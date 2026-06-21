@@ -1,0 +1,167 @@
+<template>
+  <div class="usage-progress">
+    <div class="usage-header">
+      <span class="usage-label">{{ label }}</span>
+      <span class="usage-value" :class="colorClass">{{ displayPercentage }}</span>
+    </div>
+    <div class="progress-track" v-if="hasPercentage">
+      <div class="progress-fill" :class="colorClass" :style="{ width: Math.min(percentage, 100) + '%' }"></div>
+    </div>
+    <div class="usage-footer" v-if="resetsAt">
+      <span class="reset-time" title="Thời gian được tính dựa trên múi giờ hiện tại (Local Timezone)">
+        <span class="reset-label">Resets</span>
+        <span v-if="!formattedResetTime.isNow" class="reset-label">in</span>
+        <span class="reset-relative">{{ formattedResetTime.relativeTime }}</span>
+        <span class="reset-absolute">({{ formattedResetTime.absoluteTime }})</span>
+      </span>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
+
+const props = defineProps({
+  label: String,
+  percentage: {
+    type: Number,
+    default: null
+  },
+  resetsAt: {
+    type: Number,
+    default: null
+  }
+});
+
+const emit = defineEmits(['timeout']);
+
+const currentTime = ref(Math.floor(Date.now() / 1000));
+let timer = null;
+
+onMounted(() => {
+  // Update time every 10 seconds to keep UI relatively fresh without excessive re-renders
+  timer = setInterval(() => {
+    currentTime.value = Math.floor(Date.now() / 1000);
+  }, 10000);
+});
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer);
+});
+
+const hasPercentage = computed(() => props.percentage !== null && !isNaN(props.percentage));
+
+const displayPercentage = computed(() => {
+  if (hasPercentage.value) {
+    return `${props.percentage}%`;
+  }
+  return 'N/A';
+});
+
+const colorClass = computed(() => {
+  if (!hasPercentage.value) return 'color-safe';
+  if (props.percentage <= 70) return 'color-safe';
+  if (props.percentage <= 90) return 'color-warning';
+  return 'color-danger';
+});
+
+const formattedResetTime = computed(() => {
+  if (!props.resetsAt) return { relativeTime: '', absoluteTime: '', isNow: false };
+  
+  const d = new Date(props.resetsAt * 1000);
+  const absoluteTime = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    day: 'numeric',
+    hour12: false
+  }).format(d);
+
+  const diffSeconds = props.resetsAt - currentTime.value;
+  
+  if (diffSeconds <= 0) return { relativeTime: 'now', absoluteTime, isNow: true };
+  
+  let relativeTime = '';
+  const days = Math.floor(diffSeconds / 86400);
+  const hours = Math.floor((diffSeconds % 86400) / 3600);
+  const minutes = Math.floor((diffSeconds % 3600) / 60);
+  
+  if (days > 0) {
+    relativeTime = `${days}d ${hours}h`;
+  } else if (hours > 0) {
+    relativeTime = `${hours}h ${minutes}m`;
+  } else {
+    relativeTime = minutes > 0 ? `${minutes}m` : `<1m`;
+  }
+
+  return { relativeTime, absoluteTime, isNow: false };
+});
+
+watch(() => formattedResetTime.value.isNow, (isNow) => {
+  if (isNow) {
+    emit('timeout');
+  }
+});
+</script>
+
+<style scoped>
+.usage-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.usage-value {
+  font-weight: 700;
+}
+.progress-track {
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease-in-out;
+}
+.usage-footer {
+  font-size: 10px;
+  text-align: right;
+}
+.reset-time {
+  cursor: help;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.reset-label {
+  color: rgba(255, 255, 255, 0.35);
+}
+.reset-relative {
+  color: #ffffff;
+  font-weight: 600;
+}
+.reset-absolute {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+/* Colors using existing CSS variables */
+.color-safe { color: var(--accent-green); }
+.color-safe.progress-fill { background-color: var(--accent-green); }
+
+.color-warning { color: var(--accent-amber); }
+.color-warning.progress-fill { background-color: var(--accent-amber); }
+
+.color-danger { color: var(--accent-red); }
+.color-danger.progress-fill { background-color: var(--accent-red); }
+</style>

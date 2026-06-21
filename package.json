@@ -1,0 +1,26 @@
+{
+  "name": "aki-dev-sync",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "gen-icon": "tauri icon public/icon.png && cp src-tauri/icons/32x32.png public/titlebar-icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios"
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.2.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-opener": "^2",
+    "sweetalert2": "^11.26.25",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.3"
+  }
+}
