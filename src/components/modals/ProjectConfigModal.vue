@@ -102,6 +102,10 @@
             <label for="run-remote-modal">Execute hooks on Remote Host via SSH (uncheck for Local Shell)</label>
           </div>
           <div class="checkbox-group mb-0 mt-1">
+            <input type="checkbox" id="ignore-hook-errors-modal" v-model="editingProject.hooks.ignore_hook_errors" />
+            <label for="ignore-hook-errors-modal">Ignore hook errors — sync continues even if a hook exits non-zero</label>
+          </div>
+          <div class="checkbox-group mb-0 mt-1">
             <input type="checkbox" id="delete-on-pull-modal" v-model="editingProject.delete_on_pull" />
             <label for="delete-on-pull-modal" style="color: #f87171;">
               <i class="fa-solid fa-triangle-exclamation mr-1"></i>

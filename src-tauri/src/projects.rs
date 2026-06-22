@@ -14,6 +14,8 @@ pub struct SyncHooks {
     pub pre_push_cmd: Option<String>,
     pub post_push_cmd: Option<String>,
     pub run_hooks_on_remote: bool,
+    #[serde(default)]
+    pub ignore_hook_errors: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

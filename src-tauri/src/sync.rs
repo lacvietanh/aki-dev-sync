@@ -99,7 +99,13 @@ fn run_hook_phase(
     }
     if let Some(c) = cmd {
         if !c.trim().is_empty() {
-            execute_hook(window, project, c, dry_prefix)?;
+            if let Err(e) = execute_hook(window, project, c, dry_prefix) {
+                if project.hooks.ignore_hook_errors {
+                    emit_log(window, &project.id, format!("[WARN] {} hook failed (ignored): {}\n", phase_name, e));
+                } else {
+                    return Err(e);
+                }
+            }
         }
     }
     Ok(())
