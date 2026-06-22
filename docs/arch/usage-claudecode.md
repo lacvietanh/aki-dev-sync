@@ -1,6 +1,6 @@
 # Kiến trúc Theo dõi & Đồng bộ Usage Claude Code
 
-Tài liệu này đúc kết toàn bộ cơ chế, các giới hạn kỹ thuật từ phía Anthropic/Claude CLI, và giải pháp kiến trúc "Hybrid Patching" mà Aki-RemoteDevMan sử dụng để quản lý Quota (Hạn mức) của Claude Code một cách chính xác 100% mà không gây hao tốn token.
+Tài liệu này đúc kết toàn bộ cơ chế, các giới hạn kỹ thuật từ phía Anthropic/Claude CLI, và giải pháp kiến trúc "Hybrid Patching" mà Aki Remote Dev Sync sử dụng để quản lý Quota (Hạn mức) của Claude Code một cách chính xác 100% mà không gây hao tốn token.
 
 ## 1. Bản chất của hệ thống Telemetry trong Claude Code
 Claude Code CLI (một tool Node.js) sử dụng cơ chế **hook ngầm** có tên là `statusLine` để xuất (export) dữ liệu Telemetry dưới dạng JSON ra ngoài sau mỗi lượt (turn) tương tác với LLM.
@@ -25,7 +25,7 @@ Khi người dùng dùng cạn kiệt Quota, API của Anthropic sẽ trả về
 
 ## 3. Kiến trúc Giải pháp: "Hybrid Patching"
 
-Để vượt qua các giới hạn trên, Aki-RemoteDevMan áp dụng giải pháp **Hybrid Patching** (Vá thông minh kết hợp 2 luồng) được xử lý ngay từ tầng Rust Backend bằng Python và Bash script qua SSH.
+Để vượt qua các giới hạn trên, Aki Remote Dev Sync áp dụng giải pháp **Hybrid Patching** (Vá thông minh kết hợp 2 luồng) được xử lý ngay từ tầng Rust Backend bằng Python và Bash script qua SSH.
 
 ### Luồng Bị động (Passive Flow - Quá trình Provision)
 Bắt trọn mọi hoạt động chat của User và đề phòng Lỗi A.

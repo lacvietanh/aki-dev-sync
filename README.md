@@ -1,6 +1,6 @@
-# AkiDevSync 🚀
+# Aki Remote Dev Sync 🚀
 
-**AkiDevSync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote với AI).
+**Aki Remote Dev Sync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote với AI).
 
 ![Aki Sync Dashboard](./src-tauri/icons/icon.png)
 
@@ -63,12 +63,47 @@
 - **Core Engine:** `rsync` và `ssh` native.
 
 ## 💻 Development
+
+### Prerequisites (macOS)
+
+Cài Xcode Command Line Tools và Rust:
+
+```bash
+xcode-select --install
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### Prerequisites (Linux — Ubuntu 22.04 / 24.04)
+
+**1. Cài Rust:**
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+**2. Cài system dependencies cho Tauri v2:**
+```bash
+sudo apt install -y \
+  libwebkit2gtk-4.1-dev \
+  libjavascriptcoregtk-4.1-dev \
+  libsoup-3.0-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  build-essential \
+  libssl-dev \
+  pkg-config
+```
+
+> `build-essential`, `libssl-dev`, `pkg-config` thường đã có sẵn trên máy dev — giữ lại để đảm bảo đủ khi cài fresh.
+
+### Run & Build
+
 ```bash
 npm install
-npm run tauri dev
+npm run tauri dev   # Dev (lần đầu build Rust ~5–10 phút)
 ```
 ```bash
-npm run tauri build # Build production
+npm run tauri build # Production build
 ```
 
 *Thiết kế dành riêng cho tốc độ và quy trình Lạc Việt Anh Workflow.*
