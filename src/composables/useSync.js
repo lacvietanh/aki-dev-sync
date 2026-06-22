@@ -4,6 +4,7 @@ import { projectRuntime, Toast } from '../store/projectStore'
 import { useLogs } from './useLogs'
 import { saveProjectsList } from './useProjectConfig'
 import { fetchGitStatus } from './useGit'
+import { checkProjectSyncStatus } from './useSyncStatus'
 
 export const showSpecialModal = ref(false)
 export const specialProject = ref(null)
@@ -52,6 +53,16 @@ export async function startSync(project, direction, specificPaths = []) {
     project.last_sync_status = "success"
     await saveProjectsList()
     fetchGitStatus(project.id)
+
+    // Optimistic: mark the synced direction as clean, then recheck to confirm
+    if (!isDryRun && specificPaths.length === 0) {
+      if (direction === 'push') {
+        projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], hasPendingPush: false }
+      } else if (direction === 'pull') {
+        projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], hasPendingPull: false }
+      }
+      setTimeout(() => checkProjectSyncStatus(project), 3000)
+    }
 
     if (activeLogProjectId.value === project.id) {
       setTimeout(() => {

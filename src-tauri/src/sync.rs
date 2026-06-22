@@ -257,6 +257,75 @@ pub fn expand_remote_tilde(path: &str) -> String {
     }
 }
 
+#[derive(Serialize, Clone)]
+pub struct SyncStatusResult {
+    pub has_local_changes: bool,
+    pub has_remote_changes: bool,
+}
+
+fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, String> {
+    let local = format!("{}/", project.local_path.trim_end_matches('/'));
+    let remote = format!("{}:{}/", project.remote_host, project.remote_path.trim_end_matches('/'));
+    let (src, dest) = if is_push {
+        (local.as_str(), remote.as_str())
+    } else {
+        (remote.as_str(), local.as_str())
+    };
+
+    let sync_git = is_push && project.sync_git;
+    let mut args = build_rsync_args(project, is_push, true, &[], sync_git, src, dest);
+    // Insert before the trailing src/dest pair to handle sub-second mtime differences
+    // between local APFS (nanosecond) and remote ext4/FAT (second precision).
+    let insert_pos = args.len().saturating_sub(2);
+    args.insert(insert_pos, "--modify-window=2".to_string());
+
+    let output = Command::new("rsync")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("rsync status check failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("rsync exited non-zero: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let count = stdout
+        .lines()
+        .filter(|line| {
+            let l = line.trim();
+            !l.is_empty()
+                && !l.starts_with("sending ")
+                && !l.starts_with("receiving ")
+                && !l.starts_with("sent ")
+                && !l.starts_with("received ")
+                && !l.starts_with("total size")
+                && !l.starts_with("Number of")
+                && !l.starts_with("deleting ")
+                && !l.starts_with("*deleting ")
+                && l != "./"
+                && l != "."
+        })
+        .count();
+
+    Ok(count)
+}
+
+#[tauri::command]
+pub async fn check_sync_status(project: SyncProject) -> Result<SyncStatusResult, String> {
+    validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let push_count = count_rsync_changes(&project, true)?;
+        let pull_count = count_rsync_changes(&project, false)?;
+        Ok(SyncStatusResult {
+            has_local_changes: push_count > 0,
+            has_remote_changes: pull_count > 0,
+        })
+    })
+    .await
+    .map_err(|e| format!("check_sync_status task error: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

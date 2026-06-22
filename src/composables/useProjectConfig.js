@@ -4,6 +4,7 @@ import Swal from 'sweetalert2'
 import { projects, projectRuntime, isReloading, Toast } from '../store/projectStore'
 import { useLogs } from './useLogs'
 import { fetchGitStatus } from './useGit'
+import { checkAllSyncStatus, startSyncStatusPolling } from './useSyncStatus'
 
 export const showConfigModal = ref(false)
 export const editingProject = ref(null)
@@ -36,6 +37,10 @@ export async function loadData(sshHosts, showToast = false) {
     appendGlobalLog("LOAD", `Loaded ${loaded.length} projects successfully.`)
 
     await Promise.all(projects.value.map(p => fetchGitStatus(p.id)))
+
+    // Background: check rsync status for all projects (non-blocking)
+    checkAllSyncStatus()
+    startSyncStatusPolling()
 
     if (showToast) Toast.fire({ icon: 'success', title: 'Data Reloaded!' })
   } catch (err) {

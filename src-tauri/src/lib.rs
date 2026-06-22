@@ -26,6 +26,7 @@ pub fn run() {
             git::get_project_files,
             // sync
             sync::run_sync,
+            sync::check_sync_status,
             // agent usage
             agent_usage::provision_agent_usage,
             agent_usage::force_sync_agent_usage,

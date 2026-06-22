@@ -83,7 +83,7 @@
                     <input type="checkbox" v-model="p.sync_git" :disabled="projectRuntime[p.id]?.syncing" @change="saveProjectsList()" />
                     .git
                   </label>
-                  <button class="btn-tech btn-tech-push" @click="startSync(p, 'push')" :disabled="projectRuntime[p.id]?.syncing" title="Push Local to Remote">
+                  <button class="btn-tech btn-tech-push" :class="{ 'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false }" @click="startSync(p, 'push')" :disabled="projectRuntime[p.id]?.syncing" title="Push Local to Remote">
                     <i class="fa-solid fa-arrow-up"></i> PUSH
                   </button>
                 </div>
@@ -97,7 +97,7 @@
                 </div>
 
                 <div class="dry-group-right">
-                  <button class="btn-tech btn-tech-pull" @click="startSync(p, 'pull')" :disabled="projectRuntime[p.id]?.syncing" title="Pull Remote to Local">
+                  <button class="btn-tech btn-tech-pull" :class="{ 'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false }" @click="startSync(p, 'pull')" :disabled="projectRuntime[p.id]?.syncing" title="Pull Remote to Local">
                     <i class="fa-solid fa-arrow-down"></i> PULL
                   </button>
                 </div>

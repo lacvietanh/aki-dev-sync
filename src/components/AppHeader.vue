@@ -83,7 +83,7 @@ function handleCreateNew() {
 
 <style scoped>
 .app-version {
-  font-size: 0.5em;
+  font-size: 0.75em;
   color: #64748b;
   margin-left: 8px;
   vertical-align: middle;
