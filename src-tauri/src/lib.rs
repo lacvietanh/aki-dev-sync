@@ -370,6 +370,12 @@ async fn run_sync(
         args.push("--dry-run".to_string());
     }
 
+    if is_push {
+        args.push(format!("--rsync-path=mkdir -p \"{}\" && rsync", project.remote_path));
+    } else {
+        let _ = std::fs::create_dir_all(&project.local_path);
+    }
+
     if !specific_paths.is_empty() && is_push {
         // Advanced PUSH: use -R (Relative) to push specific files preserving tree
         args.push("-R".to_string());
