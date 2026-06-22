@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.1.2] - 2026-06-23
+
+#### Added
+- **`ignore_hook_errors` flag** on `SyncHooks`: when enabled, a hook that exits non-zero emits a
+  `[WARN]` log line and allows the sync to continue instead of aborting. Useful for post-sync
+  scripts that may fail on the first push (e.g. directory not yet created on remote, optional
+  install steps). Toggle available in Project Config modal under the hooks section.
+- **Sync status indicator**: Push/Pull buttons now show visual state based on real-time rsync dry-run
+  checks. Buttons appear muted (`.btn-sync-clean`) when no changes are pending in that direction.
+  Background polling every 60s keeps status fresh. New `check_sync_status` Tauri command runs
+  `rsync --dry-run` for both directions and returns `has_local_changes` / `has_remote_changes`.
+
+#### Fixed
+- **Titlebar sacred boundary**: Modal overlays now start at `top: 42px` instead of `top: 0` to never
+  cover the custom titlebar drag region. Added `--titlebar-h` CSS variable and documentation at
+  `docs/ref/titlebar-sacred-boundary.md` to enforce the rule for all future fixed-position UI.
+
+---
+
 ### [1.1.1] - 2026-06-23
 
 #### Fixed
