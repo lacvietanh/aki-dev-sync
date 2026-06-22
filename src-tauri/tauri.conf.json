@@ -20,7 +20,7 @@
     ],
     "macOSPrivateApi": true,
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {
@@ -32,6 +32,27 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "dmg": {
+        "background": "../dev/app-dmg-bg.png",
+        "windowSize": {
+          "width": 540,
+          "height": 420
+        },
+        "appPosition": {
+          "x": 127,
+          "y": 210
+        },
+        "applicationFolderPosition": {
+          "x": 420,
+          "y": 210
+        },
+        "windowPosition": {
+          "x": 500,
+          "y": 100
+        }
+      }
+    }
   }
 }
