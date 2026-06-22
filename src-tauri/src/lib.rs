@@ -371,7 +371,14 @@ async fn run_sync(
     }
 
     if is_push {
-        args.push(format!("--rsync-path=mkdir -p \"{}\" && rsync", project.remote_path));
+        let remote_dir = if project.remote_path.starts_with("~/") {
+            project.remote_path.replacen("~/", "$HOME/", 1)
+        } else if project.remote_path == "~" {
+            "$HOME".to_string()
+        } else {
+            project.remote_path.clone()
+        };
+        args.push(format!("--rsync-path=mkdir -p \"{}\" && rsync", remote_dir));
     } else {
         let _ = std::fs::create_dir_all(&project.local_path);
     }
@@ -596,19 +603,19 @@ pub struct AgentUsageResponse {
 async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
     if agent_name == "claudecode" {
         let cmd = r#"
-            FILE=~/.claude/statusline-command.sh
+            FILE="$HOME/.claude/statusline-command.sh"
             if [ ! -f "$FILE" ]; then exit 0; fi
             if ! grep -q "rate-limits-cache" "$FILE"; then
                 cat << 'EOF' > /tmp/patch.sh
 rl_input=$(echo "$input" | jq -c '.rate_limits // empty')
-if [ -z "$rl_input" ] && [ -f ~/.claude/rate-limits-cache.json ]; then
-    input=$(echo "$input" | jq --argjson old "$(cat ~/.claude/rate-limits-cache.json)" '
+if [ -z "$rl_input" ] && [ -f "$HOME/.claude/rate-limits-cache.json" ]; then
+    input=$(echo "$input" | jq --argjson old "$(cat "$HOME/.claude/rate-limits-cache.json")" '
         if ($old.rate_limits != null) then
             .rate_limits = ($old.rate_limits | map_values(.used_percentage = 100))
         else . end
     ')
 fi
-printf '%s' "$input" > ~/.claude/rate-limits-cache.json
+printf '%s' "$input" > "$HOME/.claude/rate-limits-cache.json"
 EOF
                 sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
                 rm -f /tmp/patch.sh
@@ -720,8 +727,8 @@ EOF
 async fn get_agent_usage(agent_name: String, host: String) -> Result<Option<AgentUsageResponse>, String> {
     if agent_name == "claudecode" {
         let cmd = r#"
-            FILE=~/.claude/rate-limits-cache.json
-            CREDS=~/.claude/.credentials.json
+            FILE="$HOME/.claude/rate-limits-cache.json"
+            CREDS="$HOME/.claude/.credentials.json"
             if [ -f "$FILE" ]; then
                 MTIME=$(stat -c %Y "$FILE" 2>/dev/null || stat -f %m "$FILE" 2>/dev/null)
                 
