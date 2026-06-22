@@ -113,7 +113,7 @@ export function useSsh() {
       await updateSshHistoryStatus();
       const newHosts = await invoke("get_ssh_hosts");
       sshHosts.value = newHosts;
-      appendGlobalLog("SSH", "Successfully updated ~/.ssh/config. Undo state created.");
+      appendGlobalLog("SSH", "User manually updated ~/.ssh/config. Undo state created.");
       closeSshModal();
       Toast.fire({ icon: 'success', title: 'Đã lưu cấu hình SSH!' });
       await checkAndFixAffectedProjects(oldHosts, newHosts, saveProjectsListFn);

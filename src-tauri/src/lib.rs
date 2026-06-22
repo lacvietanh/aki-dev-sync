@@ -353,10 +353,14 @@ async fn run_sync(
         );
     }
 
-    // Prepare paths
-    let local = project.local_path.clone();
-    let remote = project.remote_path.clone();
-    let remote_full = format!("{}:{}", project.remote_host, remote);
+    // Prepare paths — always add trailing slash so rsync syncs directory
+    // *contents*, not the directory itself (avoids creating nested subdirs).
+    let local = {
+        let p = project.local_path.trim_end_matches('/');
+        format!("{}/", p)
+    };
+    let remote = project.remote_path.trim_end_matches('/');
+    let remote_full = format!("{}:{}/", project.remote_host, remote);
 
     let (src, dest) = if is_push {
         (&local, &remote_full)

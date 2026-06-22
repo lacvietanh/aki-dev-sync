@@ -68,6 +68,7 @@ export function useProjects() {
     if (isReloading.value) return;
     isReloading.value = true;
     try {
+      if (showToast) appendGlobalLog("SYSTEM", "User triggered manual reload.");
       appendGlobalLog("LOAD", "Initializing workspace and scanning SSH hosts...");
       sshHosts.value = await invoke("get_ssh_hosts");
       appendGlobalLog("LOAD", `Found ${sshHosts.value.length} SSH hosts.`);
@@ -194,10 +195,12 @@ export function useProjects() {
       editingProject.value.sync_git = projects.value[index].sync_git;
       editingProject.value.git_status = projects.value[index].git_status;
       projects.value[index] = JSON.parse(JSON.stringify(editingProject.value));
+      appendGlobalLog("CONFIG", `User updated config for project "${editingProject.value.name}".`);
     } else {
       editingProject.value.dry_run = true;
       editingProject.value.sync_git = true;
       projects.value.push(JSON.parse(JSON.stringify(editingProject.value)));
+      appendGlobalLog("CONFIG", `User created new project "${editingProject.value.name}".`);
     }
 
     await saveProjectsList();
