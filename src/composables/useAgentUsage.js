@@ -10,6 +10,20 @@ export function useAgentUsage(agentName, hostRef) {
 
   let pollTimer = null;
 
+  // Provision must be triggered explicitly by the user via `provision()`.
+  // The poll path only reads — it never writes to the remote environment.
+  const provision = async () => {
+    if (!hostRef.value) return false;
+    try {
+      await invoke('provision_agent_usage', { agentName, host: hostRef.value });
+      provisioned.value = true;
+      return true;
+    } catch (e) {
+      console.error(`Failed to provision ${agentName}:`, e);
+      return false;
+    }
+  };
+
   const checkUsage = async () => {
     if (!hostRef.value) {
       data.value = null;
@@ -22,12 +36,6 @@ export function useAgentUsage(agentName, hostRef) {
     stale.value = false;
 
     try {
-      if (!provisioned.value) {
-        // Auto-provision on first run for the host
-        await invoke('provision_agent_usage', { agentName, host: hostRef.value });
-        provisioned.value = true;
-      }
-
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
       if (res) {
         try {
@@ -77,7 +85,7 @@ export function useAgentUsage(agentName, hostRef) {
   };
 
   watch(() => hostRef.value, (newHost) => {
-    provisioned.value = false; // Need to reprovision if host changes
+    provisioned.value = false;
     data.value = null;
     error.value = null;
     if (pollTimer) clearInterval(pollTimer);
@@ -96,6 +104,8 @@ export function useAgentUsage(agentName, hostRef) {
     loading,
     error,
     stale,
+    provisioned,
+    provision,
     refresh,
     forceSync
   };

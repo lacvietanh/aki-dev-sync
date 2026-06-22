@@ -11,7 +11,7 @@
           <button v-if="activeLogProjectId !== null" class="btn-tech btn-tech-secondary btn-icon-only ml-2 text-red" @click="activeLogProjectId = null" title="Close Project Log & Return to Global Log">
             <i class="fa-solid fa-circle-xmark"></i>
           </button>
-          <span class="status-indicator ml-2" v-if="syncingProjectId !== null">
+          <span class="status-indicator ml-2" v-if="anySyncing">
             <span class="status-dot"></span> SYNCING...
           </span>
         </div>
@@ -44,7 +44,7 @@ import { useLogs } from '../composables/useLogs';
 import { useProjects } from '../composables/useProjects';
 
 const { activeLogProjectId, isLogExpanded, displayedLogs, consoleRef, copied, copyLogs, clearLog } = useLogs();
-const { projects, syncingProjectId } = useProjects();
+const { projects, anySyncing } = useProjects();
 
 function getLogClass(line) {
   if (line.includes("[ERROR]") || line.includes("FAILED")) return "log-error";

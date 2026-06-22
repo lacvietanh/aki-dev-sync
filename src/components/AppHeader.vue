@@ -8,13 +8,13 @@
         </h1>
       </div>
       <div class="header-actions">
-        <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="syncingProjectId !== null || isReloading">
+        <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="anySyncing || isReloading">
           <i class="fa-solid fa-plus"></i> NEW PROJECT
         </button>
-        <button class="btn-tech btn-tech-secondary" @click="openSshConfig" title="Edit SSH Config" :disabled="syncingProjectId !== null || isReloading">
+        <button class="btn-tech btn-tech-secondary" @click="openSshConfig" title="Edit SSH Config" :disabled="anySyncing || isReloading">
           <i class="fa-solid fa-server"></i> SSH CONFIG
         </button>
-        <button class="btn-tech btn-tech-secondary" @click="handleReload" title="Reload Data" :disabled="syncingProjectId !== null || isReloading">
+        <button class="btn-tech btn-tech-secondary" @click="handleReload" title="Reload Data" :disabled="anySyncing || isReloading">
           <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i> 
           {{ isReloading ? 'RELOADING...' : 'RELOAD' }}
         </button>
@@ -70,7 +70,7 @@ onMounted(async () => {
 
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
-const { createNewProject, loadData, syncingProjectId, isReloading } = useProjects();
+const { createNewProject, loadData, anySyncing, isReloading } = useProjects();
 
 function handleReload() {
   loadData(sshHosts, true);
