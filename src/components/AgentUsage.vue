@@ -69,6 +69,7 @@
             :percentage="data.rate_limits.five_hour.used_percentage" 
             :resetsAt="data.rate_limits.five_hour.resets_at" 
             @timeout="$emit('retry')"
+            @force-sync="$emit('force-sync')"
           />
           <UsageProgressBar 
             v-if="data.rate_limits.seven_day"
@@ -76,6 +77,7 @@
             :percentage="data.rate_limits.seven_day.used_percentage" 
             :resetsAt="data.rate_limits.seven_day.resets_at" 
             @timeout="$emit('retry')"
+            @force-sync="$emit('force-sync')"
           />
         </template>
         
@@ -87,6 +89,7 @@
             :percentage="geminiPool.remainingPercentage !== undefined ? Math.round((1 - geminiPool.remainingPercentage) * 100) : null" 
             :resetsAt="Math.floor(new Date(geminiPool.resetTime).getTime() / 1000)" 
             @timeout="$emit('retry')"
+            @force-sync="$emit('force-sync')"
           />
           <UsageProgressBar 
             v-if="claudeOssPool"
@@ -94,6 +97,7 @@
             :percentage="claudeOssPool.remainingPercentage !== undefined ? Math.round((1 - claudeOssPool.remainingPercentage) * 100) : null" 
             :resetsAt="Math.floor(new Date(claudeOssPool.resetTime).getTime() / 1000)" 
             @timeout="$emit('retry')"
+            @force-sync="$emit('force-sync')"
           />
         </template>
       </div>
@@ -117,7 +121,7 @@ const props = defineProps({
   stale: Boolean
 });
 
-defineEmits(['retry']);
+defineEmits(['retry', 'force-sync']);
 
 const geminiPool = computed(() => {
   if (props.agentId !== 'antigravity' || !props.data || !props.data.models) return null;

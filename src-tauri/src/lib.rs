@@ -60,64 +60,82 @@ fn get_ssh_hosts() -> Result<Vec<String>, String> {
     Ok(hosts)
 }
 
+#[derive(Serialize)]
+pub struct GitInfo {
+    status: String,
+    remote_url: String,
+    log: String,
+}
+
 #[tauri::command]
-fn get_git_status(local_path: String) -> Result<String, String> {
+fn get_git_info(local_path: String) -> Result<GitInfo, String> {
     let path = std::path::Path::new(&local_path);
     if !path.join(".git").exists() {
-        return Ok("No Git".to_string());
+        return Ok(GitInfo {
+            status: "No Git".to_string(),
+            remote_url: "".to_string(),
+            log: "Not a git repository.".to_string(),
+        });
     }
 
-    let output = Command::new("git")
-        .current_dir(path)
-        .args(["status", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to execute git: {}", e))?;
+    let mut status = "Clean".to_string();
+    let mut log = String::new();
+    let mut remote_url = String::new();
 
-    if !output.status.success() {
-        return Ok("Git Error".to_string());
+    // 1. Get porcelain status
+    if let Ok(output) = Command::new("git").current_dir(path).args(["status", "--porcelain"]).output() {
+        if !output.status.success() {
+            status = "Git Error".to_string();
+        } else {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if !stdout.trim().is_empty() {
+                status = "Dirty".to_string();
+            }
+        }
+    } else {
+        status = "Git Error".to_string();
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if !stdout.trim().is_empty() {
-        return Ok("Dirty".to_string());
-    }
-    
-    let output_branch = Command::new("git")
-        .current_dir(path)
-        .args(["status", "-sb"])
-        .output();
-        
-    if let Ok(out) = output_branch {
-        if out.status.success() {
-            let stdout_branch = String::from_utf8_lossy(&out.stdout);
-            if stdout_branch.contains("[ahead ") {
-                return Ok("Ahead".to_string());
+    // 2. Check if ahead (only if Clean so far)
+    if status == "Clean" {
+        if let Ok(out) = Command::new("git").current_dir(path).args(["status", "-sb"]).output() {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                if stdout.contains("[ahead ") {
+                    status = "Ahead".to_string();
+                }
             }
         }
     }
 
-    Ok("Clean".to_string())
-}
-
-#[tauri::command]
-fn get_git_remote_url(local_path: String) -> Result<String, String> {
-    let path = std::path::Path::new(&local_path);
-    if !path.join(".git").exists() {
-        return Ok("".to_string());
+    // 3. Get Remote URL
+    if let Ok(out) = Command::new("git").current_dir(path).args(["remote", "get-url", "origin"]).output() {
+        if out.status.success() {
+            remote_url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        }
     }
 
-    let output = Command::new("git")
-        .current_dir(path)
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .map_err(|e| format!("Failed to execute git: {}", e))?;
-
-    if output.status.success() {
-        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Ok(url)
-    } else {
-        Ok("".to_string())
+    // 4. Get detailed log
+    if let Ok(output) = Command::new("git").current_dir(path).args(["status"]).output() {
+        if output.status.success() {
+            log.push_str(&String::from_utf8_lossy(&output.stdout));
+        } else {
+            log.push_str(&String::from_utf8_lossy(&output.stderr));
+        }
     }
+    
+    log.push_str("\n\n--- Recent Commits ---\n");
+    if let Ok(log_out) = Command::new("git").current_dir(path).args(["log", "-n", "10", "--oneline"]).output() {
+        if log_out.status.success() {
+            log.push_str(&String::from_utf8_lossy(&log_out.stdout));
+        }
+    }
+
+    Ok(GitInfo {
+        status,
+        remote_url,
+        log,
+    })
 }
 
 #[tauri::command]
@@ -575,9 +593,19 @@ async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool,
             FILE=~/.claude/statusline-command.sh
             if [ ! -f "$FILE" ]; then exit 0; fi
             if ! grep -q "rate-limits-cache" "$FILE"; then
-                sed -i.bak '/input=$(cat)/a \
-printf '\''%s'\'' "$input" > ~/.claude/rate-limits-cache.json
-' "$FILE"
+                cat << 'EOF' > /tmp/patch.sh
+rl_input=$(echo "$input" | jq -c '.rate_limits // empty')
+if [ -z "$rl_input" ] && [ -f ~/.claude/rate-limits-cache.json ]; then
+    input=$(echo "$input" | jq --argjson old "$(cat ~/.claude/rate-limits-cache.json)" '
+        if ($old.rate_limits != null) then
+            .rate_limits = ($old.rate_limits | map_values(.used_percentage = 100))
+        else . end
+    ')
+fi
+printf '%s' "$input" > ~/.claude/rate-limits-cache.json
+EOF
+                sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
+                rm -f /tmp/patch.sh
             fi
         "#;
         
@@ -605,6 +633,81 @@ printf '\''%s'\'' "$input" > ~/.claude/rate-limits-cache.json
     }
     
     Err("Unknown agent".into())
+}
+
+#[tauri::command]
+async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
+    if agent_name == "claudecode" {
+        let cmd = r#"
+            export CLAUDE_SYNC_OUT=$(if command -v zsh >/dev/null 2>&1; then zsh -lc "claude --model haiku -p /usage 2>/dev/null"; else bash -lc "claude --model haiku -p /usage 2>/dev/null"; fi)
+            
+            cat << 'EOF' > /tmp/.claude_sync_parse.py
+import sys, re, json, datetime, os
+
+out = os.environ.get("CLAUDE_SYNC_OUT", "")
+match = re.search(r'(\d+)%\s*used\s*.\s*resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)', out, re.IGNORECASE)
+if not match:
+    sys.exit(0)
+
+pct = int(match.group(1))
+year = datetime.datetime.now().year
+date_str = f"{match.group(2)} {year} {match.group(3)}:{match.group(4)}{match.group(5)}"
+try:
+    dt = datetime.datetime.strptime(date_str, "%b %d %Y %I:%M%p")
+    resets_at = int(dt.timestamp())
+except Exception:
+    sys.exit(0)
+
+cache_file = os.path.expanduser("~/.claude/rate-limits-cache.json")
+data = {}
+if os.path.exists(cache_file):
+    try:
+        with open(cache_file, "r") as f:
+            data = json.load(f)
+    except Exception:
+        pass
+
+if "rate_limits" not in data or data["rate_limits"] is None:
+    data["rate_limits"] = {}
+
+data["rate_limits"]["five_hour"] = {
+    "used_percentage": pct,
+    "resets_at": resets_at
+}
+
+try:
+    with open(cache_file, "w") as f:
+        json.dump(data, f)
+except Exception:
+    pass
+EOF
+            python3 /tmp/.claude_sync_parse.py
+            rm -f /tmp/.claude_sync_parse.py
+        "#;
+        
+        let mut c = Command::new("ssh");
+        c.args([&host, "sh"]);
+        c.stdin(Stdio::piped());
+        c.stdout(Stdio::piped());
+        c.stderr(Stdio::piped());
+        
+        let mut child = c.spawn().map_err(|e| format!("Failed to spawn SSH for force sync: {}", e))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(cmd.as_bytes());
+        }
+        
+        let _output = child.wait_with_output().map_err(|e| format!("Failed to SSH for force sync: {}", e))?;
+        
+        // We do not check _output.status.success() here.
+        // If Claude hits a rate limit (e.g. "You've hit your session limit"), it exits with a non-zero code.
+        // However, the API was still called and the rate-limits-cache.json was successfully updated.
+        // We just return Ok(true) to let the frontend refresh the UI.
+        
+        return Ok(true);
+    }
+    
+    Err("Force sync not supported for this agent".into())
 }
 
 #[tauri::command]
@@ -938,7 +1041,7 @@ pub fn run() {
             load_projects,
             save_projects,
             run_sync,
-            get_git_status,
+            get_git_info,
             get_project_files,
             read_ssh_config,
             save_ssh_config,
@@ -947,13 +1050,13 @@ pub fn run() {
             get_ssh_history_status,
             provision_agent_usage,
             get_agent_usage,
+            force_sync_agent_usage,
             get_project_icon_base64,
             open_local_dir,
             open_in_terminal,
             open_in_vscode,
             open_antigravity_app,
             open_remote_terminal,
-            get_git_remote_url,
             open_url
         ])
         .run(tauri::generate_context!())

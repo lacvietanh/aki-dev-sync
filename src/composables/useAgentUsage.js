@@ -62,6 +62,20 @@ export function useAgentUsage(agentName, hostRef) {
     checkUsage();
   };
 
+  const forceSync = async () => {
+    if (!hostRef.value) return;
+    loading.value = true;
+    error.value = null;
+    try {
+      await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
+      await checkUsage();
+    } catch (e) {
+      console.error(`Error force syncing ${agentName}:`, e);
+      error.value = e.toString();
+      loading.value = false;
+    }
+  };
+
   watch(() => hostRef.value, (newHost) => {
     provisioned.value = false; // Need to reprovision if host changes
     data.value = null;
@@ -82,6 +96,7 @@ export function useAgentUsage(agentName, hostRef) {
     loading,
     error,
     stale,
-    refresh
+    refresh,
+    forceSync
   };
 }

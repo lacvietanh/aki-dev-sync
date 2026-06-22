@@ -15,6 +15,7 @@
           :error="antigravityError"
           :stale="antigravityStale"
           @retry="antigravityRefresh"
+          @force-sync="antigravityForceSync"
         />
       </div>
 
@@ -42,6 +43,7 @@
           :error="claudeError"
           :stale="claudeStale"
           @retry="claudeRefresh"
+          @force-sync="claudeForceSync"
         />
       </div>
     </div>
@@ -80,7 +82,8 @@ const {
   loading: claudeLoading, 
   error: claudeError, 
   stale: claudeStale, 
-  refresh: claudeRefresh 
+  refresh: claudeRefresh,
+  forceSync: claudeForceSync
 } = useAgentUsage('claudecode', selectedHost);
 
 // Setup Antigravity (local) monitoring - host is 'local'
@@ -90,7 +93,8 @@ const {
   loading: antigravityLoading, 
   error: antigravityError, 
   stale: antigravityStale, 
-  refresh: antigravityRefresh 
+  refresh: antigravityRefresh,
+  forceSync: antigravityForceSync
 } = useAgentUsage('antigravity', localHostRef);
 
 </script>

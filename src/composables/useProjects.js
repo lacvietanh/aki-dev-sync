@@ -33,13 +33,14 @@ const specialLoading = ref(false);
 
 const showGitModal = ref(false);
 const gitProject = ref(null);
+const gitStatusText = ref('');
 
 // Export for other composables if needed
 export {
   projects, syncingProjectId, syncStatus, isReloading,
   showConfigModal, editingProject,
   showSpecialModal, specialProject, specialFiles, specialSelected, specialLoading,
-  showGitModal, gitProject,
+  showGitModal, gitProject, gitStatusText,
   Toast
 };
 
@@ -49,20 +50,16 @@ export function useProjects() {
   async function fetchGitStatus(project) {
     try {
       appendGlobalLog("GIT", `Checking status for "${project.name}"...`);
-      const status = await invoke("get_git_status", { localPath: project.local_path });
-      project.git_status = status;
-      appendGlobalLog("GIT", `Status for "${project.name}": ${status}`);
-      
-      try {
-        const remoteUrl = await invoke("get_git_remote_url", { localPath: project.local_path });
-        if (remoteUrl) {
-          project.remote_url = remoteUrl;
-        }
-      } catch (e) {
-        // silently ignore remote url errors
+      const info = await invoke("get_git_info", { localPath: project.local_path });
+      project.git_status = info.status;
+      if (info.remote_url) {
+        project.remote_url = info.remote_url;
       }
+      project.git_log = info.log;
+      appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`);
     } catch (err) {
       project.git_status = "Git Error";
+      project.git_log = `Lỗi khi tải trạng thái Git:\n${err}`;
       appendGlobalLog("ERROR", `Failed git status for "${project.name}": ${err}`);
     }
   }
@@ -314,14 +311,16 @@ export function useProjects() {
     specialSelected.value = [];
   }
 
-  function openGitModal(project) {
+  async function openGitModal(project) {
     gitProject.value = project;
     showGitModal.value = true;
+    gitStatusText.value = project.git_log || 'Chưa có thông tin lịch sử Git.';
   }
 
   function closeGitModal() {
     showGitModal.value = false;
     gitProject.value = null;
+    gitStatusText.value = '';
   }
 
   return {
@@ -352,6 +351,7 @@ export function useProjects() {
     closeSpecialModal,
     showGitModal,
     gitProject,
+    gitStatusText,
     openGitModal,
     closeGitModal,
     Toast

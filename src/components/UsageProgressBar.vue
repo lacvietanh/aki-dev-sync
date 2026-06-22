@@ -9,10 +9,13 @@
     </div>
     <div class="usage-footer" v-if="resetsAt">
       <span class="reset-time" title="Thời gian được tính dựa trên múi giờ hiện tại (Local Timezone)">
-        <span class="reset-label">Resets</span>
-        <span v-if="!formattedResetTime.isNow" class="reset-label">in</span>
+        <span class="reset-label">{{ formattedResetTime.isPast ? 'Reset' : 'Resets' }}</span>
+        <span v-if="!formattedResetTime.isPast" class="reset-label">in</span>
         <span class="reset-relative">{{ formattedResetTime.relativeTime }}</span>
         <span class="reset-absolute">({{ formattedResetTime.absoluteTime }})</span>
+        <button v-if="formattedResetTime.isPast" @click="$emit('force-sync')" class="btn-force-sync" title="Force Sync Quota">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
       </span>
     </div>
   </div>
@@ -33,7 +36,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['timeout']);
+const emit = defineEmits(['timeout', 'force-sync']);
 
 const currentTime = ref(Math.floor(Date.now() / 1000));
 let timer = null;
@@ -66,7 +69,7 @@ const colorClass = computed(() => {
 });
 
 const formattedResetTime = computed(() => {
-  if (!props.resetsAt) return { relativeTime: '', absoluteTime: '', isNow: false };
+  if (!props.resetsAt) return { relativeTime: '', absoluteTime: '', isPast: false };
   
   const d = new Date(props.resetsAt * 1000);
   const absoluteTime = new Intl.DateTimeFormat('en-GB', {
@@ -78,13 +81,13 @@ const formattedResetTime = computed(() => {
   }).format(d);
 
   const diffSeconds = props.resetsAt - currentTime.value;
-  
-  if (diffSeconds <= 0) return { relativeTime: 'now', absoluteTime, isNow: true };
+  const isPast = diffSeconds <= 0;
+  const absDiff = Math.abs(diffSeconds);
   
   let relativeTime = '';
-  const days = Math.floor(diffSeconds / 86400);
-  const hours = Math.floor((diffSeconds % 86400) / 3600);
-  const minutes = Math.floor((diffSeconds % 3600) / 60);
+  const days = Math.floor(absDiff / 86400);
+  const hours = Math.floor((absDiff % 86400) / 3600);
+  const minutes = Math.floor((absDiff % 3600) / 60);
   
   if (days > 0) {
     relativeTime = `${days}d ${hours}h`;
@@ -94,13 +97,11 @@ const formattedResetTime = computed(() => {
     relativeTime = minutes > 0 ? `${minutes}m` : `<1m`;
   }
 
-  return { relativeTime, absoluteTime, isNow: false };
-});
-
-watch(() => formattedResetTime.value.isNow, (isNow) => {
-  if (isNow) {
-    emit('timeout');
+  if (isPast) {
+    relativeTime = `${relativeTime} ago`;
   }
+
+  return { relativeTime, absoluteTime, isPast };
 });
 </script>
 
@@ -164,4 +165,20 @@ watch(() => formattedResetTime.value.isNow, (isNow) => {
 
 .color-danger { color: var(--accent-red); }
 .color-danger.progress-fill { background-color: var(--accent-red); }
+
+.btn-force-sync {
+  background: rgba(0, 210, 255, 0.1);
+  border: 1px solid rgba(0, 210, 255, 0.3);
+  color: #a5f3fc;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+  transition: all 0.2s ease;
+  font-size: 10px;
+}
+.btn-force-sync:hover {
+  background: rgba(0, 210, 255, 0.2);
+  color: #fff;
+}
 </style>

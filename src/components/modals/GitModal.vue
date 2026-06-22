@@ -16,6 +16,11 @@
           <input type="text" class="large-input" placeholder="WIP: Implementation pending..." disabled />
         </div>
 
+        <div class="form-group full-width mt-3">
+          <label><i class="fa-solid fa-clock-rotate-left mr-1"></i> Git Status History</label>
+          <pre class="git-status-log">{{ gitStatusText }}</pre>
+        </div>
+
       </div>
       <div class="modal-footer">
         <button class="btn-tech btn-tech-secondary" @click="closeGitModal">ĐÓNG</button>
@@ -29,7 +34,7 @@
 import { onMounted, onUnmounted } from 'vue';
 import { useProjects } from '../../composables/useProjects';
 
-const { showGitModal, gitProject, closeGitModal } = useProjects();
+const { showGitModal, gitProject, gitStatusText, closeGitModal } = useProjects();
 
 function handleEsc(e) {
   if (e.key === 'Escape' && showGitModal.value) {
@@ -60,5 +65,24 @@ onUnmounted(() => window.removeEventListener('keydown', handleEsc, true));
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #9CA3AF;
   border-radius: 4px;
+}
+.mt-3 {
+  margin-top: 1rem;
+}
+.mr-1 {
+  margin-right: 0.25rem;
+}
+.git-status-log {
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 250px;
+  overflow-y: auto;
 }
 </style>
