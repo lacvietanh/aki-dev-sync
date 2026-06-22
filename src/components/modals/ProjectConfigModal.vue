@@ -31,6 +31,17 @@
           </div>
         </div>
 
+        <!-- STACK PRESETS -->
+        <div class="full-width config-group mb-1 mt-1" style="border: 1px dashed #4b5563; padding: 12px; border-radius: 8px;">
+          <h4 class="group-title text-muted" style="font-size: 12px; margin-bottom: 8px;"><i class="fa-solid fa-layer-group mr-1"></i> EXCLUDE PRESETS</h4>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" @click="applyPreset('nuxt4')">Nuxt 4</button>
+            <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" @click="applyPreset('tauriv2')">Tauri v2 (Rust)</button>
+            <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" @click="applyPreset('default')">Aki Default</button>
+          </div>
+          <p class="text-muted" style="font-size: 11px; margin-top: 6px; font-style: italic;">Áp dụng bộ lọc exclude chuẩn cho PUSH và PULL (Sẽ ghi đè các exclude hiện tại).</p>
+        </div>
+
         <!-- PUSH GROUP -->
         <div class="full-width config-group push-group mb-1 mt-1">
           <h4 class="group-title text-amber"><i class="fa-solid fa-arrow-up mr-1"></i> PUSH CONFIGURATION (Local → Remote)</h4>
@@ -143,4 +154,25 @@ function handleEsc(e) {
 
 onMounted(() => window.addEventListener('keydown', handleEsc, true));
 onUnmounted(() => window.removeEventListener('keydown', handleEsc, true));
+
+function applyPreset(stack) {
+  if (!editingProject.value) return;
+  const common = [".DS_Store", "*.log", ".env", ".claude/", ".gemini/"];
+  let baseExcludes = [];
+
+  if (stack === 'nuxt4') {
+    baseExcludes = [...common, "node_modules/", ".nuxt/", ".output/", "dist/"];
+  } else if (stack === 'tauriv2') {
+    baseExcludes = [...common, "node_modules/", "dist/", "src-tauri/target/", "src-tauri/gen/"];
+  } else {
+    // default
+    baseExcludes = [".DS_Store", "*.log", "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"];
+  }
+
+  editingProject.value.push_excludes = [...baseExcludes];
+  // pull generally needs .git/ explicitly ignored
+  editingProject.value.pull_excludes = [...baseExcludes, ".git/"];
+  
+  Toast.fire({ icon: 'success', title: `Đã áp dụng Preset ${stack.toUpperCase()}` });
+}
 </script>
