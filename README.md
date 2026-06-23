@@ -1,24 +1,13 @@
 # Aki Dev Sync 🚀
 
-**Aki Dev Sync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote với AI).
+**Aki Dev Sync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote AI agent vibe coding).
 
-![Aki Sync Dashboard](./src-tauri/icons/icon.png)
+<img width="1571" height="813" alt="Screenshot 2026-06-24 at 00 18 15" src="https://github.com/user-attachments/assets/3b086ddf-a0d7-4a00-8858-b1a756884bee" />
+
 
 ## 📖 Triết Lý: Lạc Việt Anh Workflow
 
-Ứng dụng này giải quyết bài toán chia tách môi trường phát triển để tối đa hóa hiệu suất của AI (Claude) và giữ an toàn tuyệt đối cho source code:
-
-1. **Máy Local (Source of Truth):**
-   - Nơi lưu trữ bộ code gốc, chuẩn nhất.
-   - Bạn chỉ thực hiện **code nhẹ** và **commit Git** tại đây.
-
-2. **Máy Remote (Engine / AI Workspace):**
-   - Nơi chạy AI Assistant (Claude Max) với cấu hình và sức mạnh tính toán cực lớn.
-   - Bạn đẩy code lên đây để AI đọc, refactor, tạo file hàng loạt.
-
-3. **Tại sao lại cần đồng bộ cả `.git/` lên Remote?**
-   - Mặc dù Local là Source of Truth, ta vẫn đẩy file `.git/` sang Remote. Việc này giúp AI (Claude) trên Remote có thể chạy lệnh Git, đọc diffs, và hiểu chính xác tiến trình công việc của dự án.
-   - Quan trọng hơn, khi bạn mở **VSCode Remote SSH** trên máy Remote, cây Git sẽ hiển thị chính xác các trạng thái (Changes/Staged) so với máy Local của bạn, tạo cảm giác mượt mà và liền mạch như đang code 100% trên một máy.
+Ứng dụng này giải quyết bài toán chia tách môi trường phát triển (antigravity IDE ở local, claude code ở remote)
 
 ## 🔥 Tính Năng Nổi Bật
 
@@ -27,12 +16,12 @@
 - **Mặc định (ON):** Đẩy toàn bộ code VÀ thư mục `.git/` lên Remote để Claude có đầy đủ context.
 - **Tắt (OFF):** Chỉ đẩy code lên Remote, bỏ qua `.git/` (dành cho những trường hợp đặc biệt không muốn chép đè lịch sử Git trên Remote).
 
-### 2. PUSH SPECIAL (Chỉ đẩy file thay đổi)
+### 2. PUSH SELECT
 - Mở danh sách **những file bị thay đổi** ở máy Local (Modified, Untracked, Deleted).
 - "Những file bên đó có rồi thì cần gì, đúng ko?" - Chính xác! Tính năng này cho phép bạn chọn nhanh (multi-select) một vài file vừa sửa để cập nhật sang Remote cho Claude xử lý, tiết kiệm tối đa thời gian quét và đồng bộ.
 
-### 3. PULL Siêu Tốc
-- Lấy lại đoạn code tuyệt vời mà Claude vừa viết trên Remote về thẳng máy Local.
+### 3. PULL
+- Lấy lại đoạn code mà Claude vừa viết trên Remote về thẳng máy Local.
 - Bạn review nhanh và **Commit trực tiếp** tại Local, hoàn thành chu trình.
 
 ### 4. SSH Config Editor (Tích hợp & An Toàn)
