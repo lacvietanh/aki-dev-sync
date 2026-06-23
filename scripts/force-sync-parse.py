@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# @docs docs/arch/usage-claudecode.md
 # Parses claude -p /usage stdout and writes usage data to rate-limits-cache.json.
 # Prints a JSON diagnostic line to stdout so the caller can log what happened.
 import sys, re, json, datetime, os

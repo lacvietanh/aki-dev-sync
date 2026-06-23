@@ -1,3 +1,6 @@
+// @docs docs/arch/usage-claudecode.md
+// @docs docs/arch/usage-antigravity.md
+
 use serde::Serialize;
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
@@ -116,6 +119,10 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
     }
 
     let parts: Vec<&str> = stdout.split("|||MTIME|||").collect();
+    // STALE_RESET signal: cache resets_at has passed — return None so UI shows "no data"
+    if stdout.trim() == "|||STALE_RESET|||" {
+        return Ok(None);
+    }
     if parts.len() != 2 {
         return Ok(None);
     }

@@ -65,7 +65,7 @@
             label="5-Hour Quota" 
             :percentage="data.rate_limits.five_hour.used_percentage" 
             :resetsAt="data.rate_limits.five_hour.resets_at" 
-            @timeout="$emit('retry')"
+            @timeout="$emit('force-sync')"
             @force-sync="$emit('force-sync')"
           />
           <UsageProgressBar 
@@ -73,7 +73,7 @@
             label="7-Day Quota" 
             :percentage="data.rate_limits.seven_day.used_percentage" 
             :resetsAt="data.rate_limits.seven_day.resets_at" 
-            @timeout="$emit('retry')"
+            @timeout="$emit('force-sync')"
             @force-sync="$emit('force-sync')"
           />
         </template>
@@ -103,6 +103,8 @@
 </template>
 
 <script setup>
+// @docs docs/arch/usage-claudecode.md
+// @docs docs/arch/usage-antigravity.md
 import { computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import UsageProgressBar from './UsageProgressBar.vue';

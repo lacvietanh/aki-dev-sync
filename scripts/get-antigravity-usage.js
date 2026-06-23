@@ -1,5 +1,6 @@
 /**
  * scripts/get-antigravity-usage.js
+ * @docs docs/arch/usage-antigravity.md
  * 
  * Purpose:
  * Query the running Antigravity IDE local Language Server instance via Connect RPC to fetch

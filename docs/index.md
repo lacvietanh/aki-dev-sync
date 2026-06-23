@@ -3,6 +3,7 @@
 ## Features
 - [docs/feat/background-refresh.md](feat/background-refresh.md) — Background polling for git status, remote diff (push/pull buttons), and agent usage; `.git/` mtime quirk and fix
 - [docs/feat/open-popup.md](feat/open-popup.md) — Unified Open Popup for Local & Remote SSH actions, macOS open consolidation, and IDE availability checks
+- [docs/feat/sync-flow.md](feat/sync-flow.md) — Core sync flow: Push, Pull, Select special files, Dry-Run and status indicators
 
 ## Architecture
 - [docs/arch/usage-claudecode.md](arch/usage-claudecode.md) — Claude Code quota monitoring: statusLine hook, Hybrid Patching, known limitations (Lỗi A/B)
@@ -17,5 +18,7 @@
 - [docs/research/aki-dev-sync-ag-cc-usage-flow.md](research/aki-dev-sync-ag-cc-usage-flow.md) — So sánh flow của project vs cộng đồng, lợi thế native approach (phục vụ bài viết akidev)
 - [docs/research/claude-usage-1.2.7-analyze.md](research/claude-usage-1.2.7-analyze.md) — Phân tích 5 vấn đề bug quota display + 4 đề xuất cải thiện (v1.2.7)
 
-## Plans
-- [docs/plan/total-refactor-by-akirule.md](plan/total-refactor-by-akirule.md) — Full PROCODING refactor plan (in progress)
+## Plans (Completed)
+- [docs/plan/done/total-refactor-by-akirule.md](plan/done/total-refactor-by-akirule.md) — Full PROCODING refactor plan
+- [docs/plan/done/open-popup-consolidation.md](plan/done/open-popup-consolidation.md) — Consolidation of Local and Remote SSH popup actions
+- [docs/plan/done/akirule-audit-round2.md](plan/done/akirule-audit-round2.md) — Secondary audit for rule compliance

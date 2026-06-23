@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# @docs docs/arch/usage-claudecode.md
 # Patches ~/.claude/statusline-command.sh on the remote to cache rate-limit data.
 # Idempotent: checks for marker before patching.
 FILE="$HOME/.claude/statusline-command.sh"

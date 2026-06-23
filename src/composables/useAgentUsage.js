@@ -1,3 +1,6 @@
+// @docs docs/arch/usage-claudecode.md
+// @docs docs/arch/usage-antigravity.md
+// @docs docs/research/claude-usage-1.2.7-analyze.md
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
@@ -39,7 +42,9 @@ export function useAgentUsage(agentName, hostRef) {
           data.value = JSON.parse(res.content);
 
           const mtime = parseInt(res.file_modified_at, 10);
-          stale.value = mtime > 0 && (Date.now() / 1000 - mtime) > 600;
+          const fiveHour = data.value?.rate_limits?.five_hour;
+          const resetIsPast = fiveHour?.resets_at > 0 && (Date.now() / 1000) > fiveHour.resets_at;
+          stale.value = resetIsPast || (mtime > 0 && (Date.now() / 1000 - mtime) > 600);
         } catch (e) {
           console.error(`Failed to parse ${agentName} usage JSON:`, e);
           error.value = "Invalid usage data format.";

@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.8] - 2026-06-24
+
+#### Fixed
+- **Force Sync 3s Delay**: Added `< /dev/null` to the `claude --model haiku -p /usage` invocation in `force-sync-claudecode.sh`. Without it, Claude Code waited 3 seconds for stdin input before proceeding, making every Force Sync take >5s. Now completes in ~2s.
+- **Force Sync Context Isolation**: Changed working directory from generic `/tmp` to a dedicated empty directory `/tmp/aki-dev-sync-blank-dir` before running `claude -p /usage`, ensuring no stray files in `/tmp` are picked up as project context.
+- **Stale Cache After Reset**: `get-claudecode-usage.sh` now checks if `rate_limits.five_hour.resets_at` has already passed before serving the cache file. If the reset time is in the past, it emits a `|||STALE_RESET|||` signal instead of the stale file. The Rust backend interprets this as `Ok(None)`, causing the UI to show "No data — waiting for next session" instead of displaying a frozen progress bar with "Reset X hours ago".
+- **Stale Badge on Reset**: `useAgentUsage.js` stale detection now also triggers when `five_hour.resets_at` is in the past, complementing the existing 10-minute mtime check.
+- **Auto Force Sync on Reset**: `UsageProgressBar.vue` now emits a `timeout` event exactly once when the countdown timer crosses zero (reset time reached). For Claude Code bars, `AgentUsage.vue` maps `@timeout` to `force-sync` (previously mapped to `retry`), triggering an automatic quota refresh instead of just re-reading the stale cache file.
+
+#### Research
+- Confirmed via live SSH testing (2026-06-23): `claude -p /usage` makes a real network call to the Anthropic OAuth API (`~/.claude/.credentials.json`) and does **not** require an active Claude Code session. Previous assumption that it read from RAM session was incorrect. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.7-analyze.md`.
+
+---
+
 ### [1.2.7] - 2026-06-23
 
 #### Added

@@ -44,12 +44,12 @@ Dữ liệu `stdin` của `statusLine` hook có cấu trúc:
 
 Vì dữ liệu thật chỉ tồn tại thoáng qua trong `stdin` khi `statusLine` script chạy, chúng ta phải persist nó:
 
-1. SSH vào remote host.
+1. SSH vào remote host và patch `statusline-command.sh` bằng script [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh).
 2. Đọc `~/.claude/statusline-command.sh`.
 3. Kiểm tra chuỗi `rate-limits-cache`.
 4. Nếu chưa có: dùng `sed` để inject đoạn mã jq + bash ngay sau dòng `input=$(cat)`.
 5. Nếu đã có: bỏ qua (idempotent).
-6. Từ đó trở đi: đọc `~/.claude/rate-limits-cache.json` qua SSH.
+6. Từ đó trở đi: đọc `~/.claude/rate-limits-cache.json` qua SSH bằng script [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh).
 
 ---
 
@@ -77,23 +77,48 @@ Khi người dùng dùng cạn kiệt Quota, API của Anthropic sẽ trả về
 
 ### Luồng Bị động (Passive Flow - Quá trình Provision)
 Bắt trọn mọi hoạt động chat của User và đề phòng Lỗi A.
-- Khi người dùng kết nối, lệnh `provision_agent_usage` sẽ tiêm (inject) một đoạn mã jq + bash thông minh vào script `statusline-command.sh` trên máy chủ từ xa.
+- Khi người dùng kết nối, lệnh [provision_agent_usage](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) sẽ tiêm (inject) một đoạn mã jq + bash thông minh vào script `statusline-command.sh` trên máy chủ từ xa thông qua [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh).
 - **Thuật toán thông minh:** Nếu luồng JSON của Claude đẩy ra *KHÔNG CÓ* `rate_limits` (do lỗi 429), script sẽ tự động chui vào file `rate-limits-cache.json` cũ, **COPY** lại mốc thời gian Reset, ép giá trị `% used = 100`, rồi hòa trộn (Merge) vào JSON mới để ghi ra file.
 - Mọi dữ liệu xịn xò (session, cwd, tokens, v.v.) được giữ nguyên. UI không bao giờ bị sập thanh Progress.
 
 ### Luồng Chủ động (Active Flow - Nút Force Sync)
-Bắt ép làm mới giao diện 100% chuẩn xác mà không tốn Token và lách được Lỗi B.
-- Rust Backend sẽ kích hoạt lệnh `claude --model haiku -p /usage`. Lệnh `/usage` in ra dạng Text trong chế độ `-p`, lấy thông tin từ RAM (bộ đệm cục bộ) của Claude trong invocation đó.
-- Dữ liệu in ra (Stdout) có dạng chuẩn: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)`.
-- Backend nhúng ngay một **Python Script** (Python 3) ngay trong luồng SSH:
+Bắt ép làm mới dữ liệu quota từ server mà không cần phát sinh lượt chat mới.
+- Rust Backend ([agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs)) kích hoạt script [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh):
+  ```sh
+  BLANK_DIR="/tmp/aki-dev-sync-blank-dir"
+  mkdir -p "$BLANK_DIR"
+  cd "$BLANK_DIR" && claude --model haiku -p /usage < /dev/null 2>/dev/null
+  ```
+- **Cơ chế thực tế (xác nhận 2026-06-23):** Lệnh `/usage` thực hiện **network call thực sự** đến Anthropic API, xác thực bằng OAuth token có sẵn trong `~/.claude/.credentials.json`. Không cần session đang mở, không đọc từ RAM — ~2 giây.
+- **`< /dev/null`** là bắt buộc: nếu thiếu, Claude Code chờ stdin 3 giây không cần thiết trước khi xử lý.
+- **Blank dir độc lập** (`/tmp/aki-dev-sync-blank-dir`): tránh dùng `/tmp` trực tiếp vì có thể có file bị nhặt làm project context; tạo mới nếu chưa tồn tại.
+- Output (Stdout) có dạng chuẩn: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)`.
+- Backend nhúng script [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) chạy inline:
   1. Dùng biểu thức chính quy (Regex) cắt lấy số `%` và `Chuỗi ngày giờ`.
   2. Dùng thư viện `datetime` chuyển đổi chuỗi chữ "Jun 22, 10:10pm" thành Unix Timestamp siêu chuẩn.
-  3. Đọc file `rate-limits-cache.json` lên, **CHỈ GHI ĐÈ** cụm `rate_limits.five_hour` bằng `%` và `Timestamp` vừa tính. Ghi ngược file lại.
-- **Giới hạn đã biết:** Active Flow chỉ hoạt động khi máy remote đang có session Claude Code đang chạy. Nếu idle sau reset, flow này thất bại. Xem `docs/research/claude-usage-1.2.7-analyze.md` để biết các hướng cải thiện.
+  3. Đọc file `rate-limits-cache.json` lên, **CHỂ GHI ĐÈ** cụm `rate_limits.five_hour` bằng `%` và `Timestamp` vừa tính. Ghi ngược file lại.
+- **Giới hạn còn lại:** Nếu cache cũ có `resets_at` đã qua nhưng user chưa bấm Force Sync, UI vẫn hiển thị "Reset X ago" từ data cũ. Xem [claude-usage-1.2.7-analyze.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/research/claude-usage-1.2.7-analyze.md) (Vấn đề B, C, D) để biết các hướng cải thiện tiếp theo.
+
+> _Cập nhật 2026-06-23: Sửa lại mô tả cơ chế Active Flow. Thực nghiệm xác nhận `/usage` gọi network (OAuth), không đọc RAM. Bổ sung `< /dev/null` để loại 3s delay. Đổi `cd /tmp` thành blank dir riêng để đảm bảo context rỗng._
 
 ---
 
-## 4. Official References
+## 4. File Code Liên Quan (Related Source Files)
+
+- **Backend / Scripts:**
+  - [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh) — Script patch statusline hook của Claude Code.
+  - [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh) — Script đọc file cache và detect stale reset.
+  - [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh) — Script kích hoạt live sync quota qua command `/usage`.
+  - [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) — Python parsing dữ liệu stdout của `/usage`.
+  - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) — Tầng điều phối Tauri commands bên Rust.
+- **Frontend:**
+  - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue composable theo dõi & đồng bộ agent usage.
+  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Component hiển thị card thông tin quota.
+  - [UsageProgressBar.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageProgressBar.vue) — Component thanh progress và đếm ngược/tự kích hoạt sync.
+
+---
+
+## 5. Official References
 
 - [StatusLine Documentation](https://code.claude.com/docs/en/statusline)
 - [Claude Code Changelog](https://code.claude.com/docs/en/changelog)

@@ -22,6 +22,7 @@
 </template>
 
 <script setup>
+// @docs docs/research/claude-usage-1.2.7-analyze.md
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 
 const props = defineProps({
@@ -46,9 +47,15 @@ const currentTime = ref(Math.floor(Date.now() / 1000));
 let timer = null;
 
 onMounted(() => {
-  // Update time every 10 seconds to keep UI relatively fresh without excessive re-renders
+  // Update time every 10 seconds; emit 'timeout' once when resetsAt is crossed
+  let wasPast = props.resetsAt > 0 && Math.floor(Date.now() / 1000) > props.resetsAt;
   timer = setInterval(() => {
     currentTime.value = Math.floor(Date.now() / 1000);
+    const nowPast = props.resetsAt > 0 && currentTime.value > props.resetsAt;
+    if (nowPast && !wasPast) {
+      emit('timeout');
+    }
+    wasPast = nowPast;
   }, 10000);
 });
 
