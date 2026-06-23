@@ -39,6 +39,8 @@ pub struct SyncProject {
     #[serde(default = "default_true")]
     pub delete_on_pull: bool,
     #[serde(default)]
+    pub delete_on_push: bool,
+    #[serde(default)]
     pub last_sync_status: Option<String>,
 }
 
@@ -132,6 +134,7 @@ mod tests {
             dry_run: true,
             sync_git: false,
             delete_on_pull: false,
+            delete_on_push: false,
             last_sync_status: None,
         }
     }

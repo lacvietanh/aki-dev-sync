@@ -145,6 +145,7 @@ export async function createNewProject(sshHosts) {
       sync_git: true,
       dry_run: true,
       delete_on_pull: true,
+      delete_on_push: false,
     }
     openConfig(p)
   }

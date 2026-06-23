@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import Swal from 'sweetalert2'
 import { projectRuntime, Toast } from '../store/projectStore'
 import { useLogs } from './useLogs'
 import { saveProjectsList } from './useProjectConfig'
@@ -18,6 +19,25 @@ export async function startSync(project, direction, specificPaths = []) {
   if (projectRuntime.value[project.id]?.syncing) {
     Toast.fire({ icon: 'warning', title: `${project.name} is syncing, please wait` })
     return
+  }
+
+  if (direction === 'push' && project.delete_on_push && specificPaths.length === 0) {
+    if (projectRuntime.value[project.id]?.hasPendingPull === true) {
+      const confirmed = await Swal.fire({
+        title: 'CẢNH BÁO MẤT DỮ LIỆU!',
+        html: `Remote đang có file mới hoặc thay đổi chưa được PULL về.<br><br>Vì bạn đang bật tùy chọn <b>PUSH with --delete</b>, lệnh PUSH lúc này sẽ XÓA SẠCH các thay đổi đó trên Remote để ép đồng bộ theo Local.<br><br>Bạn có chắc chắn muốn PUSH đè lên không?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#374151',
+        confirmButtonText: 'Vẫn PUSH (Xóa Remote)',
+        cancelButtonText: 'Hủy bỏ',
+        background: '#131317',
+        color: '#F3F4F6'
+      }).then(result => result.isConfirmed)
+
+      if (!confirmed) return
+    }
   }
 
   const isDryRun = project.dry_run

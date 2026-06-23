@@ -7,8 +7,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [1.2.6] - 2026-06-23
 
+#### Added
+- **Delete on Push Toggle**: Added `delete_on_push` per-project flag in the configuration modal. When enabled, pushing will use `--delete` to remove files on the Remote that no longer exist on the Local, keeping the Remote as a perfect mirror. Defaults to OFF for safety.
+- **Safety Guard for Push**: Added a protective confirmation dialog when attempting to Push with `delete_on_push` enabled while there are pending Pull changes. This prevents accidental deletion of AI-generated files on the Remote.
+
 #### Changed
 - **Antigravity Native Flow**: Modified `antigravity-usage` CLI call to bypass local IDE IPC (`-m google`). Fetching quota now hits Google APIs directly via `~/.gemini/` oauth credentials. This creates a zero-setup Native Flow with sub-second execution times and a 100% success rate.
+
+#### Fixed
+- **Sync Status Deletions**: Fixed an issue where locally deleted files were ignored by the sync status checker. The `count_rsync_changes` logic now correctly accounts for `deleting ` lines from the `rsync` dry-run, ensuring the Push button accurately reflects pending deletions.
 
 ---
 

@@ -105,9 +105,16 @@
         </div>
         <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="delete-on-pull-modal" v-model="editingProject.delete_on_pull" />
-          <label for="delete-on-pull-modal" style="color: #f87171;">
+          <label for="delete-on-pull-modal" style="color: #60a5fa;">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i>
             PULL with <code>--delete</code> — removes local files not present on remote
+          </label>
+        </div>
+        <div class="checkbox-group mb-0 mt-1">
+          <input type="checkbox" id="delete-on-push-modal" v-model="editingProject.delete_on_push" />
+          <label for="delete-on-push-modal" style="color: #fbbf24;">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+            PUSH with <code>--delete</code> — removes remote files not present on local
           </label>
         </div>
       </div>

@@ -161,7 +161,7 @@ fn build_rsync_args(
         if !sync_git_on_push && !excludes.iter().any(|x| x.trim() == ".git/") {
             args.push("--exclude=.git/".to_string());
         }
-        if !is_push && project.delete_on_pull {
+        if (!is_push && project.delete_on_pull) || (is_push && project.delete_on_push) {
             args.push("--delete".to_string());
         }
 
@@ -347,8 +347,6 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
                 && !l.starts_with("received ")
                 && !l.starts_with("total size")
                 && !l.starts_with("Number of")
-                && !l.starts_with("deleting ")
-                && !l.starts_with("*deleting ")
                 && !l.starts_with("building file list")
                 && !l.starts_with("Transfer starting:")
                 && !l.starts_with("Skip newer ")
