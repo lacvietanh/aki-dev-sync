@@ -158,7 +158,7 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 }
 
 fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
-    let cmd = "npx --yes antigravity-usage --json";
+    let cmd = "npx --yes antigravity-usage --json -m google";
 
     let mut command = if host == "local" || host == "localhost" {
         let mut c = Command::new("zsh");

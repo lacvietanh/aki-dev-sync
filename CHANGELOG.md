@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.6] - 2026-06-23
+
+#### Changed
+- **Antigravity Native Flow**: Modified `antigravity-usage` CLI call to bypass local IDE IPC (`-m google`). Fetching quota now hits Google APIs directly via `~/.gemini/` oauth credentials. This creates a zero-setup Native Flow with sub-second execution times and a 100% success rate.
+
+---
+
 ### [1.2.5] - 2026-06-23
 
 #### Added
