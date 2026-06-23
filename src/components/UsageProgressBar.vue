@@ -13,8 +13,8 @@
         <span v-if="!formattedResetTime.isPast" class="reset-label">in</span>
         <span class="reset-relative">{{ formattedResetTime.relativeTime }}</span>
         <span class="reset-absolute">({{ formattedResetTime.absoluteTime }})</span>
-        <button v-if="formattedResetTime.isPast" @click="$emit('force-sync')" class="btn-force-sync" title="Force Sync Quota">
-          <i class="fa-solid fa-rotate"></i>
+        <button v-if="formattedResetTime.isPast" @click="!loading && $emit('force-sync')" class="btn-ui-action" style="margin-left: 6px;" :disabled="loading" :title="loading ? 'Loading data' : 'Force Sync Quota'">
+          <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </span>
     </div>
@@ -33,6 +33,10 @@ const props = defineProps({
   resetsAt: {
     type: Number,
     default: null
+  },
+  loading: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -166,19 +170,33 @@ const formattedResetTime = computed(() => {
 .color-danger { color: var(--accent-red); }
 .color-danger.progress-fill { background-color: var(--accent-red); }
 
-.btn-force-sync {
-  background: rgba(0, 210, 255, 0.1);
-  border: 1px solid rgba(0, 210, 255, 0.3);
-  color: #a5f3fc;
-  cursor: pointer;
-  padding: 2px 6px;
+.btn-ui-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
-  margin-left: 4px;
+  padding: 4px;
+  min-width: 24px;
+  min-height: 24px;
+  font-size: 11px;
+  cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
-.btn-force-sync:hover {
-  background: rgba(0, 210, 255, 0.2);
-  color: #fff;
+
+.btn-ui-action:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-light);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.btn-ui-action:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 </style>

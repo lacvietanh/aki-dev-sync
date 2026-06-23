@@ -4,7 +4,7 @@
       <!-- Local Engine -->
       <div class="usage-column">
         <div class="column-header">
-          <h3 class="column-title"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> LOCAL ENGINE</h3>
+          <h3 class="column-title"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> LOCAL</h3>
         </div>
         <AgentUsage
           agentId="antigravity"
@@ -21,10 +21,10 @@
 
       <div class="column-divider"></div>
 
-      <!-- Remote Engine -->
+      <!-- Remote -->
       <div class="usage-column">
         <div class="column-header">
-          <h3 class="column-title"><i class="fa-solid fa-cloud text-amber mr-1"></i> REMOTE ENGINE</h3>
+          <h3 class="column-title"><i class="fa-solid fa-cloud text-amber mr-1"></i> REMOTE</h3>
           <div class="host-selector">
             <span class="selector-label">Host:</span>
             <select v-model="selectedHost" class="host-select">
@@ -163,15 +163,17 @@ const {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   padding: 2px 6px;
+  height: 24px;
   font-size: 11px;
   font-family: inherit;
   outline: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
-
 .host-select:hover {
-  border-color: var(--accent-cyan);
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .host-select:focus {

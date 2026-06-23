@@ -12,15 +12,14 @@
         <div class="agent-info">
           <div class="agent-name">
             {{ agentName }}
-            <span v-if="agentId === 'antigravity' && data && data.email" class="agent-account">
+            <span v-if="agentId === 'antigravity' && data && data.email" class="agent-account" style="margin-left: 6px;">
               - {{ data.email.split('@')[0] }}
             </span>
           </div>
           <div class="agent-location">
-            <i :class="locationIcon"></i> {{ locationName }}
-            <span v-if="agentId === 'antigravity' && data && data.promptCredits && data.promptCredits.monthly" class="agent-plan-badge">
-              {{ (data.promptCredits.monthly / 1000) }}K Quota
-            </span>
+            <template v-if="agentId !== 'antigravity'">
+              <i :class="locationIcon"></i> {{ locationName }}
+            </template>
             <span v-if="agentId === 'claudecode' && data && claudeTierDisplay" class="agent-plan-badge claude">
               Claude {{ claudeTierDisplay }}
             </span>
@@ -33,18 +32,16 @@
       
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button v-if="error" class="btn-retry" @click="$emit('retry')" title="Retry">
-          <i class="fa-solid fa-rotate-right"></i>
+        
+        <button class="btn-ui-action" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
+          <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
-        <span v-if="loading" class="loading-spinner">
-          <i class="fa-solid fa-circle-notch fa-spin"></i>
-        </span>
       </div>
     </div>
 
     <div class="agent-body">
       <div v-if="error" class="usage-error">
-        <i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ error }}
+        <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ error }}</span>
       </div>
       <div v-else-if="loading && !data" class="usage-bars-container">
         <div v-for="i in 2" :key="i" style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 2px;">
@@ -121,7 +118,7 @@ const props = defineProps({
   stale: Boolean
 });
 
-defineEmits(['retry', 'force-sync']);
+const emit = defineEmits(['retry', 'force-sync']);
 
 const geminiPool = computed(() => {
   if (props.agentId !== 'antigravity' || !props.data || !props.data.models) return null;
@@ -130,17 +127,7 @@ const geminiPool = computed(() => {
 
 const claudeOssPool = computed(() => {
   if (props.agentId !== 'antigravity' || !props.data || !props.data.models) return null;
-  const claudeModel = props.data.models.find(m => !m.label.toLowerCase().includes('gemini'));
-  if (claudeModel) {
-    if (claudeModel.remainingPercentage === undefined && props.data.promptCredits && props.data.promptCredits.remainingPercentage !== undefined) {
-      return {
-        ...claudeModel,
-        remainingPercentage: props.data.promptCredits.remainingPercentage
-      };
-    }
-    return claudeModel;
-  }
-  return null;
+  return props.data.models.find(m => !m.label.toLowerCase().includes('gemini')) || null;
 });
 
 const iconClass = computed(() => {
@@ -354,10 +341,5 @@ async function handleIconClick() {
   border-radius: 4px;
 }
 
-.usage-empty {
-  font-size: 11px;
-  color: var(--text-darker);
-  text-align: center;
-  padding: 10px 0;
-}
+
 </style>

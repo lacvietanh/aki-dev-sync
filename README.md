@@ -49,7 +49,7 @@
 - Tối ưu hiệu năng tối đa cho mỗi project, giúp mở Modal xem chi tiết tình trạng Git cực nhanh mà không phải chờ đợi hay gọi các luồng phụ chắp vá.
 
 ### 7. Giám Sát Quota & Force Sync (AI Agents)
-- Theo dõi Real-time % hạn mức sử dụng của Claude Code trên Remote và Antigravity ở Local với thời gian đếm ngược (Relative Time) được tự động quy đổi cực kỳ trực quan dựa theo Absolute Time.
+- Theo dõi Real-time % hạn mức sử dụng của Claude Code trên Remote và Antigravity ở Local với thời gian đếm ngược (Relative Time) được tự động quy đổi cực kỳ trực quan dựa theo Absolute Time. Đối với Antigravity ở Local, hệ thống sử dụng cơ chế quét tiến trình native và kết nối Connect RPC trực tiếp siêu tốc, loại bỏ hoàn toàn hiện tượng mất kết nối chập chờn của CLI cũ. Chi tiết xem tại [antigravity-usage.md](docs/ref/antigravity-usage.md).
 - **Force Sync Quota (Phá băng Cache):** Bổ sung nút (↻) tự động xuất hiện khi qua chu kỳ reset. Click để chạy ngầm lệnh `claude -m haiku` ở thư mục rỗng `/tmp`. Kỹ thuật này ép server Anthropic trả về Rate Limit Headers chuẩn nhất mà không hề tốn Token đọc Context.
 
 ### 8. Cơ Chế An Toàn Khác

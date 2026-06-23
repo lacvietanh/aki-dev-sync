@@ -1,6 +1,6 @@
 [package]
 name = "aki-dev-sync"
-version = "1.2.4"
+version = "1.2.6"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"

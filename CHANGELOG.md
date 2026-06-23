@@ -12,7 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Safety Guard for Push**: Added a protective confirmation dialog when attempting to Push with `delete_on_push` enabled while there are pending Pull changes. This prevents accidental deletion of AI-generated files on the Remote.
 
 #### Changed
-- **Antigravity Native Flow**: Modified `antigravity-usage` CLI call to bypass local IDE IPC (`-m google`). Fetching quota now hits Google APIs directly via `~/.gemini/` oauth credentials. This creates a zero-setup Native Flow with sub-second execution times and a 100% success rate.
+- **Native Antigravity Quota Flow**: Replaced the flaky third-party `antigravity-usage` NPM CLI tool with a custom Node.js script `scripts/get-antigravity-usage.js` compiled directly into the Tauri Rust binary. This resolves the process-matching conflict with Volar/CSS language servers and macOS command argument truncation. We also removed the legacy `50K Quota` badge (which displayed static/fake monthly credits) and simplified the Vue frontend code. Quota polling is now 100% stable, fast (takes ~40ms), runs entirely locally, and returns accurate active model telemetry. Added reference documentation in [antigravity-usage.md](docs/ref/antigravity-usage.md).
 
 #### Fixed
 - **Sync Status Deletions**: Fixed an issue where locally deleted files were ignored by the sync status checker. The `count_rsync_changes` logic now correctly accounts for `deleting ` lines from the `rsync` dry-run, ensuring the Push button accurately reflects pending deletions.

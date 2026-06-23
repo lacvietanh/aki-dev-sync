@@ -158,21 +158,37 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 }
 
 fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
-    let cmd = "npx --yes antigravity-usage --json -m google";
+    let script = include_str!("../../scripts/get-antigravity-usage.js");
 
     let mut command = if host == "local" || host == "localhost" {
         let mut c = Command::new("zsh");
-        c.args(["-lc", cmd]);
+        c.args(["-lc", "node"]);
+        c.stdin(Stdio::piped())
+         .stdout(Stdio::piped())
+         .stderr(Stdio::piped());
         c
     } else {
         let mut c = Command::new("ssh");
-        c.args([host, cmd]);
+        c.args([host, "node"]);
+        c.stdin(Stdio::piped())
+         .stdout(Stdio::piped())
+         .stderr(Stdio::piped());
         c
     };
 
-    let output = command
-        .output()
-        .map_err(|e| format!("Failed to run antigravity-usage: {}", e))?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to spawn node: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(script.as_bytes())
+            .map_err(|e| format!("Failed to write script to node stdin: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to run node script: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -194,3 +210,5 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         file_modified_at: now,
     }))
 }
+
+

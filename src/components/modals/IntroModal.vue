@@ -91,7 +91,7 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Theo dõi mức dùng Antigravity (Local) và Claude Code (Remote) theo thời gian thực.</span>
+            <span>Theo dõi mức dùng Antigravity (Local - qua cơ chế quét tiến trình native siêu tốc) và Claude Code (Remote) theo thời gian thực.</span>
           </div>
         </div>
 
@@ -123,6 +123,9 @@
           <li>
             <strong>Remote (AI Workspace):</strong> Đẩy code lên để AI đọc hiểu toàn bộ project. Tận dụng
             <em>Claude Code / Claude MAX</em> tài khoản riêng qua Terminal để sinh code hàng loạt một cách bảo mật.
+          </li>
+          <li>
+            <strong>Reverse-Engineered Quota Flow:</strong> Cơ chế đo lường quota của Antigravity được đào ngược từ mã nguồn của IDE. Hệ thống tự động quét chính xác tiến trình native, lùng sục qua <code>lsof</code> để dò cổng kết nối Connect RPC nội bộ và query trực tiếp kết quả thật từ local proxy.
           </li>
         </ul>
       </div>
