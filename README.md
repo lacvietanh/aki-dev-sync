@@ -58,6 +58,11 @@
 
 → Implementation detail: `docs/feat/background-refresh.md`
 
+### 9. Open Popup (Trình Mở Nhanh)
+- Thay thế các nút mở riêng lẻ bằng một menu popup tập trung duy nhất, xuất hiện khi rê chuột hoặc click vào nút **OPEN** ở cột Actions.
+- **Local:** Mở dự án tại Local bằng Finder, Terminal, VSCode, VSCode Insiders, hoặc Antigravity IDE.
+- **Remote SSH:** Mở trực tiếp dự án trên máy Remote thông qua kết nối SSH Terminal, VSCode Remote SSH, VSCode Insiders Remote, hoặc Antigravity Remote.
+- **Auto Check IDE:** Tự động kiểm tra các IDE đã cài đặt trên máy người dùng (macOS) và làm mờ đi các lựa chọn không khả dụng.
 ---
 
 ## 🛠 Tech Stack

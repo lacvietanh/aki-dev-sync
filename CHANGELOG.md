@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.5] - 2026-06-23
+
+#### Added
+- **Open Popup Header**: Added a project title header inside the Open Popup to prevent accidental clicks.
+- **Open Popup Animation**: Added a smooth fade/scale animation with dynamic `transform-origin` flipping based on the popup's vertical position.
+- **Brighter Popup UI**: Slightly brightened the popup's background color for better contrast.
+
+#### Changed
+- **Rebranding**: Renamed "Project Hub" to "Open Popup" across the UI, codebase, and documentation.
+- **Documentation**: Consolidated old planning docs and created a dedicated `docs/feat/open-popup.md` feature document.
+
+#### Fixed
+- **Remote `$HOME` Resolution**: Fixed a bug where remote IDEs failed to launch if the path was configured using `$HOME` instead of `~/`.
+- **OpenSSH Argument Bug**: Fixed a backend issue where `Command::new("ssh")` passed separated arguments that OpenSSH incorrectly concatenated without quotes, causing remote bash scripts to fail. Scripts are now passed as a single quoted string.
+
 ### [1.2.4] - 2026-06-23
 
 #### Added

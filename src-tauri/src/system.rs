@@ -164,14 +164,17 @@ pub fn check_ide_availability() -> IdeAvailability {
 
 #[tauri::command]
 pub fn resolve_remote_path(host: String, path: String) -> Result<String, String> {
-    if !path.starts_with("~/") && path != "~" {
+    if !path.starts_with("~/") && path != "~" && !path.contains("$HOME") {
         return Ok(path);
     }
     
     let expanded = expand_remote_tilde(&path);
     
     let mut command = create_command("ssh");
-    command.args([&host, "bash", "-c", &format!("echo {}", expanded)]);
+    // Pass the command as a single argument so SSH passes it intact to the remote shell.
+    // Otherwise SSH concatenates multiple args with spaces and `bash -c` gets split.
+    let script = format!("bash -c \"echo {}\"", expanded);
+    command.args([&host, &script]);
     
     let output = command.output()
         .map_err(|e| format!("Failed to resolve remote path: {}", e))?;

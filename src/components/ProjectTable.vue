@@ -66,53 +66,58 @@
           <td class="col-actions">
             <div class="actions-wrapper">
               
-              <!-- Hub Trigger (OPEN Button) -->
-              <div class="project-hub-wrapper" @mouseenter="onIconEnter(p, $event)" @mouseleave="onIconLeave()">
-                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Project Hub">
+              <!-- Open Popup Trigger (OPEN Button) -->
+              <div class="open-popup-wrapper" @mouseenter="onOpenEnter(p, $event)" @mouseleave="onOpenLeave()">
+                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup">
                   OPEN <i class="fa-solid fa-caret-down ml-1"></i>
                 </button>
 
-                <!-- Hub Popup -->
-                <div v-if="activeHub === p.id" class="project-hub" :style="hubPositionStyle" @mouseenter="onHubEnter()" @mouseleave="onIconLeave()">
-                  <div style="display: flex;">
-                    <!-- LOCAL -->
+                <!-- Open Popup -->
+                <transition name="popup-fade">
+                  <div v-if="activeOpenPopup === p.id" class="open-popup" :style="popupPositionStyle" @mouseenter="onPopupEnter()" @mouseleave="onOpenLeave()">
+                    <div class="popup-header" :title="p.name">
+                      <i class="fa-solid fa-folder-open" style="color: var(--accent-cyan); margin-right: 6px;"></i>{{ p.name }}
+                    </div>
+                    <div style="display: flex;">
+                      <!-- LOCAL -->
                     <div style="flex: 1; min-width: 150px;">
-                      <div class="hub-section-label">💻 LOCAL</div>
-                      <div class="hub-item" @click="openIdeLocal('finder', p.local_path)">
+                      <div class="popup-section-label">💻 LOCAL</div>
+                      <div class="popup-item" @click="openIdeLocal('finder', p.local_path)">
                         <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
                       </div>
-                      <div class="hub-item" @click="openIdeLocal('terminal', p.local_path)">
+                      <div class="popup-item" @click="openIdeLocal('terminal', p.local_path)">
                         <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
                       </div>
-                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
-                        <img src="/vscode-icon.png" class="hub-icon" alt="VSCode" /> VSCode
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
+                        <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
                       </div>
-                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
-                        <img src="/vscode-icon.png" class="hub-icon hub-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
+                        <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
                       </div>
-                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
-                        <img src="/antigravity-icon.png" class="hub-icon" alt="Antigravity" /> Antigravity IDE
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
+                        <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
                       </div>
                     </div>
 
                     <!-- REMOTE (only if project has remote config) -->
                     <div v-if="p.remote_host && p.remote_path" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
-                      <div class="hub-section-label">☁️ REMOTE (SSH)</div>
-                      <div class="hub-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
+                      <div class="popup-section-label">☁️ REMOTE (SSH)</div>
+                      <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
                         <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
                       </div>
-                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
-                        <img src="/vscode-icon.png" class="hub-icon" alt="VSCode" /> VSCode (Remote SSH)
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
+                        <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
                       </div>
-                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
-                        <img src="/vscode-icon.png" class="hub-icon hub-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
+                        <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
                       </div>
-                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
-                        <img src="/antigravity-icon.png" class="hub-icon" alt="Antigravity" /> Antigravity (Remote)
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
+                        <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
                       </div>
                     </div>
                   </div>
                 </div>
+                </transition>
               </div>
 
               <button class="btn-action-git" @click="openGitModal(p)" title="Git Actions (Commit & Push to Remote Git)">
@@ -174,10 +179,10 @@ const { projects, projectRuntime, isReloading, startSync, saveProjectsList, open
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 
 const projectIcons = ref({});
-const activeHub = ref(null);
+const activeOpenPopup = ref(null);
 const ideAvailability = ref(null);
-const hubPositionStyle = ref({ top: '34px', bottom: 'auto' });
-let hubTimer = null;
+const popupPositionStyle = ref({ top: '34px', bottom: 'auto', transformOrigin: 'top left' });
+let popupTimer = null;
 
 watch(() => projects.value.map(p => p.id), async (newIds) => {
   for (const id of newIds) {
@@ -195,17 +200,17 @@ watch(() => projects.value.map(p => p.id), async (newIds) => {
   }
 }, { immediate: true });
 
-async function onIconEnter(project, event) {
-  clearTimeout(hubTimer);
-  activeHub.value = project.id;
+async function onOpenEnter(project, event) {
+  clearTimeout(popupTimer);
+  activeOpenPopup.value = project.id;
   
   if (event) {
     const rect = event.currentTarget.getBoundingClientRect();
     const windowHeight = window.innerHeight;
     if (windowHeight - rect.bottom < 350) {
-      hubPositionStyle.value = { top: 'auto', bottom: '34px' };
+      popupPositionStyle.value = { top: 'auto', bottom: '34px', transformOrigin: 'bottom left' };
     } else {
-      hubPositionStyle.value = { top: '34px', bottom: 'auto' };
+      popupPositionStyle.value = { top: '34px', bottom: 'auto', transformOrigin: 'top left' };
     }
   }
 
@@ -218,15 +223,15 @@ async function onIconEnter(project, event) {
   }
 }
 
-function onIconLeave() {
-  hubTimer = setTimeout(() => { activeHub.value = null; }, 150);
+function onOpenLeave() {
+  popupTimer = setTimeout(() => { activeOpenPopup.value = null; }, 150);
 }
 
-function onHubEnter() {
-  clearTimeout(hubTimer);
+function onPopupEnter() {
+  clearTimeout(popupTimer);
 }
 
-onUnmounted(() => clearTimeout(hubTimer));
+onUnmounted(() => clearTimeout(popupTimer));
 
 const IDE_LOCAL_ARGS = {
   finder:          p => [p],
@@ -244,7 +249,7 @@ async function openIdeLocal(ideName, path) {
 async function openIdeRemote(ideName, host, path) {
   try {
     let resolvedPath = path;
-    if (path.startsWith('~/') || path === '~') {
+    if (path.startsWith('~/') || path === '~' || path.includes('$HOME')) {
       try {
         resolvedPath = await invoke('resolve_remote_path', { host, path });
       } catch (e) {
@@ -257,7 +262,7 @@ async function openIdeRemote(ideName, host, path) {
     } else if (ideName === 'vscode_insiders') {
       await invoke('macos_open', { args: [`vscode-insiders://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else {
-      await invoke('open_remote_subprocess', { ideName, host, path })
+      await invoke('open_remote_subprocess', { ideName, host, path: remotePath })
     }
   } catch (e) { console.error(e); }
 }
@@ -277,8 +282,8 @@ function formatTimeAgo(timestamp) {
 </script>
 
 <style scoped>
-/* Project Hub */
-.project-hub-wrapper {
+/* Open Popup */
+.open-popup-wrapper {
   position: relative;
   display: inline-flex;
 }
@@ -287,19 +292,43 @@ function formatTimeAgo(timestamp) {
   padding: 0 10px;
 }
 
-.project-hub {
+.open-popup {
   position: absolute;
   top: 30px;
   left: 0;
   z-index: 99;
-  background: rgba(10, 15, 22, 0.97);
+  background: rgba(22, 30, 44, 0.97);
   border: 1px solid rgba(0, 210, 255, 0.2);
   border-radius: 8px;
-  padding: 6px 0;
+  padding: 8px 0 6px 0;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  will-change: transform, opacity;
 }
 
-.hub-section-label {
+.popup-fade-enter-active,
+.popup-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.popup-fade-enter-from,
+.popup-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.popup-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e5e7eb;
+  padding: 0 12px 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.popup-section-label {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -308,7 +337,7 @@ function formatTimeAgo(timestamp) {
   user-select: none;
 }
 
-.hub-item {
+.popup-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -320,29 +349,29 @@ function formatTimeAgo(timestamp) {
   user-select: none;
 }
 
-.hub-item:hover {
+.popup-item:hover {
   background: rgba(0, 210, 255, 0.08);
   color: #fff;
 }
 
-.hub-item.hub-disabled {
+.popup-item.popup-disabled {
   filter: grayscale(1) opacity(0.35);
   cursor: not-allowed;
   pointer-events: none;
 }
 
-.hub-icon {
+.popup-icon {
   width: 14px;
   height: 14px;
   object-fit: contain;
   flex-shrink: 0;
 }
 
-.hub-icon-insiders {
+.popup-icon-insiders {
   filter: hue-rotate(-50deg) saturate(2) brightness(1.2);
 }
 
-.hub-divider {
+.popup-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.07);
   margin: 4px 0;

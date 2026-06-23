@@ -82,8 +82,8 @@
         <div class="feature-card">
           <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
-            <strong>Project Hub</strong>
-            <span>Hover icon project → mở Finder, Terminal, VSCode, Antigravity cho Local & Remote SSH.</span>
+            <strong>Open Popup</strong>
+            <span>Hover/Click nút OPEN → mở Finder, Terminal, VSCode, Antigravity cho Local & Remote SSH.</span>
           </div>
         </div>
 

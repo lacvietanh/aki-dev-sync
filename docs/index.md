@@ -2,6 +2,7 @@
 
 ## Features
 - [docs/feat/background-refresh.md](feat/background-refresh.md) — Background polling for git status, remote diff (push/pull buttons), and agent usage; `.git/` mtime quirk and fix
+- [docs/feat/open-popup.md](feat/open-popup.md) — Unified Open Popup for Local & Remote SSH actions, macOS open consolidation, and IDE availability checks
 
 ## Architecture
 - [docs/arch/usage-claudecode.md](arch/usage-claudecode.md) — Claude Code agent usage integration
