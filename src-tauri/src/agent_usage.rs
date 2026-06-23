@@ -54,7 +54,7 @@ pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<b
 }
 
 #[tauri::command]
-pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
+pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<String, String> {
     if agent_name != "claudecode" {
         return Err("Force sync not supported for this agent".into());
     }
@@ -79,7 +79,12 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
         }
     }
 
-    Ok(true)
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        Ok("{\"parsed\":false,\"raw_preview\":\"\"}".into())
+    } else {
+        Ok(stdout)
+    }
 }
 
 #[tauri::command]

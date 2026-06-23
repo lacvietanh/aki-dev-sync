@@ -61,7 +61,13 @@ export function useAgentUsage(agentName, hostRef) {
     loading.value = true;
     error.value = null;
     try {
-      await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
+      const raw = await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
+      try {
+        const diag = JSON.parse(raw);
+        console.log(`[ForceSync] ${agentName}@${hostRef.value}:`, diag);
+      } catch (_) {
+        console.log(`[ForceSync] ${agentName}@${hostRef.value}: raw=`, raw);
+      }
       await checkUsage();
     } catch (e) {
       console.error(`Error force syncing ${agentName}:`, e);

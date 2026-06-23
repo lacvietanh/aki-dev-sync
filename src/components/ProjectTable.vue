@@ -120,7 +120,7 @@
               </button>
 
               <button class="btn-tech btn-tech-push-special" @click="openSpecialModal(p)" :disabled="projectRuntime[p.id]?.syncing" title="Select specific files to push">
-                PUSH SPECIAL
+                SELECT
               </button>
 
               <div class="dry-group" :class="p.dry_run ? 'is-safe' : 'is-danger'">
@@ -243,7 +243,15 @@ async function openIdeLocal(ideName, path) {
 
 async function openIdeRemote(ideName, host, path) {
   try {
-    const remotePath = path.startsWith('/') ? path : `/${path}`;
+    let resolvedPath = path;
+    if (path.startsWith('~/') || path === '~') {
+      try {
+        resolvedPath = await invoke('resolve_remote_path', { host, path });
+      } catch (e) {
+        console.error('Failed to resolve remote path', e);
+      }
+    }
+    const remotePath = resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
     if (ideName === 'vscode') {
       await invoke('macos_open', { args: [`vscode://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else if (ideName === 'vscode_insiders') {

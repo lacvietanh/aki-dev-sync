@@ -5,7 +5,8 @@ import { readFileSync } from "fs";
 const host = process.env.TAURI_DEV_HOST;
 
 const now = new Date();
-const buildDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+const buildDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
+const buildHash = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 // https://vite.dev/config/
@@ -13,6 +14,7 @@ export default defineConfig(async () => ({
   plugins: [vue()],
   define: {
     '__BUILD_DATE__': JSON.stringify(buildDate),
+    '__BUILD_HASH__': JSON.stringify(buildHash),
     '__APP_VERSION__': JSON.stringify(version),
   },
 

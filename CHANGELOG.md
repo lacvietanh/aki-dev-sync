@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.4] - 2026-06-23
+
+#### Added
+- **Build Identifier**: Added `#HHMM` build identifier to the titlebar (e.g., `v1.2.4 (2026.06.23 #1430)`) to distinguish same-day builds.
+- **Bundle Metadata**: Added `category`, `description`, `copyright`, and `publisher` to `tauri.conf.json` for OS-level app metadata.
+
+#### Changed
+- **Push Special UI**: Renamed the `PUSH SPECIAL` button to `SELECT`.
+- **Build Date Format**: Replaced the `HH:MM` time in `buildDate` with the new `#HHMM` build identifier.
+
+#### Fixed
+- **Special Push Git Sync**: Fixed empty modal issue by explicitly showing `.git/` when git sync is enabled, allowing manual git pushing even on a clean working tree.
+- **VSCode Remote SSH**: Fixed `~/` paths creating a literal `~` directory at the remote root. Paths are now automatically resolved to absolute paths via SSH before opening.
+- **Force Sync Diagnostics**: `force-sync-parse.py` now emits JSON diagnostics to stdout. If Force Sync fails silently, the exact reason is now logged in the browser console.
+
+---
+
 ### [1.2.3] - 2026-06-23
 
 #### Added

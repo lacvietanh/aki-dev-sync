@@ -162,6 +162,27 @@ pub fn check_ide_availability() -> IdeAvailability {
     }
 }
 
+#[tauri::command]
+pub fn resolve_remote_path(host: String, path: String) -> Result<String, String> {
+    if !path.starts_with("~/") && path != "~" {
+        return Ok(path);
+    }
+    
+    let expanded = expand_remote_tilde(&path);
+    
+    let mut command = create_command("ssh");
+    command.args([&host, "bash", "-c", &format!("echo {}", expanded)]);
+    
+    let output = command.output()
+        .map_err(|e| format!("Failed to resolve remote path: {}", e))?;
+        
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(format!("SSH error resolving path: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

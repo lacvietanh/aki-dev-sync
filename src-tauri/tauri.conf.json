@@ -27,6 +27,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "rsync-based remote deploy workflow manager",
+    "longDescription": "Aki Dev Sync is a dark-mode desktop tool for managing rsync-based deployment workflows between local and remote machines via SSH.",
+    "copyright": "© 2026 Aki",
+    "publisher": "Aki",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -55,7 +55,7 @@ pub fn get_git_info(local_path: String) -> Result<GitInfo, String> {
 /// Returns modified/untracked files from `git status --porcelain` for the special push modal.
 /// Returns an empty list if the path is not a git repo or git fails.
 #[tauri::command]
-pub fn get_project_files(local_path: String) -> Result<Vec<String>, String> {
+pub fn get_project_files(local_path: String, sync_git: bool) -> Result<Vec<String>, String> {
     let path = Path::new(&local_path);
     if !path.exists() || !path.join(".git").exists() {
         return Ok(vec![]);
@@ -68,7 +68,7 @@ pub fn get_project_files(local_path: String) -> Result<Vec<String>, String> {
     if !out.status.success() {
         return Ok(vec![]);
     }
-    let files = String::from_utf8_lossy(&out.stdout)
+    let mut files: Vec<String> = String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter(|s| !s.trim().is_empty())
         .filter_map(|s| {
@@ -81,5 +81,10 @@ pub fn get_project_files(local_path: String) -> Result<Vec<String>, String> {
             })
         })
         .collect();
+
+    if sync_git && path.join(".git").exists() {
+        files.insert(0, ".git/".to_string());
+    }
+
     Ok(files)
 }

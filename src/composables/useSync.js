@@ -90,7 +90,7 @@ export async function openSpecialModal(project) {
   specialSelected.value = []
   specialLoading.value = true
   try {
-    specialFiles.value = await invoke("get_project_files", { localPath: project.local_path })
+    specialFiles.value = await invoke("get_project_files", { localPath: project.local_path, syncGit: project.sync_git })
   } catch (err) {
     appendGlobalLog("ERROR", `Failed to load files: ${err}`)
   }

@@ -36,6 +36,7 @@ pub fn run() {
             system::open_remote_subprocess,
             system::get_project_icon_base64,
             system::check_ide_availability,
+            system::resolve_remote_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

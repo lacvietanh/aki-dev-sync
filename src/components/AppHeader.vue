@@ -4,7 +4,7 @@
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
           <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Dev Sync
-          <span class="app-version clickable" @click="showChangelog" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }})</span>
+          <span class="app-version clickable" @click="showChangelog" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }} #{{ buildHash }})</span>
         </h1>
       </div>
       <div class="header-actions">
@@ -56,6 +56,7 @@ import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 
 const appVersion = __APP_VERSION__;
 const buildDate = __BUILD_DATE__;
+const buildHash = __BUILD_HASH__;
 const showRefreshSettings = ref(false);
 
 function showChangelog() {
