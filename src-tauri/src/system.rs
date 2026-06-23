@@ -3,6 +3,23 @@ use std::process::Command;
 
 use crate::sync::expand_remote_tilde;
 
+/// Creates a Command and injects Homebrew/local paths on macOS to ensure consistent behavior
+/// between dev (terminal PATH) and build (macOS GUI PATH).
+pub fn create_command(cmd: &str) -> Command {
+    let mut c = Command::new(cmd);
+    #[cfg(target_os = "macos")]
+    {
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = if current_path.is_empty() {
+            "/opt/homebrew/bin:/usr/local/bin".to_string()
+        } else {
+            format!("/opt/homebrew/bin:/usr/local/bin:{}", current_path)
+        };
+        c.env("PATH", new_path);
+    }
+    c
+}
+
 #[derive(serde::Serialize)]
 pub struct IdeAvailability {
     pub vscode: bool,
@@ -48,8 +65,8 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
                 let expanded = expand_remote_tilde(&path);
                 let safe_path = applescript_escape(&expanded);
                 let script = format!(
-                    "tell application \"Terminal\" to do script \"ssh {} -t 'cd \\\"{}\\\" ; exec bash'\"",
-                    host, safe_path
+                    "tell application \"Terminal\" to do script \"ssh {} -t 'mkdir -p \\\"{}\\\" && cd \\\"{}\\\" ; exec bash'\"",
+                    host, safe_path, safe_path
                 );
                 Command::new("osascript")
                     .arg("-e")
@@ -60,8 +77,9 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             Ok(())
         }
         "antigravity" => {
+            let expanded = expand_remote_tilde(&path);
             Command::new("antigravity-ide")
-                .args(["--remote", &format!("ssh-remote+{}", host), &path])
+                .args(["--remote", &format!("ssh-remote+{}", host), &expanded])
                 .spawn()
                 .map_err(|e| format!("Failed to open Antigravity remotely: {}", e))?;
             Ok(())
@@ -132,7 +150,8 @@ pub fn check_ide_availability() -> IdeAvailability {
                 "/Applications/Visual Studio Code - Insiders.app",
             )
             .exists(),
-            antigravity: std::path::Path::new("/Applications/Antigravity.app").exists(),
+            antigravity: std::path::Path::new("/Applications/Antigravity IDE.app").exists()
+                || std::path::Path::new("/Applications/Antigravity.app").exists(),
         };
     }
     #[cfg(not(target_os = "macos"))]

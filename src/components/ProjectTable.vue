@@ -30,76 +30,22 @@
           <td class="col-project-info">
             <div style="display: flex; align-items: center; gap: 12px;">
 
-              <!-- Project Icon → Hub Trigger -->
-              <div class="project-hub-wrapper" @mouseenter="onIconEnter(p)" @mouseleave="onIconLeave()">
-                <div style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 6px; overflow: hidden;">
+              <!-- Project Icon -->
+              <div style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 6px; overflow: hidden; flex-shrink: 0;">
                   <img v-if="projectIcons[p.id]" :src="projectIcons[p.id]" style="width: 100%; height: 100%; object-fit: cover;" />
                   <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
-                </div>
-
-                <!-- Hub Popup -->
-                <div v-if="activeHub === p.id" class="project-hub" @mouseenter="onHubEnter()" @mouseleave="onIconLeave()">
-                  <!-- LOCAL -->
-                  <div class="hub-section-label">💻 LOCAL</div>
-                  <div class="hub-item" @click="openIdeLocal('finder', p.local_path)">
-                    <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
-                  </div>
-                  <div class="hub-item" @click="openIdeLocal('terminal', p.local_path)">
-                    <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
-                  </div>
-                  <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
-                    <img src="/vscode-icon.png" class="hub-icon" alt="VSCode" />
-                    VSCode
-                  </div>
-                  <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
-                    <img src="/vscode-icon.png" class="hub-icon hub-icon-insiders" alt="VSCode Insiders" />
-                    VSCode Insiders
-                  </div>
-                  <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
-                    <img src="/antigravity-icon.png" class="hub-icon" alt="Antigravity" />
-                    Antigravity IDE
-                  </div>
-
-                  <!-- REMOTE (only if project has remote config) -->
-                  <template v-if="p.remote_host && p.remote_path">
-                    <div class="hub-divider"></div>
-                    <div class="hub-section-label">☁️ REMOTE (SSH)</div>
-                    <div class="hub-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
-                      <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
-                    </div>
-                    <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
-                      <img src="/vscode-icon.png" class="hub-icon" alt="VSCode" />
-                      VSCode (Remote SSH)
-                    </div>
-                    <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
-                      <img src="/vscode-icon.png" class="hub-icon hub-icon-insiders" alt="VSCode Insiders" />
-                      VSCode Insiders (Remote)
-                    </div>
-                    <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
-                      <img src="/antigravity-icon.png" class="hub-icon" alt="Antigravity" />
-                      Antigravity (Remote)
-                    </div>
-                  </template>
-
-                  <!-- LINKS (only if production_url exists) -->
-                  <template v-if="p.production_url">
-                    <div class="hub-divider"></div>
-                    <div class="hub-section-label">🌐 LINKS</div>
-                    <div class="hub-item" @click="openUrl(p.production_url)">
-                      <i class="fa-solid fa-globe text-cyan" style="width:14px;"></i> Open Production Site
-                    </div>
-                  </template>
-                </div>
               </div>
-              <!-- End Hub Wrapper -->
 
               <div style="flex: 1; min-width: 0; padding-right: 16px;">
-                <div class="project-name">
+                <div class="project-name" style="display: flex; justify-content: space-between; align-items: center;">
                   <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
+                  <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" style="color: var(--accent-cyan); font-size: 11px; text-decoration: none; display: flex; align-items: center; gap: 4px;">
+                    <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i>
+                  </a>
                 </div>
                 <div class="project-paths">
-                  <span class="path-local"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
-                  <span v-if="p.remote_host" class="path-remote" title="Remote path"><i class="fa-solid fa-cloud text-amber mr-1"></i> {{ p.remote_host }}:{{ p.remote_path }}</span>
+                  <span class="path-local" :title="p.local_path"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
+                  <span v-if="p.remote_host" class="path-remote" :title="`${p.remote_host}:${p.remote_path}`"><i class="fa-solid fa-cloud text-amber mr-1"></i> {{ p.remote_host }}:{{ p.remote_path }}</span>
                 </div>
               </div>
             </div>
@@ -119,6 +65,56 @@
           </td>
           <td class="col-actions">
             <div class="actions-wrapper">
+              
+              <!-- Hub Trigger (OPEN Button) -->
+              <div class="project-hub-wrapper" @mouseenter="onIconEnter(p, $event)" @mouseleave="onIconLeave()">
+                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Project Hub">
+                  OPEN <i class="fa-solid fa-caret-down ml-1"></i>
+                </button>
+
+                <!-- Hub Popup -->
+                <div v-if="activeHub === p.id" class="project-hub" :style="hubPositionStyle" @mouseenter="onHubEnter()" @mouseleave="onIconLeave()">
+                  <div style="display: flex;">
+                    <!-- LOCAL -->
+                    <div style="flex: 1; min-width: 150px;">
+                      <div class="hub-section-label">💻 LOCAL</div>
+                      <div class="hub-item" @click="openIdeLocal('finder', p.local_path)">
+                        <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
+                      </div>
+                      <div class="hub-item" @click="openIdeLocal('terminal', p.local_path)">
+                        <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
+                      </div>
+                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
+                        <img src="/vscode-icon.png" class="hub-icon" alt="VSCode" /> VSCode
+                      </div>
+                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
+                        <img src="/vscode-icon.png" class="hub-icon hub-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
+                      </div>
+                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
+                        <img src="/antigravity-icon.png" class="hub-icon" alt="Antigravity" /> Antigravity IDE
+                      </div>
+                    </div>
+
+                    <!-- REMOTE (only if project has remote config) -->
+                    <div v-if="p.remote_host && p.remote_path" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
+                      <div class="hub-section-label">☁️ REMOTE (SSH)</div>
+                      <div class="hub-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
+                        <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
+                      </div>
+                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
+                        <img src="/vscode-icon.png" class="hub-icon" alt="VSCode" /> VSCode (Remote SSH)
+                      </div>
+                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
+                        <img src="/vscode-icon.png" class="hub-icon hub-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
+                      </div>
+                      <div class="hub-item" :class="{ 'hub-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
+                        <img src="/antigravity-icon.png" class="hub-icon" alt="Antigravity" /> Antigravity (Remote)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <button class="btn-action-git" @click="openGitModal(p)" title="Git Actions (Commit & Push to Remote Git)">
                 <i class="fa-brands fa-git-alt"></i>
               </button>
@@ -180,6 +176,7 @@ const { activeLogProjectId, toggleProjectLog } = useLogs();
 const projectIcons = ref({});
 const activeHub = ref(null);
 const ideAvailability = ref(null);
+const hubPositionStyle = ref({ top: '34px', bottom: 'auto' });
 let hubTimer = null;
 
 watch(() => projects.value.map(p => p.id), async (newIds) => {
@@ -198,9 +195,20 @@ watch(() => projects.value.map(p => p.id), async (newIds) => {
   }
 }, { immediate: true });
 
-async function onIconEnter(project) {
+async function onIconEnter(project, event) {
   clearTimeout(hubTimer);
   activeHub.value = project.id;
+  
+  if (event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const windowHeight = window.innerHeight;
+    if (windowHeight - rect.bottom < 350) {
+      hubPositionStyle.value = { top: 'auto', bottom: '34px' };
+    } else {
+      hubPositionStyle.value = { top: '34px', bottom: 'auto' };
+    }
+  }
+
   if (ideAvailability.value === null) {
     try {
       ideAvailability.value = await invoke('check_ide_availability');
@@ -225,7 +233,7 @@ const IDE_LOCAL_ARGS = {
   terminal:        p => ['-a', 'Terminal', p],
   vscode:          p => ['-a', 'Visual Studio Code', p],
   vscode_insiders: p => ['-a', 'Visual Studio Code - Insiders', p],
-  antigravity:     p => ['-a', 'Antigravity', p],
+  antigravity:     p => ['-a', 'Antigravity IDE', p],
 }
 
 async function openIdeLocal(ideName, path) {
@@ -235,10 +243,11 @@ async function openIdeLocal(ideName, path) {
 
 async function openIdeRemote(ideName, host, path) {
   try {
+    const remotePath = path.startsWith('/') ? path : `/${path}`;
     if (ideName === 'vscode') {
-      await invoke('macos_open', { args: [`vscode://vscode-remote/ssh-remote+${host}${path}`] })
+      await invoke('macos_open', { args: [`vscode://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else if (ideName === 'vscode_insiders') {
-      await invoke('macos_open', { args: [`vscode-insiders://vscode-remote/ssh-remote+${host}${path}`] })
+      await invoke('macos_open', { args: [`vscode-insiders://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else {
       await invoke('open_remote_subprocess', { ideName, host, path })
     }
@@ -263,21 +272,21 @@ function formatTimeAgo(timestamp) {
 /* Project Hub */
 .project-hub-wrapper {
   position: relative;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
+  display: inline-flex;
+}
+
+.btn-action-open {
+  padding: 0 10px;
 }
 
 .project-hub {
   position: absolute;
-  top: 34px;
+  top: 30px;
   left: 0;
-  z-index: 50;
+  z-index: 99;
   background: rgba(10, 15, 22, 0.97);
   border: 1px solid rgba(0, 210, 255, 0.2);
   border-radius: 8px;
-  min-width: 210px;
   padding: 6px 0;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
@@ -322,7 +331,7 @@ function formatTimeAgo(timestamp) {
 }
 
 .hub-icon-insiders {
-  filter: hue-rotate(100deg) saturate(1.3);
+  filter: hue-rotate(-50deg) saturate(2) brightness(1.2);
 }
 
 .hub-divider {

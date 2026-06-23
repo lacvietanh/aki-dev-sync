@@ -61,7 +61,7 @@ const showRefreshSettings = ref(false);
 function showChangelog() {
   Swal.fire({
     title: 'Aki Dev Sync Changelog',
-    html: `<div class="markdown-body" style="text-align: left; font-size: 15px; color: #e2e8f0; background: #1a1a24; padding: 20px; border-radius: 8px; max-height: 500px; overflow-y: auto; line-height: 1.6;">${renderMarkdown(changelogText)}</div>`,
+    html: `<div class="markdown-body" style="text-align: left; font-size: 13px; color: #e2e8f0; background: #1a1a24; padding: 20px; border-radius: 8px; max-height: 500px; overflow-y: auto; line-height: 1.5;">${renderMarkdown(changelogText)}</div>`,
     background: '#131317',
     color: '#F3F4F6',
     width: '800px',

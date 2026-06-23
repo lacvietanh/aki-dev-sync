@@ -25,7 +25,10 @@ let renamed = false;
 for (const file of files) {
   if (file.endsWith('.dmg') && file.startsWith('Aki Dev Sync_')) {
     const archMatch = file.match(/_([a-z0-9]+)\.dmg$/);
-    const arch = archMatch ? archMatch[1] : 'aarch64';
+    let arch = archMatch ? archMatch[1] : 'universal';
+    if (arch === 'aarch64') {
+      arch = 'arm';
+    }
     
     const newName = `Aki-DevSync-v${version}-${arch}.dmg`;
     fs.renameSync(path.join(dmgDir, file), path.join(dmgDir, newName));

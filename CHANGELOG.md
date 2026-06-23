@@ -8,7 +8,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ### [1.2.3] - 2026-06-23
 
 #### Added
+- **Background Sync Logging**: The application now intelligently logs state transitions from the background sync checker (which polls every 60s). It logs the initial state of each project upon startup, and subsequently only emits a log when it detects a *new* pending push or pull. This turns the project log into a linear timeline of when you (locally) or the AI (remotely) finished making changes, without spamming the log with redundant checks.
+- **Auto Version Sync**: Added `scripts/sync-version.js` and updated `package.json` scripts to automatically synchronize the application version from `package.json` into `src-tauri/Cargo.toml` before every `tauri dev` and `tauri build` execution.
 - **Intro Modal**: Added an interactive "INTRO" button to the header with a pulsing notification badge. The modal provides a comprehensive and visually appealing explanation of the Aki Dev Sync workflow, explicitly distinguishing between the author's primary use case (Security / Claude MAX sharing) and general use cases for other developers.
+
+#### Changed
+- **Changelog UI**: Reduced the global font size and line height of the changelog content for improved readability.
+- **Build Artifacts**: Modified the post-build artifact renaming script to map `aarch64` to `arm` and support `universal` in `.dmg` filenames for better clarity.
+
+- **Project Hub UI**: Refactored the hub to trigger from a dedicated "OPEN" button in the actions column rather than the project icon. The popup layout was changed to a wider horizontal two-column format (Local and Remote) to prevent vertical overflow.
+- **Project Info Layout**: Reduced the width of the Project/Path column to save space. Full paths are now available via hover tooltips. The Production URL link was moved out of the hub back to the project row, right-aligned next to the project name.
+- **App Identifier**: Updated `tauri.conf.json` identifier from `com.aki.remotedevsync` to `aki.devsync`.
+
+#### Fixed
+- **Remote Terminal Fallback Issue**: Fixed an issue where opening a remote terminal would fail with `No such file or directory` and fallback to the remote `$HOME` directory if the project's remote directory had not yet been created. A `mkdir -p` command is now automatically prepended before `cd` to ensure the directory exists.
+- **VSCode/Insiders Remote Open**: Fixed an issue causing a `Could not resolve hostname` error when opening a remote project in VS Code or VS Code Insiders. This was caused by a missing slash `/` separator between the hostname and the tilde-prefixed path (`~`) when constructing the `vscode-remote://` URI.
+- **Antigravity IDE Remote Open**: Added automatic tilde expansion (`~/` -> `$HOME/`) for remote paths passed to the Antigravity IDE CLI to ensure correct path resolution.
+- **Sync Buttons False Positive in Build**: Fixed an issue where the Push and Pull buttons would falsely light up for all projects in the compiled production build on macOS. This occurred because the production GUI app uses the ancient macOS default `/usr/bin/rsync` (v2.6.9), which outputs `building file list ... done`, `Transfer starting:`, and `Skip newer ` during dry runs. These strings are now explicitly filtered out from the `count_rsync_changes` parsing logic.
+- **Homebrew PATH Injection**: Injected `/opt/homebrew/bin:/usr/local/bin` into the environment `PATH` of all Rust `Command` executions on macOS. This ensures the production build automatically uses the modern `rsync 3.x` from Homebrew (if installed) for drastically improved sync performance, matching the development environment.
+- **Rsync Version Logging**: Added automatic extraction and printing of both the **Local** and **Remote** `rsync` versions to the sync logs before execution. This helps developers verify whether the local macOS is using Homebrew's `rsync` and quickly identify any version or protocol mismatches between the two environments.
+- **VSCode Insiders Icon**: Updated the icon's CSS filter in the project hub to match the bright green color (`#10b981`) of a clean Git state, fixing the previously incorrect color.
+- **Project Hub Popup Positioning**: Added dynamic bounding box calculation so the hover popup correctly flips upwards when near the bottom of the window, preventing it from being cut off by the global log area.
+- **Antigravity IDE Compatibility**: Fixed macOS app detection to correctly locate `Antigravity IDE.app` and updated the frontend arguments (`-a 'Antigravity IDE'`) to launch it successfully from the hub.
+- **DMG Icon Alignment**: Shifted the macOS DMG application folder alias 6px to the left in the installer background for perfect pixel alignment.
 
 ---
 

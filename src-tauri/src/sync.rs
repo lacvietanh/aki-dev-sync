@@ -1,11 +1,19 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use tauri::{Emitter, Window};
 
 use crate::projects::{validate_path_segment, validate_project, SyncProject};
+
+static RSYNC_VERSIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn get_rsync_versions() -> &'static Mutex<HashMap<String, String>> {
+    RSYNC_VERSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[derive(Serialize, Clone)]
 struct LogPayload {
@@ -74,11 +82,11 @@ fn execute_hook(
 ) -> Result<(), String> {
     emit_log(window, &project.id, format!("\n>>> {}Executing hook: {}\n", dry_prefix, cmd));
     let mut command = if project.hooks.run_hooks_on_remote {
-        let mut c = Command::new("ssh");
+        let mut c = crate::system::create_command("ssh");
         c.args([&project.remote_host, cmd]);
         c
     } else {
-        let mut c = Command::new("sh");
+        let mut c = crate::system::create_command("sh");
         c.args(["-c", cmd]);
         c
     };
@@ -207,7 +215,7 @@ fn run_sync_blocking(
     if is_push {
         let remote_dir = expand_remote_tilde(&project.remote_path);
         if !dry_run {
-            let mkdir_out = Command::new("ssh")
+            let mkdir_out = crate::system::create_command("ssh")
                 .args([&project.remote_host, "mkdir", "-p", &remote_dir])
                 .output()
                 .map_err(|e| format!("Failed to create remote directory '{}': {}", remote_dir, e))?;
@@ -226,13 +234,51 @@ fn run_sync_blocking(
 
     let args = build_rsync_args(&project, is_push, dry_run, &specific_paths, sync_git, src, dest);
 
+    let versions_map = get_rsync_versions();
+
+    let local_v_str = {
+        let mut map = versions_map.lock().unwrap();
+        if let Some(v) = map.get("local") {
+            v.clone()
+        } else {
+            let v = if let Ok(out) = crate::system::create_command("rsync").arg("--version").output() {
+                String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("unknown").to_string()
+            } else {
+                "unknown".to_string()
+            };
+            map.insert("local".to_string(), v.clone());
+            v
+        }
+    };
+
+    let remote_v_str = {
+        let mut map = versions_map.lock().unwrap();
+        if let Some(v) = map.get(&project.remote_host) {
+            v.clone()
+        } else {
+            let v = if let Ok(out) = crate::system::create_command("ssh").args([&project.remote_host, "rsync", "--version"]).output() {
+                String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("unknown").to_string()
+            } else {
+                "unknown".to_string()
+            };
+            map.insert(project.remote_host.clone(), v.clone());
+            v
+        }
+    };
+
+    let log_str = format!(
+        ">>> {}Local Rsync: {}\n>>> {}Remote Rsync: {}\n",
+        dry_prefix, local_v_str.trim(), dry_prefix, remote_v_str.trim()
+    );
+    emit_log(&window, &project.id, log_str);
+
     emit_log(
         &window,
         &project.id,
         format!(">>> {}Executing command: rsync {}\n", dry_prefix, args.join(" ")),
     );
 
-    let mut command = Command::new("rsync");
+    let mut command = crate::system::create_command("rsync");
     if !specific_paths.is_empty() && is_push {
         command.current_dir(&project.local_path);
     }
@@ -279,7 +325,7 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
     let insert_pos = args.len().saturating_sub(2);
     args.insert(insert_pos, "--modify-window=2".to_string());
 
-    let output = Command::new("rsync")
+    let output = crate::system::create_command("rsync")
         .args(&args)
         .output()
         .map_err(|e| format!("rsync status check failed: {}", e))?;
@@ -303,6 +349,9 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
                 && !l.starts_with("Number of")
                 && !l.starts_with("deleting ")
                 && !l.starts_with("*deleting ")
+                && !l.starts_with("building file list")
+                && !l.starts_with("Transfer starting:")
+                && !l.starts_with("Skip newer ")
                 && !l.ends_with('/')  // directory mtime churn (e.g. .git/ after git status)
         })
         .count();
