@@ -53,8 +53,8 @@
         </div>
       </div>
       <div v-else-if="!data && !loading" class="usage-empty">
-        <i class="fa-solid fa-hourglass-empty mb-1"></i><br>
-        No data — waiting for next session
+        <i class="fa-solid" :class="agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1'"></i><br>
+        {{ agentId === 'antigravity' ? 'IDE not running (Open Antigravity to monitor)' : 'No data — waiting for next session' }}
       </div>
       
       <div v-else-if="data" class="usage-bars-container">

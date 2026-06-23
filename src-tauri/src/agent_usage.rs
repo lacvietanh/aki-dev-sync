@@ -192,7 +192,7 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("command not found") {
+        if stderr.contains("command not found") || stderr.contains("is not running") {
             return Ok(None);
         }
         return Err(format!("Antigravity usage error: {}", stderr));

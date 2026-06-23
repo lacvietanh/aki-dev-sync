@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.7] - 2026-06-23
+
+#### Added
+- **Auto-Reveal DMG**: Automatically open and highlight the built `.dmg` file in Finder via `open -R` on macOS after the build completes.
+
+#### Changed
+- **Post-Build Script**: Renamed `rename-artifacts.js` to `post-build.js` to align with its broader post-build role.
+
+#### Fixed
+- **Antigravity Inactive State**: Optimized the quota monitoring flow to return a clean `None` response instead of throwing a raw JSON error when the Antigravity IDE process is not running. The UI now displays a friendly status message: "IDE not running (Open Antigravity to monitor)".
+- **Rust Test Compilation**: Restored compilation of the Rust unit tests by adding the missing `ignore_hook_errors` field to the mock `SyncHooks` struct inside `projects.rs` tests.
+
+---
+
 ### [1.2.6] - 2026-06-23
 
 #### Added

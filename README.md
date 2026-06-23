@@ -134,7 +134,7 @@ Lessons from working with Tauri v2 on a macOS-first app. Recorded to avoid re-di
 
 ### Post-build artifact rename
 
-Raw `npm run tauri build` outputs filenames with spaces (e.g., `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead — it chains `tauri build` and `node scripts/rename-artifacts.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
+Raw `npm run tauri build` outputs filenames with spaces (e.g., `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead — it chains `tauri build` and `node scripts/post-build.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
 
 ### IPC capability: silent failures
 

@@ -128,6 +128,7 @@ mod tests {
                 pre_push_cmd: None,
                 post_push_cmd: None,
                 run_hooks_on_remote: false,
+                ignore_hook_errors: false,
             },
             last_sync_action: None,
             last_sync_time: None,

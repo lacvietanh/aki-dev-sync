@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -31,9 +32,20 @@ for (const file of files) {
     }
     
     const newName = `Aki-DevSync-v${version}-${arch}.dmg`;
-    fs.renameSync(path.join(dmgDir, file), path.join(dmgDir, newName));
+    const newPath = path.join(dmgDir, newName);
+    fs.renameSync(path.join(dmgDir, file), newPath);
     console.log(`✅ Renamed build artifact: ${file} -> ${newName}`);
     renamed = true;
+
+    // Auto-reveal the renamed dmg file in Finder if on macOS
+    if (process.platform === 'darwin') {
+      try {
+        execSync(`open -R "${newPath}"`);
+        console.log(`📂 Revealed in Finder: ${newName}`);
+      } catch (err) {
+        console.error('Failed to open DMG in Finder:', err);
+      }
+    }
   }
 }
 

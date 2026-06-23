@@ -1,7 +1,7 @@
 {
   "name": "aki-dev-sync",
   "private": true,
-  "version": "1.2.6",
+  "version": "1.2.7",
   "type": "module",
   "scripts": {
     "dev": "node scripts/check-env.js && vite",
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "node scripts/sync-version.js && node scripts/check-env.js && tauri",
     "gen-icon": "tauri icon public/icon.png && cp src-tauri/icons/32x32.png public/titlebar-icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios",
-    "build:app": "npm run tauri build && node scripts/rename-artifacts.js"
+    "build:app": "npm run tauri build && node scripts/post-build.js"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",
