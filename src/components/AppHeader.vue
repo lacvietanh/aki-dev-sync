@@ -4,7 +4,7 @@
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
           <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Remote Dev Sync
-          <span class="app-version clickable" @click="showChangelog" title="Nhấn để xem Changelog">v{{ appVersion }} ({{ buildDate }})</span>
+          <span class="app-version clickable" @click="showChangelog" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }})</span>
         </h1>
       </div>
       <div class="header-actions">
@@ -14,11 +14,18 @@
         <button class="btn-tech btn-tech-secondary" @click="openSshConfig" title="Edit SSH Config" :disabled="anySyncing || isReloading">
           <i class="fa-solid fa-server"></i> SSH CONFIG
         </button>
-        <button class="btn-tech btn-tech-secondary" @click="handleReload" title="Reload Data" :disabled="anySyncing || isReloading">
-          <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i> 
-          {{ isReloading ? 'RELOADING...' : 'RELOAD' }}
-        </button>
+        <div class="btn-group-refresh">
+          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" title="Refresh all — git, remote diff, usage" :disabled="anySyncing || isReloading">
+            <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i>
+            {{ isReloading ? 'REFRESHING...' : 'REFRESH' }}
+          </button>
+          <button class="btn-tech btn-tech-secondary btn-refresh-settings" @click="showRefreshSettings = true" title="Background Refresh Settings" :disabled="isReloading">
+            <i class="fa-solid fa-sliders"></i>
+          </button>
+        </div>
         
+        <RefreshSettingsModal :show="showRefreshSettings" @close="showRefreshSettings = false" />
+
         <!-- Custom Traffic Lights -->
         <div class="titlebar-button minimize-btn" @click="minimize" title="Minimize">
           <i class="fa-solid fa-window-minimize"></i>
@@ -32,17 +39,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import { getVersion } from '@tauri-apps/api/app';
+import { ref } from 'vue';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
+import { refreshAll } from '../composables/useBackgroundRefresh';
 import { useSsh } from '../composables/useSsh';
 import changelogText from '../../CHANGELOG.md?raw';
 import Swal from 'sweetalert2';
 import { renderMarkdown, runMermaid } from '../utils/markdown';
+import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 
-const appVersion = ref('');
+const appVersion = __APP_VERSION__;
 const buildDate = __BUILD_DATE__;
+const showRefreshSettings = ref(false);
 
 function showChangelog() {
   Swal.fire({
@@ -52,7 +61,7 @@ function showChangelog() {
     color: '#F3F4F6',
     width: '800px',
     confirmButtonColor: '#3b82f6',
-    confirmButtonText: 'Đóng',
+    confirmButtonText: 'Close',
     showCloseButton: true,
     didOpen: () => {
       runMermaid();
@@ -60,20 +69,13 @@ function showChangelog() {
   });
 }
 
-onMounted(async () => {
-  try {
-    appVersion.value = await getVersion();
-  } catch (e) {
-    appVersion.value = 'dev';
-  }
-});
-
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
 const { createNewProject, loadData, anySyncing, isReloading } = useProjects();
 
-function handleReload() {
+function handleRefresh() {
   loadData(sshHosts, true);
+  refreshAll();
 }
 
 function handleCreateNew() {
@@ -82,6 +84,26 @@ function handleCreateNew() {
 </script>
 
 <style scoped>
+.btn-group-refresh {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.btn-refresh-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+.btn-refresh-settings {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 0 10px;
+}
+.btn-refresh-main:hover:not(:disabled) + .btn-refresh-settings,
+.btn-refresh-settings:hover:not(:disabled) {
+  border-left-color: rgba(255, 255, 255, 0.4);
+}
+
 .app-version {
   font-size: 0.75em;
   color: #64748b;

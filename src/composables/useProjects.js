@@ -11,7 +11,8 @@ import {
   showSpecialModal, specialProject, specialFiles, specialSelected, specialLoading,
   startSync, openSpecialModal, closeSpecialModal, toggleSpecialSelection, selectAllSpecial, confirmPushSpecial,
 } from './useSync'
-import { checkProjectSyncStatus, checkAllSyncStatus, startSyncStatusPolling } from './useSyncStatus'
+import { checkProjectSyncStatus, checkAllSyncStatus } from './useSyncStatus'
+import { startBackgroundRefresh } from './useBackgroundRefresh'
 
 export {
   // store
@@ -24,8 +25,8 @@ export {
   // sync
   showSpecialModal, specialProject, specialFiles, specialSelected, specialLoading,
   startSync, openSpecialModal, closeSpecialModal, toggleSpecialSelection, selectAllSpecial, confirmPushSpecial,
-  // sync status
-  checkProjectSyncStatus, checkAllSyncStatus, startSyncStatusPolling,
+  // sync status + background refresh
+  checkProjectSyncStatus, checkAllSyncStatus, startBackgroundRefresh,
 }
 
 // Factory shim — backward compat for the 8 components that call useProjects()
@@ -37,6 +38,6 @@ export function useProjects() {
     loadData, saveProjectsList, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
     showSpecialModal, specialProject, specialFiles, specialSelected, specialLoading,
     startSync, openSpecialModal, closeSpecialModal, toggleSpecialSelection, selectAllSpecial, confirmPushSpecial,
-    checkProjectSyncStatus, checkAllSyncStatus, startSyncStatusPolling,
+    checkProjectSyncStatus, checkAllSyncStatus, startBackgroundRefresh,
   }
 }

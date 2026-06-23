@@ -65,7 +65,7 @@ export function useSsh() {
         affected.forEach(p => { p.remote_host = newHost; });
         needsSave = true;
         appendGlobalLog("SSH", `Auto-migrated ${affected.length} projects from '${missingHost}' to '${newHost}'.`);
-        Toast.fire({ icon: 'info', title: `Tự động trỏ Host về '${newHost}'` });
+        Toast.fire({ icon: 'info', title: `Auto-migrated projects to '${newHost}'` });
       }
     } else {
       for (const missingHost of missingHosts) {
@@ -76,15 +76,15 @@ export function useSsh() {
         newHosts.forEach(h => { inputOptions[h] = h; });
 
         const { value: newHost } = await Swal.fire({
-          title: '⚠️ Cảnh báo Đứt gãy kết nối',
-          html: `Host SSH <b>${missingHost}</b> không còn tồn tại, nhưng đang được dùng bởi <b>${affected.length} projects</b>.<br><br>Vui lòng chọn Host mới để cập nhật tự động:`,
+          title: '⚠️ SSH Host Missing',
+          html: `Host <b>${missingHost}</b> no longer exists in SSH config, but is used by <b>${affected.length} project(s)</b>.<br><br>Select a replacement host to update them automatically:`,
           icon: 'warning',
           input: 'select',
           inputOptions,
-          inputPlaceholder: '--- Chọn Host thay thế ---',
+          inputPlaceholder: '--- Select replacement host ---',
           showCancelButton: true,
-          confirmButtonText: 'Cập Nhật',
-          cancelButtonText: 'Bỏ qua',
+          confirmButtonText: 'Update',
+          cancelButtonText: 'Skip',
           allowOutsideClick: false,
           background: '#131317',
           color: '#e2e8f0'
@@ -101,7 +101,7 @@ export function useSsh() {
     if (needsSave) {
       await saveProjectsListFn();
       if (missingHosts.length !== 1 || addedHosts.length !== 1) {
-        Toast.fire({ icon: 'success', title: 'Đã đồng bộ Host cho các Projects' });
+        Toast.fire({ icon: 'success', title: 'Projects updated with new hosts' });
       }
     }
   }
@@ -115,11 +115,11 @@ export function useSsh() {
       sshHosts.value = newHosts;
       appendGlobalLog("SSH", "User manually updated ~/.ssh/config. Undo state created.");
       closeSshModal();
-      Toast.fire({ icon: 'success', title: 'Đã lưu cấu hình SSH!' });
+      Toast.fire({ icon: 'success', title: 'SSH config saved' });
       await checkAndFixAffectedProjects(oldHosts, newHosts, saveProjectsListFn);
     } catch (err) {
       appendGlobalLog("ERROR", `Failed to save SSH config: ${err}`);
-      Toast.fire({ icon: 'error', title: 'Lỗi lưu cấu hình SSH' });
+      Toast.fire({ icon: 'error', title: 'Failed to save SSH config' });
     }
   }
 
@@ -132,11 +132,11 @@ export function useSsh() {
       const newHosts = await invoke("get_ssh_hosts");
       sshHosts.value = newHosts;
       appendGlobalLog("SSH", "Successfully UNDONE changes to ~/.ssh/config.");
-      Toast.fire({ icon: 'success', title: 'Đã hoàn tác (Undo) cấu hình' });
+      Toast.fire({ icon: 'success', title: 'SSH config undone' });
       await checkAndFixAffectedProjects(oldHosts, newHosts, saveProjectsListFn);
     } catch (err) {
       appendGlobalLog("ERROR", `Failed to undo SSH config: ${err}`);
-      Toast.fire({ icon: 'error', title: 'Lỗi khi Hoàn tác' });
+      Toast.fire({ icon: 'error', title: 'Undo failed' });
     }
   }
 
@@ -149,11 +149,11 @@ export function useSsh() {
       const newHosts = await invoke("get_ssh_hosts");
       sshHosts.value = newHosts;
       appendGlobalLog("SSH", "Successfully REDONE changes to ~/.ssh/config.");
-      Toast.fire({ icon: 'success', title: 'Đã làm lại (Redo) cấu hình' });
+      Toast.fire({ icon: 'success', title: 'SSH config redone' });
       await checkAndFixAffectedProjects(oldHosts, newHosts, saveProjectsListFn);
     } catch (err) {
       appendGlobalLog("ERROR", `Failed to redo SSH config: ${err}`);
-      Toast.fire({ icon: 'error', title: 'Lỗi khi Làm lại' });
+      Toast.fire({ icon: 'error', title: 'Redo failed' });
     }
   }
 

@@ -1,49 +1,33 @@
 <template>
-  <div v-if="showGitModal && gitProject" class="modal-overlay">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h2><i class="fa-solid fa-code-branch mr-1"></i> Git Version Control: {{ gitProject.name }}</h2>
-        <button class="btn-close-modal" @click="closeGitModal"><i class="fa-solid fa-xmark"></i></button>
+  <BaseModal :show="showGitModal && !!gitProject" @close="closeGitModal">
+    <template #title>
+      <i class="fa-solid fa-code-branch mr-1"></i> Git Version Control: {{ gitProject?.name }}
+    </template>
+    <div class="modal-body scrollable">
+      <div class="alert-box info mb-2">
+        <i class="fa-solid fa-circle-info"></i> Git integration is coming in the next update. This will allow you to view diffs, write commit messages, and push directly to GitHub/GitLab.
       </div>
-      <div class="modal-body scrollable">
-        
-        <div class="alert-box info mb-2">
-          <i class="fa-solid fa-circle-info"></i> Git integration is coming in the next update. This will allow you to view diffs, write commit messages, and push directly to GitHub/GitLab.
-        </div>
-
-        <div class="form-group full-width">
-          <label>Commit Message</label>
-          <input type="text" class="large-input" placeholder="WIP: Implementation pending..." disabled />
-        </div>
-
-        <div class="form-group full-width mt-3">
-          <label><i class="fa-solid fa-clock-rotate-left mr-1"></i> Git Status History</label>
-          <pre class="git-status-log">{{ gitStatusText }}</pre>
-        </div>
-
+      <div class="form-group full-width">
+        <label>Commit Message</label>
+        <input type="text" class="large-input" placeholder="WIP: Implementation pending..." disabled />
       </div>
-      <div class="modal-footer">
-        <button class="btn-tech btn-tech-secondary" @click="closeGitModal">ĐÓNG</button>
-        <button class="btn-tech btn-tech-primary" disabled><i class="fa-solid fa-cloud-arrow-up"></i> COMMIT & PUSH</button>
+      <div class="form-group full-width mt-3">
+        <label><i class="fa-solid fa-clock-rotate-left mr-1"></i> Git Status History</label>
+        <pre class="git-status-log">{{ gitStatusText }}</pre>
       </div>
     </div>
-  </div>
+    <div class="modal-footer">
+      <button class="btn-tech btn-tech-secondary" @click="closeGitModal">CLOSE</button>
+      <button class="btn-tech btn-tech-primary" disabled><i class="fa-solid fa-cloud-arrow-up"></i> COMMIT & PUSH</button>
+    </div>
+  </BaseModal>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue';
-import { useProjects } from '../../composables/useProjects';
+import BaseModal from './BaseModal.vue'
+import { useProjects } from '../../composables/useProjects'
 
-const { showGitModal, gitProject, gitStatusText, closeGitModal } = useProjects();
-
-function handleEsc(e) {
-  if (e.key === 'Escape' && showGitModal.value) {
-    closeGitModal();
-  }
-}
-
-onMounted(() => window.addEventListener('keydown', handleEsc, true));
-onUnmounted(() => window.removeEventListener('keydown', handleEsc, true));
+const { showGitModal, gitProject, gitStatusText, closeGitModal } = useProjects()
 </script>
 
 <style scoped>

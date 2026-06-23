@@ -5,6 +5,51 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.1.3] - 2026-06-23
+
+#### Added
+- **Background Refresh**: a new settings panel (⚙ icon next to REFRESH) lets you configure
+  independent auto-refresh intervals for Git Status, Remote Diff, and Agent Usage. Settings
+  persist across sessions; set any interval to 0 to disable that type.
+- **REFRESH button** (renamed from RELOAD): triggers all three refresh types simultaneously —
+  git status, remote diff, and agent usage — in one click. Grouped with the ⚙ settings icon
+  as a paired control.
+
+#### Fixed
+- **Agent Usage — percentage display**: fixed floating-point noise rendering values like
+  `7.000000000000001%`. Percentages are now always displayed as whole numbers.
+- **Agent Usage — stale indicator**: the "Stale" badge now reflects the actual current age of
+  the cached data rather than its age at the time of the last fetch. The badge also no longer
+  flickers (disappearing and reappearing) on every refresh cycle.
+- **Agent Usage — auto-setup on first use**: when no usage cache is found on a remote host,
+  the app now automatically provisions the host in the background — patching Claude Code's
+  statusline hook so rate-limit data is cached on every session. No manual setup required.
+- **Modal backdrop**: clicking outside any modal now dismisses it, equivalent to pressing Cancel.
+- **Git modal stale data**: the Git modal now fetches fresh data from the backend on every open
+  instead of showing a potentially stale cached snapshot. A loading state is shown while in flight.
+- **Project Config preset notification**: the success toast after applying a preset was silently
+  failing due to an unresolved reference. Now fires correctly.
+- **Push Special modal width**: the modal was rendering at 800px instead of the intended 600px
+  after the `BaseModal` refactor. Corrected by passing the right container class.
+
+#### Changed
+- **`BaseModal` component**: extracted shared modal scaffolding (overlay, drag handle, header,
+  close button, ESC listener, backdrop click) into a single reusable `BaseModal.vue`. All 5 modals
+  now use it, removing ~80 lines of duplicated boilerplate each.
+- **Log panel ESC**: pressing Escape in an expanded log panel now collapses the panel and returns
+  to the Global Event Log in one keystroke. Has no effect when a modal is open — modal ESC takes
+  priority.
+- **Push button dirty state**: the Push button no longer stays permanently lit when `sync_git` is
+  enabled. Directory entries (e.g. `.git/`) are now filtered from the rsync dry-run change count —
+  previously a routine `git status` call was enough to flip the button to dirty.
+- **UI language**: completed a full English pass — all remaining Vietnamese strings replaced across
+  `AppHeader`, `UsageProgressBar`, `useSsh.js`, and `useSync.js`.
+- **Version display**: `package.json` is now the single source of truth for the app version. Version
+  is injected at build time via Vite (same pattern as build date), replacing a `getVersion()` call
+  that read from `Cargo.toml` and required manual updates in two separate files to stay in sync.
+
+---
+
 ### [1.1.2] - 2026-06-23
 
 #### Added

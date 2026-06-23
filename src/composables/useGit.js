@@ -9,11 +9,11 @@ export const gitStatusText = ref('')
 
 const { appendGlobalLog } = useLogs()
 
-export async function fetchGitStatus(projectId) {
+export async function fetchGitStatus(projectId, silent = false) {
   const project = projects.value.find(p => p.id === projectId)
   if (!project) return
   try {
-    appendGlobalLog("GIT", `Checking status for "${project.name}"...`)
+    if (!silent) appendGlobalLog("GIT", `Checking status for "${project.name}"...`)
     const info = await invoke("get_git_info", { localPath: project.local_path })
     projectRuntime.value[projectId] = {
       ...projectRuntime.value[projectId],
@@ -21,7 +21,7 @@ export async function fetchGitStatus(projectId) {
       git_log: info.log,
       remote_url: info.remote_url || "",
     }
-    appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`)
+    if (!silent) appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`)
   } catch (err) {
     projectRuntime.value[projectId] = {
       ...projectRuntime.value[projectId],
@@ -32,9 +32,11 @@ export async function fetchGitStatus(projectId) {
   }
 }
 
-export function openGitModal(project) {
+export async function openGitModal(project) {
   gitProject.value = project
+  gitStatusText.value = 'Loading...'
   showGitModal.value = true
+  await fetchGitStatus(project.id)
   const rt = projectRuntime.value[project.id]
   gitStatusText.value = rt?.git_log || 'No Git history available.'
 }

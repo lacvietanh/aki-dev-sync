@@ -8,7 +8,7 @@
       <div class="progress-fill" :class="colorClass" :style="{ width: Math.min(percentage, 100) + '%' }"></div>
     </div>
     <div class="usage-footer" v-if="resetsAt">
-      <span class="reset-time" title="Thời gian được tính dựa trên múi giờ hiện tại (Local Timezone)">
+      <span class="reset-time" title="Reset time is based on your local timezone">
         <span class="reset-label">{{ formattedResetTime.isPast ? 'Reset' : 'Resets' }}</span>
         <span v-if="!formattedResetTime.isPast" class="reset-label">in</span>
         <span class="reset-relative">{{ formattedResetTime.relativeTime }}</span>
@@ -56,7 +56,7 @@ const hasPercentage = computed(() => props.percentage !== null && !isNaN(props.p
 
 const displayPercentage = computed(() => {
   if (hasPercentage.value) {
-    return `${props.percentage}%`;
+    return `${Math.round(props.percentage)}%`;
   }
   return 'N/A';
 });

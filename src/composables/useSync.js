@@ -16,7 +16,7 @@ const { appendGlobalLog, appendLog, projectLogs, activeLogProjectId, isLogExpand
 
 export async function startSync(project, direction, specificPaths = []) {
   if (projectRuntime.value[project.id]?.syncing) {
-    Toast.fire({ icon: 'warning', title: `${project.name} đang sync, vui lòng chờ` })
+    Toast.fire({ icon: 'warning', title: `${project.name} is syncing, please wait` })
     return
   }
 
@@ -71,13 +71,13 @@ export async function startSync(project, direction, specificPaths = []) {
       }, 1500)
     }
 
-    Toast.fire({ icon: 'success', title: 'Đồng bộ hoàn tất!' })
+    Toast.fire({ icon: 'success', title: 'Sync complete' })
   } catch (err) {
     appendLog(project.id, `\n[ERROR] Sync failed: ${err}`)
     appendGlobalLog("ERROR", `Sync failed for "${project.name}": ${err}`)
     project.last_sync_status = "error"
     await saveProjectsList()
-    Toast.fire({ icon: 'error', title: 'Đồng bộ thất bại' })
+    Toast.fire({ icon: 'error', title: 'Sync failed' })
   } finally {
     projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: false }
   }

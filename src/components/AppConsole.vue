@@ -40,11 +40,22 @@
 </template>
 
 <script setup>
+import { onMounted, onUnmounted } from 'vue';
 import { useLogs } from '../composables/useLogs';
 import { useProjects } from '../composables/useProjects';
 
 const { activeLogProjectId, isLogExpanded, displayedLogs, consoleRef, copied, copyLogs, clearLog } = useLogs();
 const { projects, anySyncing } = useProjects();
+
+function handleEsc(e) {
+  if (e.key === 'Escape' && isLogExpanded.value && !document.querySelector('.modal-overlay')) {
+    activeLogProjectId.value = null;
+    isLogExpanded.value = false;
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', handleEsc, true));
+onUnmounted(() => window.removeEventListener('keydown', handleEsc, true));
 
 function getLogClass(line) {
   if (line.includes("[ERROR]") || line.includes("FAILED")) return "log-error";

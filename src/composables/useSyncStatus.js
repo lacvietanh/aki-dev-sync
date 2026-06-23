@@ -1,10 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { projects, projectRuntime } from '../store/projectStore'
 
-const POLL_INTERVAL_MS = 60_000
-
-let pollTimer = null
-
 export async function checkProjectSyncStatus(project) {
   if (projectRuntime.value[project.id]?.syncing) return
   try {
@@ -21,9 +17,4 @@ export async function checkProjectSyncStatus(project) {
 
 export async function checkAllSyncStatus() {
   await Promise.all(projects.value.map(p => checkProjectSyncStatus(p)))
-}
-
-export function startSyncStatusPolling() {
-  if (pollTimer) return
-  pollTimer = setInterval(checkAllSyncStatus, POLL_INTERVAL_MS)
 }

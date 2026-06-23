@@ -16,7 +16,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted } from 'vue';
 import AppHeader from './components/AppHeader.vue';
 import AgentUsageSection from './components/AgentUsageSection.vue';
 import ProjectTable from './components/ProjectTable.vue';
@@ -29,17 +29,8 @@ import GitModal from './components/modals/GitModal.vue';
 import { useProjects } from './composables/useProjects';
 import { useSsh } from './composables/useSsh';
 
-const { 
-  loadData, 
-  showConfigModal, closeConfig, 
-  showSpecialModal, closeSpecialModal,
-  showGitModal, closeGitModal
-} = useProjects();
-
-const { 
-  sshHosts, 
-  showSshModal, closeSshModal 
-} = useSsh();
+const { loadData } = useProjects();
+const { sshHosts } = useSsh();
 
 onMounted(() => {
   loadData(sshHosts, false);

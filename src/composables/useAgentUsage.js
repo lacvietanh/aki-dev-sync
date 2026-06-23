@@ -1,26 +1,24 @@
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
 
 export function useAgentUsage(agentName, hostRef) {
   const data = ref(null);
   const loading = ref(false);
   const error = ref(null);
   const stale = ref(false);
-  const provisioned = ref(false);
 
   let pollTimer = null;
+  let provisioned = false; // plain boolean — not reactive, not exposed to template
 
-  // Provision must be triggered explicitly by the user via `provision()`.
-  // The poll path only reads — it never writes to the remote environment.
   const provision = async () => {
-    if (!hostRef.value) return false;
+    if (!hostRef.value || provisioned) return;
+    provisioned = true; // mark before await to prevent concurrent calls
     try {
       await invoke('provision_agent_usage', { agentName, host: hostRef.value });
-      provisioned.value = true;
-      return true;
     } catch (e) {
+      provisioned = false; // reset so next empty result can retry
       console.error(`Failed to provision ${agentName}:`, e);
-      return false;
     }
   };
 
@@ -33,30 +31,22 @@ export function useAgentUsage(agentName, hostRef) {
 
     loading.value = true;
     error.value = null;
-    stale.value = false;
 
     try {
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
       if (res) {
         try {
           data.value = JSON.parse(res.content);
-          
-          // Check if data is stale (older than 10 minutes)
-          const fetchedAt = parseInt(res.fetched_at, 10);
+
           const mtime = parseInt(res.file_modified_at, 10);
-          
-          if (fetchedAt && mtime) {
-            // fetchedAt and mtime are in seconds
-            if (fetchedAt - mtime > 600) {
-              stale.value = true;
-            }
-          }
+          stale.value = mtime > 0 && (Date.now() / 1000 - mtime) > 600;
         } catch (e) {
           console.error(`Failed to parse ${agentName} usage JSON:`, e);
           error.value = "Invalid usage data format.";
         }
       } else {
         data.value = null;
+        provision(); // fire-and-forget: set up remote on first empty result
       }
     } catch (e) {
       console.error(`Error fetching ${agentName} usage:`, e);
@@ -64,10 +54,6 @@ export function useAgentUsage(agentName, hostRef) {
     } finally {
       loading.value = false;
     }
-  };
-
-  const refresh = () => {
-    checkUsage();
   };
 
   const forceSync = async () => {
@@ -84,16 +70,27 @@ export function useAgentUsage(agentName, hostRef) {
     }
   };
 
+  function restartPollTimer() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    const s = refreshSettings.value.usage_interval_s;
+    if (hostRef.value && s > 0) {
+      pollTimer = setInterval(checkUsage, s * 1000);
+    }
+  }
+
   watch(() => hostRef.value, (newHost) => {
-    provisioned.value = false;
+    provisioned = false; // reset provision state on host change
     data.value = null;
     error.value = null;
-    if (pollTimer) clearInterval(pollTimer);
     if (newHost) {
       checkUsage();
-      pollTimer = setInterval(checkUsage, 30000);
     }
+    restartPollTimer();
   }, { immediate: true });
+
+  watch(() => refreshSettings.value.usage_interval_s, restartPollTimer);
+  watch(() => manualRefreshCount.value, () => { if (hostRef.value) checkUsage(); });
 
   onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer);
@@ -104,9 +101,7 @@ export function useAgentUsage(agentName, hostRef) {
     loading,
     error,
     stale,
-    provisioned,
-    provision,
-    refresh,
+    refresh: checkUsage,
     forceSync
   };
 }

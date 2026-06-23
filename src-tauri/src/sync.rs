@@ -303,8 +303,7 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
                 && !l.starts_with("Number of")
                 && !l.starts_with("deleting ")
                 && !l.starts_with("*deleting ")
-                && l != "./"
-                && l != "."
+                && !l.ends_with('/')  // directory mtime churn (e.g. .git/ after git status)
         })
         .count();
 
