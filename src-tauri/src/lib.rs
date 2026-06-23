@@ -32,13 +32,10 @@ pub fn run() {
             agent_usage::force_sync_agent_usage,
             agent_usage::get_agent_usage,
             // system / OS integration
-            system::open_local_dir,
-            system::open_in_terminal,
-            system::open_in_vscode,
-            system::open_antigravity_app,
-            system::open_remote_terminal,
-            system::open_url,
+            system::macos_open,
+            system::open_remote_subprocess,
             system::get_project_icon_base64,
+            system::check_ide_availability,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

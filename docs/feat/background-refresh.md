@@ -28,7 +28,7 @@ Automatic background polling that keeps three independent data types fresh witho
 
 **Implementation:** `useSyncStatus.js` → `checkProjectSyncStatus(project)` → Tauri command `check_sync_status` → `count_rsync_changes()` in `sync.rs`.
 
-**Result:** `hasPendingPush` and `hasPendingPull` written into `projectRuntime`. Buttons light up when value is `true` or `undefined`; dim (`.btn-sync-clean`) only when explicitly `false`.
+**Result:** `hasPendingPush` and `hasPendingPull` written into `projectRuntime`. On startup both are initialized to `null` (not `undefined`) — buttons render in a faint "checking" state (`.btn-sync-checking`) until the first check resolves. After that: `true` → fully lit, `false` → dim (`.btn-sync-clean`).
 
 **Planned interval:** 60s (unchanged).
 
@@ -80,6 +80,7 @@ This gives accurate signal: Push button lights up for real commits and file chan
 | Remote diff polling (60s) | ✅ Implemented |
 | Agent usage polling (30s) | ✅ Implemented |
 | `.git/` directory filter fix | ✅ Implemented |
+| `null` init → no false-active on startup | ✅ Implemented |
 | Git status polling | ⬜ Not yet — on-demand only |
 | Unified `useBackgroundRefresh` singleton | ⬜ Not yet |
 | Per-type configurable intervals | ⬜ Not yet |

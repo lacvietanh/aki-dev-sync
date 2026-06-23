@@ -1,6 +1,6 @@
-# Aki Remote Dev Sync 🚀
+# Aki Dev Sync 🚀
 
-**Aki Remote Dev Sync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote với AI).
+**Aki Dev Sync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote với AI).
 
 ![Aki Sync Dashboard](./src-tauri/icons/icon.png)
 
@@ -54,6 +54,9 @@
 
 ### 8. Cơ Chế An Toàn Khác
 - **DRY RUN Toggle:** Công tắc xem trước. Kích hoạt sẽ hiển thị chi tiết lệnh rsync sẽ làm gì mà không chép đè bất cứ byte nào xuống ổ cứng.
+- **Sync Status Indicator:** Nút PUSH/PULL tự động sáng lên khi phát hiện có thay đổi cần đồng bộ, mờ đi khi đã gọn. Background polling 60s giữ trạng thái luôn cập nhật mà không cần thao tác thủ công.
+
+→ Implementation detail: `docs/feat/background-refresh.md`
 
 ---
 
@@ -103,7 +106,53 @@ npm install
 npm run tauri dev   # Dev (lần đầu build Rust ~5–10 phút)
 ```
 ```bash
-npm run tauri build # Production build
+npm run build:app   # Production build + post-build artifact rename
 ```
 
 *Thiết kế dành riêng cho tốc độ và quy trình Lạc Việt Anh Workflow.*
+
+---
+
+## ⚠️ Tauri Gotchas & Conventions
+
+Lessons from working with Tauri v2 on a macOS-first app. Recorded to avoid re-discovery.
+
+### Titlebar sacred boundary
+
+`"decorations": false` + `"transparent": true` removes the native titlebar entirely. Every fixed or absolute-positioned element that spans the full window **must** start at `top: var(--titlebar-h)` (42px), never `top: 0`. Covering the drag region makes the window un-movable.
+
+→ Full rule + rationale: `docs/ref/titlebar-sacred-boundary.md`
+
+### Version SSOT — `package.json` only
+
+`tauri.conf.json` sets `"version": "../package.json"`. Do **not** hardcode a version there or sync `Cargo.toml`'s version to track the app release — they are separate concerns. Bump only `package.json`.
+
+### Post-build artifact rename
+
+Raw `npm run tauri build` outputs filenames with spaces (`Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead — it chains `tauri build` and `node scripts/rename-artifacts.js` to produce `Aki-DevSync-v1.2.0-aarch64.dmg`.
+
+### IPC capability: silent failures
+
+Every Tauri command — including `@tauri-apps/api/window` calls — must be **granted** in `src-tauri/capabilities/default.json`. A missing entry causes a **silent no-op**: the JS call resolves without error and nothing happens. This was the root cause of the window drag/minimize/close not responding (fixed by adding `core:window:allow-start-dragging`, `core:window:allow-minimize`, `core:window:allow-close`).
+
+### async IPC + blocking subprocess
+
+Tauri runs `async fn` commands on an async executor. Calling `std::process::Command` (blocking) directly inside an `async fn` starves the thread pool — the UI appears frozen until the command returns. Use `tauri::async_runtime::spawn_blocking` for any blocking work inside an `async fn` command.
+
+> History: `run_sync` was temporarily changed to a sync `fn` as a workaround, introducing a different UI freeze. Reverted in v1.1.1 with proper `spawn_blocking`.
+
+### CSP
+
+Never leave `"csp": null` in `tauri.conf.json`. Minimum safe policy:
+
+```json
+"csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+```
+
+### Serde struct fields and old JSON
+
+Adding a field to a Rust struct deserialized from persisted JSON (e.g. `projects.json`) will **silently drop** records missing the new key — unless the field is annotated `#[serde(default)]`. Always add `#[serde(default)]` to new optional fields on persistent structs.
+
+### `#[cfg(target_os = "macos")]` variable scoping
+
+Variables declared **outside** a `#[cfg(target_os = "macos")]` block but only used inside it produce unused-variable warnings on Linux/Windows builds. Declare them **inside** the cfg block.

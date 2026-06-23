@@ -1,0 +1,39 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Fix __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Read package.json explicitly since import attributes are still experimental in some node versions
+const pkgPath = path.resolve(__dirname, '../package.json');
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+
+const version = pkg.version;
+// We know Tauri will build 'Aki Dev Sync_<version>_aarch64.dmg'
+const dmgDir = path.resolve(__dirname, '../src-tauri/target/release/bundle/dmg');
+
+if (!fs.existsSync(dmgDir)) {
+  console.log(`Directory not found: ${dmgDir}. Skipping rename.`);
+  process.exit(0);
+}
+
+const files = fs.readdirSync(dmgDir);
+let renamed = false;
+
+for (const file of files) {
+  if (file.endsWith('.dmg') && file.startsWith('Aki Dev Sync_')) {
+    const archMatch = file.match(/_([a-z0-9]+)\.dmg$/);
+    const arch = archMatch ? archMatch[1] : 'aarch64';
+    
+    const newName = `Aki-DevSync-v${version}-${arch}.dmg`;
+    fs.renameSync(path.join(dmgDir, file), path.join(dmgDir, newName));
+    console.log(`✅ Renamed build artifact: ${file} -> ${newName}`);
+    renamed = true;
+  }
+}
+
+if (!renamed) {
+  console.log('⚠️ No matching DMG files found to rename.');
+}

@@ -11,16 +11,14 @@ SRP, SOLID, DRY
 
 ## THIS PROJECT
 
-### 1. Project
-- **Name**: aki-sync-gui
-- **Description**: A Tauri-based Desktop App for managing and executing rsync-based deployment workflows with remote pre/post hooks.
-- **Stack**: Vue 3 (Vite), Tauri v2, Rust.
+**Stack**: Vue 3 (Vite), Tauri v2, Rust. Dark mode desktop tool for rsync-based deploy workflows.
 
-### 2. Specific Config
-- **Tauri Architecture**: Cửa sổ chạy ở chế độ `"decorations": false` và `"transparent": true` (với cờ `macos-private-api` trên Mac) để tắt hoàn toàn Native macOS OS Titlebar.
-- **Window API**: Tất cả lệnh liên quan đến cửa sổ như Kéo Thả (Drag), Thu nhỏ (Minimize), Đóng (Close) được thực hiện bằng JavaScript thông qua `@tauri-apps/api/window`.
-- **Bảo mật (Tauri v2)**: BẮT BUỘC phải cấp các quyền `core:window:allow-minimize`, `core:window:allow-close`, `core:window:allow-start-dragging` trong file `src-tauri/capabilities/default.json`. Nếu không có, IPC sẽ âm thầm từ chối (Silent Fail) và giao diện không phản hồi.
+### Tauri Pitfalls — Critical, Always Apply
 
-### 3. Vibe / Styling
-- **Vibe**: Dark mode, functional developer tool, minimal footprint.
-- Phản hồi nhanh lỗi hệ thống bằng hệ thống Notification (dùng SweetAlert2) khi API từ Rust bị từ chối hoặc Promise bị catch.
+- **Titlebar sacred boundary**: `"decorations": false` + `"transparent": true` → no native titlebar. All `position: fixed/absolute` elements **must** start at `top: var(--titlebar-h)` (42px), never `top: 0`. Window controls (drag/minimize/close) via JS `@tauri-apps/api/window`. Ref: `docs/ref/titlebar-sacred-boundary.md`
+- **Version SSOT**: `package.json` only. `tauri.conf.json` → `"version": "../package.json"`. Never hardcode version in `tauri.conf.json`. `Cargo.toml` has its own crate version (separate concern).
+- **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/rename-artifacts.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X-arch.dmg`.
+- **IPC capability silent fail**: Every Tauri command AND window API call must be granted in `src-tauri/capabilities/default.json`. Missing → **silent no-op**, no error, no log. Window needs: `core:window:allow-minimize`, `core:window:allow-close`, `core:window:allow-start-dragging`.
+- **async fn + blocking subprocess**: Blocking subprocess directly in `async fn` starves the executor → UI freeze. Use `tauri::async_runtime::spawn_blocking`. (History: `run_sync` v1.1.1.)
+- **Serde fields + old JSON**: New fields on structs deserialized from persisted JSON (e.g. `projects.json`) need `#[serde(default)]` or old records silently drop.
+- **`#[cfg(target_os = "macos")]` scoping**: Declare variables **inside** the cfg block. Declared outside but used only inside → unused-variable warning on non-macOS.

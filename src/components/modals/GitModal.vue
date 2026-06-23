@@ -7,6 +7,12 @@
       <div class="alert-box info mb-2">
         <i class="fa-solid fa-circle-info"></i> Git integration is coming in the next update. This will allow you to view diffs, write commit messages, and push directly to GitHub/GitLab.
       </div>
+      <div v-if="gitProject && projectRuntime[gitProject.id]?.remote_url" class="form-group full-width mb-2">
+        <label>Remote Git URL</label>
+        <a @click.prevent="openUrl(projectRuntime[gitProject.id].remote_url)" class="git-url-link">
+          <i class="fa-brands fa-git-alt mr-1"></i>{{ projectRuntime[gitProject.id].remote_url }}
+        </a>
+      </div>
       <div class="form-group full-width">
         <label>Commit Message</label>
         <input type="text" class="large-input" placeholder="WIP: Implementation pending..." disabled />
@@ -24,10 +30,15 @@
 </template>
 
 <script setup>
+import { invoke } from '@tauri-apps/api/core'
 import BaseModal from './BaseModal.vue'
 import { useProjects } from '../../composables/useProjects'
 
-const { showGitModal, gitProject, gitStatusText, closeGitModal } = useProjects()
+const { showGitModal, gitProject, gitStatusText, projectRuntime, closeGitModal } = useProjects()
+
+async function openUrl(url) {
+  try { await invoke('macos_open', { args: [url] }) } catch (e) { console.error(e) }
+}
 </script>
 
 <style scoped>
@@ -56,6 +67,19 @@ const { showGitModal, gitProject, gitStatusText, closeGitModal } = useProjects()
 .mr-1 {
   margin-right: 0.25rem;
 }
+.git-url-link {
+  display: inline-flex;
+  align-items: center;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--accent-cyan, #00d2ff);
+  cursor: pointer;
+  word-break: break-all;
+  text-decoration: none;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.git-url-link:hover { opacity: 1; text-decoration: underline; }
 .git-status-log {
   background: #0d1117;
   color: #e6edf3;

@@ -2,7 +2,7 @@
 
 > **✅ HOÀN TẤT — 27/27 items · Released: v1.1.0**
 
-> Phạm vi: `Aki Remote Dev Sync` (Tauri v2 + Vue 3 + Rust). Bản phân tích kiến trúc và kế hoạch
+> Phạm vi: `Aki Dev Sync` (Tauri v2 + Vue 3 + Rust). Bản phân tích kiến trúc và kế hoạch
 > cải thiện, soi chiếu trực tiếp vào bộ quy tắc `~/.aki/claudedoc/` (RULE-coding,
 > RULE-agent-behavior, RULE-docs, METHOD-flow-audit, METHOD-techbiz-optimizer).
 >

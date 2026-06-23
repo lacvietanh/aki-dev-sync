@@ -5,6 +5,76 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.3] - 2026-06-23
+
+#### Added
+- **Intro Modal**: Added an interactive "INTRO" button to the header with a pulsing notification badge. The modal provides a comprehensive and visually appealing explanation of the Aki Dev Sync workflow, explicitly distinguishing between the author's primary use case (Security / Claude MAX sharing) and general use cases for other developers.
+
+---
+
+### [1.2.2] - 2026-06-23
+
+#### Fixed
+- **Push/Pull buttons no longer falsely light up on startup**: `hasPendingPush` and
+  `hasPendingPull` are now initialized to `null` instead of `undefined`. Buttons
+  display a visually distinct "checking" state (very faint outline) while the background
+  sync-status check is in flight, then resolve to fully lit (pending changes) or muted
+  (clean) once the live fetch completes. No disk caching needed — background fetch is
+  the source of truth.
+
+---
+
+### [1.2.1] - 2026-06-23
+
+#### Changed
+- **IPC open consolidation**: replaced 7 thin Rust wrapper commands (`open_url`, `open_local_dir`,
+  `open_in_terminal`, `open_antigravity_app`, `open_ide_local`, `open_ide_remote` vscode arms,
+  `open_remote_terminal`) with a single `macos_open(args: Vec<String>)` command. JS now builds
+  the arg list directly (`['-a', 'Visual Studio Code', path]`, `[url]`, etc.) — macOS `open` is
+  called once per intent, no Rust matching required. Subprocess-only cases (AppleScript SSH
+  terminal, `antigravity-ide --remote`) remain in Rust as `open_remote_subprocess`.
+- **Removed dead command** `open_remote_terminal` — no callers since the hub refactor (v1.2.0).
+- **Test coverage updated**: `validate_ssh_host` tests replaced by equivalent `validate_remote_host`
+  tests (the active validation function); `applescript_escape` tests unchanged.
+
+---
+
+### [1.2.0] - 2026-06-23
+
+#### Added
+- **Project Open Hub**: hovering over the project icon now reveals a floating menu with three
+  sections — LOCAL (Finder, Terminal, VSCode, VSCode Insiders, Antigravity IDE), REMOTE SSH
+  (SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote), and LINKS (Open
+  Production Site). IDE items are automatically greyed out when the application is not installed,
+  checked once per session via the new `check_ide_availability` Tauri command.
+- **`check_ide_availability` command**: detects presence of VSCode, VSCode Insiders, and
+  Antigravity in `/Applications/` on macOS. Result cached in-session — only one IPC call per
+  app lifecycle regardless of how many projects are hovered.
+- **`open_ide_local` command**: unified local-open replacing separate `open_in_vscode` and
+  `open_antigravity_app` commands. Accepts `ide_name` (`finder` | `terminal` | `vscode` |
+  `vscode_insiders` | `antigravity`) and opens the given path with the matching application.
+- **`open_ide_remote` command**: opens a remote project via SSH. Terminal uses AppleScript,
+  VSCode/Insiders use the `vscode://vscode-remote/ssh-remote+<host><path>` URL scheme,
+  Antigravity uses `antigravity-ide --remote`. Host validated to allow `user@host` format.
+- **Remote Git URL in Git modal**: the project's remote git URL is now shown as a clickable link
+  inside the Git modal, replacing the icon that was previously shown next to the project name.
+
+#### Changed
+- **ACTIONS column cleaned up**: removed standalone Terminal (`>_`) and VSCode buttons — these
+  actions are now available through the Project Open Hub. Remaining actions: GIT, PUSH SPECIAL,
+  PUSH/DRY/PULL group, LOG, CONFIG.
+- **Path labels no longer clickable**: local path and remote path text in the project row no
+  longer have click handlers. All open actions are consolidated into the hub.
+- **Production URL moved to hub**: the globe icon (Open Production Site) is removed from the
+  project name row and now lives in the hub's LINKS section.
+- **Remote path display**: the remote path label is now hidden when a project has no `remote_host`
+  configured, eliminating the empty `:` display.
+- **Rebranding**: Project officially renamed to **Aki Dev Sync**. All UI texts, window titles, and documentation have been updated to reflect the new identity.
+- **Build Process**: Output release binaries (e.g. `.dmg`) are now automatically renamed post-build using `scripts/rename-artifacts.js` to match the standard format `Aki-DevSync-vX.X.X-arch.dmg` (Kebab-case with version) for better DX and URL distribution without spaces.
+- **Source of Truth Versioning**: Updated `tauri.conf.json` to read the app version directly from `package.json` via `"version": "../package.json"`. Resolved the previous bug where compiled files were incorrectly labeled as v1.1.1.
+
+---
+
 ### [1.1.3] - 2026-06-23
 
 #### Added

@@ -28,6 +28,8 @@ export async function loadData(sshHosts, showToast = false) {
         git_log: "",
         remote_url: "",
         syncing: projectRuntime.value[p.id]?.syncing ?? false,
+        hasPendingPush: null,
+        hasPendingPull: null,
       }
       if (!projectLogs.value[p.id]) projectLogs.value[p.id] = []
     }

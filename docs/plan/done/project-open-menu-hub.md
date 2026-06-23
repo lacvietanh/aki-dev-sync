@@ -1,5 +1,17 @@
 # Refactor UI/UX: Project Open Menu Hub
 
+**Status:** Done  
+**Started:** 2026-06-23  
+**Completed:** 2026-06-23
+
+**Progress:**
+- [x] Backend: system.rs — add check_ide_availability, open_ide_local, open_ide_remote
+- [x] Backend: lib.rs — register new, remove old commands
+- [x] Frontend: GitModal.vue — add GitHub URL
+- [x] Frontend: ProjectTable.vue — hub UI + cleanup
+
+---
+
 **Mục tiêu:** Cải thiện UX phần danh sách dự án. Chuyển đổi các hành động mở Code/IDE từ các nút bấm phân mảnh hoặc ngầm định (click đường dẫn) thành một "Menu Hub" tập trung, hiện ra khi Hover vào Project Icon. Hỗ trợ đa dạng IDE (VSCode, VSCode Insiders, Antigravity) ở cả môi trường Local và Remote SSH.
 
 ## 1. Thiết kế Interaction & UI (Frontend - `ProjectTable.vue`)

@@ -1,4 +1,4 @@
-# Docs Index — Aki Remote Dev Sync
+# Docs Index — Aki Dev Sync
 
 ## Features
 - [docs/feat/background-refresh.md](feat/background-refresh.md) — Background polling for git status, remote diff (push/pull buttons), and agent usage; `.git/` mtime quirk and fix

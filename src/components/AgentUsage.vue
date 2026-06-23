@@ -185,7 +185,7 @@ const claudeTierDisplay = computed(() => {
 async function handleIconClick() {
   if (props.agentId === 'antigravity') {
     try {
-      await invoke("open_antigravity_app");
+      await invoke("macos_open", { args: ["-a", "Antigravity"] });
     } catch (e) {
       console.error("Failed to open Antigravity:", e);
     }

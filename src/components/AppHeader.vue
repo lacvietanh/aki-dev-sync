@@ -3,11 +3,15 @@
     <header class="top-header" data-tauri-drag-region @mousedown.prevent="startDragging">
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
-          <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Remote Dev Sync
+          <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Dev Sync
           <span class="app-version clickable" @click="showChangelog" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }})</span>
         </h1>
       </div>
       <div class="header-actions">
+        <button class="btn-tech btn-tech-secondary btn-intro" @click="openIntroModal" title="Introduction">
+          <i class="fa-solid fa-book-open"></i> INTRO
+          <span class="badge-dot"></span>
+        </button>
         <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="anySyncing || isReloading">
           <i class="fa-solid fa-plus"></i> NEW PROJECT
         </button>
@@ -44,6 +48,7 @@ import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { refreshAll } from '../composables/useBackgroundRefresh';
 import { useSsh } from '../composables/useSsh';
+import { useIntro } from '../composables/useIntro';
 import changelogText from '../../CHANGELOG.md?raw';
 import Swal from 'sweetalert2';
 import { renderMarkdown, runMermaid } from '../utils/markdown';
@@ -55,7 +60,7 @@ const showRefreshSettings = ref(false);
 
 function showChangelog() {
   Swal.fire({
-    title: 'Aki Remote Dev Sync Changelog',
+    title: 'Aki Dev Sync Changelog',
     html: `<div class="markdown-body" style="text-align: left; font-size: 15px; color: #e2e8f0; background: #1a1a24; padding: 20px; border-radius: 8px; max-height: 500px; overflow-y: auto; line-height: 1.6;">${renderMarkdown(changelogText)}</div>`,
     background: '#131317',
     color: '#F3F4F6',
@@ -72,6 +77,7 @@ function showChangelog() {
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
 const { createNewProject, loadData, anySyncing, isReloading } = useProjects();
+const { openIntroModal } = useIntro();
 
 function handleRefresh() {
   loadData(sshHosts, true);
@@ -84,6 +90,27 @@ function handleCreateNew() {
 </script>
 
 <style scoped>
+.btn-intro {
+  position: relative;
+  margin-right: 4px;
+}
+.badge-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  background-color: #ef4444;
+  border-radius: 50%;
+  border: 2px solid #131317;
+  animation: pulse-red 2s infinite;
+}
+@keyframes pulse-red {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
 .btn-group-refresh {
   display: flex;
   align-items: center;
