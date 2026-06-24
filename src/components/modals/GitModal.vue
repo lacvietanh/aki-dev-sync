@@ -58,15 +58,10 @@ async function openUrl(url) {
   padding: 8px 12px;
   background: rgba(5, 7, 12, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #9CA3AF;
+  color: var(--text-muted);
   border-radius: 4px;
 }
-.mt-3 {
-  margin-top: 1rem;
-}
-.mr-1 {
-  margin-right: 0.25rem;
-}
+
 .git-url-link {
   display: inline-flex;
   align-items: center;

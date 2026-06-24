@@ -41,7 +41,7 @@
             <div style="display: flex; align-items: center; gap: 12px;">
 
               <!-- Project Icon -->
-              <div style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 6px; overflow: hidden; flex-shrink: 0;">
+              <div class="icon-glow" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 6px; overflow: hidden; flex-shrink: 0;">
                   <img v-if="projectIcons[p.id]" :src="projectIcons[p.id]" style="width: 100%; height: 100%; object-fit: cover;" />
                   <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
               </div>
@@ -185,6 +185,7 @@ import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
+import { Toast } from '../store/projectStore';
 import RefreshRing from './RefreshRing.vue';
 
 const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSpecialModal, openConfig, openGitModal } = useProjects();
@@ -276,7 +277,10 @@ async function openIdeRemote(ideName, host, path) {
     } else {
       await invoke('open_remote_subprocess', { ideName, host, path: remotePath })
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+    Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
+  }
 }
 
 async function openUrl(url) {
@@ -390,10 +394,11 @@ function formatTimeAgo(timestamp) {
   height: 14px;
   object-fit: contain;
   flex-shrink: 0;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.18));
 }
 
 .popup-icon-insiders {
-  filter: hue-rotate(-50deg) saturate(2) brightness(1.2);
+  filter: hue-rotate(-50deg) saturate(2) brightness(1.2) drop-shadow(0 0 2px rgba(255, 255, 255, 0.18));
 }
 
 </style>

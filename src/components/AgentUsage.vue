@@ -4,7 +4,7 @@
     <div v-if="agentId === 'claudecode'" class="agent-header claudecode-custom-header">
       <div class="agent-title-group">
         <div class="agent-icon-wrapper">
-          <img src="/claude-icon.png" class="agent-img-icon" alt="Claude Code" />
+          <img src="/claude-icon.png" class="agent-img-icon icon-glow" alt="Claude Code" />
         </div>
         <div class="agent-name-row">
           <span class="agent-name">{{ agentName }}</span>
@@ -28,7 +28,7 @@
     <div v-else class="agent-header">
       <div class="agent-title-group">
         <div class="agent-icon-wrapper">
-          <img src="/antigravity-icon.png" class="agent-img-icon" alt="Antigravity" @click="handleIconClick" style="cursor: pointer;" title="Open Antigravity App" />
+          <img src="/antigravity-icon.png" class="agent-img-icon icon-glow" alt="Antigravity" @click="handleIconClick" style="cursor: pointer;" title="Open Antigravity App" />
         </div>
         <div class="agent-info">
           <div class="agent-name">
@@ -62,7 +62,7 @@
           <div class="skeleton-bar-time"></div>
         </div>
         <div v-else class="circles-row">
-          <fieldset class="zone-fieldset skeleton-zone">
+          <fieldset class="zone-fieldset zone-gemini skeleton-zone">
             <legend class="zone-legend">Gemini</legend>
             <div class="zone-content">
               <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
@@ -72,7 +72,7 @@
               </div>
             </div>
           </fieldset>
-          <fieldset class="zone-fieldset skeleton-zone">
+          <fieldset class="zone-fieldset zone-claude skeleton-zone">
             <legend class="zone-legend">Claude/OSS</legend>
             <div class="zone-content">
               <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
@@ -136,7 +136,7 @@
         <!-- Render Antigravity specific circular progress (4 circles bo trong 2 fieldset) -->
         <template v-else-if="agentId === 'antigravity'">
           <div class="circles-row">
-            <fieldset class="zone-fieldset">
+            <fieldset class="zone-fieldset zone-gemini">
               <legend class="zone-legend">Gemini</legend>
               <div class="zone-content">
                 <UsageCircle 
@@ -156,7 +156,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="zone-fieldset">
+            <fieldset class="zone-fieldset zone-claude">
               <legend class="zone-legend">Claude/OSS</legend>
               <div class="zone-content">
                 <UsageCircle 
@@ -429,7 +429,6 @@ async function handleIconClick() {
   height: 18px;
   border-radius: 4px;
   object-fit: contain;
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.22));
 }
 
 .agent-info {
@@ -542,6 +541,26 @@ async function handleIconClick() {
   min-width: 0;
   box-sizing: border-box;
   transition: border-color 0.2s ease;
+}
+
+.zone-fieldset.zone-gemini {
+  border-color: rgba(96, 165, 250, 0.35);
+}
+.zone-fieldset.zone-gemini:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+}
+.zone-fieldset.zone-gemini .zone-legend {
+  color: #93c5fd;
+}
+
+.zone-fieldset.zone-claude {
+  border-color: rgba(251, 146, 60, 0.35);
+}
+.zone-fieldset.zone-claude:hover {
+  border-color: rgba(251, 146, 60, 0.55);
+}
+.zone-fieldset.zone-claude .zone-legend {
+  color: #fdba74;
 }
 
 .zone-fieldset:hover {

@@ -3,7 +3,7 @@
     <header class="top-header" data-tauri-drag-region @mousedown.prevent="startDragging">
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
-          <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Dev Sync
+          <img src="/titlebar-icon.png" class="app-icon icon-glow mr-1" data-tauri-drag-region /> Aki Dev Sync
           <span v-if="isDev" class="dev-tag">DEV</span>
           <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }} #{{ buildHash }})</span>
         </h1>

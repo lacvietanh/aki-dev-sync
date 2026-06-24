@@ -78,8 +78,21 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
         }
         "antigravity" => {
             let expanded = expand_remote_tilde(&path);
-            create_command("antigravity-ide")
-                .args(["--remote", &format!("ssh-remote+{}", host), &expanded])
+            // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox,
+            // custom profile setup, etc.) — not available in macOS GUI app's stripped PATH.
+            // Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+            let safe_path = expanded.replace('\'', "'\\''");
+            let shell_cmd = format!(
+                "antigravity-ide --remote 'ssh-remote+{}' '{}'",
+                host, safe_path
+            );
+            // -ilc: interactive (-i) sources ~/.zshrc (not just ~/.zprofile); login (-l) sources
+            // ~/.zprofile. Both needed because antigravity-ide PATH is typically set in ~/.zshrc,
+            // which a non-interactive login shell (-lc) never reads — causing silent failure when
+            // the app launches from Finder vs. from a terminal that already inherited full PATH.
+            Command::new(&shell)
+                .args(["-ilc", &shell_cmd])
                 .spawn()
                 .map_err(|e| format!("Failed to open Antigravity remotely: {}", e))?;
             Ok(())
@@ -91,19 +104,33 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
 #[tauri::command]
 pub fn get_project_icon_base64(local_path: String) -> Result<Option<String>, String> {
     let path = std::path::Path::new(&local_path);
-    if !path.join("nuxt.config.ts").exists() && !path.join("nuxt.config.js").exists() {
+    let is_nuxt = path.join("nuxt.config.ts").exists() || path.join("nuxt.config.js").exists();
+    let is_tauri = path.join("src-tauri/tauri.conf.json").exists();
+
+    if !is_nuxt && !is_tauri {
         return Ok(None);
     }
 
-    let candidates = [
-        "public/favicon/favicon.ico",
-        "public/favicon.ico",
-        "public/favicon/icon.png",
-        "public/icon.png",
-        "public/favicon/apple-touch-icon.png",
-        "public/favicon/icon-192.png",
-        "public/favicon/icon-512-maskable.png",
-    ];
+    let candidates = if is_tauri {
+        vec![
+            "src-tauri/icons/128x128.png",
+            "src-tauri/icons/128x128@2x.png",
+            "src-tauri/icons/64x64.png",
+            "src-tauri/icons/32x32.png",
+            "src-tauri/icons/icon.png",
+            "src-tauri/icons/icon.ico",
+        ]
+    } else {
+        vec![
+            "public/favicon/favicon.ico",
+            "public/favicon.ico",
+            "public/favicon/icon.png",
+            "public/icon.png",
+            "public/favicon/apple-touch-icon.png",
+            "public/favicon/icon-192.png",
+            "public/favicon/icon-512-maskable.png",
+        ]
+    };
 
     let mut best: Option<(std::path::PathBuf, u64, &str)> = None;
     for icon in &candidates {

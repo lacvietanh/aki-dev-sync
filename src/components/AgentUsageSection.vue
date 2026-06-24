@@ -140,7 +140,7 @@ const {
   margin: 0;
   font-size: 11px;
   font-weight: 800;
-  color: #9CA3AF;
+  color: var(--text-muted);
   letter-spacing: 0.5px;
 }
 

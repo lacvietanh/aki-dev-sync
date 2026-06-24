@@ -12,7 +12,7 @@ export function useAgentUsage(agentName, hostRef) {
   const stale = ref(false);
 
   let pollTimer = null;
-  let provisioned = false; // plain boolean — not reactive, not exposed to template
+  let provisioned = false;
   let initialSyncDone = false;
   let staleResetSyncDone = false;
   let isSyncing = false;

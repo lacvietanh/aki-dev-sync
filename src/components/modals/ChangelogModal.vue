@@ -44,7 +44,7 @@ watch(() => bodyRef.value, (el) => {
 .changelog-body :deep(h4) {
   font-size: 12px;
   font-weight: 700;
-  color: #9CA3AF;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin: 14px 0 6px;

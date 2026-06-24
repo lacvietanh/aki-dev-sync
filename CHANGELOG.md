@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.3.2] - 2026-06-25
+
+#### Fixed
+- **Open Remote Antigravity silent fail in production build** (`system.rs`): `antigravity-ide` installs to `~/.antigravity-ide/antigravity-ide/bin/` — outside Homebrew and `/usr/local/bin`, so `create_command` (v1.2.9 fix) could never find it in the GUI app's launchd PATH. Root cause confirmed via environment comparison: launching the `.app` bundle from terminal (`/Applications/Aki Dev Sync.app/Contents/MacOS/aki-dev-sync`) works because the process inherits the full terminal PATH; launching from Finder/Dock fails because `$SHELL -lc` spawns a login non-interactive shell that reads `~/.zprofile` but NOT `~/.zshrc` — where the `antigravity-ide` PATH entry lives. Fixed by using `$SHELL -ilc` (interactive + login), which forces `~/.zshrc` to be sourced. Paths with single quotes are POSIX-escaped before shell injection.
+
+#### Added
+- **`.icon-glow` utility class** (`main.css`): Single-source `filter: drop-shadow(0 0 2px rgba(255,255,255,0.18))` applied to all app icons — titlebar (`AppHeader.vue`), agent icons in usage section (`AgentUsage.vue`), project icon in table, and popup menu IDE icons (`ProjectTable.vue`). Popup insiders icon merges the glow into its existing `hue-rotate` filter chain. Removed the old per-element `box-shadow` on `.app-icon`. One edit in `main.css` now controls glow intensity everywhere.
+- **Antigravity pool color-coding** (`AgentUsage.vue`): Gemini fieldset gets a blue dashed border + legend (`rgba(96,165,250)` / `#93c5fd`); Claude/OSS gets orange (`rgba(251,146,60)` / `#fdba74`) — matches brand colors, eliminates cognitive load when scanning pools at a glance. Applied to both live and skeleton states.
+- **Tauri v2 project icon extraction** (`system.rs`): Added support for detecting Tauri v2 projects (by checking for `src-tauri/tauri.conf.json`) and extracting the smallest suitable standard icon file (e.g. `128x128.png`, `64x64.png`, `32x32.png`) under 150KB as a Base64 data URL for the project list.
+
+#### Changed
+- **CSS hygiene pass** (`main.css`, `AgentUsageSection.vue`, modals): Replaced 13 hardcoded `#9CA3AF` literals with `var(--text-muted)` across `main.css` and 4 Vue files. Removed 3 unused `:root` vars (`--accent-purple`, `--bg-card`, `--bg-secondary`). Deleted 3 dead rule blocks (`.col-dry`, `.log-command`, `.log-delete`). Promoted spacing utilities `.mb-3`, `.mt-2`, `.mt-3` to global `main.css`; removed scoped duplicates from `GitModal.vue` (`.mt-3`, `.mr-1`) and `IntroModal.vue` (`.mb-2`, `.mb-3`, `.mt-3`).
+
+#### Fixed
+- **`staleResetSyncDone` undeclared variable** (`useAgentUsage.js`): used in 4 places but never declared — caused a `ReferenceError` on app load that crashed `AgentUsageSection` entirely. Added `let staleResetSyncDone = false;` alongside the other plain-boolean guards. Removed the leftover `lastStaleResetSyncAt` from an earlier refactor.
+- **Claude Code force-sync probe bypassed after quota reset**: `force-sync-claudecode.sh` checked only for the presence of the string `"resets"` in `/usage` output to decide whether to skip the probe. After a quota reset, `/usage` echoes back the stale `resets_at` from `rate-limits-cache.json` — output contains `"resets [past time]"` — so the check passed and the probe never fired. Python then parsed the past timestamp and wrote it back to cache, causing `get-claudecode-usage.sh` to emit `|||STALE_RESET|||` again on every poll. UI remained stuck on "No data — waiting for next session" until the user manually opened a real Claude Code session. Fixed by adding a Python inline check that parses the reset time and verifies it is actually in the future; if past (or absent), the probe fires regardless.
+- **JSONL cleanup window reduced from 7 days to 1 day**: blank dir and probe orphan JSONL files in `~/.claude/projects/` are only needed for the single `/usage` call immediately following their creation. Retaining them for 7 days was unnecessary accumulation.
+
+---
+
 ### [1.3.1] - 2026-06-24
 
 #### Added

@@ -125,7 +125,7 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Theo dõi hạn mức sử dụng (Quota) của Antigravity (Local - qua cơ chế quét native process hiệu năng cao) và Claude Code (Remote) theo real-time.</span>
+            <span>Quota thực tế: <strong>Claude Code</strong> (Remote) đọc <code>rate_limits</code> Anthropic (5H + 7D), hiển thị plan tier, email, org name — toggle ẩn/hiện per cột. <strong>Antigravity</strong> (Local) truy vấn native Language Server. Đồng hồ đếm ngược reset real-time.</span>
           </div>
         </div>
 
@@ -141,7 +141,7 @@
           <div class="feature-icon" style="color: #ec4899;"><i class="fa-solid fa-rotate"></i></div>
           <div class="feature-text">
             <strong>Background Refresh</strong>
-            <span>Tự động kiểm tra Git status, sync diff, agent usage theo chu kỳ tùy cấu hình.</span>
+            <span>Tự động kiểm tra Git status, sync diff, agent usage theo chu kỳ tùy cấu hình. Vòng đếm ngược (countdown ring) hiển thị tiến trình trực tiếp trên tiêu đề cột GIT và ACTIONS.</span>
           </div>
         </div>
 
@@ -149,7 +149,7 @@
           <div class="feature-icon" style="color: #fbbf24;"><i class="fa-solid fa-arrows-rotate"></i></div>
           <div class="feature-text">
             <strong>Force Sync Quota</strong>
-            <span>Làm mới Quota (↻): Đọc logs cục bộ trên Remote. Nếu chưa có session Claude Code nào hoạt động trong chu kỳ 5 giờ (lệnh /usage không hiển thị resets_at do thiếu dữ liệu logs), hệ thống tự động chạy Probe Session cực nhẹ (Haiku 'ok') để tạo log session mới, giúp Claude CLI tính toán và trả về mốc resets_at chính xác cho UI.</span>
+            <span>Làm mới Quota (↻): Đọc logs cục bộ trên Remote. Tự động chạy Probe Session (Haiku ~100 tokens) nếu chưa có session trong chu kỳ hiện tại hoặc nếu mốc reset đã qua nhưng cache chưa làm mới — đảm bảo UI luôn tự phục hồi sau quota reset mà không cần thao tác thủ công.</span>
           </div>
         </div>
 
@@ -170,7 +170,7 @@
           <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn <code>rate_limits</code>. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
           <li><strong>Hạn ngạch đa luồng (v1.3.0):</strong> Truy vấn song song hai endpoint Connect RPC để kéo đồng thời hạn ngạch 5H và hạn ngạch tuần (Weekly) cho cả Gemini và Claude/GPT pools, phân cụm bằng fieldset tinh gọn.</li>
           <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng <code>lsof</code> để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
-          <li><strong>Force Sync với Auto-Probe:</strong> Đọc log cục bộ trên Remote. Nếu chu kỳ hiện tại chưa có session nào hoạt động (thiếu mốc reset), hệ thống tự kích hoạt Probe Session cực nhẹ (Haiku ~100 tokens) để thu về mốc reset chính xác.</li>
+          <li><strong>Force Sync với Auto-Probe:</strong> Tự động kích hoạt Probe Session (Haiku ~100 tokens) trong hai trường hợp: chưa có session local trong chu kỳ 5h, hoặc mốc reset đã qua nhưng cache chưa được làm mới — UI luôn tự phục hồi sau quota reset.</li>
           <li><strong>Khắc phục lỗi mtime của <code>.git/</code>:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
         </ul>
       </div>
@@ -215,7 +215,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
 }
 .intro-header p {
   margin: 0;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 .alert-box {
   padding: 14px;
@@ -289,7 +289,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
 }
 .model-meta {
   font-size: 10px;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 .model-arrows {
   display: flex;
@@ -354,10 +354,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
 }
 .feature-text span {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 .mb-1 { margin-bottom: 4px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-3 { margin-bottom: 16px; }
-.mt-3 { margin-top: 16px; }
 </style>
