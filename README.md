@@ -1,6 +1,6 @@
 # Aki Dev Sync 🚀
 
-> A desktop **Command Center** for the **Lạc Việt Anh Workflow** — sync code between your **local machine** and a **remote AI workspace** over SSH/rsync, without polluting Git with throwaway commits.
+> MacOS App (tauri v2) for my workflow: rsync code between local-remote. Antigravity IDE for local with .git source-of-truth, ClaudeCode on remote with shared Claude MAX plan. Live monitor Local AG & remote CC quota limit
 
 <img width="1571" height="813" alt="Aki Dev Sync screenshot" src="https://github.com/user-attachments/assets/3b086ddf-a0d7-4a00-8858-b1a756884bee" />
 
