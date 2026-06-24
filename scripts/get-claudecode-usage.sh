@@ -32,4 +32,12 @@ except:
     echo "|||MTIME|||$MTIME"
     echo "|||SUBTYPE|||$SUB_TYPE"
     echo "|||TIER|||$TIER"
+    AUTH_CACHE="$HOME/.claude/auth-cache.json"
+    if [ -f "$AUTH_CACHE" ]; then
+        AUTH_INFO=$(cat "$AUTH_CACHE" 2>/dev/null || echo '{}')
+    else
+        AUTH_INFO=$(bash -lc 'claude auth status 2>/dev/null' 2>/dev/null || echo '{}')
+        [ "$AUTH_INFO" != '{}' ] && printf '%s' "$AUTH_INFO" > "$AUTH_CACHE"
+    fi
+    echo "|||AUTHINFO|||$AUTH_INFO"
 fi

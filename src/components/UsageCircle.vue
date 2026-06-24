@@ -2,35 +2,42 @@
   <div class="usage-circle-wrapper">
     <!-- Premium Tooltip Container -->
     <div class="usage-circle-container" @mouseenter="updateTime">
-      <div class="circle-svg-wrapper">
-        <svg class="radial-progress" viewBox="0 0 36 36">
-          <!-- Background Track -->
-          <circle 
-            class="circle-bg" 
-            cx="18" 
-            cy="18" 
-            r="15" 
-            stroke-width="3"
-          />
-          <!-- Active Progress Circle -->
-          <circle 
-            v-if="hasPercentage && percentage > 0"
-            class="circle-fill" 
-            :class="colorClass"
-            cx="18" 
-            cy="18" 
-            r="15" 
-            stroke-width="3"
-            :stroke-dasharray="94.25"
-            :stroke-dashoffset="strokeDashOffset"
-          />
-        </svg>
-        <div class="percentage-inner" :class="[colorClass, { 'is-na': !hasPercentage }]">
-          {{ displayPercentage }}
+      <div class="circle-main-row">
+        <span class="circle-sub-label">{{ subLabel }}</span>
+        <div class="circle-svg-wrapper">
+          <svg class="radial-progress" viewBox="0 0 36 36">
+            <!-- Background Track -->
+            <circle
+              class="circle-bg"
+              cx="18"
+              cy="18"
+              r="15"
+              stroke-width="3"
+            />
+            <!-- Active Progress Circle -->
+            <circle
+              v-if="hasPercentage && percentage > 0"
+              class="circle-fill"
+              :class="colorClass"
+              cx="18"
+              cy="18"
+              r="15"
+              stroke-width="3"
+              :stroke-dasharray="94.25"
+              :stroke-dashoffset="strokeDashOffset"
+            />
+          </svg>
+          <div class="percentage-inner" :class="[colorClass, { 'is-na': !hasPercentage }]">
+            {{ displayPercentage }}
+          </div>
         </div>
       </div>
-      <div class="circle-sub-label">{{ subLabel }}</div>
-      <div class="circle-reset-time" :class="{ 'is-na': !resetsAt }">{{ directResetTime }}</div>
+      <div class="circle-time-line" :class="{ 'is-na': !resetsAt }">
+        <template v-if="resetTimeVal">
+          <span class="time-label">Reset </span><span class="time-val">{{ resetTimeVal }}</span>
+        </template>
+        <span v-else class="time-label">{{ resetsAt ? 'ready' : 'N/A' }}</span>
+      </div>
 
       <!-- CSS Premium Tooltip Popup -->
       <div class="premium-tooltip">
@@ -46,7 +53,7 @@
           </div>
           <div class="tooltip-row time-abs" v-if="resetsAt">
             <span class="tooltip-label">Date:</span>
-            <span class="tooltip-val-dim">({{ formattedResetTime.absoluteTime }})</span>
+            <span class="tooltip-val-dim">{{ formattedResetTime.absoluteTime }}</span>
           </div>
           <div class="tooltip-row" v-if="!resetsAt && hasPercentage">
             <span class="tooltip-label">Reset:</span>
@@ -168,22 +175,16 @@ const formattedResetTime = computed(() => {
   return { relativeTime, absoluteTime, isPast };
 });
 
-const directResetTime = computed(() => {
-  if (!props.resetsAt) return 'N/A';
+const resetTimeVal = computed(() => {
+  if (!props.resetsAt) return null;
   const diff = props.resetsAt - currentTime.value;
-  if (diff <= 0) return 'ready';
-  
+  if (diff <= 0) return null;
   const days = Math.floor(diff / 86400);
   const hours = Math.floor((diff % 86400) / 3600);
   const minutes = Math.floor((diff % 3600) / 60);
-  
-  if (days > 0) {
-    return `${days}d${hours}h`;
-  }
-  if (hours > 0) {
-    return `${hours}h${minutes}m`;
-  }
-  return minutes > 0 ? `${minutes}m` : `<1m`;
+  if (days > 0) return `${days}d${hours}h`;
+  if (hours > 0) return `${hours}h${minutes}m`;
+  return minutes > 0 ? `${minutes}m` : '<1m';
 });
 </script>
 
@@ -204,8 +205,15 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   cursor: pointer;
+}
+
+.circle-main-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
 }
 
 .circle-svg-wrapper {
@@ -257,19 +265,29 @@ export default {
   text-transform: uppercase;
   letter-spacing: 0.3px;
   line-height: 1;
+  flex-shrink: 0;
 }
 
-.circle-reset-time {
+.circle-time-line {
   font-size: 8px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
-  margin-top: 1px;
   text-align: center;
   line-height: 1;
+  white-space: nowrap;
 }
 
-.circle-reset-time.is-na {
+.circle-time-line.is-na {
   color: var(--text-darker);
+}
+
+.circle-time-line .time-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.circle-time-line .time-val {
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 700;
 }
 
 /* Colors matching your palette */
@@ -290,14 +308,14 @@ export default {
   color: var(--text-darker);
 }
 
-/* Tooltip implementation */
+/* Tooltip implementation — positioned below-right to avoid titlebar and left-edge crop */
 .premium-tooltip {
   visibility: hidden;
   opacity: 0;
   position: absolute;
-  bottom: 125%; /* Position tooltip above the circle */
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
+  top: calc(100% + 6px);
+  left: 0;
+  transform: translateY(4px);
   background: rgba(18, 18, 22, 0.95);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -313,22 +331,21 @@ export default {
   gap: 6px;
 }
 
-/* Tooltip triangle indicator */
+/* Upward triangle pointing toward the circle above */
 .premium-tooltip::after {
   content: "";
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 100%;
+  left: 24px;
   border-width: 5px;
   border-style: solid;
-  border-color: rgba(18, 18, 22, 0.95) transparent transparent transparent;
+  border-color: transparent transparent rgba(18, 18, 22, 0.95) transparent;
 }
 
 .usage-circle-container:hover .premium-tooltip {
   visibility: visible;
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
 }
 
 .tooltip-header {

@@ -247,13 +247,23 @@ Khi người dùng không mở session Claude Code cục bộ nào trên máy hi
 
 ## 🔮 Wishlist (Tính năng mong muốn)
 
-* **Phân rã Quota cá nhân (Personal vs. Others):** 
-  Do sử dụng chung tài khoản với máy khác, chúng ta mong muốn hiển thị chi tiết lượng quota do chính session local của mình tiêu thụ và lượng quota do người khác tiêu thụ.
-  * **Giải pháp đề xuất:** Parser cục bộ sẽ tự đếm tổng số tokens tiêu thụ từ các file logs của session hiện tại (`~/.claude/projects/**/*.jsonl`). Sau đó vẽ thanh Progress Bar gồm 2 màu/2 phần rõ rệt: Phần trăm mình đã dùng và Phần trăm người khác đã dùng.
+* **Phân rã Quota cá nhân (Personal vs. Others):** ❌ KHÔNG KHẢ THI — blocked on Anthropic API surface
+
+  **Mong muốn:** Hiển thị phần quota do máy này tiêu thụ vs phần do người khác dùng chung tài khoản.
+
+  **Đã phân tích kỹ (2026-06-24):** Không thể thực hiện dù ở dạng ước lượng, vì thiếu đồng thời 3 yếu tố:
+
+  1. **`plan_limit` (mẫu số tuyệt đối):** Server chỉ trả về `used_percentage` (%), không trả về tổng token tương đương 100% là bao nhiêu.
+  2. **`discount_rate` cho cache:** `cache_read_input_tokens` bị server discount mạnh (có thể 10x+) khi tính quota, nhưng tỷ lệ discount không được Anthropic công bố. Raw sum từ JSONL local sẽ inflate "my share" lên nhiều lần so với thực tế server tính.
+  3. **Công thức `f()` của server:** `used_percentage = f(input, output, cache_read × discount, cache_creation × rate, ...)` là proprietary — không thể reproduce locally để so sánh chính xác với con số server trả về.
+
+  **Kết luận:** Ngay cả nếu đọc được raw token counts từ `~/.claude/projects/**/*.jsonl` cho máy này, con số đó không thể quy đổi sang "% quota đã dùng" vì thiếu cả 3 yếu tố trên. Tính năng này chỉ khả thi nếu Anthropic expose thêm field trong API response, ví dụ `contribution_by_session` hoặc `tokens_this_device_percentage`.
+
+  **Không cần phân tích lại.** Đây là giới hạn kiến trúc API, không phải vấn đề implementation.
 
 ---
 
-## Tình trạng triển khai (v1.2.9)
+## Tình trạng triển khai (v1.2.9 → v1.3.0)
 
 | # | Cải thiện | Trạng thái | Ghi chú |
 |---|---|---|---|
@@ -264,5 +274,8 @@ Khi người dùng không mở session Claude Code cục bộ nào trên máy hi
 | E | Hỗ trợ case `0% used` không có resets time | ✅ **ĐÃ FIX** | Tách Regex để parse additive trong Python parser |
 | F | Probe Session (dummy session) khi thiếu resets_at | ✅ **ĐÃ FIX** | Tạo dummy session `haiku` rồi lấy mốc reset chính xác |
 | ~~A~~ | ~~Fallback OAuth endpoint~~ | ❌ **ĐÃ BỎ** | `/usage` đã dùng OAuth nội bộ |
+| G | STALE_RESET auto-recovery (UI stuck vô thời hạn) | ✅ **ĐÃ FIX** (v1.3.0) | `staleResetSyncDone` guard trong `useAgentUsage.js`: transition data→null kích hoạt forceSync 1 lần |
+| H | Concurrency guard trên `forceSync()` | ✅ **ĐÃ FIX** (v1.3.0) | `isSyncing` flag ngăn 2 SSH session đồng thời ghi đè nhau vào cache |
+| I | JSONL file tích lũy không giới hạn từ BLANK_DIR + probe orphan | ✅ **ĐÃ FIX** (v1.3.0) | `force-sync-claudecode.sh` dọn file >7 ngày sau mỗi lần chạy |
 
 > **⚠️ Ghi chú 2026-06-24:** Dòng A đặt sai lý do: định `/usage` = OAuth API, thực ra `/usage` là P2 (local JSONL). Cần xem xét lại khả năng dùng P3 thật (đọc `api.anthropic.com/api/oauth/usage`) như các tool cộng đồng (xem `deepresearch-claudecode-antigravity-quota-measurement.md` mục P3) để lấy quota thực tế của tài khoản tổng thể.

@@ -33,3 +33,11 @@ if ! echo "$OUT" | grep -q "resets"; then
 fi
 
 export CLAUDE_SYNC_OUT="$OUT"
+
+# Cleanup: remove JSONL files older than 7 days from BLANK_DIR project folder
+BLANK_PROJECT_DIR="$HOME/.claude/projects/$(echo "$BLANK_DIR" | sed 's|/|-|g')"
+find "$BLANK_PROJECT_DIR" -name "*.jsonl" -mtime +7 -delete 2>/dev/null || true
+
+# Cleanup: remove orphaned probe project dirs older than 7 days
+find "$HOME/.claude/projects" -maxdepth 1 -type d -name '-tmp-aki-probe-*' -mtime +7 \
+  -exec rm -rf {} + 2>/dev/null || true

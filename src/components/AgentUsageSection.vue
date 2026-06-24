@@ -5,6 +5,9 @@
       <div class="usage-column">
         <div class="column-header">
           <h3 class="column-title"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> LOCAL</h3>
+          <button class="btn-eye-toggle" @click="toggleLocalEmail" :aria-label="showLocalEmail ? 'Hide email' : 'Show email'" :title="showLocalEmail ? 'Hide email' : 'Show email'">
+            <i class="fa-regular" :class="showLocalEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
+          </button>
         </div>
         <AgentUsage
           agentId="antigravity"
@@ -14,6 +17,7 @@
           :loading="antigravityLoading"
           :error="antigravityError"
           :stale="antigravityStale"
+          :showEmail="showLocalEmail"
           @retry="antigravityRefresh"
           @force-sync="antigravityForceSync"
         />
@@ -25,6 +29,9 @@
       <div class="usage-column">
         <div class="column-header">
           <h3 class="column-title"><i class="fa-solid fa-cloud text-amber mr-1"></i> REMOTE</h3>
+          <button class="btn-eye-toggle" @click="toggleRemoteEmail" :aria-label="showRemoteEmail ? 'Hide email' : 'Show email'" :title="showRemoteEmail ? 'Hide email' : 'Show email'">
+            <i class="fa-regular" :class="showRemoteEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
+          </button>
         </div>
         <AgentUsage
           agentId="claudecode"
@@ -35,6 +42,7 @@
           :loading="claudeLoading"
           :error="claudeError"
           :stale="claudeStale"
+          :showEmail="showRemoteEmail"
           @retry="claudeForceSync"
           @force-sync="claudeForceSync"
         />
@@ -44,36 +52,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref } from 'vue';
 import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
 import { useAgentUsage } from '../composables/useAgentUsage';
-import { useProjects } from '../composables/useProjects';
 
-const { sshHosts, selectedSshHost } = useSsh();
-const { projects } = useProjects();
+const { selectedSshHost } = useSsh();
 
-// Sync selectedSshHost with the first available sshHost if not set, or prefer the active project's host
-watch(sshHosts, (newHosts) => {
-  if (newHosts.length > 0 && !selectedSshHost.value) {
-    selectedSshHost.value = newHosts[0];
-  }
-}, { immediate: true });
+const showLocalEmail = ref(localStorage.getItem('aki-show-local-email') !== 'false');
+const showRemoteEmail = ref(localStorage.getItem('aki-show-remote-email') !== 'false');
 
-// We can also watch projects to default to the first project's remote host if available
-watch(projects, (newProjects) => {
-  if (newProjects.length > 0 && sshHosts.value.includes(newProjects[0].remote_host) && !selectedSshHost.value) {
-    selectedSshHost.value = newProjects[0].remote_host;
-  }
-}, { immediate: true });
-
+function toggleLocalEmail() {
+  showLocalEmail.value = !showLocalEmail.value;
+  localStorage.setItem('aki-show-local-email', String(showLocalEmail.value));
+}
+function toggleRemoteEmail() {
+  showRemoteEmail.value = !showRemoteEmail.value;
+  localStorage.setItem('aki-show-remote-email', String(showRemoteEmail.value));
+}
 // Setup Claude Code (remote) monitoring
-const { 
-  data: claudeData, 
-  loading: claudeLoading, 
-  error: claudeError, 
-  stale: claudeStale, 
-  refresh: claudeRefresh,
+const {
+  data: claudeData,
+  loading: claudeLoading,
+  error: claudeError,
+  stale: claudeStale,
   forceSync: claudeForceSync
 } = useAgentUsage('claudecode', selectedSshHost);
 
@@ -121,6 +123,22 @@ const {
   border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
+.btn-eye-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-darker);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.btn-eye-toggle:hover {
+  opacity: 1;
+  color: var(--text-muted);
+}
+
 .column-title {
   margin: 0;
   font-size: 11px;
@@ -135,40 +153,4 @@ const {
   margin: 0 4px;
 }
 
-.host-selector {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.selector-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  font-weight: 700;
-}
-
-.host-select {
-  background-color: var(--bg-tertiary);
-  color: var(--text-light);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  padding: 2px 6px;
-  height: 24px;
-  font-size: 11px;
-  font-family: inherit;
-  outline: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-.host-select:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.host-select:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 0 2px rgba(0, 210, 255, 0.2);
-}
 </style>

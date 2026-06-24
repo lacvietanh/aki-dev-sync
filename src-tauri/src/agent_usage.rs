@@ -133,17 +133,23 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 
     let content = parts[0].trim().to_string();
 
-    let (sub_type, tier) = if mtime_split.len() > 1 {
+    let (sub_type, tier, auth_json) = if mtime_split.len() > 1 {
         let sub_split: Vec<&str> = mtime_split[1].split("|||TIER|||").collect();
         let st = sub_split[0].trim();
-        let t = if sub_split.len() > 1 { sub_split[1].trim() } else { "Unknown" };
-        (st, t)
+        let (t, auth) = if sub_split.len() > 1 {
+            let tier_split: Vec<&str> = sub_split[1].split("|||AUTHINFO|||").collect();
+            let tier_val = tier_split[0].trim();
+            let auth_val = if tier_split.len() > 1 { tier_split[1].trim() } else { "{}" };
+            (tier_val, auth_val)
+        } else {
+            ("Unknown", "{}")
+        };
+        (st, t, auth)
     } else {
-        ("Unknown", "Unknown")
+        ("Unknown", "Unknown", "{}")
     };
 
-    // Append subscription metadata into the JSON object using serde_json to avoid
-    // string concatenation breaking on values that contain quotes.
+    // Append subscription metadata + auth info (email, orgName) into the JSON object.
     let content = {
         let mut v: serde_json::Value = serde_json::from_str(&content)
             .unwrap_or(serde_json::Value::Object(Default::default()));
@@ -153,6 +159,18 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
             }
             if tier != "Unknown" {
                 obj.insert("rateLimitTier".to_string(), serde_json::json!(tier));
+            }
+            if let Ok(auth) = serde_json::from_str::<serde_json::Value>(auth_json) {
+                if let Some(email) = auth.get("email").and_then(|v| v.as_str()) {
+                    if !email.is_empty() {
+                        obj.insert("email".to_string(), serde_json::json!(email));
+                    }
+                }
+                if let Some(org) = auth.get("orgName").and_then(|v| v.as_str()) {
+                    if !org.is_empty() {
+                        obj.insert("orgName".to_string(), serde_json::json!(org));
+                    }
+                }
             }
         }
         serde_json::to_string(&v).unwrap_or_default()

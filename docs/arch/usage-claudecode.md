@@ -92,12 +92,15 @@ Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remot
 - **Các kịch bản kích hoạt luồng Force Sync:**
   1. **Khởi chạy ứng dụng (App Startup) / Thay đổi Host (Host Change):** Khi người dùng mở app hoặc chuyển sang host khác, hệ thống sẽ đọc cache cục bộ trên remote. Nếu cache chưa tồn tại hoặc chứa `resets_at = 0` (chưa có session nào để tính toán mốc reset), hệ thống sẽ **tự động gọi Force Sync** một lần để chạy probe session và điền mốc reset chuẩn xác.
   2. **Khi mốc reset hiện tại đã qua (Timeout / Reset Time Reached):** Bộ đếm thời gian countdown của UI sẽ tự động kích hoạt Force Sync để cập nhật hạn mức cho chu kỳ mới.
-  3. **Yêu cầu thủ công của người dùng:**
+  3. **STALE_RESET Auto-Recovery (v1.3.0):** Khi `get-claudecode-usage.sh` phát hiện cache đã qua `resets_at`, nó trả về `|||STALE_RESET|||` → JS nhận `null` → `data.value = null`. Nếu trước đó `data` đang có giá trị (transition từ data → null), `useAgentUsage.js` tự động kích hoạt Force Sync một lần duy nhất, được bảo vệ bởi cờ `staleResetSyncDone`. Cờ này reset về `false` khi data trở lại, đảm bảo chu kỳ tiếp theo vẫn tự phục hồi.
+  4. **Yêu cầu thủ công của người dùng:**
      - Người dùng bấm nút **Reload** trên thanh tiêu đề ứng dụng (App Header).
      - Người dùng bấm nút **Refresh** (icon xoay màu trắng) ở góc phải của thẻ Claude Code card.
      - Người dùng bấm nút **Force Sync** ở trạng thái card trống hoặc ở chân progress bar (khi mốc reset cũ đã qua).
 - **`< /dev/null`** là bắt buộc: nếu thiếu, Claude Code chờ stdin 3 giây không cần thiết trước khi xử lý.
 - **Blank dir độc lập** (`/tmp/aki-dev-sync-blank-dir`): tránh dùng `/tmp` trực tiếp vì có thể có file bị nhặt làm project context; tạo mới nếu chưa tồn tại.
+- **Concurrency guard (v1.3.0):** `useAgentUsage.js` dùng cờ `isSyncing` để đảm bảo chỉ có một lần `forceSync()` chạy tại một thời điểm. Nếu đang sync mà có trigger mới (rapid click, timeout đồng thời), trigger sau bị bỏ qua yên lặng. Cờ reset khi host thay đổi.
+- **JSONL cleanup (v1.3.0):** Cuối mỗi lần chạy, `force-sync-claudecode.sh` dọn dẹp các file JSONL trong BLANK_DIR project folder và thư mục probe orphan (`-tmp-aki-probe-*`) có tuổi trên 7 ngày. File cũ hơn 7 ngày nằm ngoài cả hai cửa sổ 5h và 7d, không ảnh hưởng đến tính toán `/usage`.
 - Output (Stdout) có dạng: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)` (khi có session) hoặc `Current session: 0% used` (khi không có session local trong 5h qua).
 - Backend nhúng script [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) chạy inline:
   1. Dùng Regex cắt lấy số `%` (bắt buộc) và chuỗi ngày giờ (tùy chọn).
@@ -106,6 +109,7 @@ Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remot
 
 > _Cập nhật 2026-06-23: Bổ sung `< /dev/null` để loại 3s delay. Đổi `cd /tmp` thành blank dir riêng để đảm bảo context rỗng._
 > _Cập nhật 2026-06-24 (v1.2.9): Sửa lỗi parser regex thất bại khi quota được reset hoàn toàn (0% used). Tích hợp cơ chế tự động chạy "Probe Session" (dummy session haiku) khi `/usage` thiếu mốc thời gian reset. Tài liệu hóa các kịch bản kích hoạt luồng Force Sync._
+> _Cập nhật 2026-06-24 (v1.3.0): Bổ sung STALE_RESET auto-recovery (trigger #3 mới), concurrency guard `isSyncing`, và JSONL cleanup cho BLANK_DIR + probe orphan dirs._
 
 ---
 
@@ -120,7 +124,8 @@ Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remot
 - **Frontend:**
   - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue composable theo dõi & đồng bộ agent usage.
   - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Component hiển thị card thông tin quota.
-  - [UsageProgressBar.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageProgressBar.vue) — Component thanh progress và đếm ngược/tự kích hoạt sync.
+  - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) — SVG radial progress circle với tooltip reset time (dùng cho Antigravity).
+  - ~~UsageProgressBar.vue~~ — Đã xóa ở v1.3.0, thay bởi UsageCircle + CC horizontal bars.
 
 ---
 

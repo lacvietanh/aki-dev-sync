@@ -26,6 +26,11 @@ if reset_match:
     try:
         dt = datetime.datetime.strptime(date_str, "%b %d %Y %I:%M%p")
         resets_at = int(dt.timestamp())
+        # Year-boundary fix: if parsed time is >1h in the past, the date must be next year
+        # (5h windows can't expire >1h ago when /usage just ran successfully)
+        if resets_at < int(datetime.datetime.now().timestamp()) - 3600:
+            dt = dt.replace(year=year + 1)
+            resets_at = int(dt.timestamp())
     except Exception:
         print(json.dumps({"parsed": False, "parse_error": True, "date_str": date_str}))
         sys.exit(0)

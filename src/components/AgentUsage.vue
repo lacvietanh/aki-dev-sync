@@ -11,14 +11,22 @@
           <span v-if="data && claudeTierDisplay" class="agent-plan-badge claude">
             Claude {{ claudeTierDisplay }}
           </span>
-          <span v-if="data && data.cost" class="agent-plan-badge claude" title="Cost of last session">
-            Session: ${{ data.cost.total_cost_usd.toFixed(2) }}
-          </span>
+          <span v-if="showEmail && data?.email" class="agent-account">{{ data.email }}</span>
+          <span v-if="showEmail && ccOrgName" class="agent-org">· {{ ccOrgName }}</span>
         </div>
       </div>
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
+          <svg v-if="refreshSettings.usage_interval_s > 0" class="reload-ring" viewBox="0 0 36 36" aria-hidden="true">
+            <circle class="ring-track" cx="18" cy="18" r="15" />
+            <circle
+              class="ring-fill"
+              :key="drainKey"
+              cx="18" cy="18" r="15"
+              :style="{ animationDuration: refreshSettings.usage_interval_s + 's' }"
+            />
+          </svg>
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
@@ -33,8 +41,8 @@
         <div class="agent-info">
           <div class="agent-name">
             {{ agentName }}
-            <span v-if="data && data.email" class="agent-account">
-              - {{ data.email.split('@')[0] }}
+            <span v-if="showEmail && data && data.email" class="agent-account">
+              - {{ data.email }}
             </span>
           </div>
         </div>
@@ -42,7 +50,16 @@
       
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
+          <svg v-if="refreshSettings.usage_interval_s > 0" class="reload-ring" viewBox="0 0 36 36" aria-hidden="true">
+            <circle class="ring-track" cx="18" cy="18" r="15" />
+            <circle
+              class="ring-fill"
+              :key="drainKey"
+              cx="18" cy="18" r="15"
+              :style="{ animationDuration: refreshSettings.usage_interval_s + 's' }"
+            />
+          </svg>
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
@@ -55,12 +72,10 @@
       
       <!-- Skeleton circles with fieldset wrapper for AG -->
       <div v-else-if="loading && !data" class="usage-circles-skeleton">
-        <div v-if="agentId === 'claudecode'" class="circles-row">
-          <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
-            <div class="skeleton-circle"></div>
-            <div class="skeleton-text" style="width: 20px;"></div>
-            <div class="skeleton-text" style="width: 30px; height: 6px;"></div>
-          </div>
+        <div v-if="agentId === 'claudecode'" class="cc-skeleton-block">
+          <div class="skeleton-bar-header"></div>
+          <div class="skeleton-bar-track"></div>
+          <div class="skeleton-bar-time"></div>
         </div>
         <div v-else class="circles-row">
           <fieldset class="zone-fieldset skeleton-zone">
@@ -98,21 +113,39 @@
       <div v-else-if="data" class="usage-bars-container">
         <!-- Render Claude Code specific circular progress (2 circles) -->
         <template v-if="agentId === 'claudecode'">
-          <div class="circles-row">
-            <UsageCircle 
-              label="Claude 5-Hour Limit" 
-              subLabel="5H" 
-              :percentage="data.rate_limits?.five_hour?.used_percentage ?? null" 
-              :resetsAt="data.rate_limits?.five_hour?.resets_at ?? null" 
-              @timeout="$emit('force-sync')"
-            />
-            <UsageCircle 
-              label="Claude 7-Day Limit" 
-              subLabel="7D" 
-              :percentage="data.rate_limits?.seven_day?.used_percentage ?? null" 
-              :resetsAt="data.rate_limits?.seven_day?.resets_at ?? null" 
-              @timeout="$emit('force-sync')"
-            />
+          <div class="cc-bars-block">
+            <div class="cc-usage-bar">
+              <div class="cc-bar-header">
+                <span class="cc-bar-label">5-Hour</span>
+                <span class="cc-bar-pct" :class="cc5hColorClass">{{ cc5hPct !== null ? cc5hPct + '%' : 'N/A' }}</span>
+              </div>
+              <div class="cc-progress-track">
+                <div class="cc-progress-fill" :class="cc5hColorClass" :style="{ width: (cc5hPct || 0) + '%' }"></div>
+              </div>
+              <div class="cc-reset-line" :class="{ 'is-na': !cc5hResetsAt }">
+                <template v-if="cc5hResetLine.val">
+                  <span class="time-label">Reset </span><span class="time-val">{{ cc5hResetLine.val }}</span>
+                  <span v-if="cc5hResetLine.abs" class="time-abs"> ({{ cc5hResetLine.abs }})</span>
+                </template>
+                <span v-else class="time-label">{{ cc5hResetLine.label }}</span>
+              </div>
+            </div>
+            <div v-if="data.rate_limits?.seven_day?.used_percentage != null" class="cc-usage-bar">
+              <div class="cc-bar-header">
+                <span class="cc-bar-label">7-Day</span>
+                <span class="cc-bar-pct" :class="cc7dColorClass">{{ cc7dPct !== null ? cc7dPct + '%' : 'N/A' }}</span>
+              </div>
+              <div class="cc-progress-track">
+                <div class="cc-progress-fill" :class="cc7dColorClass" :style="{ width: (cc7dPct || 0) + '%' }"></div>
+              </div>
+              <div class="cc-reset-line" :class="{ 'is-na': !cc7dResetsAt }">
+                <template v-if="cc7dResetLine.val">
+                  <span class="time-label">Reset </span><span class="time-val">{{ cc7dResetLine.val }}</span>
+                  <span v-if="cc7dResetLine.abs" class="time-abs"> ({{ cc7dResetLine.abs }})</span>
+                </template>
+                <span v-else class="time-label">{{ cc7dResetLine.label }}</span>
+              </div>
+            </div>
           </div>
         </template>
         
@@ -168,19 +201,21 @@
 <script setup>
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
-import { computed } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import UsageCircle from './UsageCircle.vue';
+import { refreshSettings } from '../store/refreshStore';
 
 const props = defineProps({
-  agentId: String,     // 'claudecode' or 'antigravity'
-  agentName: String,   // 'Claude Code' or 'Antigravity'
-  locationType: String, // 'remote' or 'local'
-  hostName: String,     // e.g., 'bien'
+  agentId: String,
+  agentName: String,
+  locationType: String,
+  hostName: String,
   data: Object,
   loading: Boolean,
   error: String,
-  stale: Boolean
+  stale: Boolean,
+  showEmail: { type: Boolean, default: true }
 });
 
 const emit = defineEmits(['retry', 'force-sync']);
@@ -268,21 +303,59 @@ const claude5hData = computed(() => {
   return null;
 });
 
-const iconClass = computed(() => {
-  if (props.agentId === 'claudecode') return 'fa-solid fa-robot';
-  if (props.agentId === 'antigravity') return 'fa-solid fa-satellite';
-  return 'fa-solid fa-microchip';
+// CC bar helpers
+function formatResetLine(resetsAt, nowSec) {
+  if (!resetsAt) return { label: 'N/A', val: null, abs: '' };
+  const diff = resetsAt - nowSec;
+  if (diff <= 0) return { label: 'ready', val: null, abs: '' };
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  let val = '';
+  if (days > 0) val = `${days}d${hours}h`;
+  else if (hours > 0) val = `${hours}h${minutes}m`;
+  else val = minutes > 0 ? `${minutes}m` : '<1m';
+  const d = new Date(resetsAt * 1000);
+  const month = d.toLocaleString('en-US', { month: 'short' });
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return { label: null, val, abs: `${hh}:${mm} ${month}${d.getDate()}` };
+}
+
+function pctColorClass(pct) {
+  if (pct === null) return 'color-na';
+  if (pct <= 70) return 'color-safe';
+  if (pct <= 90) return 'color-warning';
+  return 'color-danger';
+}
+
+const ccNow = ref(Math.floor(Date.now() / 1000));
+let ccClockTimer = null;
+onMounted(() => { ccClockTimer = setInterval(() => { ccNow.value = Math.floor(Date.now() / 1000); }, 60000); });
+onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
+
+const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
+const cc5hResetsAt = computed(() => props.data?.rate_limits?.five_hour?.resets_at ?? null);
+const cc5hColorClass = computed(() => pctColorClass(cc5hPct.value));
+const cc5hResetLine = computed(() => formatResetLine(cc5hResetsAt.value, ccNow.value));
+
+const cc7dPct = computed(() => { const v = props.data?.rate_limits?.seven_day?.used_percentage; return v != null ? Math.round(v) : null; });
+const cc7dResetsAt = computed(() => props.data?.rate_limits?.seven_day?.resets_at ?? null);
+const cc7dColorClass = computed(() => pctColorClass(cc7dPct.value));
+const cc7dResetLine = computed(() => formatResetLine(cc7dResetsAt.value, ccNow.value));
+
+// Org name: skip Anthropic's auto-generated default "email's Organization"
+const ccOrgName = computed(() => {
+  const org = props.data?.orgName;
+  if (!org) return null;
+  if (props.data?.email && org === `${props.data.email}'s Organization`) return null;
+  return org;
 });
 
-const locationIcon = computed(() => {
-  return props.locationType === 'remote' ? 'fa-solid fa-cloud' : 'fa-solid fa-laptop-code';
-});
-
-const locationName = computed(() => {
-  if (props.locationType === 'remote') {
-    return props.hostName ? `Remote: ${props.hostName}` : 'Remote';
-  }
-  return 'Local';
+// SVG ring — restarts animation when each refresh completes
+const drainKey = ref(0);
+watch(() => props.loading, (newVal, oldVal) => {
+  if (oldVal === true && newVal === false) drainKey.value++;
 });
 
 const claudeTierDisplay = computed(() => {
@@ -362,10 +435,11 @@ async function handleIconClick() {
 }
 
 .agent-img-icon {
-  width: 18px; /* Tiny logo for AG */
+  width: 18px;
   height: 18px;
   border-radius: 4px;
   object-fit: contain;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.22));
 }
 
 .agent-info {
@@ -383,9 +457,16 @@ async function handleIconClick() {
 }
 
 .agent-account {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-darker);
   font-weight: 500;
+}
+
+.agent-org {
+  font-size: 10px;
+  color: var(--text-darker);
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 .agent-plan-badge {
@@ -565,5 +646,160 @@ async function handleIconClick() {
   background-color: var(--bg-tertiary);
   border-color: var(--accent-amber) !important;
   color: var(--accent-amber) !important;
+}
+
+/* CC horizontal bars */
+.cc-bars-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.cc-usage-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cc-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.cc-bar-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cc-bar-pct {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cc-bar-pct.color-safe { color: var(--accent-green); }
+.cc-bar-pct.color-warning { color: var(--accent-amber); }
+.cc-bar-pct.color-danger { color: var(--accent-red); }
+.cc-bar-pct.color-na { color: var(--text-darker); }
+
+.cc-progress-track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cc-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.cc-progress-fill.color-safe { background: var(--accent-green); }
+.cc-progress-fill.color-warning { background: var(--accent-amber); }
+.cc-progress-fill.color-danger { background: var(--accent-red); }
+.cc-progress-fill.color-na { background: rgba(255, 255, 255, 0.08); }
+
+.cc-reset-line {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.cc-reset-line.is-na {
+  color: var(--text-darker);
+}
+
+/* CC skeleton */
+.cc-skeleton-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.skeleton-bar-header {
+  height: 10px;
+  width: 50px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+.skeleton-bar-track {
+  height: 5px;
+  width: 100%;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+.skeleton-bar-time {
+  height: 9px;
+  width: 130px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+/* Reload button — circular, hosts the countdown ring */
+.btn-reload {
+  position: relative;
+  overflow: visible;
+  border-radius: 50% !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+.btn-reload:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* SVG countdown ring around the reload button */
+.reload-ring {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  transform: rotate(-90deg); /* start fill from 12 o'clock */
+  pointer-events: none;
+  overflow: visible;
+}
+
+.ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 2;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: rgba(6, 182, 212, 0.55);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 94.25;   /* 2π × r15 */
+  stroke-dashoffset: 94.25;  /* starts empty */
+  animation: ringFill linear forwards;
+}
+
+@keyframes ringFill {
+  from { stroke-dashoffset: 94.25; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Time parts used in CC bar reset line */
+.cc-reset-line .time-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.cc-reset-line .time-val {
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 700;
+}
+.cc-reset-line .time-abs {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 </style>

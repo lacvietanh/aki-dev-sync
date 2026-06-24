@@ -25,3 +25,4 @@
 - [docs/plan/done/total-refactor-by-akirule.md](plan/done/total-refactor-by-akirule.md) — Full PROCODING refactor plan
 - [docs/plan/done/open-popup-consolidation.md](plan/done/open-popup-consolidation.md) — Consolidation of Local and Remote SSH popup actions
 - [docs/plan/done/akirule-audit-round2.md](plan/done/akirule-audit-round2.md) — Secondary audit for rule compliance
+- [docs/plan/done/fix-claude-flow-24jun.md](plan/done/fix-claude-flow-24jun.md) — Fix Claude Code sync flow: STALE_RESET auto-recovery, concurrency guard, JSONL cleanup

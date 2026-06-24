@@ -14,6 +14,8 @@ export function useAgentUsage(agentName, hostRef) {
   let pollTimer = null;
   let provisioned = false; // plain boolean — not reactive, not exposed to template
   let initialSyncDone = false;
+  let staleResetSyncDone = false;
+  let isSyncing = false;
 
   const provision = async () => {
     if (!hostRef.value || provisioned) return;
@@ -37,10 +39,12 @@ export function useAgentUsage(agentName, hostRef) {
     error.value = null;
 
     try {
+      const hadData = data.value !== null;
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
       if (res) {
         try {
           data.value = JSON.parse(res.content);
+          staleResetSyncDone = false;
 
           const mtime = parseInt(res.file_modified_at, 10);
           const fiveHour = data.value?.rate_limits?.five_hour;
@@ -65,6 +69,10 @@ export function useAgentUsage(agentName, hostRef) {
         if (agentName === 'claudecode' && !initialSyncDone) {
           initialSyncDone = true;
           forceSync();
+        } else if (agentName === 'claudecode' && hadData && !staleResetSyncDone) {
+          // Transition: had data → now null = STALE_RESET. Auto-recover once.
+          staleResetSyncDone = true;
+          forceSync();
         }
       }
     } catch (e) {
@@ -76,7 +84,8 @@ export function useAgentUsage(agentName, hostRef) {
   };
 
   const forceSync = async () => {
-    if (!hostRef.value) return;
+    if (!hostRef.value || isSyncing) return;
+    isSyncing = true;
     loading.value = true;
     error.value = null;
     try {
@@ -92,6 +101,8 @@ export function useAgentUsage(agentName, hostRef) {
       console.error(`Error force syncing ${agentName}:`, e);
       error.value = e.toString();
       loading.value = false;
+    } finally {
+      isSyncing = false;
     }
   };
 
@@ -105,8 +116,10 @@ export function useAgentUsage(agentName, hostRef) {
   }
 
   watch(() => hostRef.value, (newHost) => {
-    provisioned = false; // reset provision state on host change
-    initialSyncDone = false; // reset initial sync state on host change
+    provisioned = false;
+    initialSyncDone = false;
+    staleResetSyncDone = false;
+    isSyncing = false;
     data.value = null;
     error.value = null;
     if (newHost) {

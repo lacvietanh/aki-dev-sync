@@ -19,3 +19,7 @@ EOF
     sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
     rm -f /tmp/patch.sh
 fi
+# Cache auth info (email, orgName) for UI — runs once per host session
+AUTH_CACHE="$HOME/.claude/auth-cache.json"
+AUTH_JSON=$(bash -lc 'claude auth status 2>/dev/null' 2>/dev/null || echo '{}')
+[ "$AUTH_JSON" != '{}' ] && printf '%s' "$AUTH_JSON" > "$AUTH_CACHE"
