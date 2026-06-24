@@ -5,7 +5,7 @@
         <h1 data-tauri-drag-region>
           <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Dev Sync
           <span v-if="isDev" class="dev-tag">DEV</span>
-          <span class="app-version clickable" @click="showChangelog" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }} #{{ buildHash }})</span>
+          <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }} #{{ buildHash }})</span>
         </h1>
       </div>
       <div class="header-actions">
@@ -30,6 +30,7 @@
         </div>
         
         <RefreshSettingsModal :show="showRefreshSettings" @close="showRefreshSettings = false" />
+        <ChangelogModal :show="showChangelogModal" @close="showChangelogModal = false" />
 
         <!-- Custom Traffic Lights -->
         <div class="titlebar-button minimize-btn" @click="minimize" title="Minimize">
@@ -49,32 +50,15 @@ import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
-import changelogText from '../../CHANGELOG.md?raw';
-import Swal from 'sweetalert2';
-import { renderMarkdown, runMermaid } from '../utils/markdown';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
+import ChangelogModal from './modals/ChangelogModal.vue';
 
 const appVersion = __APP_VERSION__;
 const buildDate = __BUILD_DATE__;
 const buildHash = __BUILD_HASH__;
 const showRefreshSettings = ref(false);
+const showChangelogModal = ref(false);
 const isDev = import.meta.env.DEV;
-
-function showChangelog() {
-  Swal.fire({
-    title: 'Aki Dev Sync Changelog',
-    html: `<div class="markdown-body" style="text-align: left; font-size: 13px; color: #e2e8f0; background: #1a1a24; padding: 20px; border-radius: 8px; max-height: 500px; overflow-y: auto; line-height: 1.5;">${renderMarkdown(changelogText)}</div>`,
-    background: '#131317',
-    color: '#F3F4F6',
-    width: '800px',
-    confirmButtonColor: '#3b82f6',
-    confirmButtonText: 'Close',
-    showCloseButton: true,
-    didOpen: () => {
-      runMermaid();
-    }
-  });
-}
 
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();

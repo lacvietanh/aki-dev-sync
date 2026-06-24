@@ -5,6 +5,7 @@
 FILE="$HOME/.claude/statusline-command.sh"
 if [ ! -f "$FILE" ]; then exit 0; fi
 if ! grep -q "rate-limits-cache" "$FILE"; then
+    trap 'rm -f /tmp/patch.sh' EXIT
     cat << 'EOF' > /tmp/patch.sh
 rl_input=$(echo "$input" | jq -c '.rate_limits // empty')
 if [ -z "$rl_input" ] && [ -f "$HOME/.claude/rate-limits-cache.json" ]; then
@@ -17,7 +18,7 @@ fi
 printf '%s' "$input" > "$HOME/.claude/rate-limits-cache.json"
 EOF
     sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
-    rm -f /tmp/patch.sh
+    rm -f "${FILE}.bak"
 fi
 # Cache auth info (email, orgName) for UI — runs once per host session
 AUTH_CACHE="$HOME/.claude/auth-cache.json"

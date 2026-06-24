@@ -1,4 +1,5 @@
 # @docs docs/arch/usage-claudecode.md
+set -e
 FILE="$HOME/.claude/rate-limits-cache.json"
 CREDS="$HOME/.claude/.credentials.json"
 if [ -f "$FILE" ]; then
@@ -15,7 +16,7 @@ except:
     print(0)
 " 2>/dev/null)
     NOW=$(date +%s)
-    if [ -n "$RESETS_AT" ] && [ "$RESETS_AT" -gt 0 ] 2>/dev/null && [ "$NOW" -gt "$RESETS_AT" ] 2>/dev/null; then
+    if [ -n "$RESETS_AT" ] && [ "$RESETS_AT" -gt 0 ] && [ "$NOW" -gt "$RESETS_AT" ]; then
         echo "|||STALE_RESET|||"
         exit 0
     fi
@@ -34,7 +35,7 @@ except:
     echo "|||TIER|||$TIER"
     AUTH_CACHE="$HOME/.claude/auth-cache.json"
     if [ -f "$AUTH_CACHE" ]; then
-        AUTH_INFO=$(cat "$AUTH_CACHE" 2>/dev/null || echo '{}')
+        AUTH_INFO=$(python3 -c "import json,sys; d=json.load(open('$AUTH_CACHE')); print(json.dumps(d))" 2>/dev/null || echo '{}')
     else
         AUTH_INFO=$(bash -lc 'claude auth status 2>/dev/null' 2>/dev/null || echo '{}')
         [ "$AUTH_INFO" != '{}' ] && printf '%s' "$AUTH_INFO" > "$AUTH_CACHE"

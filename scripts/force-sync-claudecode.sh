@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+set -o pipefail 2>/dev/null || true
 # @docs docs/arch/usage-claudecode.md
 # @docs docs/research/claude-usage-1.2.x-analyze.md
 # Runs `claude -p /usage` on the remote and exports the output for the parser.

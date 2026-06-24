@@ -17,16 +17,8 @@
       </div>
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
-          <svg v-if="refreshSettings.usage_interval_s > 0" class="reload-ring" viewBox="0 0 36 36" aria-hidden="true">
-            <circle class="ring-track" cx="18" cy="18" r="15" />
-            <circle
-              class="ring-fill"
-              :key="drainKey"
-              cx="18" cy="18" r="15"
-              :style="{ animationDuration: refreshSettings.usage_interval_s + 's' }"
-            />
-          </svg>
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
+          <RefreshRing :interval-s="refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
@@ -50,16 +42,8 @@
       
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'">
-          <svg v-if="refreshSettings.usage_interval_s > 0" class="reload-ring" viewBox="0 0 36 36" aria-hidden="true">
-            <circle class="ring-track" cx="18" cy="18" r="15" />
-            <circle
-              class="ring-fill"
-              :key="drainKey"
-              cx="18" cy="18" r="15"
-              :style="{ animationDuration: refreshSettings.usage_interval_s + 's' }"
-            />
-          </svg>
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
+          <RefreshRing :interval-s="refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
@@ -204,13 +188,12 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import UsageCircle from './UsageCircle.vue';
+import RefreshRing from './RefreshRing.vue';
 import { refreshSettings } from '../store/refreshStore';
 
 const props = defineProps({
   agentId: String,
   agentName: String,
-  locationType: String,
-  hostName: String,
   data: Object,
   loading: Boolean,
   error: String,
@@ -331,7 +314,11 @@ function pctColorClass(pct) {
 
 const ccNow = ref(Math.floor(Date.now() / 1000));
 let ccClockTimer = null;
-onMounted(() => { ccClockTimer = setInterval(() => { ccNow.value = Math.floor(Date.now() / 1000); }, 60000); });
+onMounted(() => {
+  if (props.agentId === 'claudecode') {
+    ccClockTimer = setInterval(() => { ccNow.value = Math.floor(Date.now() / 1000); }, 60000);
+  }
+});
 onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 
 const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
@@ -352,10 +339,13 @@ const ccOrgName = computed(() => {
   return org;
 });
 
-// SVG ring — restarts animation when each refresh completes
+// SVG ring — restarts on refresh complete or when interval setting changes
 const drainKey = ref(0);
 watch(() => props.loading, (newVal, oldVal) => {
   if (oldVal === true && newVal === false) drainKey.value++;
+});
+watch(() => refreshSettings.value.usage_interval_s, () => {
+  drainKey.value++;
 });
 
 const claudeTierDisplay = computed(() => {
@@ -756,38 +746,6 @@ async function handleIconClick() {
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
-/* SVG countdown ring around the reload button */
-.reload-ring {
-  position: absolute;
-  top: -4px;
-  left: -4px;
-  width: calc(100% + 8px);
-  height: calc(100% + 8px);
-  transform: rotate(-90deg); /* start fill from 12 o'clock */
-  pointer-events: none;
-  overflow: visible;
-}
-
-.ring-track {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.06);
-  stroke-width: 2;
-}
-
-.ring-fill {
-  fill: none;
-  stroke: rgba(6, 182, 212, 0.55);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-dasharray: 94.25;   /* 2π × r15 */
-  stroke-dashoffset: 94.25;  /* starts empty */
-  animation: ringFill linear forwards;
-}
-
-@keyframes ringFill {
-  from { stroke-dashoffset: 94.25; }
-  to   { stroke-dashoffset: 0; }
-}
 
 /* Time parts used in CC bar reset line */
 .cc-reset-line .time-label {

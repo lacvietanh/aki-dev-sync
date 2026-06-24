@@ -74,15 +74,8 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
 
     let output = run_remote_script(&host, &script)?;
 
-    // Intentionally not checking exit code: `claude -p /usage` exits non-zero when rate-limited,
-    // but still writes to the cache file. Log stderr for diagnostics but still return Ok.
-    if !output.stderr.is_empty() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        if !err.trim().is_empty() && !err.contains("You've hit") {
-            eprintln!("[force_sync] remote stderr: {}", err.trim());
-        }
-    }
-
+    // Intentionally not checking exit code — `claude -p /usage` exits non-zero when rate-limited
+    // but still writes to the cache file. stderr is not surfaced; rate-limit messages are expected.
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if stdout.is_empty() {
         Ok("{\"parsed\":false,\"raw_preview\":\"\"}".into())

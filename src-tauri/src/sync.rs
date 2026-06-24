@@ -237,7 +237,7 @@ fn run_sync_blocking(
     let versions_map = get_rsync_versions();
 
     let local_v_str = {
-        let mut map = versions_map.lock().unwrap();
+        let mut map = versions_map.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(v) = map.get("local") {
             v.clone()
         } else {
@@ -252,7 +252,7 @@ fn run_sync_blocking(
     };
 
     let remote_v_str = {
-        let mut map = versions_map.lock().unwrap();
+        let mut map = versions_map.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(v) = map.get(&project.remote_host) {
             v.clone()
         } else {

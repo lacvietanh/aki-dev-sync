@@ -75,7 +75,7 @@ pub fn get_ssh_history_status(app: AppHandle) -> Result<SshHistoryStatus, String
 #[tauri::command]
 pub fn save_ssh_config(app: AppHandle, content: String) -> Result<(), String> {
     let config = ssh_config_path()?;
-    let ssh_dir = config.parent().expect("~/.ssh has no parent");
+    let ssh_dir = config.parent().ok_or("~/.ssh config path has no parent directory")?;
     if !ssh_dir.exists() {
         fs::create_dir_all(ssh_dir).map_err(|e| format!("Failed to create .ssh dir: {}", e))?;
     }

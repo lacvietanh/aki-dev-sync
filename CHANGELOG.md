@@ -5,6 +5,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.3.1] - 2026-06-24
+
+#### Added
+- **`RefreshRing.vue` component**: Extracted SVG `stroke-dashoffset` countdown ring into a standalone reusable component with `inline` (flex row, 16px) and `overlay` (position absolute over button) modes and configurable `strokeColor`. Replaces the two inline SVG blocks in `AgentUsage.vue`.
+- **Countdown rings for Git & Diff** (`ProjectTable.vue`): GIT column header shows a green `RefreshRing` (git interval); ACTIONS column header shows an amber ring (remote diff interval) — both display-only, no interaction, animate to full each cycle. `useBackgroundRefresh.js` exports `gitRefreshKey` / `diffRefreshKey`, incrementing on every timer fire and on every timer restart (so ring resets immediately when interval setting changes).
+- **`ChangelogModal.vue`**: Replaced ad-hoc `Swal.fire()` inline HTML changelog with a proper `BaseModal`-based component. Uses themed scoped CSS matching app dark style, `renderMarkdown` computed once, `runMermaid()` via `watch` on body ref. `AppHeader.vue` no longer imports `Swal`, `changelogText`, or `renderMarkdown` directly.
+
+#### Fixed
+- **`sync.rs` Mutex poison panic**: Both `versions_map.lock().unwrap()` calls replaced with `.unwrap_or_else(|e| e.into_inner())` — prevents app crash if a thread panics while holding the `RSYNC_VERSIONS` lock.
+- **`ssh.rs` `.expect()` crash**: `config.parent().expect(...)` replaced with `ok_or(...)` and `?` propagation — hard panic in `save_ssh_config` eliminated.
+- **`useAgentUsage.js` concurrency guard**: Added `isChecking` boolean to `checkUsage()` — parallel poll ticks and `manualRefreshCount` watch can no longer spawn overlapping fetch calls. Guard resets on host change and in `finally`.
+- **`provision-claudecode.sh` temp file leak**: Added `trap 'rm -f /tmp/patch.sh' EXIT` so the temp patch file is always cleaned up. Also removes `sed -i.bak` backup file (`${FILE}.bak`) after successful patch — was accumulating on remote host indefinitely.
+- **Shell scripts `set -e`**: Added `set -e` to `get-claudecode-usage.sh` and `set -o pipefail` (with `|| true` fallback for POSIX) to `force-sync-claudecode.sh` — silent parse failures now abort instead of propagating empty data.
+- **`auth-cache.json` corrupt file**: `get-claudecode-usage.sh` now validates JSON via `python3 -c "import json..."` before using — `cat` returning corrupt content silently no longer causes Rust parse failure downstream.
+- **`agent_usage.rs` dead stderr block**: Removed the unused `if !output.stderr.is_empty()` block and its `err` variable entirely — was a no-op after `eprintln!` was removed, causing an unused-variable compiler warning.
+- **`useLogs.js` silent clipboard catch**: `copyLogs` no longer swallows clipboard errors silently — logs to `console.warn`.
+
+#### Changed
+- **Store extraction (`sshStore.js`, `logStore.js`)**: Module-scope `ref` trong `useSsh.js` và `useLogs.js` tách ra store files riêng — HMR không còn tạo ref mới khi edit composable, giữ đúng singleton behavior.
+- **Dead CSS removal (`main.css`)**: Deleted 10 unused rule blocks — `.mr-2`, `.text-center`, `.badge-sync-git`, `.badge-push-special`, `.col-log`, `.btn-log-toggle` (+ `:hover`, `.log-active`), `.btn-action-terminal` (+ `:hover`, `:active`), `.btn-action-vscode` (+ `:hover`, `:active`), `.action-vscode-icon`, `.hooks-grid`. None referenced in any Vue template.
+- **`AgentUsage.vue` dead props removed**: `locationType` and `hostName` props deleted — never referenced in template or script body, were being passed from `AgentUsageSection.vue` for no purpose.
+- **`AgentUsage.vue` clock timer guard**: `ccClockTimer` `setInterval` now only starts when `agentId === 'claudecode'` — was running 1-minute ticks on every Antigravity instance even though `ccNow` is unused there.
+- **`ProjectTable.vue` accessibility**: Added `aria-label` to `.btn-action-git` (Git Actions) and `.btn-tech-secondary.btn-icon-only` (Edit Configuration) — both are icon-only buttons. Removed dead scoped CSS class `.popup-divider`.
+- **`AgentUsage.vue` reload buttons accessibility**: Added dynamic `:aria-label` to both CC and Antigravity reload buttons (icon-only, previously had `title` only).
+- **`ProjectTable.vue` layout**: GIT column header renamed from "LOCAL GIT" to "GIT" (full name in `title` attribute). Git action button (purple gradient) moved from ACTIONS column into GIT cell, positioned before the status badge — button and badge now left-aligned as a unit, visually anchored to the column.
+- **`RefreshRing` interval change edge case**: Usage rings restart immediately when `usage_interval_s` changes (via `watch` on `refreshSettings` in `AgentUsage.vue`). Git/diff rings restart immediately when their timer restarts — `restartGitTimer()` and `restartDiffTimer()` now increment the respective key before starting the new interval, not just on each fire.
+- **`useProjectConfig.js` `saveConfig` toast**: Save and create now fire a success toast ("Config saved" / "Project created") and an error toast on failure — previously had no user feedback.
+- **`main.css` `--color-danger`**: Added to `:root` — was referenced in 2 rules but undefined, resolving to empty.
+- **Toast position**: Changed from `bottom-end` to `bottom` (center) — avoids overlapping ACTIONS column buttons on the last table row.
+
+---
+
 ### [1.3.0] - 2026-06-24
 
 #### Added
@@ -367,12 +399,4 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Version SSOT**: Removed hardcoded `version` inside `tauri.conf.json`. `package.json` is now the Single Source of Truth for the App's version. Tauri CLI syncs the version from it during build.
 
 #### Architecture
-Added lightweight Markdown module with Mermaid support:
-```mermaid
-graph TD;
-    A[CHANGELOG.md] -->|raw string| B(Vite Import);
-    B --> C{Markdown Parser};
-    C -->|HTML| D[SweetAlert2 UI];
-    C -->|Mermaid Code| E[Mermaid Renderer];
-    E --> D;
-```
+- Added lightweight Markdown module with Mermaid support for rendering `CHANGELOG.md` in-app via `renderMarkdown` + `runMermaid`.

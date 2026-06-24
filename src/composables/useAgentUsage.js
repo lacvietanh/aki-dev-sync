@@ -16,6 +16,7 @@ export function useAgentUsage(agentName, hostRef) {
   let initialSyncDone = false;
   let staleResetSyncDone = false;
   let isSyncing = false;
+  let isChecking = false;
 
   const provision = async () => {
     if (!hostRef.value || provisioned) return;
@@ -34,6 +35,8 @@ export function useAgentUsage(agentName, hostRef) {
       error.value = null;
       return;
     }
+    if (isChecking) return;
+    isChecking = true;
 
     loading.value = true;
     error.value = null;
@@ -80,6 +83,7 @@ export function useAgentUsage(agentName, hostRef) {
       error.value = e.toString();
     } finally {
       loading.value = false;
+      isChecking = false;
     }
   };
 
@@ -120,6 +124,7 @@ export function useAgentUsage(agentName, hostRef) {
     initialSyncDone = false;
     staleResetSyncDone = false;
     isSyncing = false;
+    isChecking = false;
     data.value = null;
     error.value = null;
     if (newHost) {

@@ -1,8 +1,21 @@
 # Plan: Cải tiến đợt 2026-06 (Account info, Table, Notifications, Antigravity Remote, Auto-update)
 
-**Status:** Active
-**Started:** 2026-06-24
-**Base version:** 1.2.8
+**Status:** ✅ Done (core items)  
+**Started:** 2026-06-24  
+**Base version:** 1.2.8  
+**Completed:** 2026-06-24 (v1.3.0–v1.3.1)
+
+### Tóm tắt trạng thái
+| Mục | Trạng thái |
+|---|---|
+| §1 Claude account info (email/org/tier) | ✅ Done — hiển thị trong `AgentUsage.vue` |
+| §2 Table alignment | ✅ Done — header/body căn chỉnh, col widths tường minh; `table-layout: fixed` đánh giá lại → không cần (1 table HTML, cột không trôi) |
+| §3 CSS variables + empty states + saveConfig toast | ✅ Done — biến định nghĩa trong `:root`, `saveConfig()` có Toast, `--color-danger` alias |
+| §3 Toast positioning | ⏸ Deferred → `deferred-auto-update-toast-pos.md` |
+| §4 Antigravity remote fix | ✅ Done |
+| §5 Auto-update | ⏸ Deferred → `deferred-auto-update-toast-pos.md` |
+
+---
 
 Gom 5 hạng mục độc lập thành một plan vì cùng một đợt làm việc. Mỗi phần có thể triển khai riêng, không phụ thuộc nhau. Thứ tự ưu tiên đề xuất ở cuối (§6).
 

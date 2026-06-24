@@ -37,6 +37,7 @@ Dữ liệu `stdin` của `statusLine` hook có cấu trúc:
 ~/.claude/statusline-command.sh      → Script nhận stdin JSON từ Claude Code
 ~/.claude/rate-limits-cache.json     → File cache (do chúng ta tạo bằng cách dump stdin)
 ~/.claude/.credentials.json          → OAuth credentials (subscriptionType, rateLimitTier, accessToken)
+~/.claude/auth-cache.json            → Auth info cache (email, orgName) — do provision tạo một lần/session
 ~/.claude/projects/**/*.jsonl        → Transcript files (fallback ước lượng token nếu cần)
 ```
 
@@ -47,9 +48,10 @@ Vì dữ liệu thật chỉ tồn tại thoáng qua trong `stdin` khi `statusLi
 1. SSH vào remote host và patch `statusline-command.sh` bằng script [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh).
 2. Đọc `~/.claude/statusline-command.sh`.
 3. Kiểm tra chuỗi `rate-limits-cache`.
-4. Nếu chưa có: dùng `sed` để inject đoạn mã jq + bash ngay sau dòng `input=$(cat)`.
+4. Nếu chưa có: dùng `sed` để inject đoạn mã jq + bash ngay sau dòng `input=$(cat)`. File tạm `/tmp/patch.sh` được dọn dẹp qua `trap EXIT`; file `.bak` của `sed -i.bak` cũng được xóa ngay.
 5. Nếu đã có: bỏ qua (idempotent).
-6. Từ đó trở đi: đọc `~/.claude/rate-limits-cache.json` qua SSH bằng script [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh).
+6. **Auth Info (v1.3.0):** Cuối `provision-claudecode.sh`, chạy `bash -lc 'claude auth status'` (login shell đảm bảo PATH có `claude`), ghi kết quả JSON vào `~/.claude/auth-cache.json`. Chạy một lần mỗi host session.
+7. Từ đó trở đi: đọc `~/.claude/rate-limits-cache.json` qua SSH bằng script [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh).
 
 ---
 
@@ -99,9 +101,27 @@ Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remot
      - Người dùng bấm nút **Force Sync** ở trạng thái card trống hoặc ở chân progress bar (khi mốc reset cũ đã qua).
 - **`< /dev/null`** là bắt buộc: nếu thiếu, Claude Code chờ stdin 3 giây không cần thiết trước khi xử lý.
 - **Blank dir độc lập** (`/tmp/aki-dev-sync-blank-dir`): tránh dùng `/tmp` trực tiếp vì có thể có file bị nhặt làm project context; tạo mới nếu chưa tồn tại.
-- **Concurrency guard (v1.3.0):** `useAgentUsage.js` dùng cờ `isSyncing` để đảm bảo chỉ có một lần `forceSync()` chạy tại một thời điểm. Nếu đang sync mà có trigger mới (rapid click, timeout đồng thời), trigger sau bị bỏ qua yên lặng. Cờ reset khi host thay đổi.
+- **Concurrency guard (v1.3.0/v1.3.1):** `useAgentUsage.js` dùng hai cờ độc lập:
+  - `isSyncing` — bảo vệ `forceSync()`: chỉ một lần force sync chạy tại một thời điểm.
+  - `isChecking` — bảo vệ `checkUsage()`: ngăn nhiều poll tick hoặc `manualRefreshCount` watch trigger đồng thời. Cả hai cờ reset khi host thay đổi.
 - **JSONL cleanup (v1.3.0):** Cuối mỗi lần chạy, `force-sync-claudecode.sh` dọn dẹp các file JSONL trong BLANK_DIR project folder và thư mục probe orphan (`-tmp-aki-probe-*`) có tuổi trên 7 ngày. File cũ hơn 7 ngày nằm ngoài cả hai cửa sổ 5h và 7d, không ảnh hưởng đến tính toán `/usage`.
+- **Shell safety (v1.3.1):** `get-claudecode-usage.sh` có `set -e` — parse Python fail sẽ abort thay vì truyền data rỗng. `force-sync-claudecode.sh` có `set -o pipefail`. `auth-cache.json` được validate JSON qua `python3` trước khi dùng — file bị truncate/corrupt sẽ fallback `{}`.
 - Output (Stdout) có dạng: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)` (khi có session) hoặc `Current session: 0% used` (khi không có session local trong 5h qua).
+
+### Delimiter Chain trong `get-claudecode-usage.sh`
+
+Script ghép nhiều thông tin vào một stdout stream qua các delimiter riêng biệt để Rust parse:
+
+```
+<nội dung rate-limits-cache.json>
+|||MTIME|||<unix timestamp của file>
+|||SUBTYPE|||<subscriptionType từ .credentials.json>
+|||TIER|||<rateLimitTier từ .credentials.json>
+|||AUTHINFO|||<nội dung auth-cache.json (JSON: email, orgName, ...)>
+```
+
+Rust (`agent_usage.rs`) split tuần tự theo từng delimiter, parse `|||AUTHINFO|||` thành `serde_json::Value`, rồi inject `email` và `orgName` (nếu có, nếu non-empty) vào payload JSON trả về frontend. `orgName` tự động bị suppressed nếu trùng với pattern `"<email>'s Organization"` (Anthropic default) — logic này nằm ở computed `ccOrgName` trong `AgentUsage.vue`.
+
 - Backend nhúng script [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) chạy inline:
   1. Dùng Regex cắt lấy số `%` (bắt buộc) và chuỗi ngày giờ (tùy chọn).
   2. Dùng thư viện `datetime` chuyển đổi "Jun 22, 10:10pm" thành Unix Timestamp.
@@ -109,7 +129,8 @@ Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remot
 
 > _Cập nhật 2026-06-23: Bổ sung `< /dev/null` để loại 3s delay. Đổi `cd /tmp` thành blank dir riêng để đảm bảo context rỗng._
 > _Cập nhật 2026-06-24 (v1.2.9): Sửa lỗi parser regex thất bại khi quota được reset hoàn toàn (0% used). Tích hợp cơ chế tự động chạy "Probe Session" (dummy session haiku) khi `/usage` thiếu mốc thời gian reset. Tài liệu hóa các kịch bản kích hoạt luồng Force Sync._
-> _Cập nhật 2026-06-24 (v1.3.0): Bổ sung STALE_RESET auto-recovery (trigger #3 mới), concurrency guard `isSyncing`, và JSONL cleanup cho BLANK_DIR + probe orphan dirs._
+> _Cập nhật 2026-06-24 (v1.3.0): Bổ sung STALE_RESET auto-recovery (trigger #3 mới), concurrency guard `isSyncing`, và JSONL cleanup cho BLANK_DIR + probe orphan dirs. Bổ sung CC Auth Info Pipeline: `provision-claudecode.sh` → `auth-cache.json` → `|||AUTHINFO|||` delimiter → Rust inject `email`/`orgName` vào payload._
+> _Cập nhật 2026-06-24 (v1.3.1): Thêm `isChecking` guard cho `checkUsage()`. Shell safety: `set -e` + `set -o pipefail`, JSON validation của `auth-cache.json`, temp file cleanup trong `provision-claudecode.sh`._
 
 ---
 
@@ -122,9 +143,11 @@ Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remot
   - [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) — Python parsing dữ liệu stdout của `/usage`.
   - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) — Tầng điều phối Tauri commands bên Rust.
 - **Frontend:**
-  - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue composable theo dõi & đồng bộ agent usage.
-  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Component hiển thị card thông tin quota.
-  - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) — SVG radial progress circle với tooltip reset time (dùng cho Antigravity).
+  - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue composable theo dõi & đồng bộ agent usage. Guards: `isSyncing` (forceSync), `isChecking` (checkUsage).
+  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — Layout LOCAL/REMOTE split, eye-toggle email per column, pass `selectedSshHost` computed từ `useSsh.js`.
+  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Card hiển thị quota. CC header: tier badge, email, orgName (suppresses Anthropic default). AG header: email full. Dùng `RefreshRing` cho countdown reload.
+  - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) — SVG radial progress circle với tooltip reset time (dùng cho Antigravity buckets).
+  - [RefreshRing.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/RefreshRing.vue) — SVG `stroke-dashoffset` countdown ring tái dùng được. Hai mode: `overlay` (position absolute trên button, dùng trong AgentUsage) và `inline` (16px trong flex row, dùng trong ProjectTable header cho git/diff timer).
   - ~~UsageProgressBar.vue~~ — Đã xóa ở v1.3.0, thay bởi UsageCircle + CC horizontal bars.
 
 ---

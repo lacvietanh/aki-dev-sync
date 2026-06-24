@@ -1,13 +1,10 @@
-import { ref, computed, nextTick } from "vue";
+import { computed, nextTick } from "vue";
 import { listen } from "@tauri-apps/api/event";
-
-const globalLogs = ref([]);
-const projectLogs = ref({});
-const activeLogProjectId = ref(null);
-const isLogExpanded = ref(false);
-const consoleRef = ref(null);
-const copied = ref(false);
-let globalListener = null;
+import {
+  globalLogs, projectLogs, activeLogProjectId,
+  isLogExpanded, consoleRef, copied,
+  globalListener, setGlobalListener
+} from "../store/logStore";
 
 export function useLogs() {
   const displayedLogs = computed(() => {
@@ -65,17 +62,19 @@ export function useLogs() {
       await navigator.clipboard.writeText(logs.join("\n"));
       copied.value = true;
       setTimeout(() => (copied.value = false), 2000);
-    } catch (err) {}
+    } catch (err) {
+      console.warn('Clipboard copy failed:', err);
+    }
   }
 
   async function setupGlobalListener() {
     if (globalListener) return;
-    globalListener = await listen("sync-log", (event) => {
+    setGlobalListener(await listen("sync-log", (event) => {
       const payload = event.payload;
       if (payload && payload.project_id && payload.line !== undefined) {
         appendLog(payload.project_id, payload.line);
       }
-    });
+    }));
   }
 
   return {

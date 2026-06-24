@@ -1,19 +1,11 @@
-import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import Swal from "sweetalert2";
 import { useLogs } from "./useLogs";
 import { projects, Toast } from "./useProjects";
-
-const sshHosts = ref([]);
-const _storedHost = ref(localStorage.getItem('aki-selected-ssh-host') || '');
-const selectedSshHost = computed({
-  get: () => _storedHost.value || sshHosts.value[0] || '',
-  set: v => { _storedHost.value = v; localStorage.setItem('aki-selected-ssh-host', v); }
-});
-const showSshModal = ref(false);
-const sshConfigText = ref("");
-const hasSshUndo = ref(false);
-const hasSshRedo = ref(false);
+import {
+  sshHosts, selectedSshHost, showSshModal,
+  sshConfigText, hasSshUndo, hasSshRedo
+} from "../store/sshStore";
 
 export function useSsh() {
   const { appendGlobalLog } = useLogs();

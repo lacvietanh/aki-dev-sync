@@ -1,4 +1,4 @@
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import { projects } from '../store/projectStore'
 import { refreshSettings, triggerManualRefresh } from '../store/refreshStore'
 import { checkAllSyncStatus } from './useSyncStatus'
@@ -7,13 +7,18 @@ import { fetchGitStatus } from './useGit'
 let gitTimer = null
 let diffTimer = null
 
+export const gitRefreshKey = ref(0)
+export const diffRefreshKey = ref(0)
+
 function restartGitTimer() {
   if (gitTimer) clearInterval(gitTimer)
   gitTimer = null
   const s = refreshSettings.value.git_interval_s
   if (s > 0) {
+    gitRefreshKey.value++ // restart ring animation with new duration
     gitTimer = setInterval(() => {
       projects.value.forEach(p => fetchGitStatus(p.id, true))
+      gitRefreshKey.value++
     }, s * 1000)
   }
 }
@@ -23,7 +28,11 @@ function restartDiffTimer() {
   diffTimer = null
   const s = refreshSettings.value.remote_diff_interval_s
   if (s > 0) {
-    diffTimer = setInterval(checkAllSyncStatus, s * 1000)
+    diffRefreshKey.value++ // restart ring animation with new duration
+    diffTimer = setInterval(() => {
+      checkAllSyncStatus()
+      diffRefreshKey.value++
+    }, s * 1000)
   }
 }
 

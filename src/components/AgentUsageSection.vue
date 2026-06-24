@@ -12,7 +12,6 @@
         <AgentUsage
           agentId="antigravity"
           agentName="Antigravity"
-          locationType="local"
           :data="antigravityData"
           :loading="antigravityLoading"
           :error="antigravityError"
@@ -36,8 +35,6 @@
         <AgentUsage
           agentId="claudecode"
           agentName="Claude Code"
-          locationType="remote"
-          :hostName="selectedSshHost"
           :data="claudeData"
           :loading="claudeLoading"
           :error="claudeError"

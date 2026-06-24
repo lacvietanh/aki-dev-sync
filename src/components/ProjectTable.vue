@@ -4,9 +4,19 @@
       <thead>
         <tr>
           <th>PROJECT / PATH</th>
-          <th class="col-git-status">LOCAL GIT</th>
+          <th class="col-git-status" title="LOCAL GIT">
+            <span class="th-with-ring">
+              GIT
+              <RefreshRing :interval-s="refreshSettings.git_interval_s" :refresh-key="gitRefreshKey" stroke-color="rgba(16, 185, 129, 0.6)" />
+            </span>
+          </th>
           <th class="col-last-sync">LAST ACTION</th>
-          <th class="col-actions">ACTIONS</th>
+          <th class="col-actions">
+            <span class="th-with-ring">
+              ACTIONS
+              <RefreshRing :interval-s="refreshSettings.remote_diff_interval_s" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
+            </span>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -51,7 +61,10 @@
             </div>
           </td>
           <td class="col-git-status">
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="git-cell">
+              <button class="btn-action-git" @click="openGitModal(p)" title="Git Actions (Commit & Push to Remote Git)" aria-label="Git Actions">
+                <i class="fa-brands fa-git-alt"></i>
+              </button>
               <span class="git-badge" :class="'git-' + (projectRuntime[p.id]?.git_status || 'Unknown').replace(' ', '-')">
                 {{ projectRuntime[p.id]?.git_status || '...' }}
               </span>
@@ -120,10 +133,6 @@
                 </transition>
               </div>
 
-              <button class="btn-action-git" @click="openGitModal(p)" title="Git Actions (Commit & Push to Remote Git)">
-                <i class="fa-brands fa-git-alt"></i>
-              </button>
-
               <button class="btn-tech btn-tech-push-special" @click="openSpecialModal(p)" :disabled="projectRuntime[p.id]?.syncing" title="Select specific files to push">
                 SELECT
               </button>
@@ -158,7 +167,7 @@
                 LOG
               </button>
 
-              <button class="btn-tech btn-tech-secondary btn-icon-only" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration">
+              <button class="btn-tech btn-tech-secondary btn-icon-only" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
                 <i class="fa-solid fa-gear"></i>
               </button>
             </div>
@@ -174,6 +183,9 @@ import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
+import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
+import { refreshSettings } from '../store/refreshStore';
+import RefreshRing from './RefreshRing.vue';
 
 const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSpecialModal, openConfig, openGitModal } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
@@ -282,6 +294,19 @@ function formatTimeAgo(timestamp) {
 </script>
 
 <style scoped>
+.th-with-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 8px;
+}
+
+.git-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Open Popup */
 .open-popup-wrapper {
   position: relative;
@@ -371,9 +396,4 @@ function formatTimeAgo(timestamp) {
   filter: hue-rotate(-50deg) saturate(2) brightness(1.2);
 }
 
-.popup-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.07);
-  margin: 4px 0;
-}
 </style>

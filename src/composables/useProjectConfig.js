@@ -91,25 +91,32 @@ export async function saveConfig() {
   }
 
   const index = projects.value.findIndex(p => p.id === editingProject.value.id)
+  const isNew = index === -1
 
-  if (index !== -1) {
-    projects.value[index] = { ...editingProject.value }
-    appendGlobalLog("CONFIG", `User updated config for project "${editingProject.value.name}".`)
-  } else {
-    projectRuntime.value[editingProject.value.id] = {
-      git_status: "...",
-      git_log: "",
-      remote_url: "",
-      syncing: false,
+  try {
+    if (!isNew) {
+      projects.value[index] = { ...editingProject.value }
+      appendGlobalLog("CONFIG", `User updated config for project "${editingProject.value.name}".`)
+    } else {
+      projectRuntime.value[editingProject.value.id] = {
+        git_status: "...",
+        git_log: "",
+        remote_url: "",
+        syncing: false,
+      }
+      projects.value.push({ ...editingProject.value })
+      appendGlobalLog("CONFIG", `User created new project "${editingProject.value.name}".`)
     }
-    projects.value.push({ ...editingProject.value })
-    appendGlobalLog("CONFIG", `User created new project "${editingProject.value.name}".`)
-  }
 
-  await saveProjectsList()
-  const savedProject = projects.value.find(p => p.id === editingProject.value.id)
-  if (savedProject) fetchGitStatus(savedProject.id)
-  closeConfig()
+    await saveProjectsList()
+    const savedProject = projects.value.find(p => p.id === editingProject.value.id)
+    if (savedProject) fetchGitStatus(savedProject.id)
+    Toast.fire({ icon: 'success', title: isNew ? 'Project created' : 'Config saved' })
+    closeConfig()
+  } catch (err) {
+    appendGlobalLog("ERROR", `Failed to save config: ${err}`)
+    Toast.fire({ icon: 'error', title: 'Failed to save config' })
+  }
 }
 
 export async function createNewProject(sshHosts) {
