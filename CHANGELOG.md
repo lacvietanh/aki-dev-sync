@@ -7,9 +7,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [1.3.2] - 2026-06-25
 
-#### Fixed
-- **Open Remote Antigravity silent fail in production build** (`system.rs`): `antigravity-ide` installs to `~/.antigravity-ide/antigravity-ide/bin/` — outside Homebrew and `/usr/local/bin`, so `create_command` (v1.2.9 fix) could never find it in the GUI app's launchd PATH. Root cause confirmed via environment comparison: launching the `.app` bundle from terminal (`/Applications/Aki Dev Sync.app/Contents/MacOS/aki-dev-sync`) works because the process inherits the full terminal PATH; launching from Finder/Dock fails because `$SHELL -lc` spawns a login non-interactive shell that reads `~/.zprofile` but NOT `~/.zshrc` — where the `antigravity-ide` PATH entry lives. Fixed by using `$SHELL -ilc` (interactive + login), which forces `~/.zshrc` to be sourced. Paths with single quotes are POSIX-escaped before shell injection.
-
 #### Added
 - **`.icon-glow` utility class** (`main.css`): Single-source `filter: drop-shadow(0 0 2px rgba(255,255,255,0.18))` applied to all app icons — titlebar (`AppHeader.vue`), agent icons in usage section (`AgentUsage.vue`), project icon in table, and popup menu IDE icons (`ProjectTable.vue`). Popup insiders icon merges the glow into its existing `hue-rotate` filter chain. Removed the old per-element `box-shadow` on `.app-icon`. One edit in `main.css` now controls glow intensity everywhere.
 - **Antigravity pool color-coding** (`AgentUsage.vue`): Gemini fieldset gets a blue dashed border + legend (`rgba(96,165,250)` / `#93c5fd`); Claude/OSS gets orange (`rgba(251,146,60)` / `#fdba74`) — matches brand colors, eliminates cognitive load when scanning pools at a glance. Applied to both live and skeleton states.
@@ -19,6 +16,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **CSS hygiene pass** (`main.css`, `AgentUsageSection.vue`, modals): Replaced 13 hardcoded `#9CA3AF` literals with `var(--text-muted)` across `main.css` and 4 Vue files. Removed 3 unused `:root` vars (`--accent-purple`, `--bg-card`, `--bg-secondary`). Deleted 3 dead rule blocks (`.col-dry`, `.log-command`, `.log-delete`). Promoted spacing utilities `.mb-3`, `.mt-2`, `.mt-3` to global `main.css`; removed scoped duplicates from `GitModal.vue` (`.mt-3`, `.mr-1`) and `IntroModal.vue` (`.mb-2`, `.mb-3`, `.mt-3`).
 
 #### Fixed
+- **Open Remote Antigravity silent fail in production build** (`system.rs`, `ProjectTable.vue`): `antigravity-ide` installs to `~/.antigravity-ide/antigravity-ide/bin/` — outside Homebrew and `/usr/local/bin`, so `create_command` (v1.2.9 fix) could never find it in the GUI app's launchd PATH. Root cause confirmed: launching from Finder/Dock fails because `$SHELL -lc` (login non-interactive) reads `~/.zprofile` but NOT `~/.zshrc` — where all `antigravity-ide` PATH entries live (confirmed lines 98, 101, 113, 116). Launching via terminal works because the process inherits the full session PATH. Fixed by using `$SHELL -ilc` (interactive + login), which forces `~/.zshrc` to be sourced. Also added `Toast.fire({ icon: 'error' })` in `openIdeRemote` catch block so spawn failures surface to the user instead of silently logging to console only.
 - **`staleResetSyncDone` undeclared variable** (`useAgentUsage.js`): used in 4 places but never declared — caused a `ReferenceError` on app load that crashed `AgentUsageSection` entirely. Added `let staleResetSyncDone = false;` alongside the other plain-boolean guards. Removed the leftover `lastStaleResetSyncAt` from an earlier refactor.
 - **Claude Code force-sync probe bypassed after quota reset**: `force-sync-claudecode.sh` checked only for the presence of the string `"resets"` in `/usage` output to decide whether to skip the probe. After a quota reset, `/usage` echoes back the stale `resets_at` from `rate-limits-cache.json` — output contains `"resets [past time]"` — so the check passed and the probe never fired. Python then parsed the past timestamp and wrote it back to cache, causing `get-claudecode-usage.sh` to emit `|||STALE_RESET|||` again on every poll. UI remained stuck on "No data — waiting for next session" until the user manually opened a real Claude Code session. Fixed by adding a Python inline check that parses the reset time and verifies it is actually in the future; if past (or absent), the probe fires regardless.
 - **JSONL cleanup window reduced from 7 days to 1 day**: blank dir and probe orphan JSONL files in `~/.claude/projects/` are only needed for the single `/usage` call immediately following their creation. Retaining them for 7 days was unnecessary accumulation.
@@ -32,16 +30,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Countdown rings for Git & Diff** (`ProjectTable.vue`): GIT column header shows a green `RefreshRing` (git interval); ACTIONS column header shows an amber ring (remote diff interval) — both display-only, no interaction, animate to full each cycle. `useBackgroundRefresh.js` exports `gitRefreshKey` / `diffRefreshKey`, incrementing on every timer fire and on every timer restart (so ring resets immediately when interval setting changes).
 - **`ChangelogModal.vue`**: Replaced ad-hoc `Swal.fire()` inline HTML changelog with a proper `BaseModal`-based component. Uses themed scoped CSS matching app dark style, `renderMarkdown` computed once, `runMermaid()` via `watch` on body ref. `AppHeader.vue` no longer imports `Swal`, `changelogText`, or `renderMarkdown` directly.
 
-#### Fixed
-- **`sync.rs` Mutex poison panic**: Both `versions_map.lock().unwrap()` calls replaced with `.unwrap_or_else(|e| e.into_inner())` — prevents app crash if a thread panics while holding the `RSYNC_VERSIONS` lock.
-- **`ssh.rs` `.expect()` crash**: `config.parent().expect(...)` replaced with `ok_or(...)` and `?` propagation — hard panic in `save_ssh_config` eliminated.
-- **`useAgentUsage.js` concurrency guard**: Added `isChecking` boolean to `checkUsage()` — parallel poll ticks and `manualRefreshCount` watch can no longer spawn overlapping fetch calls. Guard resets on host change and in `finally`.
-- **`provision-claudecode.sh` temp file leak**: Added `trap 'rm -f /tmp/patch.sh' EXIT` so the temp patch file is always cleaned up. Also removes `sed -i.bak` backup file (`${FILE}.bak`) after successful patch — was accumulating on remote host indefinitely.
-- **Shell scripts `set -e`**: Added `set -e` to `get-claudecode-usage.sh` and `set -o pipefail` (with `|| true` fallback for POSIX) to `force-sync-claudecode.sh` — silent parse failures now abort instead of propagating empty data.
-- **`auth-cache.json` corrupt file**: `get-claudecode-usage.sh` now validates JSON via `python3 -c "import json..."` before using — `cat` returning corrupt content silently no longer causes Rust parse failure downstream.
-- **`agent_usage.rs` dead stderr block**: Removed the unused `if !output.stderr.is_empty()` block and its `err` variable entirely — was a no-op after `eprintln!` was removed, causing an unused-variable compiler warning.
-- **`useLogs.js` silent clipboard catch**: `copyLogs` no longer swallows clipboard errors silently — logs to `console.warn`.
-
 #### Changed
 - **Store extraction (`sshStore.js`, `logStore.js`)**: Module-scope `ref` trong `useSsh.js` và `useLogs.js` tách ra store files riêng — HMR không còn tạo ref mới khi edit composable, giữ đúng singleton behavior.
 - **Dead CSS removal (`main.css`)**: Deleted 10 unused rule blocks — `.mr-2`, `.text-center`, `.badge-sync-git`, `.badge-push-special`, `.col-log`, `.btn-log-toggle` (+ `:hover`, `.log-active`), `.btn-action-terminal` (+ `:hover`, `:active`), `.btn-action-vscode` (+ `:hover`, `:active`), `.action-vscode-icon`, `.hooks-grid`. None referenced in any Vue template.
@@ -54,6 +42,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **`useProjectConfig.js` `saveConfig` toast**: Save and create now fire a success toast ("Config saved" / "Project created") and an error toast on failure — previously had no user feedback.
 - **`main.css` `--color-danger`**: Added to `:root` — was referenced in 2 rules but undefined, resolving to empty.
 - **Toast position**: Changed from `bottom-end` to `bottom` (center) — avoids overlapping ACTIONS column buttons on the last table row.
+
+#### Fixed
+- **`sync.rs` Mutex poison panic**: Both `versions_map.lock().unwrap()` calls replaced with `.unwrap_or_else(|e| e.into_inner())` — prevents app crash if a thread panics while holding the `RSYNC_VERSIONS` lock.
+- **`ssh.rs` `.expect()` crash**: `config.parent().expect(...)` replaced with `ok_or(...)` and `?` propagation — hard panic in `save_ssh_config` eliminated.
+- **`useAgentUsage.js` concurrency guard**: Added `isChecking` boolean to `checkUsage()` — parallel poll ticks and `manualRefreshCount` watch can no longer spawn overlapping fetch calls. Guard resets on host change and in `finally`.
+- **`provision-claudecode.sh` temp file leak**: Added `trap 'rm -f /tmp/patch.sh' EXIT` so the temp patch file is always cleaned up. Also removes `sed -i.bak` backup file (`${FILE}.bak`) after successful patch — was accumulating on remote host indefinitely.
+- **Shell scripts `set -e`**: Added `set -e` to `get-claudecode-usage.sh` and `set -o pipefail` (with `|| true` fallback for POSIX) to `force-sync-claudecode.sh` — silent parse failures now abort instead of propagating empty data.
+- **`auth-cache.json` corrupt file**: `get-claudecode-usage.sh` now validates JSON via `python3 -c "import json..."` before using — `cat` returning corrupt content silently no longer causes Rust parse failure downstream.
+- **`agent_usage.rs` dead stderr block**: Removed the unused `if !output.stderr.is_empty()` block and its `err` variable entirely — was a no-op after `eprintln!` was removed, causing an unused-variable compiler warning.
+- **`useLogs.js` silent clipboard catch**: `copyLogs` no longer swallows clipboard errors silently — logs to `console.warn`.
 
 ---
 
@@ -179,6 +177,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Remote `$HOME` Resolution**: Fixed a bug where remote IDEs failed to launch if the path was configured using `$HOME` instead of `~/`.
 - **OpenSSH Argument Bug**: Fixed a backend issue where `Command::new("ssh")` passed separated arguments that OpenSSH incorrectly concatenated without quotes, causing remote bash scripts to fail. Scripts are now passed as a single quoted string.
 
+---
+
 ### [1.2.4] - 2026-06-23
 
 #### Added
@@ -298,6 +298,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   git status, remote diff, and agent usage — in one click. Grouped with the ⚙ settings icon
   as a paired control.
 
+#### Changed
+- **`BaseModal` component**: extracted shared modal scaffolding (overlay, drag handle, header,
+  close button, ESC listener, backdrop click) into a single reusable `BaseModal.vue`. All 5 modals
+  now use it, removing ~80 lines of duplicated boilerplate each.
+- **Log panel ESC**: pressing Escape in an expanded log panel now collapses the panel and returns
+  to the Global Event Log in one keystroke. Has no effect when a modal is open — modal ESC takes
+  priority.
+- **Push button dirty state**: the Push button no longer stays permanently lit when `sync_git` is
+  enabled. Directory entries (e.g. `.git/`) are now filtered from the rsync dry-run change count —
+  previously a routine `git status` call was enough to flip the button to dirty.
+- **UI language**: completed a full English pass — all remaining Vietnamese strings replaced across
+  `AppHeader`, `UsageProgressBar`, `useSsh.js`, and `useSync.js`.
+- **Version display**: `package.json` is now the single source of truth for the app version. Version
+  is injected at build time via Vite (same pattern as build date), replacing a `getVersion()` call
+  that read from `Cargo.toml` and required manual updates in two separate files to stay in sync.
+
 #### Fixed
 - **Agent Usage — percentage display**: fixed floating-point noise rendering values like
   `7.000000000000001%`. Percentages are now always displayed as whole numbers.
@@ -314,22 +330,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   failing due to an unresolved reference. Now fires correctly.
 - **Push Special modal width**: the modal was rendering at 800px instead of the intended 600px
   after the `BaseModal` refactor. Corrected by passing the right container class.
-
-#### Changed
-- **`BaseModal` component**: extracted shared modal scaffolding (overlay, drag handle, header,
-  close button, ESC listener, backdrop click) into a single reusable `BaseModal.vue`. All 5 modals
-  now use it, removing ~80 lines of duplicated boilerplate each.
-- **Log panel ESC**: pressing Escape in an expanded log panel now collapses the panel and returns
-  to the Global Event Log in one keystroke. Has no effect when a modal is open — modal ESC takes
-  priority.
-- **Push button dirty state**: the Push button no longer stays permanently lit when `sync_git` is
-  enabled. Directory entries (e.g. `.git/`) are now filtered from the rsync dry-run change count —
-  previously a routine `git status` call was enough to flip the button to dirty.
-- **UI language**: completed a full English pass — all remaining Vietnamese strings replaced across
-  `AppHeader`, `UsageProgressBar`, `useSsh.js`, and `useSync.js`.
-- **Version display**: `package.json` is now the single source of truth for the app version. Version
-  is injected at build time via Vite (same pattern as build date), replacing a `getVersion()` call
-  that read from `Cargo.toml` and required manual updates in two separate files to stay in sync.
 
 ---
 
@@ -354,6 +354,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [1.1.1] - 2026-06-23
 
+#### Changed
+- Internal: major DRY pass on `sync.rs` (`spawn_and_stream`, `run_hook_phase`, `build_rsync_args`),
+  `git.rs` (`git_capture`), `ssh.rs` (`ssh_config_path`), `projects.rs` (`validate_path_segment`).
+- `get_project_files` moved from `projects.rs` to `git.rs` (co-located with all git porcelain parsing).
+- All `scripts/` now fully external (`get-claudecode-usage.sh` extracted); `include_str!` at every call site.
+
 #### Fixed
 - **UI freeze on Push/Pull**: `run_sync` restored to `async fn` with internal `spawn_blocking` for
   subprocess work. Previous patch incorrectly changed it to a sync `fn`, causing Tauri's IPC
@@ -365,12 +371,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   error would silently proceed into rsync and fail with a confusing message. Now reported immediately.
 - **JSON field injection** in agent usage now uses `serde_json::Value` instead of string
   concatenation, safe for values containing quotes.
-
-#### Changed
-- Internal: major DRY pass on `sync.rs` (`spawn_and_stream`, `run_hook_phase`, `build_rsync_args`),
-  `git.rs` (`git_capture`), `ssh.rs` (`ssh_config_path`), `projects.rs` (`validate_path_segment`).
-- `get_project_files` moved from `projects.rs` to `git.rs` (co-located with all git porcelain parsing).
-- All `scripts/` now fully external (`get-claudecode-usage.sh` extracted); `include_str!` at every call site.
 
 ---
 
