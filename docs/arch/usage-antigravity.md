@@ -28,9 +28,16 @@ sequenceDiagram
     LSOF-->>Node: List of listening TCP ports
     Node->>AG: Probe ports (POST /GetUnleashData with CSRF)
     AG-->>Node: Response 200/401 (identifies active port)
-    Node->>AG: Query GetUserStatus Connect RPC
-    AG-->>Node: Return raw UserStatus JSON payload
-    Node->>Node: Standardize JSON output
+    
+    rect rgb(20, 30, 40)
+        Note over Node,AG: Parallel Connect RPC Query
+        Node->>AG: Query GetUserStatus (POST)
+        Node->>AG: Query RetrieveUserQuotaSummary (POST)
+        AG-->>Node: Return email & plan status
+        AG-->>Node: Return detailed groups/buckets quota
+    end
+
+    Node->>Node: Standardize JSON output (Merge email & quota summary)
     Node-->>Rust: Print JSON output to stdout
     Rust-->>Rust: Parse & return to Vue Frontend
 ```
@@ -53,10 +60,13 @@ sequenceDiagram
 * **Connection Probing:** Sends POST requests to `/exa.language_server_pb.LanguageServerService/GetUnleashData` containing the CSRF token to check for valid Connect RPC statuses (`200` or `401`).
 
 ### 3. API Query & Standardization
-* **User Status Query:** Performs a POST request to `/exa.language_server_pb.LanguageServerService/GetUserStatus` with the header `X-Codeium-Csrf-Token`.
-* **Output Mapping:** Converts the raw cascade model configurations into the unified JSON format:
+* **Parallel Queries:** Performs two Connect RPC queries concurrently using `Promise.all`:
+  * `GetUserStatus`: Fetch account information such as `email`.
+  * `RetrieveUserQuotaSummary`: Fetch the 4 detailed quota metrics (5h and Weekly buckets for Gemini and Claude/GPT pools).
+* **Output Mapping:** Merges the results into a standardized JSON snapshot containing:
   * `email`: User account email.
-  * `models`: Detailed lists of models, reset times, remaining usage fractions, and autocomplete-only markers.
+  * `models`: Autocomplete/model metadata (for backward compatibility).
+  * `quotaSummary`: Structured list of groups and buckets, including remaining fractions and reset times.
 
 ## Execution Environment
 

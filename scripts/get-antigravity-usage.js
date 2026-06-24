@@ -370,7 +370,60 @@ function getUserStatus(baseUrl, csrfToken) {
   });
 }
 
+function retrieveUserQuotaSummary(baseUrl, csrfToken) {
+  return new Promise((resolve, reject) => {
+    const isHttps = baseUrl.startsWith('https://');
+    const url = new URL('/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary', baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      timeout: 2000,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Connect-Protocol-Version': '1',
+        ...(csrfToken ? { 'X-Codeium-Csrf-Token': csrfToken } : {})
+      },
+      ...(isHttps ? { rejectUnauthorized: false } : {})
+    };
 
+    const client = isHttps ? https : http;
+    const req = client.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new Error(`Failed to parse RetrieveUserQuotaSummary response: ${e.message}`));
+          }
+        } else {
+          reject(new Error(`HTTP error status ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
+
+    req.write(JSON.stringify({
+      metadata: {
+        ideName: 'antigravity',
+        extensionName: 'antigravity',
+        locale: 'en'
+      }
+    }));
+    req.end();
+  });
+}
 
 function parseResetTime(resetTime) {
   if (!resetTime) return undefined;
@@ -399,16 +452,15 @@ function parseModelQuota(model) {
   };
 }
 
-function parseLocalQuotaSnapshot(userStatus) {
+function parseLocalQuotaSnapshot(userStatus, quotaSummary) {
   const quota = userStatus.quota || {};
   const snapshot = {
     timestamp: new Date().toISOString(),
     method: 'local',
     email: userStatus.email,
-    models: []
+    models: [],
+    quotaSummary: quotaSummary || null
   };
-
-
 
   if (Array.isArray(quota.models)) {
     snapshot.models = quota.models.map(parseModelQuota);
@@ -420,7 +472,6 @@ function parseLocalQuotaSnapshot(userStatus) {
 // Convert Connect RPC payload format to match what antigravity-usage outputs
 function extractQuota(data) {
   const quota = {};
-
 
   const cascadeData = data.cascadeModelConfigData;
   const clientModelConfigs = cascadeData?.clientModelConfigs;
@@ -474,7 +525,23 @@ async function main() {
     }
 
     debug(`Connected to Connect API at ${probeResult.baseUrl}`);
-    const rawStatus = await getUserStatus(probeResult.baseUrl, processInfo.csrfToken);
+    
+    // Call userStatus and retrieveUserQuotaSummary in parallel
+    const [rawStatus, rawSummary] = await Promise.all([
+      getUserStatus(probeResult.baseUrl, processInfo.csrfToken).catch(err => {
+        debug('getUserStatus failed:', err.message);
+        return null;
+      }),
+      retrieveUserQuotaSummary(probeResult.baseUrl, processInfo.csrfToken).catch(err => {
+        debug('retrieveUserQuotaSummary failed:', err.message);
+        return null;
+      })
+    ]);
+
+    if (!rawStatus) {
+      console.error(JSON.stringify({ error: 'Could not fetch user status from Antigravity Connect API.' }));
+      process.exit(1);
+    }
 
     // Map userStatus like ConnectClient does
     const userStatus = rawStatus.userStatus || rawStatus;
@@ -484,7 +551,8 @@ async function main() {
       quota: finalQuota
     };
 
-    const snapshot = parseLocalQuotaSnapshot(unifiedStatus);
+    const quotaSummary = rawSummary?.response || rawSummary || null;
+    const snapshot = parseLocalQuotaSnapshot(unifiedStatus, quotaSummary);
     console.log(JSON.stringify(snapshot, null, 2));
   } catch (err) {
     console.error(JSON.stringify({ error: err.message }));

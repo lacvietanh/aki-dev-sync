@@ -5,10 +5,16 @@ import { useLogs } from "./useLogs";
 import { projects, Toast } from "./useProjects";
 
 const sshHosts = ref([]);
+const selectedSshHost = ref(localStorage.getItem('aki-selected-ssh-host') || '');
 const showSshModal = ref(false);
 const sshConfigText = ref("");
 const hasSshUndo = ref(false);
 const hasSshRedo = ref(false);
+
+import { watch } from "vue";
+watch(selectedSshHost, (newVal) => {
+  localStorage.setItem('aki-selected-ssh-host', newVal);
+});
 
 export function useSsh() {
   const { appendGlobalLog } = useLogs();
@@ -159,6 +165,7 @@ export function useSsh() {
 
   return {
     sshHosts,
+    selectedSshHost,
     showSshModal,
     sshConfigText,
     hasSshUndo,

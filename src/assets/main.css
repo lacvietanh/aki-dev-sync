@@ -28,6 +28,12 @@
   --accent-red: #ef4444;
   --accent-green: #10b981;
   --accent-purple: #8b5cf6;
+  --text-light: #F3F4F6;
+  --text-muted: #9CA3AF;
+  --text-darker: #6B7280;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --bg-secondary: rgba(255, 255, 255, 0.02);
+  --bg-tertiary: rgba(255, 255, 255, 0.05);
 }
 
 body {

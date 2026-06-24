@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "Aki Dev Sync",
-        "width": 1100,
+        "width": 1000,
         "height": 768,
+        "minWidth": 600,
+        "minHeight": 500,
         "transparent": true,
         "decorations": false
       }

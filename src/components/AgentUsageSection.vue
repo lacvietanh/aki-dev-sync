@@ -25,19 +25,12 @@
       <div class="usage-column">
         <div class="column-header">
           <h3 class="column-title"><i class="fa-solid fa-cloud text-amber mr-1"></i> REMOTE</h3>
-          <div class="host-selector">
-            <span class="selector-label">Host:</span>
-            <select v-model="selectedHost" class="host-select">
-              <option value="" disabled>Select Host</option>
-              <option v-for="host in sshHosts" :key="host" :value="host">{{ host }}</option>
-            </select>
-          </div>
         </div>
         <AgentUsage
           agentId="claudecode"
           agentName="Claude Code"
           locationType="remote"
-          :hostName="selectedHost"
+          :hostName="selectedSshHost"
           :data="claudeData"
           :loading="claudeLoading"
           :error="claudeError"
@@ -57,22 +50,20 @@ import { useSsh } from '../composables/useSsh';
 import { useAgentUsage } from '../composables/useAgentUsage';
 import { useProjects } from '../composables/useProjects';
 
-const { sshHosts } = useSsh();
+const { sshHosts, selectedSshHost } = useSsh();
 const { projects } = useProjects();
 
-const selectedHost = ref('');
-
-// Sync selectedHost with the first available sshHost if not set, or prefer the active project's host
+// Sync selectedSshHost with the first available sshHost if not set, or prefer the active project's host
 watch(sshHosts, (newHosts) => {
-  if (newHosts.length > 0 && !selectedHost.value) {
-    selectedHost.value = newHosts[0];
+  if (newHosts.length > 0 && !selectedSshHost.value) {
+    selectedSshHost.value = newHosts[0];
   }
 }, { immediate: true });
 
 // We can also watch projects to default to the first project's remote host if available
 watch(projects, (newProjects) => {
-  if (newProjects.length > 0 && sshHosts.value.includes(newProjects[0].remote_host) && !selectedHost.value) {
-    selectedHost.value = newProjects[0].remote_host;
+  if (newProjects.length > 0 && sshHosts.value.includes(newProjects[0].remote_host) && !selectedSshHost.value) {
+    selectedSshHost.value = newProjects[0].remote_host;
   }
 }, { immediate: true });
 
@@ -84,7 +75,7 @@ const {
   stale: claudeStale, 
   refresh: claudeRefresh,
   forceSync: claudeForceSync
-} = useAgentUsage('claudecode', selectedHost);
+} = useAgentUsage('claudecode', selectedSshHost);
 
 // Setup Antigravity (local) monitoring - host is 'local'
 const localHostRef = ref('local');
@@ -103,10 +94,10 @@ const {
 .agent-usage-section {
   background: rgba(22, 22, 26, 0.6);
   border-bottom: 1px solid var(--border-color);
-  padding: 10px 16px;
+  padding: 6px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .usage-split-layout {
@@ -119,14 +110,14 @@ const {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
 }
 
 .column-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
 }
 

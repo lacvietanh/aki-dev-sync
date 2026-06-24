@@ -133,7 +133,7 @@
           <div class="feature-icon" style="color: #94a3b8;"><i class="fa-solid fa-key"></i></div>
           <div class="feature-text">
             <strong>SSH Config</strong>
-            <span>Quản lý <code>~/.ssh/config</code> có undo/redo — không cần mở terminal.</span>
+            <span>Quản lý <code>~/.ssh/config</code> có undo/redo, kiêm chọn Remote Host cho quota & logs — không cần mở terminal.</span>
           </div>
         </div>
 
@@ -168,6 +168,7 @@
         <ul class="custom-list">
           <li><strong>Quota thực tế:</strong> Đọc trực tiếp <code>rate_limits</code> do server Anthropic trả về qua <code>statusLine</code> hook, không chắp vá hay giả lập request — an toàn tuyệt đối.</li>
           <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn <code>rate_limits</code>. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
+          <li><strong>Hạn ngạch đa luồng (v1.3.0):</strong> Truy vấn song song hai endpoint Connect RPC để kéo đồng thời hạn ngạch 5H và hạn ngạch tuần (Weekly) cho cả Gemini và Claude/GPT pools, phân cụm bằng fieldset tinh gọn.</li>
           <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng <code>lsof</code> để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
           <li><strong>Force Sync với Auto-Probe:</strong> Đọc log cục bộ trên Remote. Nếu chu kỳ hiện tại chưa có session nào hoạt động (thiếu mốc reset), hệ thống tự kích hoạt Probe Session cực nhẹ (Haiku ~100 tokens) để thu về mốc reset chính xác.</li>
           <li><strong>Khắc phục lỗi mtime của <code>.git/</code>:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>

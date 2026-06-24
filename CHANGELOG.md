@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.3.0] - 2026-06-24
+
+#### Added
+- **Parallel Quota Connect RPC (`get-antigravity-usage.js`)**: Upgraded the local Connect RPC backend script to execute `/GetUserStatus` (for email/status) and `/RetrieveUserQuotaSummary` (for quota summary details) concurrently, capturing 4 detailed model quota buckets of Gemini and Claude pools.
+- **Circular Progress SVG Gauge (`UsageCircle.vue`)**: Designed a new reusable SVG-based circular progress component rendering Used % in a radial style with automatic color state triggers (`<= 70%` safe green, `<= 90%` warning amber, `> 90%` danger red, and gray for `N/A`) and hover tooltips.
+- **Fieldset Grouping Panels (`AgentUsage.vue`)**: Structured Antigravity model circles under separate `<fieldset>` containers for Gemini and Claude/GPT pools, applying a dashed border layout with a `<legend>` header resting natively on the border line.
+- **Next Reset Countdowns**: Formatted and displayed remaining quota reset timers (e.g., `2h15m`, `ready`, or `N/A`) directly below the circles.
+- **Persisted Host Selector Relocation (`SshConfigModal.vue` & `AgentUsageSection.vue`)**: Removed the `HOST` select dropdown from the main Remote column header. Created a new Claude Code remote host selector row inside the **SSH Config Modal**, sharing state globally via `useSsh.js` and persisting selection choices in `localStorage`.
+- **Claude Code Icon Alignment (`AgentUsage.vue`)**: Re-integrated the official `/claude-icon.png` image with `18x18px` boundaries in the Claude Code usage card header, ensuring symmetrical alignment with Antigravity.
+
+#### Changed
+- **Zero Padding & Compact Grid**: Transparentized card backgrounds, eliminated inner card padding/margins, and reduced column/header spacing (gap from 12px to 4px, header padding from 6px to 4px) to optimize space.
+- **Theme CSS Variables (`main.css`)**: Defined missing `:root` CSS variables (`--text-light`, `--text-muted`, `--text-darker`, `--border-color`, `--bg-secondary`, `--bg-tertiary`) to correct reset time contrast.
+- **App Version Bump**: Updated app version to `1.3.0` globally in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
+
+#### Documentation
+- **Architecture References**: Updated [usage-antigravity.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/arch/usage-antigravity.md) with parallel Connect RPC sequence diagrams.
+- **Research Log**: Created [antigravity-usage-new-4line.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/research/antigravity-usage-new-4line.md) logging local Connect RPC probe trials and endpoint findings.
+
 ### [1.2.9] - 2026-06-24
 
 #### Added
