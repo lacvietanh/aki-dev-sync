@@ -1,6 +1,6 @@
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
-// @docs docs/research/claude-usage-1.2.7-analyze.md
+// @docs docs/research/claude-usage-1.2.x-analyze.md
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
@@ -13,6 +13,7 @@ export function useAgentUsage(agentName, hostRef) {
 
   let pollTimer = null;
   let provisioned = false; // plain boolean — not reactive, not exposed to template
+  let initialSyncDone = false;
 
   const provision = async () => {
     if (!hostRef.value || provisioned) return;
@@ -45,6 +46,14 @@ export function useAgentUsage(agentName, hostRef) {
           const fiveHour = data.value?.rate_limits?.five_hour;
           const resetIsPast = fiveHour?.resets_at > 0 && (Date.now() / 1000) > fiveHour.resets_at;
           stale.value = resetIsPast || (mtime > 0 && (Date.now() / 1000 - mtime) > 600);
+
+          // Auto force-sync on first load if resets_at is 0 for Claude Code
+          if (agentName === 'claudecode' && !initialSyncDone) {
+            if (!fiveHour || fiveHour.resets_at === 0) {
+              initialSyncDone = true;
+              forceSync();
+            }
+          }
         } catch (e) {
           console.error(`Failed to parse ${agentName} usage JSON:`, e);
           error.value = "Invalid usage data format.";
@@ -52,6 +61,11 @@ export function useAgentUsage(agentName, hostRef) {
       } else {
         data.value = null;
         provision(); // fire-and-forget: set up remote on first empty result
+        // Auto force-sync on first load if cache file doesn't exist yet for Claude Code
+        if (agentName === 'claudecode' && !initialSyncDone) {
+          initialSyncDone = true;
+          forceSync();
+        }
       }
     } catch (e) {
       console.error(`Error fetching ${agentName} usage:`, e);
@@ -92,6 +106,7 @@ export function useAgentUsage(agentName, hostRef) {
 
   watch(() => hostRef.value, (newHost) => {
     provisioned = false; // reset provision state on host change
+    initialSyncDone = false; // reset initial sync state on host change
     data.value = null;
     error.value = null;
     if (newHost) {
@@ -101,7 +116,15 @@ export function useAgentUsage(agentName, hostRef) {
   }, { immediate: true });
 
   watch(() => refreshSettings.value.usage_interval_s, restartPollTimer);
-  watch(() => manualRefreshCount.value, () => { if (hostRef.value) checkUsage(); });
+  watch(() => manualRefreshCount.value, () => {
+    if (hostRef.value) {
+      if (agentName === 'claudecode') {
+        forceSync();
+      } else {
+        checkUsage();
+      }
+    }
+  });
 
   onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer);

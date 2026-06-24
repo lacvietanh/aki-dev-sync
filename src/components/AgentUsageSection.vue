@@ -42,7 +42,7 @@
           :loading="claudeLoading"
           :error="claudeError"
           :stale="claudeStale"
-          @retry="claudeRefresh"
+          @retry="claudeForceSync"
           @force-sync="claudeForceSync"
         />
       </div>

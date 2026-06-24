@@ -9,17 +9,35 @@
         <h3>🚀 Aki Dev Sync</h3>
         <p>
           Command Center để đồng bộ code giữa <strong>Máy Local</strong> và <strong>Máy Remote</strong> qua SSH/rsync —
-          không cần commit rác lên Git, không lo UI freeze.
+          không lo treo giao diện (UI freeze), không làm bẩn lịch sử Git bằng các commit tạm.
         </p>
+      </div>
+
+      <!-- Mental Model: Local <-> Remote -->
+      <div class="model-flow mb-3">
+        <div class="model-node local">
+          <div class="model-role">LOCAL</div>
+          <div class="model-title">Source of Truth</div>
+          <div class="model-meta">Git · Antigravity</div>
+        </div>
+        <div class="model-arrows">
+          <span class="arrow-push"><i class="fa-solid fa-arrow-right"></i> PUSH</span>
+          <span class="arrow-pull">PULL <i class="fa-solid fa-arrow-left"></i></span>
+        </div>
+        <div class="model-node remote">
+          <div class="model-role">REMOTE</div>
+          <div class="model-title">AI Workspace</div>
+          <div class="model-meta">Claude Code · Tác vụ nặng</div>
+        </div>
       </div>
 
       <!-- Use Cases -->
       <div class="alert-box info mb-3">
         <h4 class="alert-title"><i class="fa-solid fa-earth-americas"></i> Ai cần dùng?</h4>
         <ul class="custom-list">
-          <li><strong>Máy yếu ↔ Server mạnh:</strong> Code nhẹ ở laptop, đẩy build nặng / chạy AI lên Server.</li>
-          <li><strong>Bảo mật source code:</strong> Máy công ty bị kiểm soát? Giữ core code ở VPS cá nhân.</li>
-          <li><strong>Đa thiết bị:</strong> Đồng bộ nhanh giữa PC, Laptop, Server mà không commit rác lên GitHub.</li>
+          <li><strong>Máy yếu ↔ Server cấu hình cao:</strong> Viết code nhẹ nhàng ở máy Local, chuyển các tác vụ build nặng / chạy AI lên Server.</li>
+          <li><strong>Bảo mật mã nguồn:</strong> Tách biệt môi trường công việc, lưu giữ mã nguồn cốt lõi (core code) trên Remote riêng.</li>
+          <li><strong>Đồng bộ đa thiết bị:</strong> Đồng bộ nhanh giữa PC, Laptop và Server mà không tạo commit nháp trên GitHub.</li>
           <li><strong>AI Workspace:</strong> Đẩy toàn bộ project (kèm <code>.git/</code>) lên Remote để AI đọc hiểu đầy đủ ngữ cảnh.</li>
         </ul>
       </div>
@@ -31,14 +49,14 @@
           <div class="feature-icon"><i class="fa-solid fa-arrow-up"></i></div>
           <div class="feature-text">
             <strong>PUSH</strong>
-            <span>Đẩy code Local → Remote. Toggle <code>.git/</code> để AI đọc full context.</span>
+            <span>Đẩy code Local → Remote. Hỗ trợ toggle <code>.git/</code> (mặc định ON) và cấu hình "Force Delete" riêng cho từng dự án.</span>
           </div>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-bolt"></i></div>
           <div class="feature-text">
-            <strong>PUSH SPECIAL</strong>
+            <strong>SELECT (Push Special)</strong>
             <span>Chọn từng file từ danh sách Git để push — không scan cả thư mục.</span>
           </div>
         </div>
@@ -47,7 +65,7 @@
           <div class="feature-icon" style="color: #3b82f6;"><i class="fa-solid fa-arrow-down"></i></div>
           <div class="feature-text">
             <strong>PULL</strong>
-            <span>Rút file AI vừa sửa từ Remote về Local để review & commit.</span>
+            <span>Lấy file (Pull) sau khi code trên Remote về lại Local để kiểm tra và commit.</span>
           </div>
         </div>
 
@@ -55,7 +73,7 @@
           <div class="feature-icon" style="color: #22c55e;"><i class="fa-solid fa-shield-halved"></i></div>
           <div class="feature-text">
             <strong>DRY RUN</strong>
-            <span>Preview danh sách file sẽ thay đổi — không ghi thật cho đến khi tắt toggle.</span>
+            <span>Xem trước (Dry Run) các file sẽ thay đổi — không ghi đè dữ liệu thực tế cho đến khi tắt chế độ này.</span>
           </div>
         </div>
 
@@ -63,7 +81,7 @@
           <div class="feature-icon" style="color: #a78bfa;"><i class="fa-solid fa-circle-dot"></i></div>
           <div class="feature-text">
             <strong>Sync Status</strong>
-            <span>Background check — nút PUSH/PULL tự sáng lên khi hai phía lệch nhau.</span>
+            <span>Tự động kiểm tra — nút PUSH/PULL sáng lên để thông báo khi dữ liệu giữa hai phía có sự chênh lệch.</span>
           </div>
         </div>
 
@@ -71,7 +89,23 @@
           <div class="feature-icon" style="color: #f97316;"><i class="fa-solid fa-code"></i></div>
           <div class="feature-text">
             <strong>Pre / Post Hooks</strong>
-            <span>Script chạy trước/sau mỗi lần sync (build, restart service, notify...).</span>
+            <span>Script chạy trước/sau mỗi lần sync (build, restart service, notify...), chạy Local hoặc Remote tuỳ chọn.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #ef4444;"><i class="fa-solid fa-clone"></i></div>
+          <div class="feature-text">
+            <strong>Mirror / Delete</strong>
+            <span>Bật <code>--delete</code> để mirror chính xác. Mặc định Push không xóa; nếu kích hoạt, việc push ghi đè lên thay đổi mới ở Remote sẽ yêu cầu xác nhận.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #14b8a6;"><i class="fa-solid fa-layer-group"></i></div>
+          <div class="feature-text">
+            <strong>Exclude Presets</strong>
+            <span>Cấu hình rsync exclude riêng cho Push/Pull, hỗ trợ cấu hình nhanh chỉ với 1-click: Nuxt 4, Tauri v2, Aki Default.</span>
           </div>
         </div>
       </div>
@@ -83,7 +117,7 @@
           <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
             <strong>Open Popup</strong>
-            <span>Hover/Click nút OPEN → mở Finder, Terminal, VSCode, Antigravity cho Local & Remote SSH.</span>
+            <span>Hover nút OPEN → mở nhanh Local (Finder, Terminal, VSCode, VSCode Insiders, Antigravity) và Remote (SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote).</span>
           </div>
         </div>
 
@@ -91,7 +125,7 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Theo dõi mức dùng Antigravity (Local - qua cơ chế quét tiến trình native siêu tốc) và Claude Code (Remote) theo thời gian thực.</span>
+            <span>Theo dõi hạn mức sử dụng (Quota) của Antigravity (Local - qua cơ chế quét native process hiệu năng cao) và Claude Code (Remote) theo real-time.</span>
           </div>
         </div>
 
@@ -107,26 +141,47 @@
           <div class="feature-icon" style="color: #ec4899;"><i class="fa-solid fa-rotate"></i></div>
           <div class="feature-text">
             <strong>Background Refresh</strong>
-            <span>Tự động poll Git status, sync diff, agent usage theo interval tuỳ chỉnh.</span>
+            <span>Tự động kiểm tra Git status, sync diff, agent usage theo chu kỳ tùy cấu hình.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #fbbf24;"><i class="fa-solid fa-arrows-rotate"></i></div>
+          <div class="feature-text">
+            <strong>Force Sync Quota</strong>
+            <span>Làm mới Quota (↻): Đọc logs cục bộ trên Remote. Nếu chưa có session Claude Code nào hoạt động trong chu kỳ 5 giờ (lệnh /usage không hiển thị resets_at do thiếu dữ liệu logs), hệ thống tự động chạy Probe Session cực nhẹ (Haiku 'ok') để tạo log session mới, giúp Claude CLI tính toán và trả về mốc resets_at chính xác cho UI.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #f87171;"><i class="fa-brands fa-git-alt"></i></div>
+          <div class="feature-text">
+            <strong>Git Actions</strong>
+            <span>Modal Git hợp nhất: status (clean/dirty/ahead), remote URL, commit log và commit-and-push trong một luồng quét.</span>
           </div>
         </div>
       </div>
 
+      <!-- Engineering Highlights -->
+      <div class="alert-box tech mt-3">
+        <h4 class="alert-title"><i class="fa-solid fa-flask"></i> Điểm Nhấn Công Nghệ</h4>
+        <ul class="custom-list">
+          <li><strong>Quota thực tế:</strong> Đọc trực tiếp <code>rate_limits</code> do server Anthropic trả về qua <code>statusLine</code> hook, không chắp vá hay giả lập request — an toàn tuyệt đối.</li>
+          <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn <code>rate_limits</code>. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
+          <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng <code>lsof</code> để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
+          <li><strong>Force Sync với Auto-Probe:</strong> Đọc log cục bộ trên Remote. Nếu chu kỳ hiện tại chưa có session nào hoạt động (thiếu mốc reset), hệ thống tự kích hoạt Probe Session cực nhẹ (Haiku ~100 tokens) để thu về mốc reset chính xác.</li>
+          <li><strong>Khắc phục lỗi mtime của <code>.git/</code>:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
+        </ul>
+      </div>
+
       <!-- Origin Story — moved to bottom, preserved -->
       <div class="alert-box origin mt-3">
-        <h4 class="alert-title"><i class="fa-solid fa-bullseye"></i> Mục Đích Khởi Thủy</h4>
-        <p class="mb-1">Ứng dụng sinh ra từ bài toán thực tế của tác giả (Lạc Việt Anh):</p>
+        <h4 class="alert-title"><i class="fa-solid fa-bullseye"></i> Bối Cảnh Ra Đời</h4>
+        <p class="mb-1">Ứng dụng phát triển để phục vụ chính nhu cầu của tác giả (Lạc Việt Anh) trong việc tối ưu luồng code hàng ngày:</p>
         <ul class="custom-list">
-          <li>
-            <strong>Local (Source of Truth):</strong> Nơi code an toàn, lưu trữ Git. Sử dụng <em>Antigravity Pro</em> cá nhân.
-          </li>
-          <li>
-            <strong>Remote (AI Workspace):</strong> Đẩy code lên để AI đọc hiểu toàn bộ project. Tận dụng
-            <em>Claude Code / Claude MAX</em> tài khoản riêng qua Terminal để sinh code hàng loạt một cách bảo mật.
-          </li>
-          <li>
-            <strong>Reverse-Engineered Quota Flow:</strong> Cơ chế đo lường quota của Antigravity được đào ngược từ mã nguồn của IDE. Hệ thống tự động quét chính xác tiến trình native, lùng sục qua <code>lsof</code> để dò cổng kết nối Connect RPC nội bộ và query trực tiếp kết quả thật từ local proxy.
-          </li>
+          <li><strong>Local — Source of Truth:</strong> code an toàn, giữ Git, dùng <em>Antigravity Pro</em> cá nhân.</li>
+          <li><strong>Remote — AI Workspace:</strong> đẩy code lên cho <em>Claude Code / MAX</em> (tài khoản riêng) sinh code hàng loạt qua Terminal.</li>
+          <li><strong>Reverse Engineering Quota:</strong> Đo lường hạn mức Antigravity bằng cách phân tích ngược IDE — quét native process, dùng <code>lsof</code> dò cổng Connect RPC và truy vấn trực tiếp local proxy.</li>
         </ul>
       </div>
     </div>
@@ -175,6 +230,13 @@ const { showIntroModal, closeIntroModal } = useIntro();
   background: rgba(110, 231, 183, 0.04);
   border-color: rgba(110, 231, 183, 0.15);
 }
+.alert-box.tech {
+  background: rgba(167, 139, 250, 0.05);
+  border-color: rgba(167, 139, 250, 0.2);
+}
+.alert-box.tech .alert-title {
+  color: #a78bfa;
+}
 .alert-title {
   margin: 0 0 10px 0;
   font-size: 14px;
@@ -190,6 +252,59 @@ const { showIntroModal, closeIntroModal } = useIntro();
   color: #6ee7b7;
   opacity: 0.8;
 }
+.model-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.model-node {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(5, 7, 12, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.model-node.local {
+  border-color: rgba(34, 211, 238, 0.25);
+  background: rgba(34, 211, 238, 0.04);
+}
+.model-node.remote {
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.04);
+}
+.model-role {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.model-node.local .model-role { color: #22d3ee; }
+.model-node.remote .model-role { color: #f59e0b; }
+.model-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e5e7eb;
+  margin: 2px 0;
+}
+.model-meta {
+  font-size: 10px;
+  color: #9ca3af;
+}
+.model-arrows {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.arrow-push, .arrow-pull {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.arrow-push { color: #6ee7b7; }
+.arrow-pull { color: #60a5fa; }
 .subgroup-label {
   font-size: 10px;
   font-weight: 700;

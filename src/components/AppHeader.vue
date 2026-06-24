@@ -4,6 +4,7 @@
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
           <img src="/titlebar-icon.png" class="app-icon mr-1" data-tauri-drag-region /> Aki Dev Sync
+          <span v-if="isDev" class="dev-tag">DEV</span>
           <span class="app-version clickable" @click="showChangelog" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }} #{{ buildHash }})</span>
         </h1>
       </div>
@@ -46,7 +47,6 @@
 import { ref } from 'vue';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
-import { refreshAll } from '../composables/useBackgroundRefresh';
 import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
 import changelogText from '../../CHANGELOG.md?raw';
@@ -58,6 +58,7 @@ const appVersion = __APP_VERSION__;
 const buildDate = __BUILD_DATE__;
 const buildHash = __BUILD_HASH__;
 const showRefreshSettings = ref(false);
+const isDev = import.meta.env.DEV;
 
 function showChangelog() {
   Swal.fire({
@@ -82,7 +83,6 @@ const { openIntroModal } = useIntro();
 
 function handleRefresh() {
   loadData(sshHosts, true);
-  refreshAll();
 }
 
 function handleCreateNew() {
@@ -146,5 +146,19 @@ function handleCreateNew() {
 }
 .app-version.clickable:hover {
   color: #3b82f6;
+}
+
+.dev-tag {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+  display: inline-block;
 }
 </style>

@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.2.9] - 2026-06-24
+
+#### Added
+- **Dev Titlebar Indicator**: Display a subtle red "DEV" badge in the custom HTML titlebar when running the application in Vite development mode (`npm run tauri dev`).
+- **Claude Code Auto-Probe Session**: Integrated an automatic "Probe Session" (dummy session using Haiku with prompt "respond with ok" in a temporary directory) into `force-sync-claudecode.sh`. When a remote host has no active local Claude sessions in the current 5-hour window, `/usage` hides the `resets_at` time. The script now automatically runs a quick probe session if no reset time is found, forcing Claude CLI to output a valid `resets_at` timestamp for the UI cache.
+
+#### Fixed
+- **Open Remote Antigravity**: Fixed a path issue where launching Antigravity remotely from the ACTIONS table button failed silently when running the app as a macOS `.app` bundle. Resolved by wrapping the `antigravity-ide` command in the `create_command` helper to correctly inject `/opt/homebrew/bin:/usr/local/bin` into the process environment PATH.
+- **Parser Crash on 0% Quota**: `force-sync-parse.py` regex was a single combined pattern requiring both `% used` AND `· resets <time>` together. When quota resets fully, `/usage` returns `Current session: 0% used` with **no reset timestamp**, causing parse failure → cache not updated → `STALE_RESET` loop → UI permanently stuck on "No data". Fixed by splitting into two independent regexes: `%` (required) + `resets_at` (optional, defaults to 0). Now correctly writes `{used_percentage: 0, resets_at: 0}` to cache on fresh quota.
+- **Force Sync Button in Empty State**: `AgentUsage.vue` empty state ("No data — waiting for next session") had no way to trigger Force Sync, leaving users stuck. Added a Force Sync button directly in the empty state for Claude Code cards.
+- **Double refreshAll() on Manual Reload**: `handleRefresh()` in `AppHeader.vue` called `refreshAll()` directly after `loadData()`, which itself already calls `refreshAll()` internally. This caused git status, sync status, and usage checks to fire twice on every manual reload. Removed the redundant external call.
+- **Startup & Host Change Auto Force-Sync**: Fixed an issue where restarting the application or switching remote hosts left the UI stuck at `0%` without a reset line. Integrated an initial-load auto force-sync logic in `useAgentUsage.js` that automatically runs a remote sync when `resets_at` is 0 or cache is missing.
+- **Manual Refresh Full Force-Sync**: Wired up both the card header reload button and the titlebar global reload button to trigger a full remote `forceSync()` for Claude Code rather than just re-reading the remote cache file.
+
+#### Research
+- Confirmed (2026-06-24): `claude -p /usage` **reads local JSONL session files** (`~/.claude/projects/**/*.jsonl`) and computes offline — output states *"does not include other devices or claude.ai"*. It is **P2, not P3** (OAuth API call). Previous assumption (2026-06-23) that it makes a live OAuth network call was **incorrect**. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.x-analyze.md`.
+- **Auto-Probe Breakthrough (2026-06-24)**: Solved the "missing reset time on inactive session" issue. When local Claude Code logs are inactive (past 5h window), `/usage` hides `resets_at`. We discovered that executing a dummy one-turn session (`claude --model haiku -p "respond with ok" < /dev/null`) inside a unique temporary directory forces the CLI to populate the local JSONL log. This safely and natively forces the `/usage` parser to output the correct server-synchronized `resets_at` time for the UI, consuming less than $0.0001 worth of tokens (approx. 100 Haiku tokens) without the safety risks of hitting undocumented Anthropic OAuth APIs.
+- Confirmed (2026-06-24): correct SSH invocation for manual testing is `ssh <host> "bash -lc 'claude --model haiku -p /usage < /dev/null'"`. Using `zsh` fails on hosts without zsh (e.g. `bien`); omitting `-lc` fails because PATH is not loaded.
+
+---
+
 ### [1.2.8] - 2026-06-24
 
 #### Fixed
@@ -15,7 +36,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Auto Force Sync on Reset**: `UsageProgressBar.vue` now emits a `timeout` event exactly once when the countdown timer crosses zero (reset time reached). For Claude Code bars, `AgentUsage.vue` maps `@timeout` to `force-sync` (previously mapped to `retry`), triggering an automatic quota refresh instead of just re-reading the stale cache file.
 
 #### Research
-- Confirmed via live SSH testing (2026-06-23): `claude -p /usage` makes a real network call to the Anthropic OAuth API (`~/.claude/.credentials.json`) and does **not** require an active Claude Code session. Previous assumption that it read from RAM session was incorrect. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.7-analyze.md`.
+- Confirmed via live SSH testing (2026-06-23): `claude -p /usage` makes a real network call to the Anthropic OAuth API (`~/.claude/.credentials.json`) and does **not** require an active Claude Code session. Previous assumption that it read from RAM session was incorrect. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.7-analyze.md`.is not loaded.
 
 ---
 

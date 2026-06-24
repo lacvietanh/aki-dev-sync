@@ -7,24 +7,29 @@ import sys, re, json, datetime, os
 out = os.environ.get("CLAUDE_SYNC_OUT", "")
 raw_preview = out[:300].strip()
 
-match = re.search(
-    r'(\d+)%\s*used\s*.\s*resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)',
-    out,
-    re.IGNORECASE,
-)
-if not match:
+pct_match = re.search(r'(\d+)%\s*used', out, re.IGNORECASE)
+if not pct_match:
     print(json.dumps({"parsed": False, "raw_preview": raw_preview}))
     sys.exit(0)
 
-pct = int(match.group(1))
-year = datetime.datetime.now().year
-date_str = f"{match.group(2)} {year} {match.group(3)}:{match.group(4)}{match.group(5)}"
-try:
-    dt = datetime.datetime.strptime(date_str, "%b %d %Y %I:%M%p")
-    resets_at = int(dt.timestamp())
-except Exception:
-    print(json.dumps({"parsed": False, "parse_error": True, "date_str": date_str}))
-    sys.exit(0)
+pct = int(pct_match.group(1))
+resets_at = 0
+
+reset_match = re.search(
+    r'resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)',
+    out,
+    re.IGNORECASE,
+)
+if reset_match:
+    year = datetime.datetime.now().year
+    date_str = f"{reset_match.group(1)} {year} {reset_match.group(2)}:{reset_match.group(3)}{reset_match.group(4)}"
+    try:
+        dt = datetime.datetime.strptime(date_str, "%b %d %Y %I:%M%p")
+        resets_at = int(dt.timestamp())
+    except Exception:
+        print(json.dumps({"parsed": False, "parse_error": True, "date_str": date_str}))
+        sys.exit(0)
+
 
 cache_file = os.path.expanduser("~/.claude/rate-limits-cache.json")
 data = {}

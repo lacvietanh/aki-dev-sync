@@ -54,7 +54,11 @@
       </div>
       <div v-else-if="!data && !loading" class="usage-empty">
         <i class="fa-solid" :class="agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1'"></i><br>
-        {{ agentId === 'antigravity' ? 'IDE not running (Open Antigravity to monitor)' : 'No data — waiting for next session' }}
+        <span>{{ agentId === 'antigravity' ? 'IDE not running (Open Antigravity to monitor)' : 'No data — waiting for next session' }}</span>
+        <button v-if="agentId === 'claudecode'" @click="$emit('force-sync')" class="btn-ui-action btn-sync-now" style="margin-top: 8px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" title="Force Sync Quota">
+          <i class="fa-solid fa-arrows-rotate"></i>
+          <span>Force Sync</span>
+        </button>
       </div>
       
       <div v-else-if="data" class="usage-bars-container">
@@ -343,5 +347,27 @@ async function handleIconClick() {
   border-radius: 4px;
 }
 
+.usage-empty {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-darker);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-sync-now {
+  border-radius: 4px;
+  color: var(--text-light);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.btn-sync-now:hover {
+  background-color: var(--bg-tertiary);
+  border-color: var(--accent-amber) !important;
+  color: var(--accent-amber) !important;
+}
 
 </style>

@@ -78,7 +78,7 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
         }
         "antigravity" => {
             let expanded = expand_remote_tilde(&path);
-            Command::new("antigravity-ide")
+            create_command("antigravity-ide")
                 .args(["--remote", &format!("ssh-remote+{}", host), &expanded])
                 .spawn()
                 .map_err(|e| format!("Failed to open Antigravity remotely: {}", e))?;

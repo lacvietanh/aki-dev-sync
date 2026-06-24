@@ -1,5 +1,6 @@
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
+// Updated: 2026-06-24 (v1.2.9 - added auto-probe session support)
 
 use serde::Serialize;
 use std::io::Write;
