@@ -61,13 +61,16 @@ Trong quá trình sử dụng thực tế, chúng ta đã phát hiện 2 điểm
 Khi người dùng dùng cạn kiệt Quota, API của Anthropic sẽ trả về lỗi HTTP `429 Too Many Requests`. Thay vì truyền nguyên vẹn gói JSON cũ với thông báo 100%, Claude Code CLI lại tự ý **CẮT BỎ HOÀN TOÀN** cục `rate_limits` ra khỏi luồng JSON truyền vào `statusLine`.
 - **Hệ quả:** File cache bị mất key `rate_limits`, UI của App không đọc được % và thời gian reset, dẫn đến việc thanh Progress Bar biến mất hoàn toàn.
 
-### Lỗi B: Force Sync bị "Bất lực" khi không có session đang chạy
-Để ép đồng bộ Quota khi chưa phát sinh lượt chat mới, App chạy ngầm `claude --model haiku -p /usage`.
-- **`-p` thực sự là gì:** Theo `claude --help`, `-p` / `--print` chỉ đơn giản là *"Print response and exit"* — không có ghi chú nào về việc tắt `statusLine`. (Ghi chú cũ trong tài liệu này về việc `-p` tắt `statusLine` là **sai**, đã được sửa sau thực nghiệm 2026-06-23.)
-- **Lý do thực sự thất bại:** `statusLine` bị tắt vì **stdout không phải TTY** (chạy qua SSH pipe/redirect) — đây là điều Claude Code tự detect, không liên quan đến cờ `-p`.
-- **Vấn đề căn bản hơn:** Mỗi lần gọi `claude -p` là một **process riêng biệt, RAM riêng biệt**. Lệnh `/usage` đọc thông tin rate-limit từ RAM của invocation hiện tại. Nếu không có session Claude Code nào đang chạy trên remote, RAM không có data → `/usage` trả về rỗng hoặc không match được format → parse thất bại → cache cũ giữ nguyên.
-- **Xác nhận thực tế (2026-06-23):** Quan sát 1 ngày: sau mỗi lần quota reset mà người dùng không dùng Claude Code, bấm Force Sync không có tác dụng. Test thực nghiệm SSH xác nhận `/usage` chỉ trả về data đúng khi máy remote đang có session Claude Code hoạt động.
-- **Hạn chế API:** Anthropic không có endpoint REST công khai tên `/rate_limits`. Thông tin quota được nhúng vào Headers (`anthropic-ratelimit-*`) của Response khi có Request thực sự, hoặc có thể truy cập qua endpoint OAuth không chính thức `api.anthropic.com/api/oauth/usage` (xem thêm tài liệu nghiên cứu).
+### Lỗi B: Sự cố đồng bộ Quota khi chạy ngầm qua SSH
+App chạy ngầm `claude --model haiku -p /usage` để cố lấy thông tin quota. Trong thực tế triển khai, lệnh này đã gặp phải 2 sự cố kỹ thuật:
+- **Trễ 3 giây do thiếu `< /dev/null`:** Khi chạy qua SSH subshell không phải TTY, Claude CLI sẽ chờ nhập liệu từ stdin trong 3 giây trước khi xử lý tiếp, in cảnh báo ra stderr. Do đó, quá trình đồng bộ bị trễ từ ~2s lên hơn 5s.
+- **Parser bị sập khi Quota Reset (0% used):** Khi quota reset hoàn toàn (hoặc chưa tiêu tốn token nào), output của `/usage` trả về `Current session: 0% used` và **không kèm theo** mốc thời gian reset kế tiếp. Do regex parser cũ quá cứng nhắc, việc không khớp chuỗi thời gian dẫn đến lỗi parse, khiến file cache không được cập nhật. Kết hợp với logic vô hiệu hóa cache cũ khi qua giờ reset, UI sẽ bị kẹt vĩnh viễn ở trạng thái "No data - waiting for next session".
+
+**⚠️ Giới hạn quan trọng của `/usage` (xác nhận 2026-06-24):** Lệnh `/usage` **KHÔNG** thực hiện network call đến Anthropic API. Output của nó ghi rõ: *"Approximate, based on local sessions on this machine — does not include other devices or claude.ai"*. Tức là nó **chỉ đọc file JSONL local** (`~/.claude/projects/**/*.jsonl`) rồi tính toán locally — là **họ P2**, không phải P3. Kết quả:
+- Chỉ phản ánh session trên chính máy `bien`, không phản ánh tài khoản tổng thể.
+- Nếu người dùng khác dùng Claude Code trên máy khác, `/usage` trên `bien` **không thay đổi**.
+- `0% used` + không có `resets_at` là **chính xác** khi không có session local nào trong 5 giờ qua, dù tài khoản thực tế có thể đã dùng nhiều trên thiết bị khác.
+
 
 ---
 
@@ -82,24 +85,27 @@ Bắt trọn mọi hoạt động chat của User và đề phòng Lỗi A.
 - Mọi dữ liệu xịn xò (session, cwd, tokens, v.v.) được giữ nguyên. UI không bao giờ bị sập thanh Progress.
 
 ### Luồng Chủ động (Active Flow - Nút Force Sync)
-Bắt ép làm mới dữ liệu quota từ server mà không cần phát sinh lượt chat mới.
+Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remote.
 - Rust Backend ([agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs)) kích hoạt script [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh):
-  ```sh
-  BLANK_DIR="/tmp/aki-dev-sync-blank-dir"
-  mkdir -p "$BLANK_DIR"
-  cd "$BLANK_DIR" && claude --model haiku -p /usage < /dev/null 2>/dev/null
-  ```
-- **Cơ chế thực tế (xác nhận 2026-06-23):** Lệnh `/usage` thực hiện **network call thực sự** đến Anthropic API, xác thực bằng OAuth token có sẵn trong `~/.claude/.credentials.json`. Không cần session đang mở, không đọc từ RAM — ~2 giây.
+  - **Cơ chế tự động Probe Session (v1.2.9):** Lệnh `/usage` (họ P2) chỉ đọc local JSONL logs. Nếu trong 5h qua không có local session nào, nó sẽ báo `0% used` và **không hiển thị** mốc `resets_at` do thiếu dữ liệu logs để tính toán. Để khắc phục, script kiểm tra output: nếu không tìm thấy từ khóa `resets`, nó sẽ tự động chạy một probe session cực ngắn `claude --model haiku -p "respond with ok" < /dev/null` trong thư mục tạm nhằm ép ghi log cục bộ mới. Sau đó, nó chạy lại `/usage` để thu về mốc `resets_at` chuẩn xác nhất của chu kỳ hiện tại.
+- **⚠️ Cơ chế thực tế của `/usage`:** Lệnh này **KHÔNG** gọi Anthropic API để lấy quota tài khoản tổng thể, nó **chỉ đọc local JSONL files** (`~/.claude/projects/**/*.jsonl`) rồi tính toán offline. Do đó, nó phản ánh chính xác mốc reset của chu kỳ hiện tại mà thiết bị này tham gia, nhưng không bao gồm hoạt động trên thiết bị khác.
+- **Các kịch bản kích hoạt luồng Force Sync:**
+  1. **Khởi chạy ứng dụng (App Startup) / Thay đổi Host (Host Change):** Khi người dùng mở app hoặc chuyển sang host khác, hệ thống sẽ đọc cache cục bộ trên remote. Nếu cache chưa tồn tại hoặc chứa `resets_at = 0` (chưa có session nào để tính toán mốc reset), hệ thống sẽ **tự động gọi Force Sync** một lần để chạy probe session và điền mốc reset chuẩn xác.
+  2. **Khi mốc reset hiện tại đã qua (Timeout / Reset Time Reached):** Bộ đếm thời gian countdown của UI sẽ tự động kích hoạt Force Sync để cập nhật hạn mức cho chu kỳ mới.
+  3. **Yêu cầu thủ công của người dùng:**
+     - Người dùng bấm nút **Reload** trên thanh tiêu đề ứng dụng (App Header).
+     - Người dùng bấm nút **Refresh** (icon xoay màu trắng) ở góc phải của thẻ Claude Code card.
+     - Người dùng bấm nút **Force Sync** ở trạng thái card trống hoặc ở chân progress bar (khi mốc reset cũ đã qua).
 - **`< /dev/null`** là bắt buộc: nếu thiếu, Claude Code chờ stdin 3 giây không cần thiết trước khi xử lý.
 - **Blank dir độc lập** (`/tmp/aki-dev-sync-blank-dir`): tránh dùng `/tmp` trực tiếp vì có thể có file bị nhặt làm project context; tạo mới nếu chưa tồn tại.
-- Output (Stdout) có dạng chuẩn: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)`.
+- Output (Stdout) có dạng: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)` (khi có session) hoặc `Current session: 0% used` (khi không có session local trong 5h qua).
 - Backend nhúng script [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) chạy inline:
-  1. Dùng biểu thức chính quy (Regex) cắt lấy số `%` và `Chuỗi ngày giờ`.
-  2. Dùng thư viện `datetime` chuyển đổi chuỗi chữ "Jun 22, 10:10pm" thành Unix Timestamp siêu chuẩn.
-  3. Đọc file `rate-limits-cache.json` lên, **CHỂ GHI ĐÈ** cụm `rate_limits.five_hour` bằng `%` và `Timestamp` vừa tính. Ghi ngược file lại.
-- **Giới hạn còn lại:** Nếu cache cũ có `resets_at` đã qua nhưng user chưa bấm Force Sync, UI vẫn hiển thị "Reset X ago" từ data cũ. Xem [claude-usage-1.2.7-analyze.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/research/claude-usage-1.2.7-analyze.md) (Vấn đề B, C, D) để biết các hướng cải thiện tiếp theo.
+  1. Dùng Regex cắt lấy số `%` (bắt buộc) và chuỗi ngày giờ (tùy chọn).
+  2. Dùng thư viện `datetime` chuyển đổi "Jun 22, 10:10pm" thành Unix Timestamp.
+  3. Ghi đè cụm `rate_limits.five_hour` trong cache. Nếu không có `resets_at`, ghi `resets_at: 0`.
 
-> _Cập nhật 2026-06-23: Sửa lại mô tả cơ chế Active Flow. Thực nghiệm xác nhận `/usage` gọi network (OAuth), không đọc RAM. Bổ sung `< /dev/null` để loại 3s delay. Đổi `cd /tmp` thành blank dir riêng để đảm bảo context rỗng._
+> _Cập nhật 2026-06-23: Bổ sung `< /dev/null` để loại 3s delay. Đổi `cd /tmp` thành blank dir riêng để đảm bảo context rỗng._
+> _Cập nhật 2026-06-24 (v1.2.9): Sửa lỗi parser regex thất bại khi quota được reset hoàn toàn (0% used). Tích hợp cơ chế tự động chạy "Probe Session" (dummy session haiku) khi `/usage` thiếu mốc thời gian reset. Tài liệu hóa các kịch bản kích hoạt luồng Force Sync._
 
 ---
 

@@ -1,152 +1,107 @@
 # Aki Dev Sync 🚀
 
-**Aki Dev Sync** là ứng dụng desktop (Command Center) chuyên biệt, tối ưu cho quy trình lập trình **Lạc Việt Anh Workflow** (Local ↔ Remote AI agent vibe coding).
+> A desktop **Command Center** for the **Lạc Việt Anh Workflow** — sync code between your **local machine** and a **remote AI workspace** over SSH/rsync, without polluting Git with throwaway commits.
 
-<img width="1571" height="813" alt="Screenshot 2026-06-24 at 00 18 15" src="https://github.com/user-attachments/assets/3b086ddf-a0d7-4a00-8858-b1a756884bee" />
+<img width="1571" height="813" alt="Aki Dev Sync screenshot" src="https://github.com/user-attachments/assets/3b086ddf-a0d7-4a00-8858-b1a756884bee" />
 
+## 🧭 The Model: Local ↔ Remote
 
-## 📖 Triết Lý: Lạc Việt Anh Workflow
+Aki Dev Sync solves one problem: keeping a **split development environment** in sync. You code on one machine and let an AI agent work on another — without committing noise to Git just to move files around.
 
-Ứng dụng này giải quyết bài toán chia tách môi trường phát triển (antigravity IDE ở local, claude code ở remote)
+```
+                       PUSH  ───────────────►
+   ┌───────────────────────┐         ┌───────────────────────┐
+   │   LOCAL                │         │   REMOTE               │
+   │   Source of Truth      │         │   AI Workspace         │
+   │   • Git history        │         │   • Claude Code / MAX  │
+   │   • Antigravity IDE    │         │   • Heavy builds / GPU │
+   └───────────────────────┘         └───────────────────────┘
+                       ◄───────────────  PULL
+```
 
-## 🔥 Tính Năng Nổi Bật
+- **LOCAL — Source of Truth.** Your Git history lives here. You review, commit, and edit in a personal IDE (e.g. Antigravity Pro).
+- **REMOTE — AI Workspace.** A stronger box reachable over SSH where an AI agent (e.g. Claude Code / Claude MAX) reads the full project context and generates code at scale.
+- **PUSH** sends your local changes up so the AI sees everything; **PULL** brings the AI's work back for review and commit — closing the loop.
 
-### 1. Nút PUSH Thông Minh (Có Checkbox `.git`)
-- Nút **PUSH** nay đi kèm một Checkbox `[.git]`.
-- **Mặc định (ON):** Đẩy toàn bộ code VÀ thư mục `.git/` lên Remote để Claude có đầy đủ context.
-- **Tắt (OFF):** Chỉ đẩy code lên Remote, bỏ qua `.git/` (dành cho những trường hợp đặc biệt không muốn chép đè lịch sử Git trên Remote).
+## 👥 Who is this for?
 
-### 2. PUSH SELECT
-- Mở danh sách **những file bị thay đổi** ở máy Local (Modified, Untracked, Deleted).
-- "Những file bên đó có rồi thì cần gì, đúng ko?" - Chính xác! Tính năng này cho phép bạn chọn nhanh (multi-select) một vài file vừa sửa để cập nhật sang Remote cho Claude xử lý, tiết kiệm tối đa thời gian quét và đồng bộ.
+This tool was built for a specific way of working — you'll feel at home if you:
 
-### 3. PULL
-- Lấy lại đoạn code mà Claude vừa viết trên Remote về thẳng máy Local.
-- Bạn review nhanh và **Commit trực tiếp** tại Local, hoàn thành chu trình.
+- **Code on a weak machine, run on a strong server** — keep the laptop light, push heavy builds / AI to a server.
+- **Need to protect your source** — work machine locked down? Keep the core code on your own remote server.
+- **Switch between devices** — sync fast across PC, laptop, and server without dumping junk commits on GitHub.
+- **Feed a full project to an AI** — push everything (including `.git/`) so the agent has complete context.
 
-### 4. SSH Config Editor (Tích hợp & An Toàn)
-- Chỉnh sửa trực tiếp file `~/.ssh/config` ngay trên giao diện (Raw Text Code Editor).
-- Tính năng **UNDO (Khôi phục Backup nội bộ)** cứu nguy ngay lập tức nếu lỡ gõ sai cú pháp làm mất kết nối.
-- Auto-load danh sách Host tự động.
+## ✨ Features
 
-### 5. Open-Source Ready (Zero Hardcode)
-- Codebase được thiết kế chuẩn mực Native Flow, loại bỏ mọi đường dẫn (paths) và biến môi trường cá nhân bị gài cứng.
-- Global Logging ghi nhận chi tiết từng Real-time Event (Load, SSH, Git) phục vụ quá trình debug và giám sát.
+### ⚡ Sync
 
-### 6. Quản Lý Trạng Thái Git Hợp Nhất (Single Flow)
-- Gộp toàn bộ lệnh check Git (Clean/Dirty/Ahead), lấy URL Remote và trích xuất lịch sử Commit Log vào một luồng quét native duy nhất.
-- Tối ưu hiệu năng tối đa cho mỗi project, giúp mở Modal xem chi tiết tình trạng Git cực nhanh mà không phải chờ đợi hay gọi các luồng phụ chắp vá.
+| Feature | What it does |
+|---|---|
+| **PUSH** (`.git` toggle) | Push Local → Remote. Toggle `.git/` on to give the AI full history, off to skip it. |
+| **SELECT** (Push Special) | Pick individual changed files (Modified / Untracked / Deleted) from Git status and push just those — no full-tree scan. |
+| **PULL** | Pull what the AI just wrote on Remote straight back to Local for a quick review & commit. |
+| **Mirror / Delete** (per project) | Optional `--delete` mode for Push and Pull. Off by default for Push (it never deletes on the remote); when on, pushing over pending AI changes triggers a confirm dialog first. |
+| **DRY RUN** | Preview the exact rsync changes without writing a single byte. |
+| **Sync Status** | PUSH/PULL buttons light up automatically when the two sides drift; background polling keeps it current. |
+| **Pre / Post Hooks** | Run scripts before/after each push & pull (build, restart a service, notify…), locally or on the remote. |
 
-### 7. Giám Sát Quota & Force Sync (AI Agents)
-- Theo dõi Real-time % hạn mức sử dụng của Claude Code trên Remote và Antigravity ở Local với thời gian đếm ngược (Relative Time) được tự động quy đổi cực kỳ trực quan dựa theo Absolute Time. Đối với Antigravity ở Local, hệ thống sử dụng cơ chế quét tiến trình native và kết nối Connect RPC trực tiếp siêu tốc, loại bỏ hoàn toàn hiện tượng mất kết nối chập chờn của CLI cũ. Chi tiết xem tại [antigravity-usage.md](docs/ref/antigravity-usage.md).
-- **Force Sync Quota (Phá băng Cache):** Bổ sung nút (↻) tự động xuất hiện khi qua chu kỳ reset. Click để chạy ngầm lệnh `claude -m haiku` ở thư mục rỗng `/tmp`. Kỹ thuật này ép server Anthropic trả về Rate Limit Headers chuẩn nhất mà không hề tốn Token đọc Context.
+### 🛠 Tools & Monitor
 
-### 8. Cơ Chế An Toàn Khác
-- **DRY RUN Toggle:** Công tắc xem trước. Kích hoạt sẽ hiển thị chi tiết lệnh rsync sẽ làm gì mà không chép đè bất cứ byte nào xuống ổ cứng.
-- **Sync Status Indicator:** Nút PUSH/PULL tự động sáng lên khi phát hiện có thay đổi cần đồng bộ, mờ đi khi đã gọn. Background polling 60s giữ trạng thái luôn cập nhật mà không cần thao tác thủ công.
+| Feature | What it does |
+|---|---|
+| **Open Popup** | One menu to open a project — **Local:** Finder, Terminal, VSCode, VSCode Insiders, Antigravity; **Remote (SSH):** SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote. Unavailable IDEs are dimmed automatically. |
+| **Agent Usage** | **Real** quota — not estimates. **Claude Code** (Remote) read from Anthropic's own `rate_limits` (5-hour + 7-day), with plan tier and last-session cost. **Antigravity** (Local) pulled from the IDE's native Language Server, showing the Gemini and Claude/OSS pools. Relative-time reset countdowns. |
+| **Force Sync Quota** (↻) | Re-read local usage data by running `claude --model haiku -p /usage` on the remote. This reads local JSONL session logs on that machine (P2, not a network call to Anthropic). Returns `0%` if no local session has run in the current 5h window. |
+| **SSH Config Editor** | Edit `~/.ssh/config` in-app with a built-in undo/backup safety net — auto-loads your hosts. |
+| **Git Actions** | Unified Git modal: status (Clean / Dirty / Ahead / No Git), remote URL, commit log, and commit-and-push — all from one native scan. |
+| **Project Config** | Per-direction rsync excludes with one-click presets (**Nuxt 4 / Tauri v2 / Aki Default**), Production URL quick-open, run-hooks-local-or-remote, and ignore-hook-errors toggles. |
+| **Background Refresh** | Polls remote sync diff (60s) and agent usage (30s) in the background; per-type intervals are configurable. |
 
-→ Implementation detail: `docs/feat/background-refresh.md`
+## 🔬 Under the Hood
 
-### 9. Open Popup (Trình Mở Nhanh)
-- Thay thế các nút mở riêng lẻ bằng một menu popup tập trung duy nhất, xuất hiện khi rê chuột hoặc click vào nút **OPEN** ở cột Actions.
-- **Local:** Mở dự án tại Local bằng Finder, Terminal, VSCode, VSCode Insiders, hoặc Antigravity IDE.
-- **Remote SSH:** Mở trực tiếp dự án trên máy Remote thông qua kết nối SSH Terminal, VSCode Remote SSH, VSCode Insiders Remote, hoặc Antigravity Remote.
-- **Auto Check IDE:** Tự động kiểm tra các IDE đã cài đặt trên máy người dùng (macOS) và làm mờ đi các lựa chọn không khả dụng.
----
+The parts I'm quietly proud of — the clever bits that make the boring stuff "just work":
+
+- **Real quota, not guesses.** Claude Code's `statusLine` hook emits Anthropic's actual `rate_limits` after every turn. We persist it by idempotently patching `statusline-command.sh` over SSH — so the numbers are server truth, not token estimates.
+- **Hybrid Patching survives the 100% blackout.** When you hit your limit, the Claude CLI *drops* the `rate_limits` block entirely (the 429 quirk) and the progress bar would vanish. Our injected jq+bash merges the last known reset time and pins `100%`, so the UI never breaks exactly when you most need to see it.
+- **Antigravity quota, reverse-engineered.** Google's cloud endpoints return dead `0%` data. Instead we read the IDE's **local Language Server** directly: scan the process table for the native binary, extract its CSRF token, find the listening port via `lsof`, then query the `GetUserStatus` Connect RPC. Raw JS, no `npx` — **~40ms**.
+- **Force Sync with Auto-Probe.** `/usage` reads local JSONL session logs (`~/.claude/projects/**/*.jsonl`) and computes usage locally. Output explicitly states *"does not include other devices or claude.ai"*. If the remote host has no active local session in the current 5h window, `/usage` conceals the reset time. Our script solves this by automatically running a quick "Probe Session" (a tiny dummy Haiku session with prompt "respond with ok") in a temporary directory to generate local logs, natively forcing the CLI to return the exact resets_at time.
+- **The `.git/` mtime trap.** `git status` rewrites `.git/index`, bumping the `.git/` directory mtime, which made rsync think there was always something to push — button permanently lit. We filter directory-only entries from the dry-run count, so PUSH lights up for real changes, not git housekeeping.
+
+→ Deep dives: [Claude Code quota](docs/arch/usage-claudecode.md) · [Antigravity quota](docs/arch/usage-antigravity.md) · [Background refresh](docs/feat/background-refresh.md) · [104-agent quota-measurement research](docs/ref/deepresearch-claudecode-antigravity-quota-measurement.md)
+
+## 📦 Install (macOS)
+
+1. Download the latest `.dmg` from the [**Releases**](https://github.com/lacvietanh/aki-dev-sync/releases) page
+   (`Aki-DevSync-vX.X.X-arm.dmg` for Apple Silicon, `-universal.dmg` for Intel + Apple Silicon).
+2. Open the `.dmg` and drag the app to `Applications`.
+3. The build is unsigned — on first launch macOS Gatekeeper will block it. **Right-click the app → Open**, then confirm. (Or run `xattr -dr com.apple.quarantine "/Applications/Aki Dev Sync.app"`.)
+
+**Requirements:** `rsync` and `ssh` available on your `PATH` (preinstalled on macOS), plus an SSH host you can reach.
 
 ## 🛠 Tech Stack
-- **Frontend:** Vue 3 + Vite, Vanilla CSS.
-- **Backend:** Rust + Tauri v2.
-- **Core Engine:** `rsync` và `ssh` native.
 
-## 💻 Development
+- **Frontend:** Vue 3 + Vite, vanilla CSS
+- **Backend:** Rust + Tauri v2
+- **Core engine:** native `rsync` + `ssh`
 
-### Prerequisites (macOS)
-
-Cài Xcode Command Line Tools và Rust:
-
-```bash
-xcode-select --install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-### Prerequisites (Linux — Ubuntu 22.04 / 24.04)
-
-**1. Cài Rust:**
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-```
-
-**2. Cài system dependencies cho Tauri v2:**
-```bash
-sudo apt install -y \
-  libwebkit2gtk-4.1-dev \
-  libjavascriptcoregtk-4.1-dev \
-  libsoup-3.0-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev \
-  build-essential \
-  libssl-dev \
-  pkg-config
-```
-
-> `build-essential`, `libssl-dev`, `pkg-config` thường đã có sẵn trên máy dev — giữ lại để đảm bảo đủ khi cài fresh.
-
-### Run & Build
+## 🔨 Build from source
 
 ```bash
 npm install
-npm run tauri dev   # Dev (lần đầu build Rust ~5–10 phút)
-```
-```bash
-npm run build:app   # Production build + post-build artifact rename
+npm run tauri dev    # first run compiles Rust (~5–10 min)
+npm run build:app    # production build + artifact rename
 ```
 
-*Thiết kế dành riêng cho tốc độ và quy trình Lạc Việt Anh Workflow.*
+Full prerequisites (macOS & Linux), build conventions, and Tauri gotchas are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+## 📚 Documentation
+
+- **[docs/index.md](docs/index.md)** — full documentation index
+- [Sync flow](docs/feat/sync-flow.md) · [Open Popup](docs/feat/open-popup.md) · [Background refresh](docs/feat/background-refresh.md)
+- Agent usage internals: [Claude Code](docs/arch/usage-claudecode.md) · [Antigravity](docs/arch/usage-antigravity.md)
+- Research: [quota measurement methods](docs/ref/claudecode-antigravity-quota-measurement.md)
 
 ---
 
-## ⚠️ Tauri Gotchas & Conventions
-
-Lessons from working with Tauri v2 on a macOS-first app. Recorded to avoid re-discovery.
-
-### Titlebar sacred boundary
-
-`"decorations": false` + `"transparent": true` removes the native titlebar entirely. Every fixed or absolute-positioned element that spans the full window **must** start at `top: var(--titlebar-h)` (42px), never `top: 0`. Covering the drag region makes the window un-movable.
-
-→ Full rule + rationale: `docs/ref/titlebar-sacred-boundary.md`
-
-### Version SSOT — `package.json` only
-
-`tauri.conf.json` sets `"version": "../package.json"`. Do **not** hardcode a version there or sync `Cargo.toml`'s version to track the app release — they are separate concerns. Bump only `package.json`.
-
-### Post-build artifact rename
-
-Raw `npm run tauri build` outputs filenames with spaces (e.g., `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead — it chains `tauri build` and `node scripts/post-build.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
-
-### IPC capability: silent failures
-
-Every Tauri command — including `@tauri-apps/api/window` calls — must be **granted** in `src-tauri/capabilities/default.json`. A missing entry causes a **silent no-op**: the JS call resolves without error and nothing happens. This was the root cause of the window drag/minimize/close not responding (fixed by adding `core:window:allow-start-dragging`, `core:window:allow-minimize`, `core:window:allow-close`).
-
-### async IPC + blocking subprocess
-
-Tauri runs `async fn` commands on an async executor. Calling `std::process::Command` (blocking) directly inside an `async fn` starves the thread pool — the UI appears frozen until the command returns. Use `tauri::async_runtime::spawn_blocking` for any blocking work inside an `async fn` command.
-
-> History: `run_sync` was temporarily changed to a sync `fn` as a workaround, introducing a different UI freeze. Reverted in v1.1.1 with proper `spawn_blocking`.
-
-### CSP
-
-Never leave `"csp": null` in `tauri.conf.json`. Minimum safe policy:
-
-```json
-"csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
-```
-
-### Serde struct fields and old JSON
-
-Adding a field to a Rust struct deserialized from persisted JSON (e.g. `projects.json`) will **silently drop** records missing the new key — unless the field is annotated `#[serde(default)]`. Always add `#[serde(default)]` to new optional fields on persistent structs.
-
-### `#[cfg(target_os = "macos")]` variable scoping
-
-Variables declared **outside** a `#[cfg(target_os = "macos")]` block but only used inside it produce unused-variable warnings on Linux/Windows builds. Declare them **inside** the cfg block.
+*Built for speed and the Lạc Việt Anh Workflow.*

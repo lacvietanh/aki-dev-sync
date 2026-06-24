@@ -5,7 +5,7 @@
 > You MUST read `CLAUDE.md` before doing any work in this project.
 
 > [!CAUTION]
-> **NO SILENT DEVIATIONS**: Stick strictly to instructions. Ask and confirm before changing target files, code, or logic.
+> **NO SILENT DEVIATIONS**: Stick strictly to instructions. Ask and confirm before open built-in browser, changing target files, code, or logic
 > **WHEN QUESTIONS ARE ASKED**: Answer only. Do not modify code, add comments, or write logic stubs without explicit confirmation.
 
 ## Mandatory first step

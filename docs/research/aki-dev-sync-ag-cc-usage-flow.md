@@ -2,8 +2,9 @@
 
 > Bài viết phân tích chuyên sâu về kiến trúc đo lường hạn mức sử dụng (Quota) của các AI Agent hàng đầu hiện nay. Đối chiếu kết quả thực tế của dự án **Aki-Dev-Sync** với cuộc khảo sát diện rộng dựa trên **104/108 Agent Deep-Research** (~1.43M Tokens).
 >
-> **Tác giả:** Aki / Lạc Việt Anh Workflow
-> **Nguồn tham chiếu:** [dev.akitao.com](https://dev.akitao.com)
+> * **Tác giả:** Aki / Lạc Việt Anh Workflow
+> * **Ngày thực hiện:** 2026-06-23 18:00 ICT (Cập nhật ngày 2026-06-24 12:40 ICT)
+> * **Nguồn tham chiếu:** [dev.akitao.com](https://dev.akitao.com)
 
 ---
 

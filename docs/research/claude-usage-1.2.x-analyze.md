@@ -1,7 +1,8 @@
-# Claude Code Usage Flow — Bug Analysis & Improvement Proposals (v1.2.7 → v1.2.8)
+# Claude Code Usage Flow — Bug Analysis & Improvement Proposals (v1.2.x)
 
 > Phân tích kỹ thuật các vấn đề phát hiện trong flow giám sát quota Claude Code.
-> Soạn ngày 2026-06-23. Cập nhật ngày 2026-06-24 (v1.2.8): Toàn bộ các đề xuất cải thiện (B, C, D) đã được triển khai thành công.
+> * **Soạn ngày:** 2026-06-23 18:00 ICT
+> * **Cập nhật ngày:** 2026-06-24 12:40 ICT (v1.2.9): Đã tích hợp thành công các đề xuất (B, C, D, E) và giải pháp Probe Session (F).
 
 ---
 
@@ -16,18 +17,18 @@ Vấn đề phát sinh khi **người dùng không sử dụng Claude Code** tro
 
 ---
 
-## ✅ Vấn đề 1 — [ĐÃ SỬA SAI] `/usage` KHÔNG cần session đang chạy
+## ✅ Vấn đề 1 — [SẢI LẦM BAN ĐẦU] `/usage` LÀ GÌ?
 
-> **Cập nhật sau thực nghiệm SSH 2026-06-23:** Phân tích ban đầu sai.
+> **Đính chính sau thực nghiệm 2026-06-24:** Cả hai giả thiết ban đầu (đọc RAM session và gọi Anthropic API) đều **SAI**.
 
 **Thực tế đã xác minh:**
-- `claude --model haiku -p /usage < /dev/null` hoạt động hoàn toàn **không cần session nào đang chạy** trên remote.
-- Lệnh này thực hiện **network call thực sự** đến Anthropic API, xác thực bằng OAuth token từ `~/.claude/.credentials.json`. Thời gian thực thi ~2 giây.
-- Output (ví dụ): `Current session: 38% used · resets Jun 24, 3:20am (Asia/Singapore)` — là **live data từ server**, không phải từ RAM hay cache.
-- `Last 24h · N requests` trong output giảm theo thời gian thực, xác nhận đây là API call.
-- Data từ `/usage` khác với `rate-limits-cache.json` cục bộ (chứng minh nguồn độc lập).
+- `/usage` chỉ đọc **local JSONL session files** trên máy (`~/.claude/projects/**/*.jsonl`) rồi tính toán offline.
+- Output ghi rõ: *"Approximate, based on local sessions on this machine — does not include other devices or claude.ai"*.
+- Đây là **họ P2** (parse JSONL local), **KHÔNG phải P3** (OAuth endpoint gọi Anthropic API).
+- Kết quả: chỉ phản ánh session trên chính máy đó. Nếu máy khác dùng cùng tài khoản, **không phản ánh ở đây**.
+- `Last 24h · N requests · M sessions` trong output giảm theo thời gian thực vì nó đếm file JSONL local, không phải từ API.
 
-**Nguyên nhân thực sự khi Force Sync fail:** xem Vấn đề 1b bên dưới.
+**Nguyên nhân sai lầm trước:** Đã quan sát thấy `Last 24h` request count thay đổi và kết luận sai là đang gọi API. Thực ra do local JSONL files đang có data mới từ session local, dẫn đến count thay đổi.
 
 ---
 
@@ -42,7 +43,7 @@ claude --model haiku -p /usage 2>/dev/null
 
 **Vấn đề:**
 - Khi chạy trong subshell `$()` qua SSH, stdin của lệnh không được redirect → Claude Code chờ stdin 3 giây rồi mới tiếp tục, in warning vào stderr.
-- Tổng thời gian Force Sync = 3s chờ stdin + ~2s network call + overhead SSH = **>5 giây** thay vì ~2 giây.
+- Tổng thời gian Force Sync = 3s chờ stdin + ~2s chạy `/usage` + overhead SSH = **>5 giây** thay vì ~2 giây.
 - Cũng không có `cd /tmp` → có thể load project context không cần thiết.
 
 **Sau khi sửa (2026-06-23):**
@@ -58,7 +59,7 @@ cd "$BLANK_DIR" && claude --model haiku -p /usage < /dev/null 2>/dev/null
 
 ---
 
-## 🔴 Vấn đề 2 — Cache cũ không bao giờ bị xóa hay vô hiệu hóa (**ĐÃ FIX ở v1.2.8**)
+## 🔴 Vấn đề 2 — Cache cũ không bao giờ bị xóa hay vô hiệu hóa (**ĐÃ FIX ở v1.2.9**)
 
 **File:** [scripts/force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py), [scripts/get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh)
 
@@ -85,7 +86,7 @@ Cơ chế P1 vá vào `statusline-command.sh`. Hook này chỉ kích hoạt khi 
 
 ---
 
-## 🟡 Vấn đề 4 — `stale` detection không nhận biết trường hợp đã qua reset (**ĐÃ FIX ở v1.2.8**)
+## 🟡 Vấn đề 4 — `stale` detection không nhận biết trường hợp đã qua reset (**ĐÃ FIX ở v1.2.9**)
 
 **File:** [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js)
 
@@ -101,7 +102,7 @@ stale.value = mtime > 0 && (Date.now() / 1000 - mtime) > 600;
 
 ---
 
-## 🟡 Vấn đề 5 — UI không tự trigger khi phát hiện reset đã qua (**ĐÃ FIX ở v1.2.8**)
+## 🟡 Vấn đề 5 — UI không tự trigger khi phát hiện reset đã qua (**ĐÃ FIX ở v1.2.9**)
 
 **File:** [UsageProgressBar.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageProgressBar.vue)
 
@@ -186,7 +187,73 @@ Hiện tại `@timeout` ở `AgentUsage.vue` đang map sang `$emit('retry')` —
 
 ---
 
-## Tình trạng triển khai (v1.2.8)
+## 🔴 Vấn đề 6 — Regex Parser bị fail khi Quota trả về 0% (v1.2.9)
+
+**File:** [scripts/force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py)
+
+**Nguyên nhân:**
+- Khi Quota của Claude Code đã được reset hoàn toàn (hoặc chưa dùng gì), lệnh `/usage` trả về:
+  `Current session: 0% used`
+- Chuỗi output này **hoàn toàn không chứa** từ khóa `resets` hay mốc thời gian reset kế tiếp.
+- Regex parser cũ bắt buộc phải có đầy đủ phần trăm và thời gian reset:
+  `r'(\d+)%\s*used\s*.\s*resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)'`
+- Do không khớp, parser trả về `parsed: false` và thoát mà không cập nhật `rate-limits-cache.json`. Cache giữ nguyên `resets_at` cũ trong quá khứ, kích hoạt `STALE_RESET` khiến UI bị kẹt ở trạng thái `"No data — waiting for next session"`.
+
+**Giải pháp:**
+- Tách Regex thành 2 phần độc lập:
+  - Regex 1 (Bắt buộc): `r'(\d+)%\s*used'` để lấy phần trăm.
+  - Regex 2 (Tùy chọn): `r'resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)'` để lấy thời gian reset. Nếu không tìm thấy, mặc định `resets_at = 0`.
+
+---
+
+## 🛠️ Hướng dẫn Kiểm thử Thủ công (Manual Testing Guide)
+
+Để kiểm tra trực tiếp thông tin quota qua SSH từ terminal máy local mà không phụ thuộc vào GUI:
+
+1. **Lệnh chạy chuẩn xác:**
+   ```bash
+   ssh <host> "bash -lc 'claude --model haiku -p /usage < /dev/null'"
+   ```
+2. **Giải thích các tham số:**
+   * `<host>`: Tên host cấu hình trong `~/.ssh/config` (ví dụ: `bien`).
+   * `bash -lc`: Bắt buộc sử dụng shell đăng nhập (`-l` / login) và chạy lệnh tương tác (`-c`). Điều này đảm bảo PATH được nạp đầy đủ các biến môi trường và đường dẫn đến thư mục cài đặt `claude`.
+   * **Cảnh báo về Shell:** Tránh dùng `zsh` cứng trên môi trường remote chưa chắc chắn cài zsh (ví dụ: `bien` sẽ báo lỗi `zsh: command not found`). Dùng `bash` là an toàn nhất.
+   * `< /dev/null`: Tránh việc Claude CLI chờ stdin 3 giây gây chậm trễ tiến trình.
+
+---
+
+## 🟢 Vấn đề 7 — Không thể lấy reset time khi không có session local hoạt động trong 5h (Giải pháp: Kích hoạt Probe Session)
+
+Khi người dùng không mở session Claude Code cục bộ nào trên máy hiện tại trong 5 giờ qua, lệnh `claude -p /usage` sẽ báo `0% used` và **không hiển thị** thời gian reset. Điều này khiến parser không thể lấy được `resets_at` để cập nhật cho UI, làm UI bị kẹt ở trạng thái chờ.
+
+**Giải pháp (Probe Session):**
+* **Thực nghiệm nghiên cứu (Ngày 2026-06-24 12:28 ICT):** Chạy thử một session Claude cực ngắn (dummy session) sử dụng mô hình rẻ nhất (Haiku) để yêu cầu phản hồi đơn giản (ví dụ: `"respond with ok"`) trong thư mục `/tmp/`.
+* Thao tác này kích hoạt ghi nhận log session cục bộ mới (`~/.claude/projects/**/*.jsonl`), đồng thời ép Claude CLI nhận diện một session hoạt động trong chu kỳ hiện tại.
+* Ngay sau đó, chạy lệnh `claude -p /usage` sẽ nhận được đầy đủ mốc `resets_at` của chu kỳ đó.
+* Chi phí token cực thấp (~100 tokens của Haiku).
+* Đã tích hợp tự động vào [scripts/force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh): Nếu lần chạy đầu không tìm thấy chuỗi `resets` trong output, script sẽ tự kích hoạt probe session trong thư mục tạm, sau đó chạy lại lệnh `/usage`.
+* **Kịch bản tự động kích hoạt:** Xem chi tiết các sự kiện tự động kích hoạt Probe Session / Force Sync trong [usage-claudecode.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/arch/usage-claudecode.md).
+
+---
+
+## 👥 Đặc thù tài khoản dùng chung (Shared Account)
+
+- `/usage` (P2) chỉ phản ánh các session đã thực hiện trên **máy đó**.
+- Vì `/usage` parse local JSONL files, nó không bao gồm: activity từ các thiết bị khác, activity trên web (claude.ai), hay các project không nằm trong scope local.
+- Dòng chữ trong output *"does not include other devices or claude.ai"* là khẳng định cho tính chất P2 này.
+- Khi làm việc trên nhiều máy, `force-sync` trên máy A sẽ không cập nhật quota đã tiêu thụ trên máy B.
+
+---
+
+## 🔮 Wishlist (Tính năng mong muốn)
+
+* **Phân rã Quota cá nhân (Personal vs. Others):** 
+  Do sử dụng chung tài khoản với máy khác, chúng ta mong muốn hiển thị chi tiết lượng quota do chính session local của mình tiêu thụ và lượng quota do người khác tiêu thụ.
+  * **Giải pháp đề xuất:** Parser cục bộ sẽ tự đếm tổng số tokens tiêu thụ từ các file logs của session hiện tại (`~/.claude/projects/**/*.jsonl`). Sau đó vẽ thanh Progress Bar gồm 2 màu/2 phần rõ rệt: Phần trăm mình đã dùng và Phần trăm người khác đã dùng.
+
+---
+
+## Tình trạng triển khai (v1.2.9)
 
 | # | Cải thiện | Trạng thái | Ghi chú |
 |---|---|---|---|
@@ -194,4 +261,8 @@ Hiện tại `@timeout` ở `AgentUsage.vue` đang map sang `$emit('retry')` —
 | B | Vô hiệu hóa cache khi `resets_at` đã qua | ✅ **ĐÃ FIX** | Vô hiệu hóa cache qua tín hiệu STALE_RESET |
 | C | `stale` detection nhận biết `resets_at` | ✅ **ĐÃ FIX** | Composable `useAgentUsage.js` tự động đánh dấu `stale` |
 | D | Auto-trigger force sync khi reset qua | ✅ **ĐÃ FIX** | `UsageProgressBar` tự động kích hoạt `force-sync` khi timeout |
+| E | Hỗ trợ case `0% used` không có resets time | ✅ **ĐÃ FIX** | Tách Regex để parse additive trong Python parser |
+| F | Probe Session (dummy session) khi thiếu resets_at | ✅ **ĐÃ FIX** | Tạo dummy session `haiku` rồi lấy mốc reset chính xác |
 | ~~A~~ | ~~Fallback OAuth endpoint~~ | ❌ **ĐÃ BỎ** | `/usage` đã dùng OAuth nội bộ |
+
+> **⚠️ Ghi chú 2026-06-24:** Dòng A đặt sai lý do: định `/usage` = OAuth API, thực ra `/usage` là P2 (local JSONL). Cần xem xét lại khả năng dùng P3 thật (đọc `api.anthropic.com/api/oauth/usage`) như các tool cộng đồng (xem `deepresearch-claudecode-antigravity-quota-measurement.md` mục P3) để lấy quota thực tế của tài khoản tổng thể.

@@ -19,7 +19,7 @@ Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
 - **Antigravity IDE:** Editor mặc định của hệ sinh thái Aki.
 
 ### 3. Remote SSH Targets
-Với các project có cấu hình Remote (Server/VPS), popup hiển thị thêm cột kết nối từ xa:
+Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa:
 - **SSH Terminal:** Mở Terminal native, tự tạo script `osascript` kết nối SSH thẳng vào Server và cd vào thư mục project (`~` sẽ được tự động resolve thành `/home/user`).
 - **VSCode Remote (và Insiders):** Dùng URL Scheme `vscode://vscode-remote/ssh-remote+...` để điều hướng VSCode mở Remote Extension. Logic JS luôn xử lý ghép chuẩn xác URL (thêm `/` ở đầu absolute path nếu cần).
 - **Antigravity Remote:** Chạy CLI `antigravity-ide --remote` kết nối tới Server.
