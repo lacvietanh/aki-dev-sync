@@ -86,26 +86,33 @@ Bắt trọn mọi hoạt động chat của User và đề phòng Lỗi A.
 - **Thuật toán thông minh:** Nếu luồng JSON của Claude đẩy ra *KHÔNG CÓ* `rate_limits` (do lỗi 429), script sẽ tự động chui vào file `rate-limits-cache.json` cũ, **COPY** lại mốc thời gian Reset, ép giá trị `% used = 100`, rồi hòa trộn (Merge) vào JSON mới để ghi ra file.
 - Mọi dữ liệu xịn xò (session, cwd, tokens, v.v.) được giữ nguyên. UI không bao giờ bị sập thanh Progress.
 
-### Luồng Chủ động (Active Flow - Nút Force Sync)
-Cố gắng làm mới thông tin quota bằng cách chạy `/usage` trên remote.
-- Rust Backend ([agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs)) kích hoạt script [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh):
+### Luồng Chủ động (Active Flow - Force Sync)
+
+**Mục đích duy nhất:** `forceSync` chỉ phục vụ trường hợp **không có session hoạt động nên không đọc được thông tin từ file cache** — tức là khi `get_agent_usage` trả về `null`. Khi đọc cache thành công (kể cả khi `resets_at = 0`), không có lý do force sync.
+
+Rust Backend ([agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs)) kích hoạt script [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh):
   - **Cơ chế tự động Probe Session (v1.2.9, cải tiến v1.3.2):** Lệnh `/usage` (họ P2) chỉ đọc local JSONL logs. Nếu trong 5h qua không có local session nào, nó sẽ báo `0% used` và **không hiển thị** mốc `resets_at`. Probe được kích hoạt trong **hai trường hợp**: (1) output không có từ khóa `resets` — không có session local nào trong window hiện tại; (2) output có `resets` nhưng mốc thời gian đã qua — `/usage` echo lại `resets_at` cũ từ `rate-limits-cache.json` (xảy ra ngay sau quota reset khi cache chưa được làm mới). Trường hợp (2) là lý do UI bị stuck "No data" sau reset dù STALE_RESET auto-recovery đã fire. Probe chạy `claude --model haiku -p "respond with ok" < /dev/null` → statusLine hook fire → ghi `resets_at` mới vào cache → `/usage` lần 2 hiện mốc future. Kiểm tra thực hiện bằng Python inline ngay trong script.
 - **⚠️ Cơ chế thực tế của `/usage`:** Lệnh này **KHÔNG** gọi Anthropic API để lấy quota tài khoản tổng thể, nó **chỉ đọc local JSONL files** (`~/.claude/projects/**/*.jsonl`) rồi tính toán offline. Do đó, nó phản ánh chính xác mốc reset của chu kỳ hiện tại mà thiết bị này tham gia, nhưng không bao gồm hoạt động trên thiết bị khác.
-- **Các kịch bản kích hoạt luồng Force Sync:**
-  1. **Khởi chạy ứng dụng (App Startup) / Thay đổi Host (Host Change):** Khi người dùng mở app hoặc chuyển sang host khác, hệ thống sẽ đọc cache cục bộ trên remote. Nếu cache chưa tồn tại hoặc chứa `resets_at = 0` (chưa có session nào để tính toán mốc reset), hệ thống sẽ **tự động gọi Force Sync** một lần để chạy probe session và điền mốc reset chuẩn xác.
-  2. **Khi mốc reset hiện tại đã qua (Timeout / Reset Time Reached):** Bộ đếm thời gian countdown của UI sẽ tự động kích hoạt Force Sync để cập nhật hạn mức cho chu kỳ mới.
-  3. **STALE_RESET Auto-Recovery (v1.3.0):** Khi `get-claudecode-usage.sh` phát hiện cache đã qua `resets_at`, nó trả về `|||STALE_RESET|||` → JS nhận `null` → `data.value = null`. Nếu trước đó `data` đang có giá trị (transition từ data → null), `useAgentUsage.js` tự động kích hoạt Force Sync một lần duy nhất, được bảo vệ bởi cờ `staleResetSyncDone`. Cờ này reset về `false` khi data trở lại, đảm bảo chu kỳ tiếp theo vẫn tự phục hồi.
-  4. **Yêu cầu thủ công của người dùng:**
-     - Người dùng bấm nút **Reload** trên thanh tiêu đề ứng dụng (App Header).
-     - Người dùng bấm nút **Refresh** (icon xoay màu trắng) ở góc phải của thẻ Claude Code card.
-     - Người dùng bấm nút **Force Sync** ở trạng thái card trống hoặc ở chân progress bar (khi mốc reset cũ đã qua).
+- **Các kịch bản kích hoạt Force Sync (và KHÔNG kích hoạt):**
+  1. **Chưa có cache (First load, no cache):** `get_agent_usage` trả `null` (không tìm thấy file cache trên remote) → `checkUsage()` tự động kích hoạt Force Sync một lần (cờ `initialSyncDone`). Đây là trường hợp "không có session nào viết vào JSONL." Đây cũng là trường hợp **duy nhất** chạy `provision()` (cài statusLine hook): cache chưa từng đọc được nên hook có thể chưa tồn tại. Flow tuần tự một luồng: `await provision()` **rồi mới** `forceSync()` — không còn hai phiên SSH chạy song song tới cùng host (vốn làm log đan xen + tăng tải đúng lúc đang bận). `provision` nuốt lỗi của chính nó; `forceSync` parse `/usage` trực tiếp, không phụ thuộc hook, nên provision fail không chặn recovery. (`forceSync` cố ý giữ fire-and-forget vì nó kết thúc bằng `checkUsage()` — `await` ở đây sẽ bị chính cờ `isChecking` của lượt ngoài chặn lại.)
+  2. **STALE_RESET — qua mốc reset, chưa có session mới:** `get-claudecode-usage.sh` phát hiện `now > resets_at` → trả `|||STALE_RESET|||` → JS nhận `null`. Nếu trước đó `data` có giá trị (transition data → null), `checkUsage()` tự kích hoạt Force Sync một lần (cờ `staleResetSyncDone`). Cờ reset về `false` khi data trở lại. **Không** chạy `provision` ở đây: cache vẫn đọc được tới ngay trước lượt poll này nên hook chắc chắn đã được cài.
+  3. **Nút Force Sync (người dùng bấm trực tiếp):** Gọi `forceSync()` ngay (bỏ qua `checkUsage()`), dành cho khi người dùng muốn chủ động probe session ngay lập tức.
+  - ❌ **`resets_at = 0` không kích hoạt Force Sync:** Data đọc được từ cache thành công — "cách thông thường" hoạt động. `resets_at = 0` chỉ nghĩa là chưa có rate-limit event trong 5h window, không phải lỗi.
+  - ❌ **Nút Reload (App Header) và Refresh (CC card) không kích hoạt Force Sync trực tiếp:** Cả hai chỉ gọi `checkUsage()`. `checkUsage()` sẽ tự kích hoạt Force Sync theo luật 1–2 nếu kết quả là null.
+- **Hai đánh đổi cố ý (by design, không phải bug):**
+  1. **Độ trễ phát hiện reset ≤ một chu kỳ poll (30s):** Reset được phát hiện ở lượt poll kế tiếp sau khi `now > resets_at`, nên worst-case người dùng thấy data chu kỳ cũ thêm tối đa `usage_interval_s` (mặc định 30s) trước khi STALE_RESET → forceSync chạy. Đã cân nhắc đặt timer chính xác tại `resets_at + 2s`; **chủ động không làm** vì thêm phức tạp mà chỉ tiết kiệm vài giây một lần mỗi 5h — đi ngược tiêu chí tối giản.
+  2. **Probe chủ động tạo session + tiêu một nhúm quota:** Khi "qua reset mà chưa có session", `/usage` không có `resets_at`; cách duy nhất lấy mốc mới là để một session thật chạm rate-limit. Probe (`claude --model haiku -p "respond with ok"`) cố ý **tạo** một session ở pct≈0 để moi `resets_at`. Tốn rất ít (haiku, prompt tối thiểu) và chỉ chạy khi thực sự thiếu future-reset — nếu `/usage` lần 1 đã có future-reset thì probe được skip hoàn toàn.
 - **`< /dev/null`** là bắt buộc: nếu thiếu, Claude Code chờ stdin 3 giây không cần thiết trước khi xử lý.
 - **Blank dir độc lập** (`/tmp/aki-dev-sync-blank-dir`): tránh dùng `/tmp` trực tiếp vì có thể có file bị nhặt làm project context; tạo mới nếu chưa tồn tại.
 - **Concurrency guard (v1.3.0/v1.3.1):** `useAgentUsage.js` dùng hai cờ độc lập:
   - `isSyncing` — bảo vệ `forceSync()`: chỉ một lần force sync chạy tại một thời điểm.
   - `isChecking` — bảo vệ `checkUsage()`: ngăn nhiều poll tick hoặc `manualRefreshCount` watch trigger đồng thời. Cả hai cờ reset khi host thay đổi.
-- **JSONL cleanup (v1.3.0, rút ngắn v1.3.2):** Cuối mỗi lần chạy, `force-sync-claudecode.sh` dọn dẹp các file JSONL trong BLANK_DIR project folder và thư mục probe orphan (`-tmp-aki-probe-*`) có tuổi trên **1 ngày**. Các file này chỉ cần tồn tại cho đúng một `/usage` call ngay sau khi tạo ra, không cần giữ lại lâu hơn.
-- **Shell safety (v1.3.1):** `get-claudecode-usage.sh` có `set -e` — parse Python fail sẽ abort thay vì truyền data rỗng. `force-sync-claudecode.sh` có `set -o pipefail`. `auth-cache.json` được validate JSON qua `python3` trước khi dùng — file bị truncate/corrupt sẽ fallback `{}`.
+- **JSONL cleanup (v1.3.0 → v1.3.2 → v1.3.3):** Probe và `/usage` đẻ ra session transcript trong `~/.claude/projects/`. Ba lớp dọn dẹp, theo nguyên tắc "dọn sạch những gì biết chắc là rác của chính mình, đặt time-window an toàn cho phần còn lại":
+  1. **Probe transcript của lượt hiện tại (v1.3.3, deterministic):** Ngay sau `usage_run2`, xóa đúng project dir của probe vừa tạo (`-tmp-aki-probe-$NOW_TS`) bằng path tuyệt đối — không glob, không time-window, không rủi ro chạm transcript của lượt khác. Đây là nguồn tích lũy chính (mỗi reset event đẻ một dir mới) nên dọn ngay.
+  2. **Blank-dir transcript (v1.3.3, `-mmin +1`):** Xóa các `*.jsonl` trong BLANK_DIR project folder cũ hơn **1 phút** — đủ già để không bao giờ đua với transcript vừa tạo của một lượt sync đang chạy song song, đủ gắt để giới hạn tích lũy ở mức một nhúm file.
+  3. **Orphan probe dirs (v1.3.3, `-mmin +60`):** Vì lớp 1 đã xóa probe dir của chính mình, sweep này chỉ là lưới an toàn cho các lượt chết giữa chừng trước khi tới bước dọn. Window 1 giờ vừa đủ dọn nhanh mà chắc chắn không đụng probe dir của một sync đang chạy.
+- **Shell safety (v1.3.1, sửa 2026-06-25):** `get-claudecode-usage.sh` có `set -e` (hợp lệ trên dash) — parse Python fail sẽ abort thay vì truyền data rỗng. `auth-cache.json` được validate JSON qua `python3` trước khi dùng — file bị truncate/corrupt sẽ fallback `{}`.
+  - ⚠️ **Bẫy `set -o pipefail`:** Script được giao qua `ssh host sh` (= **dash** trên đa số remote Linux). `set` là special built-in; `set -o pipefail` (bashism) gây usage error → dash **thoát ngay exit 2** trước cả `|| true`, còn `2>/dev/null` nuốt luôn lỗi → `force-sync` chết im lặng (exit 2, không stdout/stderr). Đây là nguyên nhân gốc của vụ "load mãi / no data sau reset". **Phải dùng** pattern probe-trong-subshell: `( set -o pipefail ) 2>/dev/null && set -o pipefail`. Chi tiết: `docs/research/claude-usage-dash-pipefail-regression.md`.
 - Output (Stdout) có dạng: `Current session: 3% used · resets Jun 22, 10:10pm (Asia/Singapore)` (khi có session) hoặc `Current session: 0% used` (khi không có session local trong 5h qua).
 
 ### Delimiter Chain trong `get-claudecode-usage.sh`
@@ -132,6 +139,115 @@ Rust (`agent_usage.rs`) split tuần tự theo từng delimiter, parse `|||AUTHI
 > _Cập nhật 2026-06-24 (v1.3.0): Bổ sung STALE_RESET auto-recovery (trigger #3 mới), concurrency guard `isSyncing`, và JSONL cleanup cho BLANK_DIR + probe orphan dirs. Bổ sung CC Auth Info Pipeline: `provision-claudecode.sh` → `auth-cache.json` → `|||AUTHINFO|||` delimiter → Rust inject `email`/`orgName` vào payload._
 > _Cập nhật 2026-06-24 (v1.3.1): Thêm `isChecking` guard cho `checkUsage()`. Shell safety: `set -e` + `set -o pipefail`, JSON validation của `auth-cache.json`, temp file cleanup trong `provision-claudecode.sh`._
 > _Cập nhật 2026-06-25 (v1.3.2): Fix probe bị bypass sau quota reset — `/usage` echo lại `resets_at` cũ (past) từ cache, `grep -q "resets"` pass nên probe không fire, Python ghi lại past timestamp, UI stuck vô thời hạn. Fix bằng Python inline check verify reset time phải là future. Rút ngắn JSONL cleanup từ 7 ngày xuống 1 ngày._
+> _Cập nhật 2026-06-25 (fix dash/pipefail): `force-sync-claudecode.sh` dòng `set -o pipefail 2>/dev/null || true` giết dash ngay exit 2 (special built-in usage error thoát trước `|| true`, `2>/dev/null` nuốt lỗi) → `force-sync` chết im lặng trên mọi remote dùng dash. Đây là root cause của "load mãi / no data sau reset" tồn tại từ refactor `98fa2b7` (đổi `ssh host <cmd>` login-shell → `ssh host sh` dash). Sửa bằng `( set -o pipefail ) 2>/dev/null && set -o pipefail`. Post-mortem đầy đủ: `docs/research/claude-usage-dash-pipefail-regression.md`._
+>
+> _Cập nhật 2026-06-25 (v1.3.3): Tích hợp logging toàn pipeline. `logger.rs` mới: ghi `{appdata}/usage.log` (appdata = `app.path().app_data_dir()`, cùng dir với `projects.json`), stderr khi `--debug`/`AKI_DEBUG=1`, IPC `is_debug_mode()`+`get_log_path()`. `agent_usage.rs` emit `GET_USAGE`/`FORCE_SYNC`/`PROVISION` tags tại mọi decision point; shell stderr được relay line-by-line vào log file; FORCE_SYNC parse từng field của diagnostic JSON riêng lẻ. Shell scripts log env (zsh/bash path, login claude path), timing từng bước (`dur_s`), probe details (start/end/exit), cleanup stats. Timestamp format `YYYY-MM-DD HH:MM:SS.mmm` (UTC cho Rust, local cho JS). `useAgentUsage.js` log `loading=true/false` transition, `invoking`/`returned` cho mỗi IPC call, stale computation với đầy đủ inputs (`five_hour.state`, `until_reset_s`, `reset_overdue_s`)._
+
+---
+
+## 3b. Sơ đồ luồng Update (cập nhật 2026-06-25)
+
+Sơ đồ trạng thái thực tế của một chu kỳ cập nhật usage Claude Code, ghi nhận đúng nơi bug `dash/pipefail` từng làm đứt luồng (nhánh `forceSync` đỏ).
+
+```mermaid
+flowchart TD
+    Start(["App start / Host change / Poll tick 30s / Manual refresh"]) --> CheckGuard{"isChecking?"}
+    CheckGuard -- true --> SkipC["skip - tránh trùng poll"]
+    CheckGuard -- false --> CU["checkUsage()<br/>loading=true"]
+
+    CU --> GU["IPC get_agent_usage<br/>→ ssh host sh + get-claudecode-usage.sh"]
+    GU --> CacheExist{"cache file tồn tại?"}
+
+    CacheExist -- "không" --> NullNoCache["stdout rỗng → Rust Ok(None)"]
+    CacheExist -- "có" --> StaleChk{"NOW > resets_at? (stale check)"}
+
+    StaleChk -- "không (còn hạn)" --> EmitData["emit cache_json + MTIME/SUBTYPE/TIER/AUTHINFO<br/>→ Rust Ok(Some)"]
+    StaleChk -- "có (đã qua reset)" --> StaleSig["echo STALE_RESET → Rust Ok(None)"]
+
+    EmitData --> HasData["data.value = JSON<br/>UI hiển thị ✓"]
+    HasData --> Done(["loading=false"])
+
+    NullNoCache --> JSNull{"JS phân loại null"}
+    StaleSig --> JSNull
+
+    JSNull -- "first load, no cache" --> Prov["await provision()<br/>(cài statusLine hook — CHỈ first-load)"] --> FS
+    JSNull -- "had data → null (STALE_RESET)" --> FS
+    JSNull -- "đã trigger 1 lần rồi<br/>(initialSyncDone / staleResetSyncDone)" --> NoRetry["KHÔNG retry<br/>(tầng khoá kép)"]
+    NoRetry --> Done
+
+    FS["forceSync()<br/>isSyncing=true, loading=true"]:::danger --> FSIPC["IPC force_sync_agent_usage<br/>→ ssh host sh + force-sync-claudecode.sh + parser"]:::danger
+    FSIPC --> Dash{"remote sh = dash?<br/>(set -o pipefail)"}:::danger
+    Dash -- "✗ BUG (cũ): dash chết exit 2,<br/>stdout/stderr RỖNG" --> DeadEnd["parsed=false → cache KHÔNG đổi<br/>→ STALE_RESET mãi mãi → NO DATA"]:::danger
+    Dash -- "✓ ĐÃ FIX: pipefail guarded" --> RunUsage["claude -p /usage trong blank dir"]
+
+    RunUsage --> ResetFuture{"output có resets và là tương lai?"}
+    ResetFuture -- "có" --> Parse
+    ResetFuture -- "không (no session / stale echo)" --> Probe["Probe session:<br/>claude --model haiku -p 'respond with ok'<br/>→ statusLine hook ghi resets_at mới"]
+    Probe --> RunUsage2["/usage lần 2"] --> Parse["force-sync-parse.py:<br/>ghi rate_limits.five_hour vào cache"]
+    Parse --> Recheck["forceSync → checkUsage() lần nữa"]
+    Recheck --> CU
+
+    classDef danger fill:#3a1212,stroke:#e05555,color:#ffd7d7;
+```
+
+**Điểm cốt tử trong sơ đồ:** nút `Dash` là nơi cả luồng từng đứt. Khi `force-sync` chết (`✗ BUG`), không có gì ghi cache mới → `get-usage` mãi trả `STALE_RESET` → vòng lặp `NO DATA` vĩnh viễn, lại bị `tầng khoá kép` (`initialSyncDone`/`staleResetSyncDone`) chặn không cho thử lại.
+
+## 3c. Kiến trúc phòng ngừa — chấm dứt class bug "shell giao qua SSH chết im lặng"
+
+Mục tiêu: **không bao giờ** để một script giao qua `ssh host sh` chết im lặng và bị che lấp nữa. Bốn lớp phòng thủ:
+
+1. **Hợp đồng shell rõ ràng (POSIX-only):** Mọi script trong `scripts/*.sh` được `include_str!` và giao qua `ssh host sh` PHẢI là POSIX sh thuần — cấm `set -o pipefail` (không guard), `[[ ]]`, mảng, `+=`, `function name {`. Áp cho: `get-claudecode-usage.sh`, `force-sync-claudecode.sh`, `provision-claudecode.sh`.
+
+2. **Guard build-time — `scripts/lint-remote-scripts.js`:** Chạy tự động ở đầu `npm run dev` / `npm run build` / `npm run tauri` (cũng gọi tay được qua `npm run lint:scripts`). Mỗi script remote bị quét 3 lớp: (a) regex bắt bashism mà `dash -n` không thấy (vd `set -o pipefail` không guard — đã loại trừ đúng idiom `( set -o pipefail )`, và bỏ qua comment); (b) `dash -n` syntax check nếu có `dash`; (c) `shellcheck -s sh` nếu có `shellcheck`. Một bashism lọt vào → **fail build**, không bao giờ ship lại được. Danh sách script remote trong lint phải khớp với các `include_str!(... .sh)` trong `agent_usage.rs`.
+
+3. **Không nuốt lỗi — surfacing exit code:** `agent_usage.rs::force_sync_agent_usage` khi `stdout rỗng` (parser không chạy → shell chết sớm) trả **`Err`** (reject IPC) kèm `exit` + `stderr_bytes`, thay vì `Ok("{parsed:false}")` im lặng như trước. JS bắt lỗi này ở nhánh catch.
+
+4. **Tự phục hồi + chống treo:**
+   - **Timeout cho `run_remote_script` (Rust):** `run_remote_script_timeout()` đọc stdout/stderr trên thread riêng + poll `try_wait()`, **kill** tiến trình nếu quá `REMOTE_SCRIPT_TIMEOUT_SECS = 30s` → trả lỗi timeout rõ ràng thay vì treo `wait_with_output()` vô hạn khi probe `claude -p` đơ. Sau khi kill SSH client, spawn thread riêng `ssh host pkill -f 'claude -p'` để dọn remote orphan process (fire-and-forget): nếu không làm, remote `claude -p` tiếp tục chạy nền, tiêu quota và tạo session ngoài ý muốn.
+   - **Retry có giới hạn (JS):** `useAgentUsage.js` đếm `forceSyncFailCount`. Khi force-sync fail (IPC reject hoặc `diag.parsed===false`): nếu `< MAX_FORCESYNC_RETRIES (3)` → clear cờ `initialSyncDone`/`staleResetSyncDone` cho poll kế tiếp tự thử lại (poll interval = backoff); nếu chạm trần → dừng auto-retry, set `error` rõ ("Force sync failed 3× …"), nhưng **manual refresh vẫn reset bộ đếm** để người dùng thử lại từ đầu. Force-sync thành công → reset `forceSyncFailCount=0`. Đây là liều thuốc cho `tầng khoá kép` từng làm kẹt vĩnh viễn.
+
+> Trạng thái áp dụng (2026-06-25): **cả 4 lớp đã code xong và verify thực địa.** Lớp 1 — `force-sync-claudecode.sh` đã sửa, cả 3 script pass lint. Lớp 2 — `scripts/lint-remote-scripts.js` đã wire vào `package.json` (đã test: pass khi sạch, fail exit=1 khi tái nhét `set -o pipefail`). Lớp 3 — empty-stdout → `Err`. Lớp 4 — timeout 30s + remote pkill cleanup + retry cap 3.
+>
+> **Verify thực địa (log 2026-06-25 14:10, build đã có fix):** Bắt đúng khoảnh khắc giao thoa reset với "không có session active" — `stale_check` phát hiện `now > resets_at` (overdue 1s) → `null` → forceSync → `/usage` lần 1 không có resets (`has_resets=NO`) → `probe_decision=YES` → probe tạo session → `/usage` lần 2 lấy được `resets_at` future → cache ghi `pct=0` → UI chuyển `47% → 0%` sạch, không flash data sai. Startup **không** còn forceSync vô điều kiện. Đúng thiết kế.
+>
+> **Vòng tinh chỉnh v1.3.3 (sau verify):** (a) check cache-fresh sau probe so với `PROBE_START` thay vì age tuyệt đối; (b) probe transcript của lượt hiện tại bị xóa deterministic ngay sau `usage_run2`, blank-dir `-mmin +1`, orphan sweep `-mmin +60`; (c) `provision` chỉ chạy ở nhánh first-load-no-cache và tuần tự **trước** forceSync (hết chạy song song). _Lưu ý: thay đổi Rust + shell (`include_str!` compile-time) + đổi logic JS cần **rebuild app** trên máy Mac để có hiệu lực._
+
+---
+
+## Cách đọc log khi debug
+
+### Rust log file (tất cả IPC + shell output)
+```
+# Linux
+tail -f ~/.local/share/aki.devsync/usage.log
+
+# macOS  
+tail -f ~/Library/Application\ Support/aki.devsync/usage.log
+```
+
+Log path chính xác được in ra DevTools F12 khi app khởi động:
+`[YYYY-MM-DD HH:MM:SS.mmm][USAGE:init] log_file=<path>`
+
+### Frontend log (JS state transitions)
+Mở DevTools F12 trong app Tauri → Console → filter `USAGE:` để chỉ thấy usage logs.
+
+### Format mỗi log entry
+```
+# Rust (usage.log):
+[2026-06-25 07:30:22.345][GET_USAGE] ssh_result: exit=0 stdout_bytes=842 stderr_bytes=612
+[2026-06-25 07:30:22.346][GET_USAGE]   shell| [2026-06-25 07:30:22][SHELL:get-usage] STALE_RESET: ...
+
+# JS (DevTools F12):
+[2026-06-25 15:30:22.345][USAGE:claudecode] forceSync start host="bien"
+[2026-06-25 15:30:38.901][USAGE:claudecode] force_sync_agent_usage returned raw_len=187
+```
+
+### Phân tích "load mãi" từ log
+1. Xác nhận `forceSync start` được log → forceSync đã fire
+2. Xem `invoking force_sync_agent_usage` → IPC đã gọi
+3. Nếu không có `force_sync_agent_usage returned` → IPC đang hang (probe session hoặc SSH treo)
+4. Trong Rust log, xem `[SHELL:force-sync]` lines: `probe: starting` → `probe: done exit=X dur_s=Y`
+5. Nếu `probe: starting` có nhưng `probe: done` không có → `claude` CLI hang vô hạn
 
 ---
 
@@ -139,10 +255,11 @@ Rust (`agent_usage.rs`) split tuần tự theo từng delimiter, parse `|||AUTHI
 
 - **Backend / Scripts:**
   - [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh) — Script patch statusline hook của Claude Code.
-  - [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh) — Script đọc file cache và detect stale reset.
-  - [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh) — Script kích hoạt live sync quota qua command `/usage`.
-  - [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) — Python parsing dữ liệu stdout của `/usage`.
-  - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) — Tầng điều phối Tauri commands bên Rust.
+  - [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh) — Script đọc file cache và detect stale reset. Emit `[SHELL:get-usage]` log lines ra stderr.
+  - [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh) — Script kích hoạt live sync quota qua command `/usage`. Emit `[SHELL:force-sync]` log lines ra stderr.
+  - [force-sync-parse.py](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-parse.py) — Python parsing dữ liệu stdout của `/usage`. Trả về diagnostic JSON chi tiết gồm `ts`, `raw_len`, `year_fix_applied`, `year_fix_from/to`, `resets_at_overdue_s`, `parse_error`.
+  - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) — Tầng điều phối Tauri commands bên Rust. Emit tagged log entries `GET_USAGE`, `FORCE_SYNC`, `PROVISION` tại mọi decision point.
+  - [logger.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/logger.rs) — Logger module: `DEBUG_MODE` global flag (check `--debug` / `AKI_DEBUG`), ghi log vào `{appdata}/usage.log` (cùng thư mục `projects.json`), in stderr khi debug mode. IPC commands: `is_debug_mode()`, `get_log_path()`.
 - **Frontend:**
   - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue composable theo dõi & đồng bộ agent usage. Guards: `isSyncing` (forceSync), `isChecking` (checkUsage).
   - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — Layout LOCAL/REMOTE split, eye-toggle email per column, pass `selectedSshHost` computed từ `useSsh.js`.

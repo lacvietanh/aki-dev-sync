@@ -3,48 +3,37 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
-// Fix __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, '..');
+const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
 
-// Read package.json explicitly since import attributes are still experimental in some node versions
-const pkgPath = path.resolve(__dirname, '../package.json');
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+const now = new Date();
+const buildNum = process.env.BUILD_NUM || (String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0'));
 
-const version = pkg.version;
-// We know Tauri will build 'Aki Dev Sync_<version>_aarch64.dmg'
-const dmgDir = path.resolve(__dirname, '../src-tauri/target/release/bundle/dmg');
+// Scan both arm (default target) and universal output dirs.
+const dmgDirs = [
+  path.join(root, 'src-tauri/target/release/bundle/dmg'),
+  path.join(root, 'src-tauri/target/universal-apple-darwin/release/bundle/dmg'),
+];
 
-if (!fs.existsSync(dmgDir)) {
-  console.log(`Directory not found: ${dmgDir}. Skipping rename.`);
-  process.exit(0);
-}
+const archMap = { aarch64: 'arm', universal: 'uni' };
 
-const files = fs.readdirSync(dmgDir);
 let renamed = false;
 
-for (const file of files) {
-  if (file.endsWith('.dmg') && file.startsWith('Aki Dev Sync_')) {
-    const archMatch = file.match(/_([a-z0-9]+)\.dmg$/);
-    let arch = archMatch ? archMatch[1] : 'universal';
-    if (arch === 'aarch64') {
-      arch = 'arm';
-    }
-    
-    const newName = `Aki-DevSync-v${version}-${arch}.dmg`;
+for (const dmgDir of dmgDirs) {
+  if (!fs.existsSync(dmgDir)) continue;
+  for (const file of fs.readdirSync(dmgDir)) {
+    if (!file.endsWith('.dmg') || !file.startsWith('Aki Dev Sync_')) continue;
+    const archMatch = file.match(/_([a-z0-9]+)\.dmg$/i);
+    const rawArch = archMatch ? archMatch[1].toLowerCase() : 'universal';
+    const arch = archMap[rawArch] ?? rawArch;
+    const newName = `Aki-DevSync-v${version}.${buildNum}-${arch}.dmg`;
     const newPath = path.join(dmgDir, newName);
     fs.renameSync(path.join(dmgDir, file), newPath);
-    console.log(`✅ Renamed build artifact: ${file} -> ${newName}`);
+    console.log(`✅ Renamed: ${file} → ${newName}`);
     renamed = true;
-
-    // Auto-reveal the renamed dmg file in Finder if on macOS
     if (process.platform === 'darwin') {
-      try {
-        execSync(`open -R "${newPath}"`);
-        console.log(`📂 Revealed in Finder: ${newName}`);
-      } catch (err) {
-        console.error('Failed to open DMG in Finder:', err);
-      }
+      try { execSync(`open -R "${newPath}"`); } catch { /* not on macOS */ }
     }
   }
 }

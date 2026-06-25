@@ -1,18 +1,34 @@
 #!/usr/bin/env python3
 # @docs docs/arch/usage-claudecode.md
 # Parses claude -p /usage stdout and writes usage data to rate-limits-cache.json.
-# Prints a JSON diagnostic line to stdout so the caller can log what happened.
-import sys, re, json, datetime, os
+# Prints a JSON diagnostic line to stdout so the Rust logger can record exactly what happened.
+import sys, re, json, datetime, os, time
 
 out = os.environ.get("CLAUDE_SYNC_OUT", "")
-raw_preview = out[:300].strip()
+raw_preview = out[:400].strip()
+now_ts = int(time.time())
+
+diag = {
+    "ts": now_ts,
+    "parsed": False,
+    "pct": None,
+    "resets_at": None,
+    "written": False,
+    "raw_preview": raw_preview,
+    "raw_len": len(out),
+    "year_fix_applied": False,
+    "parse_error": None,
+    "resets_at_overdue_s": None,  # positive = resets_at is in the past by this many seconds
+}
 
 pct_match = re.search(r'(\d+)%\s*used', out, re.IGNORECASE)
 if not pct_match:
-    print(json.dumps({"parsed": False, "raw_preview": raw_preview}))
+    diag["parse_error"] = "no_pct_match"
+    print(json.dumps(diag))
     sys.exit(0)
 
 pct = int(pct_match.group(1))
+diag["pct"] = pct
 resets_at = 0
 
 reset_match = re.search(
@@ -26,15 +42,30 @@ if reset_match:
     try:
         dt = datetime.datetime.strptime(date_str, "%b %d %Y %I:%M%p")
         resets_at = int(dt.timestamp())
-        # Year-boundary fix: if parsed time is >1h in the past, the date must be next year
-        # (5h windows can't expire >1h ago when /usage just ran successfully)
-        if resets_at < int(datetime.datetime.now().timestamp()) - 3600:
+        overdue = now_ts - resets_at  # positive = in the past
+        diag["resets_at_raw"] = resets_at
+        diag["resets_at_overdue_s"] = overdue
+
+        # Year-boundary fix: if parsed time is >1h in the past, assume next year.
+        # NOTE: this only applies for genuine Dec→Jan crossings. If /usage is returning
+        # truly stale cache (reset was hours ago), this fix will incorrectly push the date
+        # forward 1 year. The probe logic in force-sync-claudecode.sh should have prevented
+        # stale output from reaching here, but log when fix is applied for traceability.
+        if resets_at < now_ts - 3600:
             dt = dt.replace(year=year + 1)
             resets_at = int(dt.timestamp())
-    except Exception:
-        print(json.dumps({"parsed": False, "parse_error": True, "date_str": date_str}))
+            diag["year_fix_applied"] = True
+            diag["year_fix_from"] = diag["resets_at_raw"]
+            diag["year_fix_to"] = resets_at
+    except Exception as e:
+        diag["parse_error"] = f"strptime_failed: {e}"
+        diag["date_str_attempted"] = date_str
+        print(json.dumps(diag))
         sys.exit(0)
+else:
+    diag["parse_error"] = "no_reset_match (pct parsed but no resets line)"
 
+diag["resets_at"] = resets_at
 
 cache_file = os.path.expanduser("~/.claude/rate-limits-cache.json")
 data = {}
@@ -42,8 +73,8 @@ if os.path.exists(cache_file):
     try:
         with open(cache_file, "r") as f:
             data = json.load(f)
-    except Exception:
-        pass
+    except Exception as e:
+        diag["cache_read_error"] = str(e)
 
 if "rate_limits" not in data or data["rate_limits"] is None:
     data["rate_limits"] = {}
@@ -58,7 +89,10 @@ try:
     with open(cache_file, "w") as f:
         json.dump(data, f)
     written = True
-except Exception:
-    pass
+except Exception as e:
+    diag["write_error"] = str(e)
 
-print(json.dumps({"parsed": True, "pct": pct, "resets_at": resets_at, "written": written}))
+diag["parsed"] = True
+diag["written"] = written
+
+print(json.dumps(diag))

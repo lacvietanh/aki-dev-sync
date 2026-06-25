@@ -1,5 +1,6 @@
 mod agent_usage;
 mod git;
+mod logger;
 mod projects;
 mod ssh;
 mod sync;
@@ -8,6 +9,10 @@ mod system;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            logger::init(app.handle());
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -37,6 +42,9 @@ pub fn run() {
             system::get_project_icon_base64,
             system::check_ide_availability,
             system::resolve_remote_path,
+            // logger / debug
+            logger::is_debug_mode,
+            logger::get_log_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

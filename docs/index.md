@@ -8,6 +8,7 @@
 ## Architecture
 - [docs/arch/usage-claudecode.md](arch/usage-claudecode.md) — Claude Code quota monitoring: statusLine hook, Hybrid Patching, known limitations (Lỗi A/B)
 - [docs/arch/usage-antigravity.md](arch/usage-antigravity.md) — Antigravity quota monitoring: local Language Server Connect RPC flow
+- [docs/arch/logger.md](arch/logger.md) — Logger module: 3 levels (error/info/debug), production-silent default, auto-truncate 1MB
 
 ## Reference
 - [docs/ref/deepresearch-claudecode-antigravity-quota-measurement.md](ref/deepresearch-claudecode-antigravity-quota-measurement.md) — 104-agent research: 5 phương pháp đo quota (P1–P5), so sánh 15+ repo công khai
@@ -17,9 +18,10 @@
 ## Research
 - [docs/research/aki-dev-sync-ag-cc-usage-flow.md](research/aki-dev-sync-ag-cc-usage-flow.md) — So sánh flow của project vs cộng đồng, lợi thế native approach (phục vụ bài viết akidev)
 - [docs/research/claude-usage-1.2.x-analyze.md](research/claude-usage-1.2.x-analyze.md) — Phân tích các vấn đề bug quota display + đề xuất cải thiện (v1.2.x)
+- [docs/research/claude-usage-dash-pipefail-regression.md](research/claude-usage-dash-pipefail-regression.md) — Post-mortem: `set -o pipefail` giết dash → force-sync chết im lặng → "load mãi / no data sau reset" (root cause + fix + phòng ngừa)
 
 ## Plans (Active)
-- [docs/plan/improve-jun24.md](plan/improve-jun24.md) — Đợt 2026-06: Claude account info, table alignment, notifications/toasts, fix Antigravity remote, Tauri v2 self-update
+- [docs/plan/deferred-auto-update.md](plan/deferred-auto-update.md) — Tauri v2 self-update (deferred)
 
 ## Plans (Completed)
 - [docs/plan/done/total-refactor-by-akirule.md](plan/done/total-refactor-by-akirule.md) — Full PROCODING refactor plan

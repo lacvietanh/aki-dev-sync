@@ -3,9 +3,21 @@
     <header class="top-header" data-tauri-drag-region @mousedown.prevent="startDragging">
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
-          <img src="/titlebar-icon.png" class="app-icon icon-glow mr-1" data-tauri-drag-region /> Aki Dev Sync
+          <span class="app-icon-menu" @mousedown.stop title="Links">
+            <img src="/titlebar-icon.png" class="app-icon icon-glow" />
+            <span class="icon-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+            <div class="icon-dropdown">
+              <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
+                <i class="fa-brands fa-github"></i> GitHub Repository
+              </a>
+              <a href="#" @click.prevent="openLink(RELEASE_URL)" class="icon-dropdown-item">
+                <i class="fa-solid fa-download"></i> Latest Release
+              </a>
+            </div>
+          </span>
+          Aki Dev Sync
           <span v-if="isDev" class="dev-tag">DEV</span>
-          <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">v{{ appVersion }} ({{ buildDate }} #{{ buildHash }})</span>
+          <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">v{{ appVersion }} (build {{ buildDate }} {{ buildTime }})</span>
         </h1>
       </div>
       <div class="header-actions">
@@ -46,6 +58,7 @@
 
 <script setup>
 import { ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { useSsh } from '../composables/useSsh';
@@ -53,9 +66,12 @@ import { useIntro } from '../composables/useIntro';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
 
+const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
+const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
+
 const appVersion = __APP_VERSION__;
 const buildDate = __BUILD_DATE__;
-const buildHash = __BUILD_HASH__;
+const buildTime = __BUILD_TIME__;
 const showRefreshSettings = ref(false);
 const showChangelogModal = ref(false);
 const isDev = import.meta.env.DEV;
@@ -64,6 +80,10 @@ const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
 const { createNewProject, loadData, anySyncing, isReloading } = useProjects();
 const { openIntroModal } = useIntro();
+
+function openLink(url) {
+  invoke('macos_open', { args: [url] }).catch(console.error);
+}
 
 function handleRefresh() {
   loadData(sshHosts, true);
@@ -75,6 +95,87 @@ function handleCreateNew() {
 </script>
 
 <style scoped>
+.app-icon-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 5px;
+  transition: background 0.15s;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.app-icon-menu:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.icon-chevron {
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1;
+  margin-top: 1px;
+  transition: color 0.15s, transform 0.2s;
+}
+.app-icon-menu:hover .icon-chevron {
+  color: #cbd5e1;
+  transform: rotate(180deg);
+}
+.icon-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  background: #1a1d23;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.04);
+  min-width: 180px;
+  padding: 4px;
+  white-space: nowrap;
+  /* reset h1 inherited styles */
+  text-shadow: none;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 13px;
+}
+.icon-dropdown::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 6px;
+}
+.app-icon-menu:hover .icon-dropdown {
+  display: block;
+}
+.icon-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-decoration: none;
+  border-radius: 5px;
+  transition: background 0.12s, color 0.12s;
+}
+.icon-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e2e8f0;
+}
+.icon-dropdown-item i {
+  width: 14px;
+  text-align: center;
+  color: #64748b;
+}
+.icon-dropdown-item:hover i {
+  color: #94a3b8;
+}
+
 .btn-intro {
   position: relative;
   margin-right: 4px;
