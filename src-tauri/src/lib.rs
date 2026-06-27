@@ -45,6 +45,7 @@ pub fn run() {
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,
+            logger::log_frontend,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

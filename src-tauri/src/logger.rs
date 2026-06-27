@@ -92,7 +92,7 @@ fn log_path() -> PathBuf {
     LOG_PATH.get().cloned().unwrap_or_else(|| PathBuf::from("usage.log"))
 }
 
-/// Format UTC datetime as `YYYY-MM-DD HH:MM:SS.mmm` without external crates.
+/// Format UTC datetime as `YYYYMMDD.HHMMSS.mmm` (compact, optimised for high-volume log lines).
 fn now_human() -> String {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -121,7 +121,7 @@ fn now_human() -> String {
     }
     let day = days + 1;
 
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}", year, month, day, h, m, s, ms)
+    format!("{:04}{:02}{:02}.{:02}{:02}{:02}.{:03}", year, month, day, h, m, s, ms)
 }
 
 fn is_leap(y: u64) -> bool {
@@ -171,4 +171,16 @@ pub fn is_debug_mode() -> bool {
 #[tauri::command]
 pub fn get_log_path() -> String {
     log_path().display().to_string()
+}
+
+/// Receives a log entry from the frontend and routes it through the same
+/// backend pipeline (usage.log + stderr). Only info/debug are gated by debug
+/// mode; "error" is always written — matching the three-level contract.
+#[tauri::command]
+pub fn log_frontend(level: String, tag: String, msg: String) {
+    match level.as_str() {
+        "error" => error(&tag, &msg),
+        "info"  => info(&tag, &msg),
+        _       => debug(&tag, &msg),
+    }
 }
