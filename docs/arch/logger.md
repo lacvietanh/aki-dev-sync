@@ -72,19 +72,36 @@ logger::info(tag, msg)   // chỉ khi debug
 logger::debug(tag, msg)  // chỉ khi debug
 ```
 
-Hai IPC command cho frontend:
+Bốn IPC command cho frontend:
 - `is_debug_mode()` → `bool`
 - `get_log_path()` → `String`
+- `log_frontend(level, tag, msg)` → forward log từ frontend vào cùng pipeline (usage.log + stderr)
+
+---
+
+## Frontend Logging (`useAgentUsage.js`)
+
+Mỗi `ulog(event, fields, level)` thực hiện **hai hành động song song**:
+
+1. **Print ngay ra Webview DevTools console** (trước khi gửi IPC) — giữ nguyên source-line link trong Chrome DevTools.
+   - `'error'` → `console.error` — **luôn** hiện, kể cả khi tắt debug
+   - `'info'` → `console.info` — chỉ khi `_isDebugMode = true`
+   - `'debug'` → `console.log` — chỉ khi `_isDebugMode = true`
+
+2. **Forward về Rust qua `invoke('log_frontend')` (fire-and-forget)** → ghi vào `usage.log` + in ra stderr khi `--debug`, xen kẽ đúng thứ tự thời gian với các log entry Rust.
+
+Trong production (không có `--debug`): Webview console im lặng hoàn toàn, chỉ error thật mới hiện.
 
 ---
 
 ## Format
 
 ```
-[YYYY-MM-DD HH:MM:SS.mmm][TAG] message
+[YYYYMMDD.HHMMSS.mmm][TAG] message
 ```
 
-Timestamp UTC (Rust). Tag = `STARTUP` / `GET_USAGE` / `FORCE_SYNC` / `PROVISION`.
+Timestamp UTC (Rust), local time (JS). Compact format — ~10 bytes saved per line vs old `YYYY-MM-DD HH:MM:SS.mmm`.
+Tag = `STARTUP` / `GET_USAGE` / `FORCE_SYNC` / `PROVISION` (Rust) or `USAGE:claudecode` / `USAGE:antigravity` (frontend).
 
 ---
 
@@ -109,6 +126,7 @@ Timestamp UTC (Rust). Tag = `STARTUP` / `GET_USAGE` / `FORCE_SYNC` / `PROVISION`
 
 ## Liên quan
 
-- `src-tauri/src/logger.rs` — implementation
-- `src-tauri/src/agent_usage.rs` — caller duy nhất hiện tại
-- `docs/arch/usage-claudecode.md` — §"Cách đọc log khi debug"
+- `src-tauri/src/logger.rs` — implementation: `error`, `info`, `debug`, `log_frontend`
+- `src-tauri/src/agent_usage.rs` — caller dọp nhất hiện tại
+- `src/composables/useAgentUsage.js` — frontend logger (`makeLogger`, `ulog`, dual-path)
+- `docs/arch/usage-claudecode.md` — §“Cách đọc log khi debug”

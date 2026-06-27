@@ -5,10 +5,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [Unreleased]
-
----
-
 ### [1.4.0] - 2026-06-27
 
 #### Added
@@ -32,6 +28,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 #### Changed
 - **Agent Usage Email hidden state** (`AgentUsage.vue`): Replaced `v-if` template toggle with a CSS blur filter (`filter: blur(3px)`) to maintain exact element layout sizing when email is hidden.
+- **Centralized frontend logging pipeline** (`logger.rs`, `lib.rs`, `useAgentUsage.js`): All frontend usage-flow events are now forwarded to the same Rust backend pipeline (`usage.log` + stderr) via a new `log_frontend(level, tag, msg)` IPC command. Previously logs were written exclusively to `console.warn` in the Webview — invisible from terminal and interleaved out of order with Rust entries. Now all log entries (Rust + JS) appear in chronological order in a single stream when running with `--debug`. Frontend console output is still printed immediately (before IPC) to preserve DevTools source-line links; console output is fully silent in production (no `--debug`) except for genuine `error`-level failures.
+- **Compact log timestamp format** (`logger.rs`, `useAgentUsage.js`): Timestamp format changed from `YYYY-MM-DD HH:MM:SS.mmm` to `YYYYMMDD.HHMMSS.mmm` (e.g. `20260627.122617.123`) — saves ~10 bytes per line, reduces log file size at scale with no loss of readability.
+- **Three-level frontend log discipline** (`useAgentUsage.js`): All 29 `ulog()` call sites now carry explicit level tags — `'error'` (IPC failures, parse failures, force-sync give-up), `'info'` (key lifecycle: provision, first load, STALE_RESET, forceSync start/complete, host change, manual refresh), `'debug'` (per-poll detail: poll tick, loading transitions, guard skips, IPC invoke/returned). Redundant `console.error` calls removed — now covered by `ulog(..., 'error')` routing to both console and backend.
+- **Build script aliases** (`package.json`): Added `build:rmad` (ARM64 DMG) and `build:rmud` (Universal DMG) matching the naming convention from sibling projects. Replaced the old `build:app:uni` alias. `build:app` retained as the default ARM shortcut.
 
 ---
 
