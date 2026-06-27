@@ -458,6 +458,7 @@ function parseLocalQuotaSnapshot(userStatus, quotaSummary) {
     timestamp: new Date().toISOString(),
     method: 'local',
     email: userStatus.email,
+    userTier: userStatus.userTier || null,
     models: [],
     quotaSummary: quotaSummary || null
   };
@@ -548,6 +549,7 @@ async function main() {
     const finalQuota = extractQuota(userStatus);
     const unifiedStatus = {
       email: userStatus.email,
+      userTier: userStatus.userTier || null,
       quota: finalQuota
     };
 

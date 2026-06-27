@@ -33,6 +33,9 @@
         <div class="agent-info">
           <div class="agent-name">
             {{ agentName }}
+            <span v-if="data && data.userTier?.name" class="agent-plan-badge ag">
+              {{ data.userTier.name }}
+            </span>
             <span v-if="data && data.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">
               - {{ data.email }}
             </span>
@@ -41,7 +44,9 @@
       </div>
 
       <div class="agent-status-badges">
-        <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
+        <!-- Show cached badge when AG is offline; stale badge otherwise -->
+        <span v-if="isCached" class="badge-cached" :title="'Data cached at ' + cachedAbsTime">Cached {{ cachedAgo }}</span>
+        <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
@@ -85,6 +90,7 @@
         </div>
       </div>
 
+      <!-- Empty state: only show when no data AND no cache available -->
       <div v-else-if="!data && !loading" class="usage-empty">
         <i class="fa-solid" :class="agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1'"></i><br>
         <span>{{ agentId === 'antigravity' ? 'IDE not running (Open Antigravity to monitor)' : 'No data — waiting for next session' }}</span>
@@ -194,6 +200,8 @@ const props = defineProps({
   loading: Boolean,
   error: String,
   stale: Boolean,
+  isCached: { type: Boolean, default: false },
+  cachedAt: { type: Number, default: null },
   showEmail: { type: Boolean, default: true }
 });
 
@@ -316,6 +324,35 @@ onMounted(() => {
   }
 });
 onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
+
+// AG cached-at display — reactive relative time updated every 10s
+const agCacheNow = ref(Math.floor(Date.now() / 1000));
+let agCacheTimer = null;
+onMounted(() => {
+  if (props.agentId === 'antigravity') {
+    agCacheTimer = setInterval(() => { agCacheNow.value = Math.floor(Date.now() / 1000); }, 10000);
+  }
+});
+onUnmounted(() => { if (agCacheTimer) clearInterval(agCacheTimer); });
+
+const cachedAgo = computed(() => {
+  if (!props.cachedAt) return '';
+  const diffS = agCacheNow.value - props.cachedAt;
+  if (diffS < 60) return '<1m ago';
+  const mins = Math.floor(diffS / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h${rem}m ago` : `${hrs}h ago`;
+});
+
+const cachedAbsTime = computed(() => {
+  if (!props.cachedAt) return '';
+  const d = new Date(props.cachedAt * 1000);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+});
 
 const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
 const cc5hResetsAt = computed(() => props.data?.rate_limits?.five_hour?.resets_at ?? null);
@@ -477,6 +514,12 @@ async function handleIconClick() {
   color: #D97757;
 }
 
+.agent-plan-badge.ag {
+  background: rgba(37, 99, 235, 0.12);
+  color: #93c5fd;
+  border: 1px solid rgba(147, 197, 253, 0.2);
+}
+
 .agent-status-badges {
   display: flex;
   align-items: center;
@@ -491,6 +534,17 @@ async function handleIconClick() {
   color: var(--text-darker);
   padding: 2px 6px;
   border-radius: 4px;
+}
+
+.badge-cached {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(251, 146, 60, 0.12);
+  color: rgba(251, 146, 60, 0.75);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(251, 146, 60, 0.2);
 }
 
 .btn-ui-action {

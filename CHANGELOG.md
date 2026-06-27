@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.4.1] - 2026-06-27
+
+#### Added
+- **Antigravity Plan Status Monitoring**: Natively extracts the `userTier` object from the `GetUserStatus` Connect RPC payload to display the active subscription tier (e.g. "Google AI Pro") as a styled premium badge next to the Antigravity header in `AgentUsage.vue`.
+- **Last Cached state for Antigravity**: Displays the last successful quota snapshot when the local Antigravity IDE is turned off or offline, complete with an auto-updating relative time indicator (e.g. "Cached 5m ago") that refreshes every 10s.
+- **Tauri Async Executor Protection**: Wrapped the blocking synchronous child processes for Antigravity and Claude Code monitoring inside `tauri::async_runtime::spawn_blocking` to prevent CPU starvation on the main async executor.
+- **Stale State computation fix for AG**: Reworked the stale state check to run against `fetched_at` age instead of Claude-specific `rate_limits` structure.
+
 ### [1.4.0] - 2026-06-27
 
 #### Added

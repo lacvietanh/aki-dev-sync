@@ -257,15 +257,20 @@ pub async fn get_agent_usage(
     agent_name: String,
     host: String,
 ) -> Result<Option<AgentUsageResponse>, String> {
-    if agent_name == "claudecode" {
-        return get_claudecode_usage(&host);
-    }
-
-    if agent_name == "antigravity" {
-        return get_antigravity_usage(&host);
-    }
-
-    Err("Unknown agent".into())
+    // Both inner fns are fully synchronous (wait_with_output, thread::sleep).
+    // Running them directly on the async executor starves it and freezes the UI.
+    // spawn_blocking offloads to the Tauri blocking thread-pool.
+    tauri::async_runtime::spawn_blocking(move || {
+        if agent_name == "claudecode" {
+            return get_claudecode_usage(&host);
+        }
+        if agent_name == "antigravity" {
+            return get_antigravity_usage(&host);
+        }
+        Err("Unknown agent".into())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 /// Emit each non-empty shell stderr line at debug level.

@@ -16,6 +16,8 @@
           :loading="antigravityLoading"
           :error="antigravityError"
           :stale="antigravityStale"
+          :isCached="antigravityIsCached"
+          :cachedAt="antigravityCachedAt"
           :showEmail="showLocalEmail"
           @retry="antigravityRefresh"
           @force-sync="antigravityForceSync"
@@ -82,7 +84,9 @@ const {
   data: antigravityData, 
   loading: antigravityLoading, 
   error: antigravityError, 
-  stale: antigravityStale, 
+  stale: antigravityStale,
+  isCached: antigravityIsCached,
+  cachedAt: antigravityCachedAt,
   refresh: antigravityRefresh,
   forceSync: antigravityForceSync
 } = useAgentUsage('antigravity', localHostRef);
