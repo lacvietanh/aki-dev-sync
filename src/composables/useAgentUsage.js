@@ -1,30 +1,60 @@
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
 // @docs docs/research/claude-usage-1.2.x-analyze.md
+// @docs docs/arch/logger.md
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
 
-// Structured logger: always writes to console.warn (visible in DevTools F12).
-// Format: [YYYY-MM-DD HH:MM:SS.mmm][USAGE:agent] event key=val ...
+// ─── Logger ──────────────────────────────────────────────────────────────────
+// Three levels matching logger.rs contract:
+//   error → always: console.error + backend (file + stderr)
+//   info  → debug-only: console.info  + backend
+//   debug → debug-only: console.log   + backend
+//
+// Frontend console is printed FIRST (preserves DevTools source-line links),
+// then the line is forwarded to the Rust backend via fire-and-forget IPC so
+// all events appear in the same usage.log and terminal stderr, interleaved in
+// real chronological order with Rust log entries.
+//
+// Timestamp format: YYYYMMDD.HHMMSS.mmm — compact, matches Rust now_human().
+
+let _isDebugMode = false;
+let _debugFetched = false;
+
+// Compact timestamp matching Rust format YYYYMMDD.HHMMSS.mmm (local time for JS)
 function fmtNow() {
   const d = new Date();
-  const pad2 = n => String(n).padStart(2, '0');
-  const pad3 = n => String(n).padStart(3, '0');
-  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ` +
-         `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`;
+  const p2 = n => String(n).padStart(2, '0');
+  const p3 = n => String(n).padStart(3, '0');
+  return `${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}.` +
+         `${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.` +
+         `${p3(d.getMilliseconds())}`;
 }
 
 function makeLogger(agentName) {
-  return function ulog(event, fields = {}) {
+  const tag = `USAGE:${agentName}`;
+  return function ulog(event, fields = {}, level = 'debug') {
     const pairs = Object.entries(fields).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
-    const line = `[${fmtNow()}][USAGE:${agentName}] ${event}${pairs ? ' ' + pairs : ''}`;
-    // Use console.warn so it appears even when console.log is filtered out.
-    console.warn(line);
+    const msg   = `${event}${pairs ? ' ' + pairs : ''}`;
+    const line  = `[${fmtNow()}][${tag}] ${msg}`;
+
+    // 1) Print to Webview DevTools console immediately:
+    //    - error → always (surface real failures regardless of debug mode)
+    //    - info/debug → only when debug mode is confirmed active
+    if (level === 'error') {
+      console.error(line);
+    } else if (_isDebugMode) {
+      if (level === 'info') console.info(line);
+      else                  console.log(line);
+    }
+
+    // 2) Forward to Rust backend (file + stderr) — fire-and-forget
+    invoke('log_frontend', { level, tag, msg }).catch(() => {});
   };
 }
 
-// One-time startup info: print log file path so developer knows where to look.
+// One-time startup: fetch debug mode + log path from Rust, enable console output.
 let _startupLogged = false;
 async function logStartupInfo() {
   if (_startupLogged) return;
@@ -34,14 +64,20 @@ async function logStartupInfo() {
       invoke('is_debug_mode'),
       invoke('get_log_path'),
     ]);
-    console.warn(`[${fmtNow()}][USAGE:init] debug_mode=${isDebug} log_file=${logPath}`);
-    console.warn(`[${fmtNow()}][USAGE:init] Open DevTools (F12) to trace frontend events. Rust events → log file.`);
-  } catch (_) { /* not critical */ }
+    _isDebugMode  = !!isDebug;
+    _debugFetched = true;
+    if (_isDebugMode) {
+      console.info(`[${fmtNow()}][USAGE:init] debug_mode=true log_file=${logPath}`);
+      console.info(`[${fmtNow()}][USAGE:init] Frontend logs → console + backend pipeline.`);
+    }
+  } catch (_) {
+    _debugFetched = true; // don't block forever on IPC error
+  }
 }
 
 export function useAgentUsage(agentName, hostRef) {
   const ulog = makeLogger(agentName);
-  logStartupInfo(); // one-time: prints log file path and debug mode to console
+  logStartupInfo(); // one-time: resolves debug mode, enables console output
 
   const data = ref(null);
   const loading = ref(false);
@@ -64,14 +100,13 @@ export function useAgentUsage(agentName, hostRef) {
   const provision = async () => {
     if (!hostRef.value || provisioned) return;
     provisioned = true;
-    ulog('provision start', { host: hostRef.value });
+    ulog('provision start', { host: hostRef.value }, 'info');
     try {
       await invoke('provision_agent_usage', { agentName, host: hostRef.value });
-      ulog('provision ok');
+      ulog('provision ok', {}, 'info');
     } catch (e) {
       provisioned = false;
-      ulog('provision error', { err: String(e) });
-      console.error(`Failed to provision ${agentName}:`, e);
+      ulog('provision error', { err: String(e) }, 'error');
     }
   };
 
@@ -82,7 +117,7 @@ export function useAgentUsage(agentName, hostRef) {
       return;
     }
     if (isChecking) {
-      ulog('checkUsage skip (isChecking=true)');
+      ulog('checkUsage skip (isChecking=true)', {}, 'debug');
       return;
     }
     isChecking = true;
@@ -95,17 +130,17 @@ export function useAgentUsage(agentName, hostRef) {
       initialSyncDone,
       staleResetSyncDone,
       isSyncing,
-    });
+    }, 'debug');
 
     loading.value = true;
-    ulog('loading=true');
+    ulog('loading=true', {}, 'debug');
     error.value = null;
 
     try {
       const hadData = data.value !== null;
-      ulog('invoking get_agent_usage', { host: hostRef.value });
+      ulog('invoking get_agent_usage', { host: hostRef.value }, 'debug');
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
-      ulog('get_agent_usage returned', { hasResult: res !== null });
+      ulog('get_agent_usage returned', { hasResult: res !== null }, 'debug');
 
       if (res) {
         try {
@@ -135,7 +170,7 @@ export function useAgentUsage(agentName, hostRef) {
             reset_overdue_s:      resetIsPast ? Math.round(nowSec - fiveHour.resets_at) : null,
             until_reset_s:        (!resetIsPast && fiveHour?.resets_at > 0)
                                     ? Math.round(fiveHour.resets_at - nowSec) : null,
-          });
+          }, 'info');
 
           // Data was read successfully — normal path, no forceSync needed.
           // resets_at=0 means no active session in the 5h window, but the cache file
@@ -143,11 +178,10 @@ export function useAgentUsage(agentName, hostRef) {
           // no session has written to it" — that is the null-result path below.
           if (agentName === 'claudecode' && !initialSyncDone) {
             initialSyncDone = true;
-            ulog('first load ok (data present, no forceSync)', { 'resets_at': fiveHour?.resets_at ?? null });
+            ulog('first load ok (data present, no forceSync)', { 'resets_at': fiveHour?.resets_at ?? null }, 'info');
           }
         } catch (e) {
-          ulog('parse error', { err: String(e), content_preview: String(res.content).slice(0, 100) });
-          console.error(`Failed to parse ${agentName} usage JSON:`, e);
+          ulog('parse error', { err: String(e), content_preview: String(res.content).slice(0, 100) }, 'error');
           error.value = "Invalid usage data format.";
         }
       } else {
@@ -159,22 +193,13 @@ export function useAgentUsage(agentName, hostRef) {
           null_reason: !hadData
             ? (initialSyncDone ? 'repeated_null' : 'first_load_no_cache')
             : 'transition_had_data_now_null (STALE_RESET)',
-        });
+        }, 'info');
 
         data.value = null;
 
         if (agentName === 'claudecode' && !initialSyncDone) {
-          // First load with no readable cache: the remote may have never been
-          // provisioned (statusLine hook absent). Provision is a prerequisite for
-          // ongoing polling, so run it FIRST, then force-sync — one ordered flow, not
-          // two concurrent SSH sessions racing to the same host (which interleaved the
-          // logs and added load right when we were busiest). provision() swallows its
-          // own errors; force-sync parses /usage directly and never needs the hook, so
-          // a provision failure must not block recovery.
-          // forceSync stays fire-and-forget on purpose: it ends by calling checkUsage(),
-          // which the outer isChecking guard would skip if we were still awaiting here.
           initialSyncDone = true;
-          ulog('first load no cache → provision then forceSync');
+          ulog('first load no cache → provision then forceSync', {}, 'info');
           await provision();
           forceSync();
         } else if (agentName === 'claudecode' && hadData && !staleResetSyncDone) {
@@ -182,70 +207,68 @@ export function useAgentUsage(agentName, hostRef) {
           // this poll, so the hook is already installed — no provision needed. Recover
           // once with a single force-sync.
           staleResetSyncDone = true;
-          ulog('STALE_RESET (had data → null) → forceSync (provision not needed)');
+          ulog('STALE_RESET (had data → null) → forceSync (provision not needed)', {}, 'info');
           forceSync();
         } else {
           ulog('null received but no auto-forceSync triggered', {
             reason: !hadData
               ? 'hadData=false (already null from prev poll)'
               : 'staleResetSyncDone=true (already triggered once)',
-          });
+          }, 'debug');
         }
       }
     } catch (e) {
-      ulog('IPC error', { err: String(e) });
-      console.error(`Error fetching ${agentName} usage:`, e);
+      ulog('IPC error', { err: String(e) }, 'error');
       error.value = e.toString();
     } finally {
       loading.value = false;
       isChecking = false;
-      ulog('checkUsage done', { loading: false, isChecking: false, hasData: data.value !== null, hasError: !!error.value });
+      ulog('checkUsage done', { loading: false, isChecking: false, hasData: data.value !== null, hasError: !!error.value }, 'debug');
     }
   };
 
   const forceSync = async () => {
     if (!hostRef.value || isSyncing) {
-      ulog('forceSync skip', { reason: !hostRef.value ? 'no host' : 'already syncing' });
+      ulog('forceSync skip', { reason: !hostRef.value ? 'no host' : 'already syncing' }, 'debug');
       return;
     }
     isSyncing = true;
     loading.value = true;
-    ulog('loading=true (forceSync)');
+    ulog('loading=true (forceSync)', {}, 'debug');
     error.value = null;
-    ulog('forceSync start', { host: hostRef.value, failCount: forceSyncFailCount });
+    ulog('forceSync start', { host: hostRef.value, failCount: forceSyncFailCount }, 'info');
 
     let succeeded = false;
     try {
-      ulog('invoking force_sync_agent_usage', { host: hostRef.value });
+      ulog('invoking force_sync_agent_usage', { host: hostRef.value }, 'debug');
       // Rust now returns Err (rejects) when the remote script produced no output —
       // e.g. the shell died early. That lands in catch below and is treated as failure.
       const raw = await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
-      ulog('force_sync_agent_usage returned', { raw_len: String(raw).length });
+      ulog('force_sync_agent_usage returned', { raw_len: String(raw).length }, 'debug');
       let diag = null;
       try {
         diag = JSON.parse(raw);
-        ulog('forceSync diagnostic', diag);
+        ulog('forceSync diagnostic', diag, 'debug');
       } catch (_) {
-        ulog('forceSync raw (not JSON)', { raw_preview: String(raw).slice(0, 200) });
+        ulog('forceSync raw (not JSON)', { raw_preview: String(raw).slice(0, 200) }, 'debug');
       }
       // claude ran but its output couldn't be parsed into usable data → soft failure.
       if (diag && diag.parsed === false) {
         throw new Error(`parser did not parse (parse_error=${diag.parse_error || 'unknown'})`);
       }
-      ulog('forceSync done, calling checkUsage');
+      ulog('forceSync done, calling checkUsage', {}, 'info');
       await checkUsage();
       succeeded = data.value !== null;
-      ulog('forceSync complete', { data_loaded: succeeded });
+      ulog('forceSync complete', { data_loaded: succeeded }, 'info');
     } catch (e) {
-      ulog('forceSync error', { err: String(e) });
-      console.error(`Error force syncing ${agentName}:`, e);
+      ulog('forceSync error', { err: String(e) }, 'error');
       error.value = e.toString();
     } finally {
       loading.value = false;
       isSyncing = false;
       if (succeeded) {
         forceSyncFailCount = 0;
-        ulog('forceSync finally', { isSyncing: false, outcome: 'success' });
+        ulog('forceSync finally', { isSyncing: false, outcome: 'success' }, 'info');
       } else {
         forceSyncFailCount++;
         if (forceSyncFailCount < MAX_FORCESYNC_RETRIES) {
@@ -254,7 +277,7 @@ export function useAgentUsage(agentName, hostRef) {
           staleResetSyncDone = false;
           ulog('forceSync finally', {
             isSyncing: false, outcome: 'fail-will-retry', failCount: forceSyncFailCount,
-          });
+          }, 'info');
         } else {
           // Give up auto-retrying; keep guards set. Manual refresh still forces a fresh attempt.
           if (!error.value) {
@@ -262,7 +285,7 @@ export function useAgentUsage(agentName, hostRef) {
           }
           ulog('forceSync finally', {
             isSyncing: false, outcome: 'fail-giveup', failCount: forceSyncFailCount,
-          });
+          }, 'error');
         }
       }
     }
@@ -272,17 +295,17 @@ export function useAgentUsage(agentName, hostRef) {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     const s = refreshSettings.value.usage_interval_s;
-    ulog('poll timer restart', { interval_s: s, host: hostRef.value });
+    ulog('poll timer restart', { interval_s: s, host: hostRef.value }, 'debug');
     if (hostRef.value && s > 0) {
       pollTimer = setInterval(() => {
-        ulog('poll tick', { poll: pollCount + 1, interval_s: s });
+        ulog('poll tick', { poll: pollCount + 1, interval_s: s }, 'debug');
         checkUsage();
       }, s * 1000);
     }
   }
 
   watch(() => hostRef.value, (newHost) => {
-    ulog('host changed', { newHost, resetting_all_flags: true });
+    ulog('host changed', { newHost, resetting_all_flags: true }, 'info');
     provisioned = false;
     initialSyncDone = false;
     staleResetSyncDone = false;
@@ -299,13 +322,13 @@ export function useAgentUsage(agentName, hostRef) {
   }, { immediate: true });
 
   watch(() => refreshSettings.value.usage_interval_s, (newVal) => {
-    ulog('interval changed', { new_interval_s: newVal });
+    ulog('interval changed', { new_interval_s: newVal }, 'debug');
     restartPollTimer();
   });
 
   watch(() => manualRefreshCount.value, (count) => {
     if (!hostRef.value) return;
-    ulog('manual refresh', { count, agent: agentName });
+    ulog('manual refresh', { count, agent: agentName }, 'info');
     // Manual refresh (Reload / Refresh buttons) = normal fresh load for all agents.
     // forceSync is NOT called here — it auto-triggers inside checkUsage() only when
     // the result is genuinely null (no cache / STALE_RESET). Resetting the one-shot
@@ -320,7 +343,7 @@ export function useAgentUsage(agentName, hostRef) {
 
   onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer);
-    ulog('unmounted');
+    ulog('unmounted', {}, 'debug');
   });
 
   return {
