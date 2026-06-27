@@ -103,7 +103,17 @@ fn now_secs() -> i64 {
 /// Truncate a string for safe log preview (no newlines, bounded length).
 fn preview(s: &str, max: usize) -> String {
     let s = s.trim();
-    let s = if s.len() > max { &s[..max] } else { s };
+    let s = if s.len() > max {
+        // Cut at a char boundary at/below `max` so multi-byte UTF-8 (e.g.
+        // Vietnamese session names in the cached JSON) never panics.
+        let mut end = max;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        &s[..end]
+    } else {
+        s
+    };
     s.replace('\n', "↵").replace('\r', "")
 }
 

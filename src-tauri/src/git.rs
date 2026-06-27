@@ -62,7 +62,10 @@ pub fn get_project_files(local_path: String, sync_git: bool) -> Result<Vec<Strin
     }
     let out = Command::new("git")
         .current_dir(path)
-        .args(["status", "--porcelain"])
+        // core.quotepath=false → git emits real UTF-8 paths instead of
+        // octal-escaped (`"\303\251"`), so non-ASCII filenames (Vietnamese,
+        // emoji) display correctly. Quotes are still stripped below.
+        .args(["-c", "core.quotepath=false", "status", "--porcelain"])
         .output()
         .map_err(|e| format!("Failed to execute git status: {}", e))?;
     if !out.status.success() {

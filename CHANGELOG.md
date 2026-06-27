@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.4.2] - 2026-06-27
+
+#### Fixed
+- **UTF-8 crash on non-ASCII log preview** (`agent_usage.rs`): The `preview()` log helper sliced strings at a raw byte index (`&s[..max]`), which panicked and aborted the whole app when the cut landed mid-character — e.g. a Vietnamese Claude Code `session_name` ("Khảo sát cơ ch…") embedded in the cached usage JSON. The slice runs while building the `format!` argument, so it crashed even **without** `--debug`. Now walks back to the nearest char boundary before slicing, protecting all `preview()` call sites.
+- **Non-ASCII filenames mangled in git status** (`git.rs`): `git status --porcelain` octal-escapes non-ASCII paths (`"\303\251"`), so Vietnamese/emoji filenames displayed as escape sequences. Added `-c core.quotepath=false` so git emits real UTF-8.
+- **Post-build DMG rename no-op for arm-triple builds** (`scripts/post-build.js`): `tauri build --target aarch64-apple-darwin` emits the DMG to the triple-specific `target/aarch64-apple-darwin/release/bundle/dmg` dir, which the rename step did not scan — producing "No matching DMG files found to rename." Added that directory to the scan list.
+
+---
+
 ### [1.4.1] - 2026-06-27
 
 #### Added

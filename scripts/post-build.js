@@ -10,9 +10,12 @@ const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const now = new Date();
 const buildNum = process.env.BUILD_NUM || (String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0'));
 
-// Scan both arm (default target) and universal output dirs.
+// Scan default-target, explicit arm-triple, and universal output dirs.
+// `tauri build --target aarch64-apple-darwin` emits to the triple dir, not
+// target/release — without it the rename silently no-ops.
 const dmgDirs = [
   path.join(root, 'src-tauri/target/release/bundle/dmg'),
+  path.join(root, 'src-tauri/target/aarch64-apple-darwin/release/bundle/dmg'),
   path.join(root, 'src-tauri/target/universal-apple-darwin/release/bundle/dmg'),
 ];
 
