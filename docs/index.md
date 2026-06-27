@@ -2,6 +2,7 @@
 
 ## Features
 - [docs/feat/background-refresh.md](feat/background-refresh.md) — Background polling for git status, remote diff (push/pull buttons), and agent usage; `.git/` mtime quirk and fix
+- [docs/feat/drag-and-drop.md](feat/drag-and-drop.md) — Drag & Drop Live Sorting for list reordering, Tauri v2 native file drop conflict solution, and midpoint geometric threshold logic
 - [docs/feat/open-popup.md](feat/open-popup.md) — Unified Open Popup for Local & Remote SSH actions, macOS open consolidation, and IDE availability checks
 - [docs/feat/sync-flow.md](feat/sync-flow.md) — Core sync flow: Push, Pull, Select special files, Dry-Run and status indicators
 

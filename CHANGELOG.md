@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [Unreleased]
+
+---
+
+### [1.4.0] - 2026-06-27
+
+#### Added
+- **Live Sorting for projects list** (`ProjectTable.vue`): Drag and drop to reorder projects, with Vue 3 `<transition-group>` for smooth transitions. Order is persisted to `projects.json` on drag end.
+- **Mac/Tauri Drag & Drop Pitfall solutions** (`tauri.conf.json`, `ProjectTable.vue`):
+  - Disabled `dragDropEnabled` in native window config to prevent Tauri Rust layer from swallowing HTML5 drag events.
+  - Added `-webkit-user-drag: element !important` in CSS to force WebKit engine to recognize custom div rows as draggable.
+  - Set `draggable="false"` on `<img>` icons and `pointer-events: none` on handle children to prevent native image dragging conflict. Added `z-index: 1` and a high-contrast dark opacity overlay on handle hover to keep the dotted drag indicator clearly visible above custom icon images.
+  - Mitigated Vue reactivity delay by using static `draggable="true"` and synchronous handle state checks.
+  - Solved list jittering/feedback loop with **Midpoint Geometric Threshold** (Hysteresis dead-zone) to only swap when cursor crosses target midpoint.
+- **Scientific CSS Grid Layout & spacing** (`ProjectTable.vue`):
+  - Unified grid column structure using CSS Custom Variables (`--grid-cols`, `--grid-gap`) and `rem` units defined on the parent container. Both header and rows inherit these variables, ensuring pixel-perfect alignment without code duplication (DRY pattern).
+  - Configured desktop layout to `--grid-cols: 13.5rem 5rem 3.8rem 1fr` with `0.5rem` gap, and narrow layout (under 800px) to `--grid-cols: 11rem 4.5rem 3.5rem 1fr` with `0.25rem` gap.
+  - Standardized left-alignment (`text-align: left`) on all header cells and row cells.
+  - Created [docs/feat/drag-and-drop.md](docs/feat/drag-and-drop.md) to document the technical insights and solutions.
+- **Manual UI improvements** (`AppHeader.vue`, `main.css`, `AgentUsage.vue`):
+  - Refactored `app-version` layout into separate `version-num` and `build-time` spans for cleaner alignment.
+  - Squeezed actions button texts in the header on viewport under `850px` to turn buttons into icon-only layout seamlessly.
+  - Adjusted button labels (e.g. `NEW PROJECT` to `PROJECT`, `INTRO` to `INTRO`, `SSH CONFIG` to `SSH`).
+  - Added clean formatting structure to the console/progress layouts.
+
+#### Changed
+- **Agent Usage Email hidden state** (`AgentUsage.vue`): Replaced `v-if` template toggle with a CSS blur filter (`filter: blur(3px)`) to maintain exact element layout sizing when email is hidden.
+
+---
+
 ### [1.3.3] - 2026-06-25
 
 #### Fixed

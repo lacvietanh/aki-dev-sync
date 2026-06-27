@@ -16,31 +16,34 @@
             </div>
           </span>
           Aki Dev Sync
-          <span v-if="isDev" class="dev-tag">DEV</span>
-          <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">v{{ appVersion }} (build {{ buildDate }} {{ buildTime }})</span>
         </h1>
+        <span v-if="isDev" class="dev-tag">DEV</span>
       </div>
+      <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">
+        <span class="version-num">v{{ appVersion }}</span>
+        <span class="build-time">{{ buildDate }} {{ buildTime }}</span>
+      </span>
       <div class="header-actions">
         <button class="btn-tech btn-tech-secondary btn-intro" @click="openIntroModal" title="Introduction">
-          <i class="fa-solid fa-book-open"></i> INTRO
+          <i class="fa-solid fa-book-open"></i> <span class="btn-text">INTRO</span>
           <span class="badge-dot"></span>
         </button>
         <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="anySyncing || isReloading">
-          <i class="fa-solid fa-plus"></i> NEW PROJECT
+          <i class="fa-solid fa-plus"></i> <span class="btn-text">PROJECT</span>
         </button>
         <button class="btn-tech btn-tech-secondary" @click="openSshConfig" title="Edit SSH Config" :disabled="anySyncing || isReloading">
-          <i class="fa-solid fa-server"></i> SSH CONFIG
+          <i class="fa-solid fa-edit"></i> <span class="">SSH</span>
         </button>
         <div class="btn-group-refresh">
           <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" title="Refresh all — git, remote diff, usage" :disabled="anySyncing || isReloading">
             <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i>
-            {{ isReloading ? 'REFRESHING...' : 'REFRESH' }}
+            <span class="btn-text">{{ isReloading ? 'REFRESHING...' : 'REFRESH' }}</span>
           </button>
           <button class="btn-tech btn-tech-secondary btn-refresh-settings" @click="showRefreshSettings = true" title="Background Refresh Settings" :disabled="isReloading">
             <i class="fa-solid fa-sliders"></i>
           </button>
         </div>
-        
+
         <RefreshSettingsModal :show="showRefreshSettings" @close="showRefreshSettings = false" />
         <ChangelogModal :show="showChangelogModal" @close="showChangelogModal = false" />
 
@@ -107,9 +110,11 @@ function handleCreateNew() {
   vertical-align: middle;
   margin-right: 4px;
 }
+
 .app-icon-menu:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
 .icon-chevron {
   font-size: 10px;
   color: #94a3b8;
@@ -117,10 +122,12 @@ function handleCreateNew() {
   margin-top: 1px;
   transition: color 0.15s, transform 0.2s;
 }
+
 .app-icon-menu:hover .icon-chevron {
   color: #cbd5e1;
   transform: rotate(180deg);
 }
+
 .icon-dropdown {
   display: none;
   position: absolute;
@@ -130,7 +137,7 @@ function handleCreateNew() {
   background: #1a1d23;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 7px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.04);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
   min-width: 180px;
   padding: 4px;
   white-space: nowrap;
@@ -141,6 +148,7 @@ function handleCreateNew() {
   font-weight: 400;
   font-size: 13px;
 }
+
 .icon-dropdown::before {
   content: '';
   position: absolute;
@@ -149,9 +157,11 @@ function handleCreateNew() {
   right: 0;
   height: 6px;
 }
+
 .app-icon-menu:hover .icon-dropdown {
   display: block;
 }
+
 .icon-dropdown-item {
   display: flex;
   align-items: center;
@@ -163,15 +173,18 @@ function handleCreateNew() {
   border-radius: 5px;
   transition: background 0.12s, color 0.12s;
 }
+
 .icon-dropdown-item:hover {
   background: rgba(255, 255, 255, 0.07);
   color: #e2e8f0;
 }
+
 .icon-dropdown-item i {
   width: 14px;
   text-align: center;
   color: #64748b;
 }
+
 .icon-dropdown-item:hover i {
   color: #94a3b8;
 }
@@ -180,6 +193,7 @@ function handleCreateNew() {
   position: relative;
   margin-right: 4px;
 }
+
 .badge-dot {
   position: absolute;
   top: -2px;
@@ -191,10 +205,22 @@ function handleCreateNew() {
   border: 2px solid #131317;
   animation: pulse-red 2s infinite;
 }
+
 @keyframes pulse-red {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 
 .btn-group-refresh {
@@ -202,33 +228,55 @@ function handleCreateNew() {
   align-items: center;
   gap: 0;
 }
+
 .btn-refresh-main {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right: none;
 }
+
 .btn-refresh-settings {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
   padding: 0 10px;
 }
-.btn-refresh-main:hover:not(:disabled) + .btn-refresh-settings,
+
+.btn-refresh-main:hover:not(:disabled)+.btn-refresh-settings,
 .btn-refresh-settings:hover:not(:disabled) {
   border-left-color: rgba(255, 255, 255, 0.4);
 }
 
 .app-version {
-  font-size: 0.75em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
   color: #64748b;
   margin-left: 8px;
+  margin-right: auto;
   vertical-align: middle;
   font-weight: normal;
   letter-spacing: 1px;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
+
+.version-num {
+  flex-shrink: 0;
+}
+
+.build-time {
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .app-version.clickable {
   cursor: pointer;
   transition: color 0.2s;
 }
+
 .app-version.clickable:hover {
   color: #3b82f6;
 }
@@ -245,5 +293,19 @@ function handleCreateNew() {
   vertical-align: middle;
   letter-spacing: 0.5px;
   display: inline-block;
+}
+
+@media (max-width: 850px) {
+  .header-actions .btn-tech {
+    padding: 0 10px !important;
+  }
+
+  .header-actions .btn-tech .btn-text {
+    display: none !important;
+  }
+
+  .header-actions .btn-tech i {
+    display: inline-block !important;
+  }
 }
 </style>

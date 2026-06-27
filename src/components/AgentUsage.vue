@@ -11,8 +11,8 @@
           <span v-if="data && claudeTierDisplay" class="agent-plan-badge claude">
             Claude {{ claudeTierDisplay }}
           </span>
-          <span v-if="showEmail && data?.email" class="agent-account">{{ data.email }}</span>
-          <span v-if="showEmail && ccOrgName" class="agent-org">· {{ ccOrgName }}</span>
+          <span v-if="data?.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">{{ data.email }}</span>
+          <span v-if="ccOrgName" class="agent-org" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
         </div>
       </div>
       <div class="agent-status-badges">
@@ -33,13 +33,13 @@
         <div class="agent-info">
           <div class="agent-name">
             {{ agentName }}
-            <span v-if="showEmail && data && data.email" class="agent-account">
+            <span v-if="data && data.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">
               - {{ data.email }}
             </span>
           </div>
         </div>
       </div>
-      
+
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
@@ -53,7 +53,7 @@
       <div v-if="error" class="usage-error">
         <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ error }}</span>
       </div>
-      
+
       <!-- Skeleton circles with fieldset wrapper for AG -->
       <div v-else-if="loading && !data" class="usage-circles-skeleton">
         <div v-if="agentId === 'claudecode'" class="cc-skeleton-block">
@@ -84,7 +84,7 @@
           </fieldset>
         </div>
       </div>
-      
+
       <div v-else-if="!data && !loading" class="usage-empty">
         <i class="fa-solid" :class="agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1'"></i><br>
         <span>{{ agentId === 'antigravity' ? 'IDE not running (Open Antigravity to monitor)' : 'No data — waiting for next session' }}</span>
@@ -93,7 +93,7 @@
           <span>Force Sync</span>
         </button>
       </div>
-      
+
       <div v-else-if="data" class="usage-bars-container">
         <!-- Render Claude Code specific circular progress (2 circles) -->
         <template v-if="agentId === 'claudecode'">
@@ -132,47 +132,43 @@
             </div>
           </div>
         </template>
-        
+
         <!-- Render Antigravity specific circular progress (4 circles bo trong 2 fieldset) -->
         <template v-else-if="agentId === 'antigravity'">
           <div class="circles-row">
             <fieldset class="zone-fieldset zone-gemini">
               <legend class="zone-legend">Gemini</legend>
               <div class="zone-content">
-                <UsageCircle 
-                  label="Gemini 5-Hour Limit" 
-                  subLabel="5H" 
-                  :percentage="gemini5hData ? gemini5hData.percentage : null" 
-                  :resetsAt="gemini5hData ? gemini5hData.resetsAt : null" 
-                  @timeout="$emit('retry')"
-                />
-                <UsageCircle 
-                  label="Gemini Weekly Limit" 
-                  subLabel="7D" 
-                  :percentage="geminiWeeklyBucket?.remainingFraction !== undefined ? Math.round((1 - geminiWeeklyBucket.remainingFraction) * 100) : null" 
-                  :resetsAt="geminiWeeklyBucket?.resetTime ? Math.floor(new Date(geminiWeeklyBucket.resetTime).getTime() / 1000) : null" 
-                  @timeout="$emit('retry')"
-                />
+                <UsageCircle
+                             label="Gemini 5-Hour Limit"
+                             subLabel="5H"
+                             :percentage="gemini5hData ? gemini5hData.percentage : null"
+                             :resetsAt="gemini5hData ? gemini5hData.resetsAt : null"
+                             @timeout="$emit('retry')" />
+                <UsageCircle
+                             label="Gemini Weekly Limit"
+                             subLabel="7D"
+                             :percentage="geminiWeeklyBucket?.remainingFraction !== undefined ? Math.round((1 - geminiWeeklyBucket.remainingFraction) * 100) : null"
+                             :resetsAt="geminiWeeklyBucket?.resetTime ? Math.floor(new Date(geminiWeeklyBucket.resetTime).getTime() / 1000) : null"
+                             @timeout="$emit('retry')" />
               </div>
             </fieldset>
 
             <fieldset class="zone-fieldset zone-claude">
               <legend class="zone-legend">Claude/OSS</legend>
               <div class="zone-content">
-                <UsageCircle 
-                  label="Claude & GPT 5-Hour Limit" 
-                  subLabel="5H" 
-                  :percentage="claude5hData ? claude5hData.percentage : null" 
-                  :resetsAt="claude5hData ? claude5hData.resetsAt : null" 
-                  @timeout="$emit('retry')"
-                />
-                <UsageCircle 
-                  label="Claude & GPT Weekly Limit" 
-                  subLabel="7D" 
-                  :percentage="claudeWeeklyBucket?.remainingFraction !== undefined ? Math.round((1 - claudeWeeklyBucket.remainingFraction) * 100) : null" 
-                  :resetsAt="claudeWeeklyBucket?.resetTime ? Math.floor(new Date(claudeWeeklyBucket.resetTime).getTime() / 1000) : null" 
-                  @timeout="$emit('retry')"
-                />
+                <UsageCircle
+                             label="Claude & GPT 5-Hour Limit"
+                             subLabel="5H"
+                             :percentage="claude5hData ? claude5hData.percentage : null"
+                             :resetsAt="claude5hData ? claude5hData.resetsAt : null"
+                             @timeout="$emit('retry')" />
+                <UsageCircle
+                             label="Claude & GPT Weekly Limit"
+                             subLabel="7D"
+                             :percentage="claudeWeeklyBucket?.remainingFraction !== undefined ? Math.round((1 - claudeWeeklyBucket.remainingFraction) * 100) : null"
+                             :resetsAt="claudeWeeklyBucket?.resetTime ? Math.floor(new Date(claudeWeeklyBucket.resetTime).getTime() / 1000) : null"
+                             @timeout="$emit('retry')" />
               </div>
             </fieldset>
           </div>
@@ -350,11 +346,11 @@ watch(() => refreshSettings.value.usage_interval_s, () => {
 
 const claudeTierDisplay = computed(() => {
   if (!props.data) return '';
-  
+
   if (props.data.rateLimitTier && props.data.rateLimitTier !== 'Unknown') {
     let tier = props.data.rateLimitTier;
     let cleaned = tier.replace(/^(default_)?claude_/, '').replace(/_/g, ' ');
-    
+
     return cleaned.split(' ').map(word => {
       if (word.toLowerCase() === 'max') return 'Max';
       if (word.toLowerCase() === 'pro') return 'Pro';
@@ -362,11 +358,11 @@ const claudeTierDisplay = computed(() => {
       return word.charAt(0).toUpperCase() + word.slice(1);
     }).join(' ');
   }
-  
+
   if (props.data.subscriptionType && props.data.subscriptionType !== 'Unknown') {
     return props.data.subscriptionType.charAt(0).toUpperCase() + props.data.subscriptionType.slice(1);
   }
-  
+
   return '';
 });
 
@@ -451,6 +447,13 @@ async function handleIconClick() {
   font-weight: 500;
 }
 
+.email-blurred {
+  filter: blur(3px);
+  user-select: none;
+  pointer-events: none;
+  transition: filter 0.2s;
+}
+
 .agent-org {
   font-size: 10px;
   color: var(--text-darker);
@@ -502,6 +505,7 @@ async function handleIconClick() {
   align-items: center;
   justify-content: center;
 }
+
 .btn-ui-action:hover {
   background: var(--bg-tertiary);
   color: var(--text-light);
@@ -524,7 +528,8 @@ async function handleIconClick() {
 
 .circles-row {
   display: flex;
-  gap: 4px; /* Tight gap */
+  gap: 4px;
+  /* Tight gap */
   justify-content: space-between;
   align-items: stretch;
   width: 100%;
@@ -534,9 +539,11 @@ async function handleIconClick() {
 /* fieldset for grouping Antigravity */
 .zone-fieldset {
   flex: 1;
-  border: 1px dashed rgba(255, 255, 255, 0.18); /* Brighter dashed line */
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  /* Brighter dashed line */
   border-radius: 6px;
-  padding: 4px 2px 4px 2px; /* Super compact padding */
+  padding: 4px 2px 4px 2px;
+  /* Super compact padding */
   margin: 0;
   min-width: 0;
   box-sizing: border-box;
@@ -546,9 +553,11 @@ async function handleIconClick() {
 .zone-fieldset.zone-gemini {
   border-color: rgba(96, 165, 250, 0.35);
 }
+
 .zone-fieldset.zone-gemini:hover {
   border-color: rgba(96, 165, 250, 0.55);
 }
+
 .zone-fieldset.zone-gemini .zone-legend {
   color: #93c5fd;
 }
@@ -556,9 +565,11 @@ async function handleIconClick() {
 .zone-fieldset.zone-claude {
   border-color: rgba(251, 146, 60, 0.35);
 }
+
 .zone-fieldset.zone-claude:hover {
   border-color: rgba(251, 146, 60, 0.55);
 }
+
 .zone-fieldset.zone-claude .zone-legend {
   color: #fdba74;
 }
@@ -619,9 +630,17 @@ async function handleIconClick() {
 }
 
 @keyframes pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 0.3; }
-  100% { opacity: 0.6; }
+  0% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+
+  100% {
+    opacity: 0.6;
+  }
 }
 
 .usage-error {
@@ -690,10 +709,21 @@ async function handleIconClick() {
   font-weight: 700;
 }
 
-.cc-bar-pct.color-safe { color: var(--accent-green); }
-.cc-bar-pct.color-warning { color: var(--accent-amber); }
-.cc-bar-pct.color-danger { color: var(--accent-red); }
-.cc-bar-pct.color-na { color: var(--text-darker); }
+.cc-bar-pct.color-safe {
+  color: var(--accent-green);
+}
+
+.cc-bar-pct.color-warning {
+  color: var(--accent-amber);
+}
+
+.cc-bar-pct.color-danger {
+  color: var(--accent-red);
+}
+
+.cc-bar-pct.color-na {
+  color: var(--text-darker);
+}
 
 .cc-progress-track {
   height: 5px;
@@ -708,16 +738,28 @@ async function handleIconClick() {
   transition: width 0.6s ease;
 }
 
-.cc-progress-fill.color-safe { background: var(--accent-green); }
-.cc-progress-fill.color-warning { background: var(--accent-amber); }
-.cc-progress-fill.color-danger { background: var(--accent-red); }
-.cc-progress-fill.color-na { background: rgba(255, 255, 255, 0.08); }
+.cc-progress-fill.color-safe {
+  background: var(--accent-green);
+}
+
+.cc-progress-fill.color-warning {
+  background: var(--accent-amber);
+}
+
+.cc-progress-fill.color-danger {
+  background: var(--accent-red);
+}
+
+.cc-progress-fill.color-na {
+  background: rgba(255, 255, 255, 0.08);
+}
 
 .cc-reset-line {
   font-size: 9px;
   font-weight: 500;
   color: var(--text-muted);
 }
+
 .cc-reset-line.is-na {
   color: var(--text-darker);
 }
@@ -761,6 +803,7 @@ async function handleIconClick() {
   border-radius: 50% !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
+
 .btn-reload:hover {
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
@@ -771,10 +814,12 @@ async function handleIconClick() {
   color: var(--text-muted);
   font-weight: 500;
 }
+
 .cc-reset-line .time-val {
   color: rgba(255, 255, 255, 0.88);
   font-weight: 700;
 }
+
 .cc-reset-line .time-abs {
   color: var(--text-muted);
   font-weight: 400;

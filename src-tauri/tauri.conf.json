@@ -13,12 +13,13 @@
     "windows": [
       {
         "title": "Aki Dev Sync",
-        "width": 1000,
+        "width": 875,
         "height": 768,
         "minWidth": 600,
         "minHeight": 500,
         "transparent": true,
-        "decorations": false
+        "decorations": false,
+        "dragDropEnabled": false
       }
     ],
     "macOSPrivateApi": true,
