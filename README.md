@@ -53,6 +53,7 @@ This tool was built for a specific way of working — you'll feel at home if you
 
 | Feature | What it does |
 |---|---|
+| **Project Tasks** | Per-project task list in a hover popover (TASKS column, right before GIT). Track what you are doing, plan to do, and have done while switching projects. DOING sorts to the top with color-coded status tags; the button badge counts open tasks. Stored per project in `projects.json`. |
 | **Open Popup** | One menu to open a project — **Local:** Finder, Terminal, VSCode, VSCode Insiders, Antigravity; **Remote (SSH):** SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote. Unavailable IDEs are dimmed automatically. |
 | **Agent Usage** | **Real** quota — not estimates. **Claude Code** (Remote) reads Anthropic's own `rate_limits` (5-hour + 7-day), showing plan tier, email, and org name. **Antigravity** (Local) pulled from the IDE's native Language Server, showing the Gemini and Claude/OSS pools. Relative-time reset countdowns. Email visibility toggleable per column (eye icon). |
 | **Force Sync Quota** (↻) | Re-read local usage data by running `claude --model haiku -p /usage` on the remote. This reads local JSONL session logs on that machine (P2, not a network call to Anthropic). Returns `0%` if no local session has run in the current 5h window. |

@@ -1,6 +1,7 @@
 # Docs Index — Aki Dev Sync
 
 ## Features
+- [docs/feat/project-task-list.md](feat/project-task-list.md) — Per-project task list in a hover popover (TASKS column); doing-first ordering, colored status tags, persisted on `projects.json` via serde-default
 - [docs/feat/background-refresh.md](feat/background-refresh.md) — Background polling for git status, remote diff (push/pull buttons), and agent usage; `.git/` mtime quirk and fix
 - [docs/feat/drag-and-drop.md](feat/drag-and-drop.md) — Drag & Drop Live Sorting for list reordering, Tauri v2 native file drop conflict solution, and midpoint geometric threshold logic
 - [docs/feat/open-popup.md](feat/open-popup.md) — Unified Open Popup for Local & Remote SSH actions, macOS open consolidation, and IDE availability checks
@@ -25,6 +26,7 @@
 - [docs/plan/deferred-auto-update.md](plan/deferred-auto-update.md) — Tauri v2 self-update (deferred)
 
 ## Plans (Completed)
+- [docs/plan/done/project-task-list.md](plan/done/project-task-list.md) — Per-project task list: data model, hover-popover UX, file changes
 - [docs/plan/done/total-refactor-by-akirule.md](plan/done/total-refactor-by-akirule.md) — Full PROCODING refactor plan
 - [docs/plan/done/open-popup-consolidation.md](plan/done/open-popup-consolidation.md) — Consolidation of Local and Remote SSH popup actions
 - [docs/plan/done/akirule-audit-round2.md](plan/done/akirule-audit-round2.md) — Secondary audit for rule compliance

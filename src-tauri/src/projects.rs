@@ -18,6 +18,22 @@ pub struct SyncHooks {
     pub ignore_hook_errors: bool,
 }
 
+/// A single per-project task. Created and mutated entirely on the frontend
+/// (timestamps come from JS `Date.now()`); Rust only persists it via save_projects.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ProjectTask {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub detail: String,
+    #[serde(default)]
+    pub status: String, // "todo" | "doing" | "done"
+    #[serde(default)]
+    pub created_at: u64,
+    #[serde(default)]
+    pub updated_at: u64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SyncProject {
     pub id: String,
@@ -42,6 +58,8 @@ pub struct SyncProject {
     pub delete_on_push: bool,
     #[serde(default)]
     pub last_sync_status: Option<String>,
+    #[serde(default)]
+    pub tasks: Vec<ProjectTask>,
 }
 
 /// Validates that a single path segment contains no traversal or control characters.
@@ -137,6 +155,7 @@ mod tests {
             delete_on_pull: false,
             delete_on_push: false,
             last_sync_status: None,
+            tasks: vec![],
         }
     }
 

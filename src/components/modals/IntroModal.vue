@@ -114,6 +114,14 @@
       <div class="subgroup-label mb-1">🛠 TOOLS & MONITOR</div>
       <div class="features-grid">
         <div class="feature-card">
+          <div class="feature-icon" style="color: #00d2ff;"><i class="fa-solid fa-list-check"></i></div>
+          <div class="feature-text">
+            <strong>Project Tasks</strong>
+            <span>Hover nút ở cột TASKS (ngay trước GIT) → bảng task của từng dự án: quản lý đang làm / định làm / đã làm khi chuyển qua lại nhiều dự án. Tag màu theo trạng thái, DOING tự đẩy lên đầu, badge đếm task chưa xong.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
           <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
             <strong>Open Popup</strong>

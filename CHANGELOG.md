@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.5.0] - 2026-06-28
+
+#### Added
+- **Per-project Task List** (`projects.rs`, `useProjectTasks.js`, `TaskCell.vue`, `ProjectTable.vue`): Each project now has a lightweight task list for tracking what is being done, planned, and finished while switching between projects.
+  - New `TASKS` column placed right before `GIT`. Hovering its button reveals a popover with the full task list; the popover stays open while the cursor is inside it or while an input inside has focus, so editing is not interrupted.
+  - Each task has a title, an optional detail line, and a status tag that cycles `todo -> doing -> done` on click (DOING amber, TODO cyan, DONE muted and struck-through). Tasks are ordered doing-first, then todo, then done, keeping active work at the top.
+  - The trigger button shows an open-task badge (todo + doing) and turns amber when any task is `doing`.
+  - Data model `ProjectTask { id, title, detail, status, created_at, updated_at }` with `tasks: Vec<ProjectTask>` on `SyncProject`. Tasks are persisted config on `projects.json` and ride the existing `load_projects` / `save_projects` path; no new Tauri command. `#[serde(default)]` on `tasks` and all non-id task fields so older `projects.json` records still load.
+  - Docs: [docs/feat/project-task-list.md](docs/feat/project-task-list.md); plan in [docs/plan/done/project-task-list.md](docs/plan/done/project-task-list.md).
+
+---
+
 ### [1.4.2] - 2026-06-27
 
 #### Fixed

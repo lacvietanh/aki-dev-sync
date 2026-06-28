@@ -153,6 +153,7 @@ export async function createNewProject(sshHosts) {
       dry_run: true,
       delete_on_pull: true,
       delete_on_push: false,
+      tasks: [],
     }
     openConfig(p)
   }

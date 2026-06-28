@@ -4,6 +4,7 @@
       <!-- Header -->
       <div class="grid-header">
         <div class="grid-header-cell col-project-info">PROJECT / PATH</div>
+        <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
         <div class="grid-header-cell col-git-status" title="LOCAL GIT">
           <span class="th-with-ring">
             GIT
@@ -84,7 +85,12 @@
             </div>
           </div>
 
-          <!-- Cell 2: Git Status -->
+          <!-- Cell 2: Tasks -->
+          <div class="grid-row-cell col-tasks">
+            <TaskCell :project="p" />
+          </div>
+
+          <!-- Cell 3: Git Status -->
           <div class="grid-row-cell col-git-status">
             <div class="git-cell">
               <button class="btn-action-git" @click="openGitModal(p)" title="Git Actions (Commit & Push to Remote Git)" aria-label="Git Actions">
@@ -96,7 +102,7 @@
             </div>
           </div>
 
-          <!-- Cell 3: Last Sync -->
+          <!-- Cell 4: Last Sync -->
           <div class="grid-row-cell col-last-sync">
             <div v-if="p.last_sync_action" class="last-sync-badge" :class="p.last_sync_action.includes('PULL') ? 'badge-pull' : 'badge-push'">
               {{ p.last_sync_action }} <span class="sync-time">{{ formatTimeAgo(p.last_sync_time) }}</span>
@@ -104,7 +110,7 @@
             <div v-else class="text-muted">Never</div>
           </div>
 
-          <!-- Cell 4: Actions -->
+          <!-- Cell 5: Actions -->
           <div class="grid-row-cell col-actions">
             <div class="actions-wrapper">
               <!-- Open Popup Trigger (OPEN Button) -->
@@ -218,6 +224,7 @@ import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefre
 import { refreshSettings } from '../store/refreshStore';
 import { Toast } from '../store/projectStore';
 import RefreshRing from './RefreshRing.vue';
+import TaskCell from './TaskCell.vue';
 
 const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSpecialModal, openConfig, openGitModal } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
@@ -388,7 +395,7 @@ function formatTimeAgo(timestamp) {
 <style scoped>
 .projects-table-container {
   width: 100%;
-  --grid-cols: 13.5rem 5rem 3.8rem 1fr;
+  --grid-cols: 13.5rem 3.2rem 5rem 3.8rem 1fr;
   --grid-gap: 0.5rem;
 }
 
@@ -472,6 +479,7 @@ function formatTimeAgo(timestamp) {
   width: 100%;
 }
 
+.col-tasks,
 .col-git-status,
 .col-last-sync,
 .col-actions {
@@ -481,6 +489,7 @@ function formatTimeAgo(timestamp) {
 
 /* Reset widths from main.css to let CSS Grid control layout */
 .col-project-info,
+.col-tasks,
 .col-git-status,
 .col-last-sync,
 .col-actions {
@@ -583,10 +592,11 @@ function formatTimeAgo(timestamp) {
 
 @media (max-width: 800px) {
   .projects-table-container {
-    --grid-cols: 11rem 4.5rem 3.5rem 1fr;
+    --grid-cols: 11rem 2.8rem 4.5rem 3.5rem 1fr;
     --grid-gap: 0.25rem;
   }
 
+  .col-tasks,
   .col-git-status,
   .col-last-sync,
   .col-actions {
