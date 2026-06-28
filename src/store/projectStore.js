@@ -24,6 +24,10 @@ export const projectRuntime = ref({})
 
 export const isReloading = ref(false)
 
+// Preloaded IDE availability and cache-busting timestamp for icons
+export const ideAvailability = ref(null)
+export const iconTimestamp = ref(Date.now())
+
 // True when any project is currently syncing — used by header/console
 export const anySyncing = computed(() =>
   Object.values(projectRuntime.value).some(r => r.syncing)

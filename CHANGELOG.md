@@ -8,12 +8,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ### [1.5.0] - 2026-06-28
 
 #### Added
-- **Per-project Task List** (`projects.rs`, `useProjectTasks.js`, `TaskCell.vue`, `ProjectTable.vue`): Each project now has a lightweight task list for tracking what is being done, planned, and finished while switching between projects.
-  - New `TASKS` column placed right before `GIT`. Hovering its button reveals a popover with the full task list; the popover stays open while the cursor is inside it or while an input inside has focus, so editing is not interrupted.
-  - Each task has a title, an optional detail line, and a status tag that cycles `todo -> doing -> done` on click (DOING amber, TODO cyan, DONE muted and struck-through). Tasks are ordered doing-first, then todo, then done, keeping active work at the top.
-  - The trigger button shows an open-task badge (todo + doing) and turns amber when any task is `doing`.
-  - Data model `ProjectTask { id, title, detail, status, created_at, updated_at }` with `tasks: Vec<ProjectTask>` on `SyncProject`. Tasks are persisted config on `projects.json` and ride the existing `load_projects` / `save_projects` path; no new Tauri command. `#[serde(default)]` on `tasks` and all non-id task fields so older `projects.json` records still load.
+- **Per-project Task List** (`projects.rs`, `useProjectTasks.js`, `TaskCell.vue`, `ProjectTasksModal.vue`): Each project now has a lightweight task list for tracking active items, pinned goals, and future wishes.
+  - Clicking the trigger button opens a focused centered modal (`ProjectTasksModal.vue`) where active tasks are sorted with Pinned tasks first, followed by normal tasks, then wish tasks, and completed tasks sink to the bottom of the list.
+  - Placed checklist checkmark (Done), thumbtack (Pin), and clock (Wish / do-it-later) toggle buttons together on the left of each task row, grouping all state controls.
+  - Inactive pin and wish states display as faint icons (`opacity: 0.35`) without a background, ensuring normal tasks have no colored badge.
+  - Pressing the Enter key while editing a task title instantly marks the task as completed.
+  - Added a "Hide Completed" toggle checkbox to clean up the task view, utilizing instant leave transitions (`display: none`) to prevent browser flexbox absolute layout snap-to-top glitches while preserving smooth move slide transitions.
+  - Completed task rows are dynamically dimmed.
+  - The project row trigger badge counts active tasks and turns amber if any active task is pinned.
+  - Data model `ProjectTask { id, title, detail, done, pin, wish, created_at, updated_at }` with `tasks: Vec<ProjectTask>` on `SyncProject`. Persisted on `projects.json` via `load_projects` / `save_projects` with full `#[serde(default)]` backward compatibility.
   - Docs: [docs/feat/project-task-list.md](docs/feat/project-task-list.md); plan in [docs/plan/done/project-task-list.md](docs/plan/done/project-task-list.md).
+- **High-Performance Project Icon Protocol** (`system.rs`, `lib.rs`, `projects.rs`): Introduced a custom Tauri URI protocol `aki-devsync-icon://[project_id]` to load local project icons directly from Rust memory (`PROJECT_ICONS` Mutex cache).
+  - Scans project folders during `load_projects` at startup or refresh. Supports stack-specific priority scan lists (Tauri, Nuxt, Web projects) preferring smaller icons (under 48px), fallback error tracking, and a cache-busting timestamp parameter (`?t=`).
+  - Removes base64 parsing and IPC payload bloat during render.
+- **Single Instance Configuration** (`Cargo.toml`, `lib.rs`): Integrated `tauri-plugin-single-instance` to prevent database locks and process conflicts by ensuring only a single instance of the app runs at a time, focusing the active window on subsequent launches.
+
+#### Changed
+- **Compact Project Table Grid Layout** (`ProjectTable.vue`): Tightened grid column layout by reducing the grid column gap (`--grid-gap`) to `2px` and shrinking the Tasks column width to `2.2rem` to eliminate empty spaces and keep elements tightly aligned.
+- **Open Launcher Popup UX** (`ProjectTable.vue`): Replaced JS mouseenter/mouseleave timeout timers on the OPEN button launcher with native CSS transition delays (`transition-delay: 0.15s` on mouseleave).
+  - Positioned the popup with `position: fixed` (escaping table container `overflow-y: auto` clipping) and ALWAYS UP (positioning exactly above the trigger button on hover with 0px gap).
+  - Added an invisible `::before` pseudo-element bridge below the popup to prevent losing hover when moving the cursor.
+- **Prefetched Startup Data** (`useProjectConfig.js`, `projectStore.js`):
+  - Moved `check_ide_availability` execution to startup `loadData` inside `useProjectConfig.js`, removing the laggy IPC call from the hover trigger.
 
 ---
 

@@ -13,6 +13,7 @@
     <SshConfigModal />
     <GitModal />
     <IntroModal />
+    <ProjectTasksModal />
   </div>
 </template>
 
@@ -27,6 +28,7 @@ import ProjectConfigModal from './components/modals/ProjectConfigModal.vue';
 import SshConfigModal from './components/modals/SshConfigModal.vue';
 import GitModal from './components/modals/GitModal.vue';
 import IntroModal from './components/modals/IntroModal.vue';
+import ProjectTasksModal from './components/modals/ProjectTasksModal.vue';
 
 import { useProjects } from './composables/useProjects';
 import { useSsh } from './composables/useSsh';

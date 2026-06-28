@@ -66,7 +66,7 @@
                 title="Kéo để sắp xếp"
                 @mousedown="isHandleMouseDown = true"
               >
-                <img v-if="projectIcons[p.id]" :src="projectIcons[p.id]" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" />
+                <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" @error="failedIcons[p.id] = true" />
                 <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
               </div>
 
@@ -114,17 +114,18 @@
           <div class="grid-row-cell col-actions">
             <div class="actions-wrapper">
               <!-- Open Popup Trigger (OPEN Button) -->
-              <div class="open-popup-wrapper" @mouseenter="onOpenEnter(p, $event)" @mouseleave="onOpenLeave()">
+              <div class="open-popup-wrapper" @mouseenter="onOpenEnter(p, $event)">
                 <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup">
                   <span class="btn-text">OPEN</span> <i class="fa-solid fa-caret-down"></i>
                 </button>
 
-                <!-- Open Popup -->
-                <transition name="popup-fade">
-                  <div v-if="activeOpenPopup === p.id" class="open-popup" :style="popupPositionStyle" @mouseenter="onPopupEnter()" @mouseleave="onOpenLeave()">
-                    <div class="popup-header" :title="p.name">
-                      <i class="fa-solid fa-folder-open" style="color: var(--accent-cyan); margin-right: 6px;"></i>{{ p.name }}
-                    </div>
+                <!-- Open Popup (Native CSS Hover with fixed positioning) -->
+                <div class="open-popup" :style="projectRuntime[p.id]?.popupStyle">
+                  <div class="popup-header" :title="p.name">
+                    <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
+                    <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 14px;"></i>
+                    <span>{{ p.name }}</span>
+                  </div>
                     <div style="display: flex;">
                       <!-- LOCAL -->
                       <div style="flex: 1; min-width: 150px;">
@@ -164,8 +165,7 @@
                       </div>
                     </div>
                   </div>
-                </transition>
-              </div>
+                </div>
 
               <button class="btn-tech btn-tech-push-special" @click="openSpecialModal(p)" :disabled="projectRuntime[p.id]?.syncing" title="Select specific files to push">
                 <i class="fa-solid fa-hand-pointer btn-select-icon-only" style="display: none;"></i>
@@ -222,67 +222,32 @@ import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
-import { Toast } from '../store/projectStore';
+import { Toast, ideAvailability, iconTimestamp } from '../store/projectStore';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 
 const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSpecialModal, openConfig, openGitModal } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 
-const projectIcons = ref({});
-const activeOpenPopup = ref(null);
-const ideAvailability = ref(null);
-const popupPositionStyle = ref({ top: '34px', bottom: 'auto', transformOrigin: 'top left' });
-let popupTimer = null;
+const failedIcons = ref({});
+watch([projects, iconTimestamp], () => {
+  failedIcons.value = {};
+});
 
-watch(() => projects.value.map(p => p.id), async (newIds) => {
-  for (const id of newIds) {
-    if (projectIcons.value[id] === undefined) {
-      projectIcons.value[id] = null;
-      const project = projects.value.find(p => p.id === id);
-      if (!project) continue;
-      try {
-        const base64 = await invoke("get_project_icon_base64", { localPath: project.local_path });
-        if (base64) projectIcons.value[id] = base64;
-      } catch (e) {
-        console.error("Failed to load icon", e);
-      }
-    }
-  }
-}, { immediate: true });
-
-async function onOpenEnter(project, event) {
-  clearTimeout(popupTimer);
-  activeOpenPopup.value = project.id;
-
+function onOpenEnter(project, event) {
   if (event) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const windowHeight = window.innerHeight;
-    if (windowHeight - rect.bottom < 350) {
-      popupPositionStyle.value = { top: 'auto', bottom: '34px', transformOrigin: 'bottom left' };
-    } else {
-      popupPositionStyle.value = { top: '34px', bottom: 'auto', transformOrigin: 'top left' };
+    if (!projectRuntime.value[project.id]) {
+      projectRuntime.value[project.id] = {};
     }
-  }
-
-  if (ideAvailability.value === null) {
-    try {
-      ideAvailability.value = await invoke('check_ide_availability');
-    } catch {
-      ideAvailability.value = { vscode: false, vscode_insiders: false, antigravity: false };
-    }
+    projectRuntime.value[project.id].popupStyle = {
+      position: 'fixed',
+      bottom: `${window.innerHeight - rect.top}px`,
+      left: `${rect.left}px`,
+      transformOrigin: 'bottom left'
+    };
   }
 }
-
-function onOpenLeave() {
-  popupTimer = setTimeout(() => { activeOpenPopup.value = null; }, 150);
-}
-
-function onPopupEnter() {
-  clearTimeout(popupTimer);
-}
-
-onUnmounted(() => clearTimeout(popupTimer));
 
 // --- Drag to reorder ---
 const dragFromIndex = ref(null);
@@ -395,8 +360,8 @@ function formatTimeAgo(timestamp) {
 <style scoped>
 .projects-table-container {
   width: 100%;
-  --grid-cols: 13.5rem 3.2rem 5rem 3.8rem 1fr;
-  --grid-gap: 0.5rem;
+  --grid-cols: 13.5rem 2.2rem 5rem 3.8rem 1fr;
+  --grid-gap: 2px;
 }
 
 .projects-grid {
@@ -592,8 +557,8 @@ function formatTimeAgo(timestamp) {
 
 @media (max-width: 800px) {
   .projects-table-container {
-    --grid-cols: 11rem 2.8rem 4.5rem 3.5rem 1fr;
-    --grid-gap: 0.25rem;
+    --grid-cols: 11rem 2.2rem 4.5rem 3.5rem 1fr;
+    --grid-gap: 2px;
   }
 
   .col-tasks,
@@ -633,27 +598,40 @@ function formatTimeAgo(timestamp) {
 }
 
 .open-popup {
-  position: absolute;
-  top: 30px;
-  left: 0;
-  z-index: 99;
-  background: rgba(22, 30, 44, 0.97);
-  border: 1px solid rgba(0, 210, 255, 0.2);
+  position: fixed;
+  z-index: 80;
+  background: rgba(22, 30, 44, 0.98);
+  border: 1px solid rgba(0, 210, 255, 0.25);
   border-radius: 8px;
   padding: 8px 0 6px 0;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
   will-change: transform, opacity;
-}
 
-.popup-fade-enter-active,
-.popup-fade-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.popup-fade-enter-from,
-.popup-fade-leave-to {
+  visibility: hidden;
   opacity: 0;
   transform: scale(0.96);
+  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
+  transition-delay: 0.15s;
+  pointer-events: none;
+}
+
+.open-popup::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 12px;
+  background: transparent;
+}
+
+.open-popup-wrapper:hover .open-popup {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  transition-delay: 0s;
+  pointer-events: auto;
 }
 
 .popup-header {
@@ -711,5 +689,14 @@ function formatTimeAgo(timestamp) {
 
 .popup-icon-insiders {
   filter: hue-rotate(-50deg) saturate(2) brightness(1.2) drop-shadow(0 0 2px rgba(255, 255, 255, 0.18));
+}
+
+.popup-project-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+  margin-right: 6px;
+  vertical-align: middle;
 }
 </style>

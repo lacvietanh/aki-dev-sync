@@ -117,7 +117,7 @@
           <div class="feature-icon" style="color: #00d2ff;"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-text">
             <strong>Project Tasks</strong>
-            <span>Hover nút ở cột TASKS (ngay trước GIT) → bảng task của từng dự án: quản lý đang làm / định làm / đã làm khi chuyển qua lại nhiều dự án. Tag màu theo trạng thái, DOING tự đẩy lên đầu, badge đếm task chưa xong.</span>
+            <span>Click nút ở cột TASKS (ngay trước GIT) → mở Modal quản lý task: hỗ trợ ghim lên đầu (Pin 📌), tạo dự định (Wish 🕒), đánh dấu Done (Checkmark) tức thì. Tự động sắp xếp trượt mượt mà bằng Vue Transition, có bộ lọc ẩn Completed.</span>
           </div>
         </div>
 

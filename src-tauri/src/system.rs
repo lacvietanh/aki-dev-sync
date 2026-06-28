@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose, Engine as _};
 use std::process::Command;
 
 use crate::sync::expand_remote_tilde;
@@ -101,70 +100,86 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
     }
 }
 
-#[tauri::command]
-pub fn get_project_icon_base64(local_path: String) -> Result<Option<String>, String> {
-    let path = std::path::Path::new(&local_path);
-    let is_nuxt = path.join("nuxt.config.ts").exists() || path.join("nuxt.config.js").exists();
-    let is_tauri = path.join("src-tauri/tauri.conf.json").exists();
+use std::sync::{Mutex, OnceLock};
+use std::collections::HashMap;
+use crate::projects::SyncProject;
 
-    if !is_nuxt && !is_tauri {
-        return Ok(None);
-    }
+pub struct IconData {
+    pub bytes: Vec<u8>,
+    pub mime_type: String,
+}
 
-    let candidates = if is_tauri {
-        vec![
-            "src-tauri/icons/128x128.png",
-            "src-tauri/icons/128x128@2x.png",
-            "src-tauri/icons/64x64.png",
-            "src-tauri/icons/32x32.png",
-            "src-tauri/icons/icon.png",
-            "src-tauri/icons/icon.ico",
-        ]
-    } else {
-        vec![
-            "public/favicon/favicon.ico",
-            "public/favicon.ico",
-            "public/favicon/icon.png",
-            "public/icon.png",
-            "public/favicon/apple-touch-icon.png",
-            "public/favicon/icon-192.png",
-            "public/favicon/icon-512-maskable.png",
-        ]
-    };
+static PROJECT_ICONS: OnceLock<Mutex<HashMap<String, IconData>>> = OnceLock::new();
 
-    let mut best: Option<(std::path::PathBuf, u64, &str)> = None;
-    for icon in &candidates {
-        let icon_path = path.join(icon);
-        if let Ok(meta) = std::fs::metadata(&icon_path) {
-            let size = meta.len();
-            if best
-                .as_ref()
-                .map_or(true, |(_, best_size, _)| size < *best_size)
-            {
-                best = Some((icon_path, size, icon));
+pub fn get_project_icons() -> &'static Mutex<HashMap<String, IconData>> {
+    PROJECT_ICONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn load_and_cache_project_icons(projects: &[SyncProject]) {
+    let mut cache = get_project_icons().lock().unwrap();
+    cache.clear();
+
+    for project in projects {
+        let path = std::path::Path::new(&project.local_path);
+        let is_nuxt = path.join("nuxt.config.ts").exists() || path.join("nuxt.config.js").exists();
+        let is_tauri = path.join("src-tauri/tauri.conf.json").exists();
+        let is_web = !is_nuxt && !is_tauri && (path.join("package.json").exists() || path.join("index.html").exists());
+
+        let candidates = if is_tauri {
+            vec![
+                "src-tauri/icons/32x32.png",
+                "src-tauri/icons/64x64.png",
+                "src-tauri/icons/icon.png",
+                "src-tauri/icons/128x128.png",
+            ]
+        } else if is_nuxt || is_web {
+            vec![
+                "public/favicon/icon-48.png",
+                "public/favicon.ico",
+                "public/favicon/favicon.ico",
+                "public/favicon/icon-192.png",
+                "public/icon.png",
+                "favicon.ico",
+                "icon.png",
+            ]
+        } else {
+            vec![
+                "public/favicon/icon-48.png",
+                "public/favicon.ico",
+                "public/favicon/favicon.ico",
+                "public/icon.png",
+                "favicon.ico",
+                "icon.png",
+            ]
+        };
+
+        let mut best: Option<(std::path::PathBuf, u64, &str)> = None;
+        for icon in &candidates {
+            let icon_path = path.join(icon);
+            if let Ok(meta) = std::fs::metadata(&icon_path) {
+                let size = meta.len();
+                if best
+                    .as_ref()
+                    .map_or(true, |(_, best_size, _)| size < *best_size)
+                {
+                    best = Some((icon_path, size, icon));
+                }
+            }
+        }
+
+        if let Some((icon_path, size, icon_name)) = best {
+            if size <= 250_000 {
+                if let Ok(bytes) = std::fs::read(&icon_path) {
+                    let mime_type = if icon_name.ends_with(".png") {
+                        "image/png".to_string()
+                    } else {
+                        "image/x-icon".to_string()
+                    };
+                    cache.insert(project.id.clone(), IconData { bytes, mime_type });
+                }
             }
         }
     }
-
-    if let Some((icon_path, size, icon_name)) = best {
-        if size > 150_000 {
-            return Ok(None);
-        }
-        if let Ok(bytes) = std::fs::read(&icon_path) {
-            let mime = if icon_name.ends_with(".png") {
-                "image/png"
-            } else {
-                "image/x-icon"
-            };
-            return Ok(Some(format!(
-                "data:{};base64,{}",
-                mime,
-                general_purpose::STANDARD.encode(&bytes)
-            )));
-        }
-    }
-
-    Ok(None)
 }
 
 #[tauri::command]

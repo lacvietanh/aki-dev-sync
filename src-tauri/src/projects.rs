@@ -27,7 +27,11 @@ pub struct ProjectTask {
     #[serde(default)]
     pub detail: String,
     #[serde(default)]
-    pub status: String, // "todo" | "doing" | "done"
+    pub done: bool,
+    #[serde(default)]
+    pub pin: bool,
+    #[serde(default)]
+    pub wish: bool,
     #[serde(default)]
     pub created_at: u64,
     #[serde(default)]
@@ -107,14 +111,15 @@ pub fn get_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 #[tauri::command]
 pub fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
     let path = get_projects_path(&app)?;
+    let mut projects = vec![];
     if path.exists() {
         let content =
             fs::read_to_string(&path).map_err(|e| format!("Failed to read projects: {}", e))?;
-        let projects = serde_json::from_str::<Vec<SyncProject>>(&content)
+        projects = serde_json::from_str::<Vec<SyncProject>>(&content)
             .map_err(|e| format!("projects.json is corrupt or invalid: {}", e))?;
-        return Ok(projects);
     }
-    Ok(vec![])
+    crate::system::load_and_cache_project_icons(&projects);
+    Ok(projects)
 }
 
 #[tauri::command]

@@ -1,32 +1,70 @@
-// Per-project task list logic. Tasks are persisted config living on
-// `project.tasks` and ride the existing save_projects path via saveProjectsList().
-// Created/mutated entirely on the frontend, mirroring the project CRUD flow.
+import { ref } from 'vue'
 import { saveProjectsList } from './useProjectConfig'
 
-export const TASK_STATUSES = ['todo', 'doing', 'done']
+export const showTasksModal = ref(false)
+export const tasksProject = ref(null)
 
-// Display order: doing first, then todo, then done (done sinks to the bottom).
-const STATUS_ORDER = { doing: 0, todo: 1, done: 2 }
+export function openTasksModal(project) {
+  tasksProject.value = project
+  showTasksModal.value = true
+}
+
+export function closeTasksModal() {
+  showTasksModal.value = false
+  tasksProject.value = null
+}
 
 function ensureTasks(project) {
   if (!Array.isArray(project.tasks)) project.tasks = []
+  // Backward compatibility migration for older status and state fields
+  project.tasks.forEach(t => {
+    // Migrate old 'status' (todo, doing, done)
+    if (t.status !== undefined) {
+      if (t.done === undefined) t.done = (t.status === 'done')
+      if (t.pin === undefined) t.pin = (t.status === 'doing')
+      delete t.status
+    }
+    // Migrate old 'state' (pin, wish, "")
+    if (t.state !== undefined) {
+      if (t.pin === undefined) t.pin = (t.state === 'pin')
+      if (t.wish === undefined) t.wish = (t.state === 'wish')
+      delete t.state
+    }
+    // Ensure defaults
+    if (t.done === undefined) t.done = false
+    if (t.pin === undefined) t.pin = false
+    if (t.wish === undefined) t.wish = false
+  })
   return project.tasks
 }
 
-// Stable sort by status priority; insertion order is preserved within a group.
 export function sortedTasks(project) {
-  const tasks = ensureTasks(project)
-  return [...tasks].sort(
-    (a, b) => (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1)
-  )
+  return [...ensureTasks(project)].sort((a, b) => {
+    // 1. Uncompleted tasks first, completed tasks at the bottom
+    if (a.done !== b.done) {
+      return a.done ? 1 : -1
+    }
+    // 2. Active tasks sorted by pin status, then wish status
+    if (!a.done) {
+      if (a.pin !== b.pin) {
+        return a.pin ? -1 : 1
+      }
+      if (a.wish !== b.wish) {
+        return a.wish ? 1 : -1
+      }
+    }
+    // 3. Fallback to stable insertion order (oldest first)
+    return a.created_at - b.created_at
+  })
 }
 
 export function openTaskCount(project) {
-  return ensureTasks(project).filter((t) => t.status !== 'done').length
+  return ensureTasks(project).filter((t) => !t.done).length
 }
 
 export function doingCount(project) {
-  return ensureTasks(project).filter((t) => t.status === 'doing').length
+  // Counts active pinned tasks (serves as the highlighted "pin" badge alert on project table row trigger)
+  return ensureTasks(project).filter((t) => !t.done && t.pin).length
 }
 
 export function addTask(project, title) {
@@ -37,7 +75,9 @@ export function addTask(project, title) {
     id: 'task-' + now,
     title: text,
     detail: '',
-    status: 'todo',
+    done: false,
+    pin: false,
+    wish: false,
     created_at: now,
     updated_at: now,
   }
@@ -46,28 +86,8 @@ export function addTask(project, title) {
   return task
 }
 
-export function updateTaskTitle(project, task, value) {
-  const text = (value || '').trim()
-  if (!text || text === task.title) return
-  task.title = text
-  task.updated_at = Date.now()
-  saveProjectsList()
-}
-
-export function updateTaskDetail(project, task, value) {
-  const text = value || ''
-  if (text === task.detail) return
-  task.detail = text
-  task.updated_at = Date.now()
-  saveProjectsList()
-}
-
-// todo -> doing -> done -> todo
-export function cycleStatus(project, task) {
-  const next = (STATUS_ORDER[task.status] === undefined)
-    ? 'doing'
-    : TASK_STATUSES[(TASK_STATUSES.indexOf(task.status) + 1) % TASK_STATUSES.length]
-  task.status = next
+export function toggleTaskProp(task, prop) {
+  task[prop] = !task[prop]
   task.updated_at = Date.now()
   saveProjectsList()
 }

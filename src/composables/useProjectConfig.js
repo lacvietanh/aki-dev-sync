@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import Swal from 'sweetalert2'
-import { projects, projectRuntime, isReloading, Toast } from '../store/projectStore'
+import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp } from '../store/projectStore'
 import { useLogs } from './useLogs'
 import { fetchGitStatus } from './useGit'
 import { refreshAll, startBackgroundRefresh } from './useBackgroundRefresh'
@@ -35,6 +35,17 @@ export async function loadData(sshHosts, showToast = false) {
     }
     projects.value = loaded
     setupGlobalListener()
+
+    // Prefetch IDE availability status once
+    try {
+      ideAvailability.value = await invoke('check_ide_availability')
+    } catch (e) {
+      console.error("Failed to check IDE availability:", e)
+      ideAvailability.value = { vscode: false, vscode_insiders: false, antigravity: false }
+    }
+
+    // Refresh icon timestamp to bust browser cache
+    iconTimestamp.value = Date.now()
 
     appendGlobalLog("LOAD", `Loaded ${loaded.length} projects successfully.`)
 

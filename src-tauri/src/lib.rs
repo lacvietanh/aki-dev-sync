@@ -15,6 +15,37 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .register_uri_scheme_protocol("aki-devsync-icon", |_ctx, request| {
+            let uri_str = request.uri().to_string();
+            let host = if let Some(stripped) = uri_str.strip_prefix("aki-devsync-icon://") {
+                let end = stripped.find(|c| c == '/' || c == '?').unwrap_or(stripped.len());
+                &stripped[..end]
+            } else {
+                ""
+            };
+
+            let icons = system::get_project_icons().lock().unwrap();
+            if let Some(icon) = icons.get(host) {
+                tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", &icon.mime_type)
+                    .body(icon.bytes.clone())
+                    .unwrap()
+            } else {
+                tauri::http::Response::builder()
+                    .status(404)
+                    .header("Content-Type", "text/plain")
+                    .body(Vec::new())
+                    .unwrap()
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // projects
             projects::load_projects,
@@ -39,7 +70,6 @@ pub fn run() {
             // system / OS integration
             system::macos_open,
             system::open_remote_subprocess,
-            system::get_project_icon_base64,
             system::check_ide_availability,
             system::resolve_remote_path,
             // logger / debug
