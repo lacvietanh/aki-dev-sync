@@ -42,5 +42,25 @@ for (const dmgDir of dmgDirs) {
 }
 
 if (!renamed) {
+  const appDirs = [
+    path.join(root, 'src-tauri/target/release/bundle/macos'),
+    path.join(root, 'src-tauri/target/aarch64-apple-darwin/release/bundle/macos'),
+    path.join(root, 'src-tauri/target/universal-apple-darwin/release/bundle/macos'),
+  ];
+  for (const appDir of appDirs) {
+    if (!fs.existsSync(appDir)) continue;
+    for (const file of fs.readdirSync(appDir)) {
+      if (!file.endsWith('.app')) continue;
+      const appPath = path.join(appDir, file);
+      console.log(`✅ Built .app: ${appPath}`);
+      renamed = true;
+      if (process.platform === 'darwin') {
+        try { execSync(`open -R "${appPath}"`); } catch { /* not critical */ }
+      }
+    }
+  }
+}
+
+if (!renamed) {
   console.log('⚠️ No matching DMG files found to rename.');
 }

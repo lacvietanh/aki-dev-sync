@@ -24,7 +24,7 @@
     ],
     "macOSPrivateApi": true,
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' data: aki-devsync-icon: http://aki-devsync-icon.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {

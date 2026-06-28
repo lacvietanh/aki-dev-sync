@@ -116,7 +116,7 @@
               <!-- Open Popup Trigger (OPEN Button) -->
               <div class="open-popup-wrapper" @mouseenter="onOpenEnter(p, $event)">
                 <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup">
-                  <span class="btn-text">OPEN</span> <i class="fa-solid fa-caret-down"></i>
+                  <span class="btn-text">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
                 <!-- Open Popup (Native CSS Hover with fixed positioning) -->
@@ -361,7 +361,7 @@ function formatTimeAgo(timestamp) {
 .projects-table-container {
   width: 100%;
   --grid-cols: 13.5rem 2.2rem 5rem 3.8rem 1fr;
-  --grid-gap: 2px;
+  --grid-gap: 0.5rem;
 }
 
 .projects-grid {
@@ -558,7 +558,7 @@ function formatTimeAgo(timestamp) {
 @media (max-width: 800px) {
   .projects-table-container {
     --grid-cols: 11rem 2.2rem 4.5rem 3.5rem 1fr;
-    --grid-gap: 2px;
+    --grid-gap: 0.25rem;
   }
 
   .col-tasks,

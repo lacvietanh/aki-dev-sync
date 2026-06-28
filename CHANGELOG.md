@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.5.1] - 2026-06-28
+
+#### Fixed
+- **Production icons blank** (`tauri.conf.json`): Added `aki-devsync-icon:` and `http://aki-devsync-icon.localhost` to CSP `img-src`. The custom URI protocol introduced in 1.5.0 was silently blocked by the WebView CSP in production builds, causing all project icons to disappear. Dev mode was unaffected (relaxed CSP).
+- **OPEN button caret direction** (`ProjectTable.vue`): Changed `fa-caret-down` → `fa-caret-up` to match the actual drop-up popup direction.
+- **Grid column gap reset** (`ProjectTable.vue`): Restored `--grid-gap` to `0.5rem` (desktop) and `0.25rem` (mobile), which was incorrectly reduced to `2px` when the TASKS column was added in 1.5.0.
+
+#### Changed
+- **`build:app` script** (`package.json`): Now builds ARM `.app` bundle only (`--target aarch64-apple-darwin --bundles app`) instead of all targets and bundle types. Use `build:rmad` for ARM DMG, `build:rmud` for universal DMG.
+- **`post-build.js`**: Handles `.app`-only builds — logs the output path and reveals it in Finder. When a DMG is present (release builds), only the DMG is revealed. Warning only fires when no artifact is found at all.
+
+---
+
 ### [1.5.0] - 2026-06-28
 
 #### Added
