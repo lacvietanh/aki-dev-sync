@@ -27,6 +27,21 @@
         </label>
       </div>
 
+      <!-- Project Notes -->
+      <div class="project-notes-section mb-3">
+        <div class="notes-header">
+          <span class="notes-title"><i class="fa-regular fa-note-sticky mr-1"></i> Project Notes</span>
+        </div>
+        <textarea
+          v-model="tasksProject.notes"
+          @change="handleNotesChange"
+          class="project-notes-textarea"
+          placeholder="Write general project notes, credentials, or context here..."
+          maxlength="1500"
+          rows="2"
+        ></textarea>
+      </div>
+
       <!-- Add task -->
       <div class="task-add-row mb-3">
         <input
@@ -104,18 +119,23 @@
                 maxlength="200"
                 :disabled="task.done"
               />
-              <input
+              <textarea
                 v-model="task.detail"
-                @change="saveProjectsList"
-                type="text"
-                class="task-detail-input"
+                @change="handleDetailChange(task)"
+                class="task-detail-textarea"
                 placeholder="Add detail description..."
                 maxlength="500"
                 :disabled="task.done"
-              />
+                rows="1"
+              ></textarea>
             </div>
 
             <span class="task-time" :title="'Updated ' + timeAgo(task.updated_at) + ' ago'">{{ timeAgo(task.updated_at) }}</span>
+
+            <button class="task-copy-btn" @click="copyTaskText(task)" aria-label="Copy task text" title="Copy title & detail">
+              <i class="fa-solid fa-circle-check text-green" v-if="copiedTaskId === task.id"></i>
+              <i class="fa-regular fa-copy" v-else></i>
+            </button>
 
             <button class="task-del-btn" @click="removeTask(tasksProject, task)" aria-label="Delete task" title="Delete task">
               <i class="fa-solid fa-trash-can"></i>
@@ -145,15 +165,46 @@ import {
 const newTitle = ref('')
 const showIcon = ref(true)
 const hideCompleted = ref(false)
+const copiedTaskId = ref(null)
 
 function handleIconError() {
   showIcon.value = false
+}
+
+function handleNotesChange() {
+  if (tasksProject.value) {
+    tasksProject.value.notes = (tasksProject.value.notes || '').trim()
+    saveProjectsList()
+  }
+}
+
+function handleDetailChange(task) {
+  if (task) {
+    task.detail = (task.detail || '').trim()
+    saveProjectsList()
+  }
+}
+
+async function copyTaskText(task) {
+  const text = task.detail ? `${task.title}\n${task.detail}` : task.title
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedTaskId.value = task.id
+    setTimeout(() => {
+      if (copiedTaskId.value === task.id) {
+        copiedTaskId.value = null
+      }
+    }, 1500)
+  } catch (err) {
+    console.error('Failed to copy text:', err)
+  }
 }
 
 // Reset icon state when project changes
 watch(tasksProject, () => {
   showIcon.value = true
 })
+
 
 const orderedTasks = computed(() => {
   if (!tasksProject.value) return []
@@ -163,6 +214,7 @@ const orderedTasks = computed(() => {
   }
   return list
 })
+
 
 const summary = computed(() => {
   if (!tasksProject.value) return { total: 0, open: 0, doing: 0, todo: 0, done: 0 }
@@ -438,7 +490,7 @@ function timeAgo(ts) {
   color: var(--text-darker);
 }
 
-.task-detail-input {
+.task-detail-textarea {
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -446,14 +498,20 @@ function timeAgo(ts) {
   outline: none;
   padding: 0;
   border-bottom: 1px solid transparent;
+  resize: none;
+  overflow-y: hidden;
+  font-family: inherit;
+  width: 100%;
+  line-height: 1.4;
+  field-sizing: content;
 }
 
-.task-detail-input:focus:not(:disabled) {
+.task-detail-textarea:focus:not(:disabled) {
   border-bottom-color: rgba(255, 255, 255, 0.1);
   color: var(--text-light);
 }
 
-.is-done .task-detail-input {
+.is-done .task-detail-textarea {
   color: var(--text-darker);
 }
 
@@ -461,6 +519,25 @@ function timeAgo(ts) {
   font-size: 10px;
   color: var(--text-darker);
   white-space: nowrap;
+}
+
+.task-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-darker);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.12s, background 0.12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-copy-btn:hover {
+  color: var(--accent-cyan);
+  background: rgba(0, 210, 255, 0.1);
 }
 
 .task-del-btn {
@@ -480,5 +557,47 @@ function timeAgo(ts) {
 .task-del-btn:hover {
   color: var(--accent-red);
   background: rgba(239, 68, 68, 0.1);
+}
+
+.project-notes-section {
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.notes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.notes-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.project-notes-textarea {
+  background: transparent;
+  border: none;
+  color: var(--text-light);
+  font-size: 12px;
+  outline: none;
+  padding: 0;
+  resize: none;
+  overflow-y: hidden;
+  font-family: inherit;
+  width: 100%;
+  line-height: 1.5;
+  border-bottom: 1px solid transparent;
+  field-sizing: content;
+}
+
+.project-notes-textarea:focus {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
 }
 </style>

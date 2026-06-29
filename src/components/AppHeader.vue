@@ -13,6 +13,9 @@
               <a href="#" @click.prevent="openLink(RELEASE_URL)" class="icon-dropdown-item">
                 <i class="fa-solid fa-download"></i> Latest Release
               </a>
+              <a href="#" @click.prevent="triggerManualUpdateCheck" class="icon-dropdown-item">
+                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Check for Updates
+              </a>
             </div>
           </span>
           Aki Dev Sync
@@ -20,7 +23,12 @@
         <span v-if="isDev" class="dev-tag">DEV</span>
       </div>
       <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">
-        <span class="version-num">v{{ appVersion }}</span>
+        <span class="version-row">
+          <span class="version-num">v{{ appVersion }}</span>
+          <span v-if="newVersionAvailable" class="update-badge" @click.stop="openLink(RELEASE_URL)" :title="'New version ' + newVersionAvailable + ' available! Click to download.'">
+            <i class="fa-solid fa-circle-arrow-up"></i> Update
+          </span>
+        </span>
         <span class="build-time">{{ buildDate }} {{ buildTime }}</span>
       </span>
       <div class="header-actions">
@@ -60,7 +68,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
@@ -78,11 +86,81 @@ const buildTime = __BUILD_TIME__;
 const showRefreshSettings = ref(false);
 const showChangelogModal = ref(false);
 const isDev = import.meta.env.DEV;
+const newVersionAvailable = ref(null);
+const isCheckingUpdates = ref(false);
 
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
-const { createNewProject, loadData, anySyncing, isReloading } = useProjects();
+const { createNewProject, loadData, anySyncing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
+
+const cleanVer = (v) => v.replace(/^v/, '').trim();
+const hasUpdate = (current, latest) => {
+  const cParts = cleanVer(current).split('.').map(Number);
+  const lParts = cleanVer(latest).split('.').map(Number);
+  for (let i = 0; i < Math.max(cParts.length, lParts.length); i++) {
+    const c = cParts[i] || 0;
+    const l = lParts[i] || 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
+};
+
+onMounted(async () => {
+  try {
+    const raw = await invoke('check_for_updates');
+    const latest = JSON.parse(raw);
+    if (latest && latest.tag_name) {
+      if (hasUpdate(appVersion, latest.tag_name)) {
+        newVersionAvailable.value = latest.tag_name;
+      }
+    }
+  } catch (e) {
+    console.error('Failed to check for updates:', e);
+  }
+});
+
+async function triggerManualUpdateCheck() {
+  if (isCheckingUpdates.value) return;
+  isCheckingUpdates.value = true;
+  try {
+    const raw = await invoke('check_for_updates');
+    const latest = JSON.parse(raw);
+    if (latest && latest.tag_name) {
+      if (hasUpdate(appVersion, latest.tag_name)) {
+        newVersionAvailable.value = latest.tag_name;
+        Toast.fire({
+          icon: 'success',
+          title: `New version ${latest.tag_name} is available!`,
+          text: 'Click the Update badge to download.'
+        });
+      } else {
+        newVersionAvailable.value = null;
+        Toast.fire({
+          icon: 'success',
+          title: `You are on the latest version!`,
+          text: `Current: v${appVersion}`
+        });
+      }
+    } else {
+      Toast.fire({
+        icon: 'error',
+        title: 'Failed to verify updates',
+        text: 'Invalid server response.'
+      });
+    }
+  } catch (e) {
+    console.error('Failed manual update check:', e);
+    Toast.fire({
+      icon: 'error',
+      title: 'Failed to check updates',
+      text: String(e)
+    });
+  } finally {
+    isCheckingUpdates.value = false;
+  }
+}
 
 function openLink(url) {
   invoke('macos_open', { args: [url] }).catch(console.error);
@@ -307,5 +385,32 @@ function handleCreateNew() {
   .header-actions .btn-tech i {
     display: inline-block !important;
   }
+}
+
+.version-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-green, #10b981);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0;
+  transition: all 0.15s;
+}
+
+.update-badge:hover {
+  background: rgba(16, 185, 129, 0.25);
+  color: #fff;
 }
 </style>

@@ -17,6 +17,11 @@ Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
 - **Terminal:** Mở tab Terminal native macOS.
 - **VSCode & VSCode Insiders:** Mở bằng text editor phổ biến.
 - **Antigravity IDE:** Editor mặc định của hệ sinh thái Aki.
+- **Run Dev / Build & Preview (Node/Tauri):** Lối tắt thông minh xuất hiện tự động khi phát hiện dự án Node/Frontend (chứa `package.json`):
+  - **Tự động nhận diện stack chính**:
+    - Nếu có thư mục `src-tauri` (dự án Tauri) $\to$ Hiển thị nhãn **Run Dev (Tauri)** và tự động chạy lệnh khởi động dev mode.
+    - Nếu là dự án Nuxt/Vite/Node thông thường $\to$ Hiển thị nhãn **Build & Preview** chạy lệnh build và xem trước.
+  - **Tự động cấu hình Package Manager**: Quét lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) để tự chọn đúng package manager tương ứng là `pnpm`, `yarn`, `bun`, hoặc `npm` (ví dụ: `pnpm tauri dev`, `yarn build && yarn preview`) giúp chạy lệnh vô cùng chính xác mà không cần cấu hình thủ công.
 
 ### 3. Remote SSH Targets
 Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa:
@@ -43,5 +48,5 @@ Trước bản cập nhật refactor:
   - Chỉ gọi duy nhất 1 handler dùng chung `macos_open(args)`.
 - **Rust-side (Backend):** 
   - Bỏ đi logic thin-wrapper.
-  - `system.rs` giờ đây chỉ có `macos_open(args)`, lệnh chuyên sâu SSH (`open_remote_subprocess`), và check file system (`check_ide_availability`).
+  - `system.rs` giờ đây chỉ có `macos_open(args)`, lệnh chuyên sâu SSH (`open_remote_subprocess`), check file system (`check_ide_availability`), cùng lệnh nhận diện và kích hoạt Nuxt preview (`check_is_nuxt` và `run_nuxt_preview`).
   - Gọn nhẹ, giảm rủi ro bảo mật (như String injection trong Command args).

@@ -123,7 +123,7 @@
                 <div class="open-popup" :style="projectRuntime[p.id]?.popupStyle">
                   <div class="popup-header" :title="p.name">
                     <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
-                    <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 14px;"></i>
+                    <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 18px;"></i>
                     <span>{{ p.name }}</span>
                   </div>
                     <div style="display: flex;">
@@ -144,6 +144,9 @@
                         </div>
                         <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
                           <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
+                        </div>
+                        <div v-if="projectRuntime[p.id]?.stack_info?.cmd" class="popup-item" @click="runProjectCommand(p.local_path, projectRuntime[p.id].stack_info.cmd)" :title="'Run ' + projectRuntime[p.id].stack_info.label + ' in Local Terminal'">
+                          <i class="fa-solid fa-play" style="width:14px; color: var(--accent-green, #10b981);"></i> {{ projectRuntime[p.id].stack_info.label }}
                         </div>
                       </div>
 
@@ -317,6 +320,16 @@ const IDE_LOCAL_ARGS = {
 async function openIdeLocal(ideName, path) {
   const args = IDE_LOCAL_ARGS[ideName]?.(path)
   if (args) try { await invoke('macos_open', { args }); } catch (e) { console.error(e); }
+}
+
+async function runProjectCommand(path, cmd) {
+  try {
+    await invoke('run_project_command', { localPath: path, cmd });
+    Toast.fire({ icon: 'success', title: 'Command started in Terminal!' });
+  } catch (e) {
+    console.error('Failed to run project command:', e);
+    Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
+  }
 }
 
 async function openIdeRemote(ideName, host, path) {
@@ -516,11 +529,6 @@ function formatTimeAgo(timestamp) {
   cursor: grabbing;
 }
 
-.grid-row:hover .project-drag-handle::before {
-  opacity: 0.55;
-}
-
-
 
 .row-dragging {
   opacity: 0.4;
@@ -692,8 +700,8 @@ function formatTimeAgo(timestamp) {
 }
 
 .popup-project-icon {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 3px;
   object-fit: contain;
   margin-right: 6px;

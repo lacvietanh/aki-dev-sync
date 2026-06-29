@@ -60,6 +60,7 @@ pub fn run() {
             // git
             git::get_git_info,
             git::get_project_files,
+            git::run_git_command,
             // sync
             sync::run_sync,
             sync::check_sync_status,
@@ -67,11 +68,14 @@ pub fn run() {
             agent_usage::provision_agent_usage,
             agent_usage::force_sync_agent_usage,
             agent_usage::get_agent_usage,
-            // system / OS integration
             system::macos_open,
             system::open_remote_subprocess,
             system::check_ide_availability,
             system::resolve_remote_path,
+            system::check_for_updates,
+            system::check_project_stack,
+            system::run_project_command,
+            system::read_project_changelog,
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,

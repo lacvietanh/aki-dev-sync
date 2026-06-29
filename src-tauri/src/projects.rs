@@ -64,6 +64,8 @@ pub struct SyncProject {
     pub last_sync_status: Option<String>,
     #[serde(default)]
     pub tasks: Vec<ProjectTask>,
+    #[serde(default)]
+    pub notes: String,
 }
 
 /// Validates that a single path segment contains no traversal or control characters.
@@ -161,6 +163,7 @@ mod tests {
             delete_on_push: false,
             last_sync_status: None,
             tasks: vec![],
+            notes: String::new(),
         }
     }
 

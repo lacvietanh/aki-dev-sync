@@ -228,6 +228,109 @@ pub fn resolve_remote_path(host: String, path: String) -> Result<String, String>
     }
 }
 
+#[tauri::command]
+pub fn check_for_updates() -> Result<String, String> {
+    let out = create_command("curl")
+        .args(&[
+            "-s",
+            "-H", "User-Agent: aki-dev-sync",
+            "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest"
+        ])
+        .output()
+        .map_err(|e| format!("Failed to check for updates: {}", e))?;
+    
+    if out.status.success() {
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        Ok(stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        Err(if stderr.trim().is_empty() { "Network error checking for updates".to_string() } else { stderr })
+    }
+}
+
+
+#[derive(serde::Serialize)]
+pub struct ProjectStackInfo {
+    pub is_node: bool,
+    pub is_tauri: bool,
+    pub is_nuxt: bool,
+    pub label: String,
+    pub cmd: String,
+}
+
+#[tauri::command]
+pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
+    let path = std::path::Path::new(&local_path);
+    let is_node = path.join("package.json").exists();
+    let is_tauri = path.join("src-tauri").exists() || path.join("src-tauri/tauri.conf.json").exists();
+    let is_nuxt = path.join("nuxt.config.js").exists() || path.join("nuxt.config.ts").exists() || path.join(".nuxt").exists();
+
+    let mut pm = "npm";
+    let mut run_prefix = "run ";
+    if path.join("pnpm-lock.yaml").exists() {
+        pm = "pnpm";
+        run_prefix = "";
+    } else if path.join("yarn.lock").exists() {
+        pm = "yarn";
+        run_prefix = "";
+    } else if path.join("bun.lockb").exists() || path.join("bun.lock").exists() {
+        pm = "bun";
+        run_prefix = "";
+    }
+
+    let (label, cmd) = if is_tauri {
+        ("Run Dev (Tauri)".to_string(), format!("{pm} {run_prefix}tauri dev"))
+    } else if is_nuxt {
+        ("Build & Preview".to_string(), format!("{pm} {run_prefix}build && {pm} {run_prefix}preview"))
+    } else if is_node {
+        ("Build & Preview".to_string(), format!("{pm} {run_prefix}build && {pm} {run_prefix}preview"))
+    } else {
+        ("".to_string(), "".to_string())
+    };
+
+    ProjectStackInfo {
+        is_node,
+        is_tauri,
+        is_nuxt,
+        label,
+        cmd,
+    }
+}
+
+#[tauri::command]
+pub fn run_project_command(local_path: String, cmd: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let safe_path = applescript_escape(&local_path);
+        let escaped_cmd = cmd.replace("\"", "\\\"");
+        let script = format!(
+            "tell application \"Terminal\" to do script \"cd \\\"{}\\\" && {}\"",
+            safe_path, escaped_cmd
+        );
+        create_command("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn read_project_changelog(local_path: String) -> Result<String, String> {
+    let path = std::path::Path::new(&local_path);
+    let names = ["CHANGELOG.md", "changelog.md", "CHANGELOG.txt", "changelog.txt", "CHANGELOG", "changelog"];
+    for name in names {
+        let file_path = path.join(name);
+        if file_path.exists() {
+            let bytes = std::fs::read(file_path)
+                .map_err(|e| format!("Failed to read file: {}", e))?;
+            return Ok(String::from_utf8_lossy(&bytes).into_owned());
+        }
+    }
+    Err("No changelog file found".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

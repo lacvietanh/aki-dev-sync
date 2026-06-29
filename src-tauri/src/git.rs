@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::path::Path;
-use std::process::Command;
+use crate::system::create_command;
 
 #[derive(Serialize)]
 pub struct GitInfo {
@@ -11,7 +11,7 @@ pub struct GitInfo {
 
 /// Runs a git command in `path` and returns trimmed stdout, or None on failure.
 fn git_capture(path: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").current_dir(path).args(args).output().ok()?;
+    let out = create_command("git").current_dir(path).args(args).output().ok()?;
     if out.status.success() {
         Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
@@ -30,7 +30,7 @@ pub fn get_git_info(local_path: String) -> Result<GitInfo, String> {
         });
     }
 
-    let porcelain = git_capture(path, &["status", "--porcelain"]);
+    let porcelain = git_capture(path, &["-c", "core.quotepath=false", "status", "--porcelain"]);
     let status = match porcelain.as_deref() {
         None => "Git Error".to_string(),
         Some(s) if s.is_empty() => {
@@ -43,9 +43,9 @@ pub fn get_git_info(local_path: String) -> Result<GitInfo, String> {
 
     let remote_url = git_capture(path, &["remote", "get-url", "origin"]).unwrap_or_default();
 
-    let mut log = git_capture(path, &["status"]).unwrap_or_default();
+    let mut log = git_capture(path, &["-c", "color.status=always", "-c", "core.quotepath=false", "status"]).unwrap_or_default();
     log.push_str("\n\n--- Recent Commits ---\n");
-    if let Some(commits) = git_capture(path, &["log", "-n", "10", "--oneline"]) {
+    if let Some(commits) = git_capture(path, &["log", "-n", "10", "--oneline", "--color=always"]) {
         log.push_str(&commits);
     }
 
@@ -60,7 +60,7 @@ pub fn get_project_files(local_path: String, sync_git: bool) -> Result<Vec<Strin
     if !path.exists() || !path.join(".git").exists() {
         return Ok(vec![]);
     }
-    let out = Command::new("git")
+    let out = create_command("git")
         .current_dir(path)
         // core.quotepath=false → git emits real UTF-8 paths instead of
         // octal-escaped (`"\303\251"`), so non-ASCII filenames (Vietnamese,
@@ -91,3 +91,26 @@ pub fn get_project_files(local_path: String, sync_git: bool) -> Result<Vec<Strin
 
     Ok(files)
 }
+
+#[tauri::command]
+pub fn run_git_command(local_path: String, args: Vec<String>) -> Result<String, String> {
+    let path = Path::new(&local_path);
+    if !path.exists() {
+        return Err("Path does not exist".to_string());
+    }
+    let out = create_command("git")
+        .current_dir(path)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to execute git: {}", e))?;
+    
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    
+    if out.status.success() {
+        Ok(if stdout.trim().is_empty() { stderr } else { stdout })
+    } else {
+        Err(if stderr.trim().is_empty() { stdout } else { stderr })
+    }
+}
+

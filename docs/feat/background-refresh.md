@@ -85,7 +85,7 @@ This gives accurate signal: Push button lights up for real commits and file chan
 | Unified `useBackgroundRefresh` singleton | ⬜ Not yet |
 | Per-type configurable intervals | ⬜ Not yet |
 | Settings modal in titlebar | ⬜ Not yet |
-| Auto-refresh silent log mode | ⬜ Not yet |
+| Auto-refresh silent log mode | ✅ Implemented |
 
 ---
 

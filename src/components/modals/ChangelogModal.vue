@@ -1,21 +1,41 @@
 <template>
   <BaseModal :show="show" @close="$emit('close')" container-class="changelog-modal">
-    <template #title><i class="fa-solid fa-scroll mr-1"></i> Changelog</template>
+    <template #title>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <img
+          v-if="projectId && !failedIcons[projectId]"
+          :src="`aki-devsync-icon://${projectId}?t=${iconTimestamp}`"
+          style="width: 18px; height: 18px; border-radius: 3px; object-fit: contain;"
+          alt=""
+          @error="failedIcons[projectId] = true"
+        />
+        <i v-else class="fa-solid fa-scroll" style="font-size: 18px;"></i>
+        <span>{{ title || 'Changelog' }}</span>
+      </div>
+    </template>
     <div class="modal-body changelog-body" v-html="renderedChangelog" ref="bodyRef" />
   </BaseModal>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { iconTimestamp } from '../../store/projectStore';
 import BaseModal from './BaseModal.vue';
 import changelogText from '../../../CHANGELOG.md?raw';
 import { renderMarkdown, runMermaid } from '../../utils/markdown';
 
-defineProps({ show: Boolean });
+const props = defineProps({
+  show: Boolean,
+  title: String,
+  content: String,
+  projectId: [String, Number]
+});
 defineEmits(['close']);
 
+const failedIcons = ref({});
+
 const bodyRef = ref(null);
-const renderedChangelog = computed(() => renderMarkdown(changelogText));
+const renderedChangelog = computed(() => renderMarkdown(props.content !== undefined && props.content !== null ? props.content : changelogText));
 
 watch(() => bodyRef.value, (el) => {
   if (el) runMermaid();

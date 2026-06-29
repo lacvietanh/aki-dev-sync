@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.6.0] - 2026-06-29
+
+#### Added
+- **Project Changelog Preview**: A `CHANGELOG` button dynamically appears in the Git modal footer if a changelog file is detected, opening a Markdown visual preview inside a modal (inheriting from the system `ChangelogModal`).
+- **ANSI Color Status Support**: The Git status log console now parses and renders ANSI colors (Red/Green/Yellow/Cyan/Bold) for file states and commits.
+- **Unicode Vietnamese Filename Support**: Added `core.quotepath=false` to Git commands to prevent octal-escaped representation of Vietnamese characters in the status lists and history console logs.
+- **Smart Stack Launcher (Node / Tauri)**: Automatically detects Tauri vs Node/Nuxt projects and executes the appropriate development script (`tauri dev` or `build && preview`) through the detected package manager (`pnpm`, `yarn`, `bun`, `npm` based on lockfile).
+- **Manual and Auto Update Check**: Silent background update checks on launch and a manual check option inside the Header logo dropdown menu with version update badges.
+- **Project Notes Feature**: Safe metadata note storage saved dynamically on blur/change with zero-JS native height auto-growing via CSS `field-sizing: content`.
+
+#### Changed
+- **Modals Project Icon Integration**: Displayed 18px project icons in the title headers of Git, Changelog, and Task modals, and increased the Open popup header icon size to 18px.
+- **Git Backend Consolidation**: Consolidated Rust backend commands (`git_fetch`, `git_push`, `git_commit`) into a single macOS-safe environment PATH command executor `run_git_command`.
+
+#### Fixed
+- **Task Done State Pin Clean-up**: Toggling a task as completed automatically resets its pin status (`pin = false`).
+- **Changelog Carry-over Bug**: Automatically resets the active changelog state when switching between projects to prevent the preview modal from reopening unexpectedly.
+
+---
+
 ### [1.5.1] - 2026-06-28
 
 #### Fixed

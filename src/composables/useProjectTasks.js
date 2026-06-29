@@ -88,6 +88,9 @@ export function addTask(project, title) {
 
 export function toggleTaskProp(task, prop) {
   task[prop] = !task[prop]
+  if (prop === 'done' && task.done) {
+    task.pin = false
+  }
   task.updated_at = Date.now()
   saveProjectsList()
 }

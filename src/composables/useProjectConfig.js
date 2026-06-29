@@ -22,6 +22,7 @@ export async function loadData(sshHosts, showToast = false) {
     const loaded = await invoke("load_projects")
 
     for (const p of loaded) {
+      const stack = await invoke("check_project_stack", { localPath: p.local_path }).catch(() => null)
       // Preserve syncing flag if a sync is in progress during reload
       projectRuntime.value[p.id] = {
         git_status: "...",
@@ -30,6 +31,7 @@ export async function loadData(sshHosts, showToast = false) {
         syncing: projectRuntime.value[p.id]?.syncing ?? false,
         hasPendingPush: null,
         hasPendingPull: null,
+        stack_info: stack,
       }
       if (!projectLogs.value[p.id]) projectLogs.value[p.id] = []
     }
@@ -105,8 +107,10 @@ export async function saveConfig() {
   const isNew = index === -1
 
   try {
+    const stack = await invoke("check_project_stack", { localPath: editingProject.value.local_path }).catch(() => null)
     if (!isNew) {
       projects.value[index] = { ...editingProject.value }
+      projectRuntime.value[editingProject.value.id].stack_info = stack
       appendGlobalLog("CONFIG", `User updated config for project "${editingProject.value.name}".`)
     } else {
       projectRuntime.value[editingProject.value.id] = {
@@ -114,6 +118,7 @@ export async function saveConfig() {
         git_log: "",
         remote_url: "",
         syncing: false,
+        stack_info: stack,
       }
       projects.value.push({ ...editingProject.value })
       appendGlobalLog("CONFIG", `User created new project "${editingProject.value.name}".`)
@@ -165,6 +170,7 @@ export async function createNewProject(sshHosts) {
       delete_on_pull: true,
       delete_on_push: false,
       tasks: [],
+      notes: "",
     }
     openConfig(p)
   }
