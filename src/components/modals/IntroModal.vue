@@ -116,16 +116,16 @@
         <div class="feature-card">
           <div class="feature-icon" style="color: #00d2ff;"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-text">
-            <strong>Project Tasks</strong>
-            <span>Click nút ở cột TASKS (ngay trước GIT) → mở Modal quản lý task: hỗ trợ ghim lên đầu (Pin 📌), tạo dự định (Wish 🕒), đánh dấu Done (Checkmark) tức thì. Tự động sắp xếp trượt mượt mà bằng Vue Transition, có bộ lọc ẩn Completed.</span>
+            <strong>Project Tasks & Notes</strong>
+            <span>Quản lý task: Pin 📌, Wish 🕒, và Done (tự động gỡ ghim). Tích hợp thẻ ghi chú Project Notes có khả năng co giãn chiều cao native bằng CSS (`field-sizing: content`) và tự động trim khoảng trắng thừa.</span>
           </div>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
-            <strong>Open Popup</strong>
-            <span>Hover nút OPEN → mở nhanh Local (Finder, Terminal, VSCode, VSCode Insiders, Antigravity) và Remote (SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote).</span>
+            <strong>Open Popup & Stack Launcher</strong>
+            <span>Mở nhanh IDEs Local và Remote. Tự động phát hiện stack Tauri (dev mode) vs Node/Nuxt (build & preview), quét lockfile để gọi đúng Package Manager (`pnpm`/`yarn`/`bun`/`npm`).</span>
           </div>
         </div>
 
@@ -164,8 +164,15 @@
         <div class="feature-card">
           <div class="feature-icon" style="color: #f87171;"><i class="fa-brands fa-git-alt"></i></div>
           <div class="feature-text">
-            <strong>Git Actions</strong>
-            <span>Modal Git hợp nhất: status (clean/dirty/ahead), remote URL, commit log và commit-and-push trong một luồng quét.</span>
+            <strong>Git & Changelog Visual Preview</strong>
+            <span>Modal Git hiển thị log/status dạng màu sắc Terminal ANSI, hỗ trợ tiếng Việt có dấu (quotepath=false), stage & commit, fetch, push, và hiển thị Visual Changelog Preview của dự án.</span>
+          </div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #10b981;"><i class="fa-solid fa-cloud-arrow-down"></i></div>
+          <div class="feature-text">
+            <strong>App Update Check</strong>
+            <span>Tự động kiểm tra bản cập nhật ngầm khi khởi động hoặc click thủ công trong Logo menu, hiển thị badge số hiệu và toast thông báo phiên bản mới.</span>
           </div>
         </div>
       </div>
@@ -174,12 +181,16 @@
       <div class="alert-box tech mt-3">
         <h4 class="alert-title"><i class="fa-solid fa-flask"></i> Điểm Nhấn Công Nghệ</h4>
         <ul class="custom-list">
-          <li><strong>Quota thực tế:</strong> Đọc trực tiếp <code>rate_limits</code> do server Anthropic trả về qua <code>statusLine</code> hook, không chắp vá hay giả lập request — an toàn tuyệt đối.</li>
-          <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn <code>rate_limits</code>. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
+          <li><strong>Màu sắc Git Terminal & Unicode:</strong> Ép Git xuất màu ANSI thô (`color.status=always`), tự parse bằng Regex sang thẻ HTML span màu sắc trực quan (Red/Green/Yellow/Cyan/Bold) và tắt quotepath (`core.quotepath=false`) giúp hiển thị hoàn hảo tên file tiếng Việt có dấu.</li>
+          <li><strong>Stack Detector & Lockfile Analyzer:</strong> Tự nhận dạng Tauri vs Node và phân tích lockfiles (`pnpm`, `yarn`, `bun`, `npm`) để tự chạy lệnh chạy thử nghiệm (dev/preview) mà không cần cấu hình thủ công.</li>
+          <li><strong>Co giãn Textarea Native (CSS-only):</strong> Sử dụng thuộc tính CSS mới `field-sizing: content` giúp co giãn chiều cao của Tasks & Notes tự động theo nội dung thực tế, không tốn dù chỉ một dòng JS resize hay gây giật giao diện.</li>
+          <li><strong>Changelog Modal kế thừa:</strong> Bổ sung tham số `projectId` và tùy biến title/content giúp tái sử dụng component xem Changelog dùng chung cho cả Changelog nội bộ của từng dự án.</li>
+          <li><strong>Quota thực tế:</strong> Đọc trực tiếp `rate_limits` do server Anthropic trả về qua `statusLine` hook, không chắp vá hay giả lập request — an toàn tuyệt đối.</li>
+          <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn `rate_limits`. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
           <li><strong>Hạn ngạch đa luồng (v1.3.0):</strong> Truy vấn song song hai endpoint Connect RPC để kéo đồng thời hạn ngạch 5H và hạn ngạch tuần (Weekly) cho cả Gemini và Claude/GPT pools, phân cụm bằng fieldset tinh gọn.</li>
-          <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng <code>lsof</code> để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
+          <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng `lsof` để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
           <li><strong>Force Sync với Auto-Probe:</strong> Tự động kích hoạt Probe Session (Haiku ~100 tokens) trong hai trường hợp: chưa có session local trong chu kỳ 5h, hoặc mốc reset đã qua nhưng cache chưa được làm mới — UI luôn tự phục hồi sau quota reset.</li>
-          <li><strong>Khắc phục lỗi mtime của <code>.git/</code>:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
+          <li><strong>Khắc phục lỗi mtime của `.git/`:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
         </ul>
       </div>
 
