@@ -8,7 +8,6 @@
     
     <AppConsole />
 
-    <SpecialPushModal />
     <ProjectConfigModal />
     <SshConfigModal />
     <GitModal />
@@ -23,7 +22,6 @@ import AppHeader from './components/AppHeader.vue';
 import AgentUsageSection from './components/AgentUsageSection.vue';
 import ProjectTable from './components/ProjectTable.vue';
 import AppConsole from './components/AppConsole.vue';
-import SpecialPushModal from './components/modals/SpecialPushModal.vue';
 import ProjectConfigModal from './components/modals/ProjectConfigModal.vue';
 import SshConfigModal from './components/modals/SshConfigModal.vue';
 import GitModal from './components/modals/GitModal.vue';

@@ -24,11 +24,11 @@ export async function checkProjectSyncStatus(project) {
       } else {
         // 2. Change detected log (False -> True)
         if (pushChanged && pullChanged) {
-          appendLog(project.id, `[${time}] [Background] Local & Remote changes detected!`)
+          appendLog(project.id, `[${time}] [Background] ⚠ DIVERGED — Local (${result.push_count}) & Remote (${result.pull_count}) both have changes. Resolve before syncing.`)
         } else if (pushChanged) {
-          appendLog(project.id, `[${time}] [Background] Local changes detected! Ready to PUSH.`)
+          appendLog(project.id, `[${time}] [Background] Local changes detected (${result.push_count} file(s)). Ready to PUSH.`)
         } else if (pullChanged) {
-          appendLog(project.id, `[${time}] [Background] Remote changes detected! Ready to PULL.`)
+          appendLog(project.id, `[${time}] [Background] Remote changes detected (${result.pull_count} file(s)). Ready to PULL.`)
         }
       }
     }
@@ -37,6 +37,8 @@ export async function checkProjectSyncStatus(project) {
       ...current,
       hasPendingPush: result.has_local_changes,
       hasPendingPull: result.has_remote_changes,
+      pushCount: result.push_count ?? 0,
+      pullCount: result.pull_count ?? 0,
     }
   } catch (_) {
     // SSH/network error — leave state unchanged so buttons don't flicker

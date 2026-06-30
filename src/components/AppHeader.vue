@@ -23,18 +23,20 @@
         <span v-if="isDev" class="dev-tag">DEV</span>
       </div>
       <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">
-        <span class="version-row">
-          <span class="version-num">v{{ appVersion }}</span>
-          <span v-if="newVersionAvailable" class="update-badge" @click.stop="openLink(RELEASE_URL)" :title="'New version ' + newVersionAvailable + ' available! Click to download.'">
+        <span v-if="newVersionAvailable" class="version-row">
+          <span class="update-badge" @click.stop="openLink(RELEASE_URL)" :title="'New version ' + newVersionAvailable + ' available! Click to download.'">
             <i class="fa-solid fa-circle-arrow-up"></i> Update
           </span>
         </span>
-        <span class="build-time">{{ buildDate }} {{ buildTime }}</span>
+        <span class="build-time">{{ appVersion }} {{ buildTime }}</span>
       </span>
       <div class="header-actions">
         <button class="btn-tech btn-tech-secondary btn-intro" @click="openIntroModal" title="Introduction">
           <i class="fa-solid fa-book-open"></i> <span class="btn-text">INTRO</span>
           <span class="badge-dot"></span>
+        </button>
+        <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
+          <i class="fa-solid fa-note-sticky" :style="noteContent ? 'color: #f59e0b;' : ''"></i>
         </button>
         <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="anySyncing || isReloading">
           <i class="fa-solid fa-plus"></i> <span class="btn-text">PROJECT</span>
@@ -54,6 +56,7 @@
 
         <RefreshSettingsModal :show="showRefreshSettings" @close="showRefreshSettings = false" />
         <ChangelogModal :show="showChangelogModal" @close="showChangelogModal = false" />
+        <GlobalNoteModal />
 
         <!-- Custom Traffic Lights -->
         <div class="titlebar-button minimize-btn" @click="minimize" title="Minimize">
@@ -74,14 +77,15 @@ import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
+import { openGlobalNote, noteContent } from '../composables/useGlobalNote';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
+import GlobalNoteModal from './modals/GlobalNoteModal.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
 
 const appVersion = __APP_VERSION__;
-const buildDate = __BUILD_DATE__;
 const buildTime = __BUILD_TIME__;
 const showRefreshSettings = ref(false);
 const showChangelogModal = ref(false);
@@ -270,6 +274,10 @@ function handleCreateNew() {
 .btn-intro {
   position: relative;
   margin-right: 4px;
+}
+
+.btn-note {
+  margin-left: 10px;
 }
 
 .badge-dot {

@@ -145,8 +145,13 @@
                         <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
                           <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
                         </div>
-                        <div v-if="projectRuntime[p.id]?.stack_info?.cmd" class="popup-item" @click="runProjectCommand(p.local_path, projectRuntime[p.id].stack_info.cmd)" :title="'Run ' + projectRuntime[p.id].stack_info.label + ' in Local Terminal'">
-                          <i class="fa-solid fa-play" style="width:14px; color: var(--accent-green, #10b981);"></i> {{ projectRuntime[p.id].stack_info.label }}
+                        <div v-if="getDevCmd(p) || getBuildCmd(p)" class="popup-run-row">
+                          <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getDevCmd(p))" :title="getDevCmd(p)">
+                            <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
+                          </div>
+                          <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getBuildCmd(p))" :title="getBuildCmd(p)">
+                            <i class="fa-solid fa-hammer" style="width:14px; color: #f59e0b;"></i> BUILD
+                          </div>
                         </div>
                       </div>
 
@@ -170,21 +175,34 @@
                   </div>
                 </div>
 
-              <button class="btn-tech btn-tech-push-special" @click="openSpecialModal(p)" :disabled="projectRuntime[p.id]?.syncing" title="Select specific files to push">
+              <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :disabled="projectRuntime[p.id]?.syncing" title="Select specific files to push (native file picker)">
                 <i class="fa-solid fa-hand-pointer btn-select-icon-only" style="display: none;"></i>
                 <span class="btn-text">SELECT</span>
               </button>
 
-              <div class="dry-group" :class="p.dry_run ? 'is-safe' : 'is-danger'">
+              <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                 <div class="dry-group-left">
                   <label class="btn-tech-git-inline" :class="{ 'active': p.sync_git }" title="Include .git in Push">
                     <input type="checkbox" v-model="p.sync_git" :disabled="projectRuntime[p.id]?.syncing" @change="saveProjectsList()" />
                     <i class="fa-brands fa-git-alt btn-git-icon-only" style="display: none;"></i>
                     <span class="btn-text">.git</span>
                   </label>
-                  <button class="btn-tech btn-tech-push" :class="{ 'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false, 'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null }" @click="startSync(p, 'push')" :disabled="projectRuntime[p.id]?.syncing" title="Push Local to Remote">
-                    <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
-                  </button>
+                  <div class="sync-btn-wrap">
+                    <span v-if="projectRuntime[p.id]?.pushCount > 0" class="sync-count-badge">{{ projectRuntime[p.id].pushCount }}</span>
+                    <button
+                      class="btn-tech btn-tech-push"
+                      :class="{
+                        'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false,
+                        'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
+                        'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                      }"
+                      @click="startSync(p, 'push')"
+                      :disabled="projectRuntime[p.id]?.syncing"
+                      :title="projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'"
+                    >
+                      <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="dry-toggle-center" title="Toggle Dry Run">
@@ -196,9 +214,22 @@
                 </div>
 
                 <div class="dry-group-right">
-                  <button class="btn-tech btn-tech-pull" :class="{ 'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false, 'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null }" @click="startSync(p, 'pull')" :disabled="projectRuntime[p.id]?.syncing" title="Pull Remote to Local">
-                    <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
-                  </button>
+                  <div class="sync-btn-wrap">
+                    <span v-if="projectRuntime[p.id]?.pullCount > 0" class="sync-count-badge">{{ projectRuntime[p.id].pullCount }}</span>
+                    <button
+                      class="btn-tech btn-tech-pull"
+                      :class="{
+                        'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false,
+                        'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
+                        'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                      }"
+                      @click="startSync(p, 'pull')"
+                      :disabled="projectRuntime[p.id]?.syncing"
+                      :title="projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'"
+                    >
+                      <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -229,7 +260,7 @@ import { Toast, ideAvailability, iconTimestamp } from '../store/projectStore';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 
-const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSpecialModal, openConfig, openGitModal } = useProjects();
+const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSelectDialog, openConfig, openGitModal } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 
 const failedIcons = ref({});
@@ -358,6 +389,14 @@ async function openIdeRemote(ideName, host, path) {
 
 async function openUrl(url) {
   try { await invoke('macos_open', { args: [url] }); } catch (e) { console.error(e); }
+}
+
+function getDevCmd(p) {
+  return p.dev_cmd_override || projectRuntime.value[p.id]?.stack_info?.dev_cmd || ''
+}
+
+function getBuildCmd(p) {
+  return p.build_cmd_override || projectRuntime.value[p.id]?.stack_info?.build_cmd || ''
 }
 
 function formatTimeAgo(timestamp) {
@@ -687,6 +726,22 @@ function formatTimeAgo(timestamp) {
   pointer-events: none;
 }
 
+.popup-run-row {
+  display: flex;
+  gap: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 2px;
+  padding-top: 2px;
+}
+
+.popup-run-btn {
+  flex: 1;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
 .popup-icon {
   width: 14px;
   height: 14px;
@@ -706,5 +761,40 @@ function formatTimeAgo(timestamp) {
   object-fit: contain;
   margin-right: 6px;
   vertical-align: middle;
+}
+
+/* DIVERGED state — orange outline only, zero extra space */
+.dry-group.is-diverged {
+  outline: 1px solid rgba(251, 146, 60, 0.5);
+  border-radius: 6px;
+}
+
+.btn-sync-diverged {
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
+}
+
+/* Count badge — absolute overlay above the button, zero impact on layout */
+.sync-btn-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.sync-count-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  z-index: 1;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  background: #ef4444;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  color: #fff;
+  pointer-events: none;
+  user-select: none;
 }
 </style>

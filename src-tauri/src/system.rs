@@ -256,6 +256,8 @@ pub struct ProjectStackInfo {
     pub is_nuxt: bool,
     pub label: String,
     pub cmd: String,
+    pub dev_cmd: String,
+    pub build_cmd: String,
 }
 
 #[tauri::command]
@@ -278,12 +280,19 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
         run_prefix = "";
     }
 
-    let (label, cmd) = if is_tauri {
-        ("Run Dev (Tauri)".to_string(), format!("{pm} {run_prefix}tauri dev"))
+    let (dev_cmd, build_cmd) = if is_tauri {
+        (format!("{pm} {run_prefix}tauri dev"), format!("{pm} {run_prefix}build:app"))
     } else if is_nuxt {
-        ("Build & Preview".to_string(), format!("{pm} {run_prefix}build && {pm} {run_prefix}preview"))
+        (format!("{pm} {run_prefix}dev"), format!("{pm} {run_prefix}build"))
     } else if is_node {
-        ("Build & Preview".to_string(), format!("{pm} {run_prefix}build && {pm} {run_prefix}preview"))
+        (format!("{pm} {run_prefix}dev"), format!("{pm} {run_prefix}build"))
+    } else {
+        ("".to_string(), "".to_string())
+    };
+
+    // Keep label/cmd for backward compat
+    let (label, cmd) = if !dev_cmd.is_empty() {
+        ("Run Dev".to_string(), dev_cmd.clone())
     } else {
         ("".to_string(), "".to_string())
     };
@@ -294,6 +303,8 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
         is_nuxt,
         label,
         cmd,
+        dev_cmd,
+        build_cmd,
     }
 }
 

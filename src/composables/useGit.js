@@ -55,8 +55,13 @@ export async function openGitModal(project) {
   gitStatusText.value = 'Loading...'
   showGitModal.value = true
   projectChangelogText.value = null
-  checkProjectChangelog(project)
-  await fetchGitStatus(project.id)
+  isGitLoading.value = true
+  try {
+    checkProjectChangelog(project)
+    await fetchGitStatus(project.id)
+  } finally {
+    isGitLoading.value = false
+  }
 }
 
 export function closeGitModal() {

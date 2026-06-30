@@ -10,17 +10,14 @@ const devPort = parseInt(process.env.TAURI_DEV_PORT || '1420', 10);
 const hmrPort = parseInt(process.env.TAURI_DEV_HMR_PORT || String(devPort + 1), 10);
 
 const now = new Date();
-const buildDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
 const buildNum = process.env.BUILD_NUM || (String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0'));
-const buildTime = `${buildNum.slice(0, 2)}:${buildNum.slice(2, 4)}`;
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue()],
   define: {
-    '__BUILD_DATE__': JSON.stringify(buildDate),
-    '__BUILD_TIME__': JSON.stringify(buildTime),
+    '__BUILD_TIME__': JSON.stringify(buildNum),
     '__APP_VERSION__': JSON.stringify(version),
   },
 

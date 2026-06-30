@@ -1,15 +1,20 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::io::BufReader;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Manager, Window};
 
 use crate::projects::{validate_path_segment, validate_project, SyncProject};
 
 static RSYNC_VERSIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+// Cached once on first command invocation (run_sync or check_sync_status).
+// Tauri's app data dir is fixed for the lifetime of the process.
+static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 fn get_rsync_versions() -> &'static Mutex<HashMap<String, String>> {
     RSYNC_VERSIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -126,6 +131,92 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+// ─── Tier 2 Baseline Manifest ─────────────────────────────────────────────────
+// Written after every full successful sync. On the next status check, both
+// PUSH and PULL dry-run files are classified against the baseline:
+//   PULL side:  in baseline + missing locally  → local deleted it  → push_count
+//               not in baseline                → remote created it → pull_count
+//   PUSH side:  in baseline                   → remote deleted it → suppress push_count
+//               not in baseline               → local created it  → push_count
+// This eliminates the ambiguity in both directions (EC-3 + its symmetric case).
+// Baselines are stored in Tauri's appDataDir (set via APP_DATA_DIR on first
+// command call). If APP_DATA_DIR is not yet set, the legacy ~/.aki path is used
+// as a fallback so read_baseline can also find baselines written by old builds.
+
+fn baseline_dir() -> PathBuf {
+    if let Some(dir) = APP_DATA_DIR.get() {
+        dir.join("baselines")
+    } else {
+        // Fallback: used if baseline_dir() is called before any Tauri command sets
+        // APP_DATA_DIR (should not happen in practice).
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home).join(".aki").join("devsync-baselines")
+    }
+}
+
+fn baseline_path(project_id: &str) -> PathBuf {
+    baseline_dir().join(format!("{}.json", project_id))
+}
+
+// Legacy path from pre-appDataDir builds — read_baseline checks this as fallback.
+fn legacy_baseline_path(project_id: &str) -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home)
+        .join(".aki")
+        .join("devsync-baselines")
+        .join(format!("{}.json", project_id))
+}
+
+fn collect_local_files(base: &std::path::Path, current: &std::path::Path, out: &mut Vec<String>) {
+    let entries = match std::fs::read_dir(current) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let rel = match path.strip_prefix(base) {
+            Ok(r) => r.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+        // Exclude .git from baseline (tracked by git, not rsync)
+        if rel.starts_with(".git/") || rel == ".git" {
+            continue;
+        }
+        if path.is_dir() {
+            collect_local_files(base, &path, out);
+        } else {
+            out.push(rel);
+        }
+    }
+}
+
+fn write_baseline(local_path: &str, project_id: &str) -> Result<(), String> {
+    let base = std::path::Path::new(local_path);
+    let mut files: Vec<String> = Vec::new();
+    collect_local_files(base, base, &mut files);
+
+    let json = serde_json::to_string(&files)
+        .map_err(|e| format!("baseline serialize: {}", e))?;
+
+    let path = baseline_path(project_id);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("baseline mkdir: {}", e))?;
+    }
+    std::fs::write(&path, json)
+        .map_err(|e| format!("baseline write: {}", e))?;
+    Ok(())
+}
+
+fn read_baseline(project_id: &str) -> Option<HashSet<String>> {
+    // Try appDataDir location first; fall back to legacy ~/.aki path for smooth upgrades.
+    let content = std::fs::read_to_string(baseline_path(project_id))
+        .or_else(|_| std::fs::read_to_string(legacy_baseline_path(project_id)))
+        .ok()?;
+    let files: Vec<String> = serde_json::from_str(&content).ok()?;
+    Some(files.into_iter().collect())
+}
+
 fn build_rsync_args(
     project: &SyncProject,
     is_push: bool,
@@ -135,7 +226,15 @@ fn build_rsync_args(
     src: &str,
     dest: &str,
 ) -> Vec<String> {
-    let mut args = vec!["-avzu".to_string()];
+    // Mirror mode (--delete ON): sender is fully authoritative → drop -u so the sender
+    // can overwrite receiver-newer files. Keeping -u with --delete is incoherent: -u
+    // protects receiver-newer files (e.g. dotfiles that survived rm -fR ./*) while
+    // --delete intends an exact mirror, leaving a perpetual PULL/PUSH loop.
+    // Merge mode (--delete OFF): -u is safe — keep receiver-newer files, add only what
+    // the sender has that the receiver lacks.
+    let is_mirror = (is_push && project.delete_on_push) || (!is_push && project.delete_on_pull);
+    let base_flags = if is_mirror { "-avz" } else { "-avzu" };
+    let mut args = vec![base_flags.to_string()];
     if dry_run {
         args.push("--dry-run".to_string());
     }
@@ -161,7 +260,7 @@ fn build_rsync_args(
         if !sync_git_on_push && !excludes.iter().any(|x| x.trim() == ".git/") {
             args.push("--exclude=.git/".to_string());
         }
-        if (!is_push && project.delete_on_pull) || (is_push && project.delete_on_push) {
+        if is_mirror {
             args.push("--delete".to_string());
         }
 
@@ -202,6 +301,10 @@ fn run_sync_blocking(
 ) -> Result<(), String> {
     let is_push = direction == "push";
     let dry_prefix = if dry_run { "[DRY RUN] " } else { "" };
+
+    // First log line arrives before any SSH work — closes the gap between
+    // "START SYNC" (JS) and the first rsync output (which can take 1-3s).
+    emit_log(&window, &project.id, format!(">>> {}Connecting to {}...\n", dry_prefix, project.remote_host));
 
     let pre_cmd = if is_push { &project.hooks.pre_push_cmd } else { &project.hooks.pre_pull_cmd };
     run_hook_phase(&window, &project, pre_cmd, dry_run, dry_prefix, "pre-sync")?;
@@ -285,6 +388,20 @@ fn run_sync_blocking(
 
     spawn_and_stream(&mut command.args(&args), &window, &project.id, "rsync")?;
 
+    // Write baseline after a full (non-dry, non-partial) sync so the next status
+    // check can classify PULL/PUSH files against the last-known-good state (EC-3).
+    if !dry_run && specific_paths.is_empty() {
+        // Cache appDataDir once per process so baseline_dir() resolves correctly.
+        if let Ok(dir) = window.app_handle().path().app_data_dir() {
+            let _ = APP_DATA_DIR.set(dir);
+        }
+        let local_path = project.local_path.clone();
+        let project_id = project.id.clone();
+        if let Err(e) = write_baseline(&local_path, &project_id) {
+            emit_log(&window, &project.id, format!("[WARN] Baseline write failed (non-fatal): {}\n", e));
+        }
+    }
+
     let post_cmd = if is_push { &project.hooks.post_push_cmd } else { &project.hooks.post_pull_cmd };
     run_hook_phase(&window, &project, post_cmd, dry_run, dry_prefix, "post-sync")?;
 
@@ -307,9 +424,18 @@ pub fn expand_remote_tilde(path: &str) -> String {
 pub struct SyncStatusResult {
     pub has_local_changes: bool,
     pub has_remote_changes: bool,
+    pub push_count: u32,
+    pub pull_count: u32,
 }
 
-fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, String> {
+/// Returns the list of file paths that would be additively transferred in the given direction.
+/// Status check always uses -avzu (no --delete) regardless of project settings:
+///   • -u: only lists files where the SOURCE is newer — matches the button semantic
+///         ("this side has something new to offer"). Without it, rsync lists receiver-newer
+///         files too, causing both buttons to light when only one side was modified (EC-7).
+///   • no --delete: additive content only. "deleting …" lines are the opposite direction's
+///         signal and would inflate the wrong count (EC-2).
+fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String>, String> {
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
     let remote = format!("{}:{}/", project.remote_host, project.remote_path.trim_end_matches('/'));
     let (src, dest) = if is_push {
@@ -320,8 +446,14 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
 
     let sync_git = is_push && project.sync_git;
     let mut args = build_rsync_args(project, is_push, true, &[], sync_git, src, dest);
-    // Insert before the trailing src/dest pair to handle sub-second mtime differences
-    // between local APFS (nanosecond) and remote ext4/FAT (second precision).
+
+    // Force status-check semantics regardless of project mirror/merge settings.
+    if let Some(first) = args.first_mut() {
+        *first = "-avzu".to_string();
+    }
+    args.retain(|a| a != "--delete");
+
+    // Tolerate APFS (ns) vs ext4 (1s) mtime precision gap.
     let insert_pos = args.len().saturating_sub(2);
     args.insert(insert_pos, "--modify-window=2".to_string());
 
@@ -336,40 +468,137 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let count = stdout
+    let files: Vec<String> = stdout
         .lines()
-        .filter(|line| {
+        .filter_map(|line| {
             let l = line.trim();
-            !l.is_empty()
-                && !l.starts_with("sending ")
-                && !l.starts_with("receiving ")
-                && !l.starts_with("sent ")
-                && !l.starts_with("received ")
-                && !l.starts_with("total size")
-                && !l.starts_with("Number of")
-                && !l.starts_with("building file list")
-                && !l.starts_with("Transfer starting:")
-                && !l.starts_with("Skip newer ")
-                && !l.ends_with('/')  // directory mtime churn (e.g. .git/ after git status)
+            if l.is_empty()
+                || l.starts_with("deleting ")
+                || l.starts_with("sending ")
+                || l.starts_with("receiving ")
+                || l.starts_with("sent ")
+                || l.starts_with("received ")
+                || l.starts_with("total size")
+                || l.starts_with("Number of")
+                || l.starts_with("building file list")
+                || l.starts_with("Transfer starting:")
+                || l.starts_with("Skip newer ")
+                || l.ends_with('/')
+            {
+                None
+            } else {
+                Some(l.to_string())
+            }
         })
-        .count();
+        .collect();
 
-    Ok(count)
+    Ok(files)
+}
+
+/// Computes (push_count, pull_count) with full Tier-2 baseline reclassification.
+///
+/// PULL side (EC-3): file in pull_files + in baseline + missing locally
+///   → local deleted it → reclassify to push_count (PUSH --delete propagates this)
+///
+/// PUSH side (EC-3 symmetric): file in push_files + in baseline
+///   → remote deleted it (both sides had it at last sync; now only Mac does)
+///   → suppress from push_count (remote deleted intentionally; PULL --delete removes from Mac)
+///   This is the common case when coding on the remote server (files deleted on remote
+///   show up as Mac-has-it-remote-doesn't, but the correct action is PULL not PUSH).
+///
+/// Falls back to raw counts when no baseline exists (first run or cleared).
+fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
+    let push_files = rsync_change_files(project, true)?;
+    let pull_files = rsync_change_files(project, false)?;
+
+    let baseline = read_baseline(&project.id);
+
+    // PULL side: Mac deleted file since last sync → should push the deletion, not pull
+    let (reclassified_to_push, real_pull): (Vec<_>, Vec<_>) = pull_files.into_iter().partition(|f| {
+        if let Some(ref bl) = baseline {
+            let local_full = std::path::Path::new(&project.local_path).join(f);
+            bl.contains(f) && !local_full.exists()
+        } else {
+            false
+        }
+    });
+
+    // PUSH side: remote deleted file since last sync → suppress from push_count
+    let (_, real_push): (Vec<_>, Vec<_>) = push_files.into_iter().partition(|f| {
+        if let Some(ref bl) = baseline {
+            bl.contains(f)
+        } else {
+            false
+        }
+    });
+
+    Ok((
+        real_push.len() as u32 + reclassified_to_push.len() as u32,
+        real_pull.len() as u32,
+    ))
 }
 
 #[tauri::command]
-pub async fn check_sync_status(project: SyncProject) -> Result<SyncStatusResult, String> {
+pub async fn check_sync_status(app: tauri::AppHandle, project: SyncProject) -> Result<SyncStatusResult, String> {
     validate_project(&project)?;
+    // Cache appDataDir once — baseline_dir() uses it so read_baseline() resolves to the
+    // correct location even when this is the first command called (before any sync).
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = APP_DATA_DIR.set(dir);
+    }
     tauri::async_runtime::spawn_blocking(move || {
-        let push_count = count_rsync_changes(&project, true)?;
-        let pull_count = count_rsync_changes(&project, false)?;
+        let (push_count, pull_count) = compute_sync_counts(&project)?;
         Ok(SyncStatusResult {
             has_local_changes: push_count > 0,
             has_remote_changes: pull_count > 0,
+            push_count,
+            pull_count,
         })
     })
     .await
     .map_err(|e| format!("check_sync_status task error: {}", e))?
+}
+
+/// Returns the list of paths that would be deleted on the destination side
+/// if the given direction ran with --delete. Used by the JS confirm dialog to
+/// show exactly what is at risk before the user commits to a destructive sync.
+#[tauri::command]
+pub async fn get_sync_delete_preview(
+    project: SyncProject,
+    direction: String,
+) -> Result<Vec<String>, String> {
+    validate_project(&project)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let is_push = direction == "push";
+        let local = format!("{}/", project.local_path.trim_end_matches('/'));
+        let remote = format!("{}:{}/", project.remote_host, project.remote_path.trim_end_matches('/'));
+        let (src, dest) = if is_push {
+            (local.as_str(), remote.as_str())
+        } else {
+            (remote.as_str(), local.as_str())
+        };
+
+        let sync_git = is_push && project.sync_git;
+        let mut args = build_rsync_args(&project, is_push, true, &[], sync_git, src, dest);
+        let insert_pos = args.len().saturating_sub(2);
+        args.insert(insert_pos, "--modify-window=2".to_string());
+
+        let output = crate::system::create_command("rsync")
+            .args(&args)
+            .output()
+            .map_err(|e| format!("rsync delete preview failed: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let deletes: Vec<String> = stdout
+            .lines()
+            .filter(|l| l.trim().starts_with("deleting "))
+            .map(|l| l.trim().trim_start_matches("deleting ").to_string())
+            .collect();
+
+        Ok(deletes)
+    })
+    .await
+    .map_err(|e| format!("get_sync_delete_preview task error: {}", e))?
 }
 
 #[cfg(test)]

@@ -13,6 +13,15 @@ SRP, SOLID, DRY
 
 **Stack**: Vue 3 (Vite), Tauri v2, Rust. Dark mode desktop tool for rsync-based deploy workflows.
 
+### UI Principle — Extreme Narrow (ABSOLUTE, Never Violate)
+
+This app optimizes space with extreme aggression. Every pixel counts.
+
+- **Never add extra rows, banners, or labels** to communicate state — use existing elements (button color, outline, badge overlay, tooltip).
+- **Count badges must be `position: absolute` overlays** on the button — never inline text that widens the button or adds a new element in the flow.
+- **No decorative separators, dividers, or status bars** beyond what already exists.
+- **When in doubt: less is more.** If a state change can be communicated via color/outline/tooltip alone, do not add a new DOM element.
+
 ### Tauri Pitfalls — Critical, Always Apply
 
 - **Titlebar sacred boundary**: `"decorations": false` + `"transparent": true` → no native titlebar. All `position: fixed/absolute` elements **must** start at `top: var(--titlebar-h)` (42px), never `top: 0`. Window controls (drag/minimize/close) via JS `@tauri-apps/api/window`. Ref: `docs/ref/titlebar-sacred-boundary.md`

@@ -5,6 +5,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.7.0] - 2026-06-30
+
+#### Added
+- **Tier 2 Baseline Manifest — bidirectional EC-3 disambiguation**: After every full successful sync, a local file-list snapshot is written to `{appDataDir}/baselines/{project_id}.json`. The status checker uses it in both directions:
+  - **PULL side**: file in pull_files + in baseline + missing locally → Mac deleted it → reclassified to `push_count` (not `pull_count`).
+  - **PUSH side (symmetric)**: file in push_files + in baseline → remote deleted it (both sides had it at last sync; now only Mac does) → suppressed from `push_count`. This is the dominant case when coding 75 %+ on a remote server — remote-deleted files no longer inflate the PUSH badge.
+  - Baselines are stored in Tauri `appDataDir` (`~/Library/Application Support/Aki Dev Sync/baselines/` on macOS), not `~/.aki/`. Old builds' baselines at `~/.aki/devsync-baselines/` are read as fallback for smooth upgrades.
+- **Global Note**: A persistent free-form note pad accessible from the titlebar (sticky note icon, right of INTRO with a visible gap). Opens a modal with an auto-growing textarea; auto-saves to `{appDataDir}/globalnote.json` with 500ms debounce. Not tied to any project.
+- **Global Note icon highlight**: The sticky note icon in the titlebar turns amber/yellow when the note has content, making it visually distinct at a glance.
+- **Modal z-index stack**: Modals now register in a global stack. Only the topmost modal responds to ESC or overlay click, preventing double-close when stacked (e.g., Changelog preview inside Git modal).
+- **Task auto-focus after add**: After adding a new task in the Tasks modal, the focus jumps to that task's detail textarea and scrolls it into view for immediate note entry.
+- **SELECT — Native OS file picker**: The SELECT button now opens a native macOS file dialog (multi-select, starts in project root) instead of the old git-file checkbox list. If any selected file already exists on the remote, a Swal table shows local vs remote mtime for each conflict before asking to overwrite.
+- **DEV + BUILD run buttons**: The OPEN popup now shows two inline run buttons — DEV (green) and BUILD (amber) — each with a `title` tooltip showing the exact command. Default commands are auto-detected by stack (Tauri / Nuxt / Node); per-project overrides can be set in Project Settings.
+- **Per-project run command overrides in Project Settings**: A new "RUN COMMANDS — LOCAL ONLY" section in Project Settings lets you override the detected DEV and build commands per project. Shows the auto-detected default as placeholder.
+- **Exclude list side-by-side layout**: PUSH and PULL configuration panels are now displayed side-by-side (50/50) in Project Settings, collapsing to vertical only below ~560px viewport width, saving significant vertical space.
+
+#### Changed
+- **`dev:debug` npm script**: `AKI_DEBUG=1 npm run tauri dev` — chạy dev mode với debug logging bật. Tách khỏi `dev` thông thường để không làm ồn log khi dùng bình thường.
+- **Git commands non-blocking**: `run_git_command`, `get_git_info`, and `get_project_files` Rust commands now run inside `spawn_blocking`, preventing async executor starvation during long git operations (large repos, slow fetch/push).
+- **Git modal — buttons disabled during initial load**: `isGitLoading` is now set while the initial git status loads on modal open, preventing accidental clicks before data is ready.
+- **Build time format simplified**: Titlebar build stamp now shows `x.x.x HHMM` only — no `v` prefix, no date, just version and 4-digit time, compact and unambiguous.
+
+#### Fixed
+- **UI freeze on PUSH/PULL click**: Log panel now opens immediately on every click, before any async work. For delete-mode ops, shows "Checking files at risk..." while the SSH preview runs so the UI never appears frozen. Rust emits a "Connecting..." log line before SSH mkdir/version checks, closing the 1-3s silent gap between "START SYNC" and first rsync output.
+- **DRY RUN + delete confirm bug**: The type-to-confirm delete dialog appeared even when Dry Run mode was ON — nothing would be deleted by a dry run, making the dialog misleading. `isDryRun` is now evaluated before the `isDeleteOp` guard so the dialog is skipped entirely in dry run mode.
+- **Post-sync count badges not clearing immediately**: After a successful sync, `pushCount`/`pullCount` badge overlays now clear at the same time as the button glow, not after the next background poll.
+- **Post-sync state incorrect for mirror mode**: After a mirror PUSH (`delete_on_push=true`), remote becomes an exact copy of local — `pullCount` was left unchanged but should be 0. Same for mirror PULL: `pushCount` should be 0. State is now derived from sync semantics (merge vs mirror) rather than a fixed unidirectional clear.
+- **Removed unnecessary post-sync recheck**: A `setTimeout(..., 3000)` recheck after every sync was replaced with immediate deterministic state derived from rsync's return code. The 60s background poll handles any drift.
+- **Toast wording for dry run**: "Sync complete" toast is now "Dry run complete" when Dry Run mode is ON.
+
+---
+
 ### [1.6.0] - 2026-06-29
 
 #### Added

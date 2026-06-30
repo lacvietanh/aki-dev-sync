@@ -57,7 +57,7 @@
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-bolt"></i></div>
           <div class="feature-text">
             <strong>SELECT (Push Special)</strong>
-            <span>Chọn từng file từ danh sách Git để push — không scan cả thư mục.</span>
+            <span>Mở hộp thoại chọn file native của macOS (multi-select). Nếu file đã tồn tại ở Remote, hiển thị bảng so sánh mtime Local / Remote trước khi xác nhận ghi đè.</span>
           </div>
         </div>
 
@@ -125,7 +125,15 @@
           <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
             <strong>Open Popup & Stack Launcher</strong>
-            <span>Mở nhanh IDEs Local và Remote. Tự động phát hiện stack Tauri (dev mode) vs Node/Nuxt (build & preview), quét lockfile để gọi đúng Package Manager (`pnpm`/`yarn`/`bun`/`npm`).</span>
+            <span>Mở nhanh IDEs Local và Remote. Nút <strong>DEV</strong> (xanh) và <strong>BUILD</strong> (vàng) tự động theo stack, tooltip hiển thị lệnh thực thi. Quét lockfile để gọi đúng Package Manager.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-note-sticky"></i></div>
+          <div class="feature-text">
+            <strong>Global Note</strong>
+            <span>Tấm ghi chú toàn cục trên titlebar — icon chuyển màu vàng khi có nội dung. Không gắn với project nào, tự lưu sau 500ms vào <code>appDataDir</code>.</span>
           </div>
         </div>
 
@@ -191,6 +199,7 @@
           <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng `lsof` để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
           <li><strong>Force Sync với Auto-Probe:</strong> Tự động kích hoạt Probe Session (Haiku ~100 tokens) trong hai trường hợp: chưa có session local trong chu kỳ 5h, hoặc mốc reset đã qua nhưng cache chưa được làm mới — UI luôn tự phục hồi sau quota reset.</li>
           <li><strong>Khắc phục lỗi mtime của `.git/`:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
+          <li><strong>Phân tách EC-3 hai chiều (Baseline Manifest):</strong> rsync không phân biệt được "remote tạo file X" vs "Local xóa file X", hay "Mac tạo file Y" vs "remote xóa file Y". Sau mỗi lần sync đầy đủ, app ghi snapshot danh sách file local vào <code>appDataDir/baselines/</code>. Lần check tiếp theo: file trong pull_list + có trong baseline + không còn ở Local → Local đã xóa → cộng vào push_count; file trong push_list + có trong baseline → remote đã xóa → loại khỏi push_count. Giải quyết hoàn toàn badge PUSH sáng nhầm khi code chủ yếu trên remote.</li>
         </ul>
       </div>
 

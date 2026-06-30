@@ -25,11 +25,13 @@
 - [docs/research/aki-dev-sync-ag-cc-usage-flow.md](research/aki-dev-sync-ag-cc-usage-flow.md) — So sánh flow của project vs cộng đồng, lợi thế native approach (phục vụ bài viết akidev)
 - [docs/research/claude-usage-1.2.x-analyze.md](research/claude-usage-1.2.x-analyze.md) — Phân tích các vấn đề bug quota display + đề xuất cải thiện (v1.2.x)
 - [docs/research/claude-usage-dash-pipefail-regression.md](research/claude-usage-dash-pipefail-regression.md) — Post-mortem: `set -o pipefail` giết dash → force-sync chết im lặng → "load mãi / no data sau reset" (root cause + fix + phòng ngừa)
+- [docs/research/sync-button-semantic-analysis.md](research/sync-button-semantic-analysis.md) — PUSH/PULL button semantic intent vs reality: incident log, code analysis, EC-1..EC-7 + EC-3-sym, `-u`+`--delete` incoherence, Tier 2 baseline (bidirectional, appDataDir), DRY RUN guard bug — all resolved
 
 ## Plans (Active)
 - [docs/plan/deferred-auto-update.md](plan/deferred-auto-update.md) — Tauri v2 self-update (deferred)
 
 ## Plans (Completed)
+- [docs/plan/done/fix-sync-divergence-safety.md](plan/done/fix-sync-divergence-safety.md) — Prevent accidental destructive PUSH: DIVERGED state, delete-confirm, `-u`+`--delete` fix, Tier 2 baseline, DRY RUN guard — all done
 - [docs/plan/done/project-task-list.md](plan/done/project-task-list.md) — Per-project task list: data model, hover-popover UX, file changes
 - [docs/plan/done/total-refactor-by-akirule.md](plan/done/total-refactor-by-akirule.md) — Full PROCODING refactor plan
 - [docs/plan/done/open-popup-consolidation.md](plan/done/open-popup-consolidation.md) — Consolidation of Local and Remote SSH popup actions

@@ -1,5 +1,6 @@
 mod agent_usage;
 mod git;
+mod global_note;
 mod logger;
 mod projects;
 mod ssh;
@@ -61,9 +62,11 @@ pub fn run() {
             git::get_git_info,
             git::get_project_files,
             git::run_git_command,
+            git::get_file_conflict_info,
             // sync
             sync::run_sync,
             sync::check_sync_status,
+            sync::get_sync_delete_preview,
             // agent usage
             agent_usage::provision_agent_usage,
             agent_usage::force_sync_agent_usage,
@@ -76,6 +79,9 @@ pub fn run() {
             system::check_project_stack,
             system::run_project_command,
             system::read_project_changelog,
+            // global note
+            global_note::read_global_note,
+            global_note::write_global_note,
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,

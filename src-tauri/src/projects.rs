@@ -66,6 +66,10 @@ pub struct SyncProject {
     pub tasks: Vec<ProjectTask>,
     #[serde(default)]
     pub notes: String,
+    #[serde(default)]
+    pub dev_cmd_override: Option<String>,
+    #[serde(default)]
+    pub build_cmd_override: Option<String>,
 }
 
 /// Validates that a single path segment contains no traversal or control characters.
@@ -164,6 +168,8 @@ mod tests {
             last_sync_status: None,
             tasks: vec![],
             notes: String::new(),
+            dev_cmd_override: None,
+            build_cmd_override: None,
         }
     }
 

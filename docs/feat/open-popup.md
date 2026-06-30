@@ -17,11 +17,12 @@ Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
 - **Terminal:** Mở tab Terminal native macOS.
 - **VSCode & VSCode Insiders:** Mở bằng text editor phổ biến.
 - **Antigravity IDE:** Editor mặc định của hệ sinh thái Aki.
-- **Run Dev / Build & Preview (Node/Tauri):** Lối tắt thông minh xuất hiện tự động khi phát hiện dự án Node/Frontend (chứa `package.json`):
-  - **Tự động nhận diện stack chính**:
-    - Nếu có thư mục `src-tauri` (dự án Tauri) $\to$ Hiển thị nhãn **Run Dev (Tauri)** và tự động chạy lệnh khởi động dev mode.
-    - Nếu là dự án Nuxt/Vite/Node thông thường $\to$ Hiển thị nhãn **Build & Preview** chạy lệnh build và xem trước.
-  - **Tự động cấu hình Package Manager**: Quét lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) để tự chọn đúng package manager tương ứng là `pnpm`, `yarn`, `bun`, hoặc `npm` (ví dụ: `pnpm tauri dev`, `yarn build && yarn preview`) giúp chạy lệnh vô cùng chính xác mà không cần cấu hình thủ công.
+- **DEV + BUILD (v1.7.0):** Hai nút inline xuất hiện khi phát hiện dự án có `package.json`. Mỗi nút có `title` tooltip hiển thị lệnh cụ thể sẽ chạy.
+  - **Tự động nhận diện stack & lệnh mặc định** (`check_project_stack` → `ProjectStackInfo.dev_cmd / build_cmd`):
+    - Tauri: DEV = `{pm} tauri dev`, BUILD = `{pm} build:app`
+    - Nuxt / Node: DEV = `{pm} dev`, BUILD = `{pm} build`
+  - **Tự động cấu hình Package Manager**: Quét lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) để tự chọn `pnpm`/`yarn`/`bun`/`npm`.
+  - **Per-project override**: Có thể ghi đè lệnh DEV/BUILD cho từng project trong Project Settings ("RUN COMMANDS — LOCAL ONLY"). Để trống = dùng mặc định theo stack.
 
 ### 3. Remote SSH Targets
 Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa:

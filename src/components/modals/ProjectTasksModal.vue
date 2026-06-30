@@ -70,6 +70,7 @@
             :key="task.id"
             class="task-item-row"
             :class="[{ 'is-done': task.done, 'has-detail': !!task.detail }]"
+            :data-task-id="task.id"
           >
             <!-- Left side controls: Checkmark (Done), Pin, Wish -->
             <div class="task-states-left">
@@ -152,7 +153,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { iconTimestamp } from '../../store/projectStore'
 import { saveProjectsList } from '../../composables/useProjectConfig'
@@ -224,10 +225,17 @@ const summary = computed(() => {
   return { total, open, doing, todo: open - doing, done: total - open }
 })
 
-function submitNew() {
+async function submitNew() {
   if (!tasksProject.value) return
-  if (addTask(tasksProject.value, newTitle.value)) {
+  const task = addTask(tasksProject.value, newTitle.value)
+  if (task) {
     newTitle.value = ''
+    await nextTick()
+    const el = document.querySelector(`[data-task-id="${task.id}"] .task-detail-textarea`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      el.focus()
+    }
   }
 }
 
