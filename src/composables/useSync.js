@@ -17,6 +17,10 @@ export async function startSync(project, direction, specificPaths = []) {
   projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: true }
   const isDryRun = project.dry_run
 
+  // Save previous log state so cancel can restore it instead of forcing-close
+  const prevLogProjectId = activeLogProjectId.value
+  const prevLogExpanded = isLogExpanded.value
+
   activeLogProjectId.value = project.id
   isLogExpanded.value = true
   if (!projectLogs.value[project.id]) projectLogs.value[project.id] = []
@@ -25,21 +29,49 @@ export async function startSync(project, direction, specificPaths = []) {
   const isDeleteOp = !isDryRun && specificPaths.length === 0 &&
     ((direction === 'push' && project.delete_on_push) || (direction === 'pull' && project.delete_on_pull))
 
+  const abortSync = () => {
+    projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: false }
+    activeLogProjectId.value = prevLogProjectId
+    isLogExpanded.value = prevLogExpanded
+  }
+
   if (isDeleteOp) {
     appendLog(project.id, `>>> Checking files at risk for ${direction.toUpperCase()} --delete...`)
     let deleteList = []
+    let previewFailed = false
     try {
       deleteList = await invoke('get_sync_delete_preview', { project, direction })
-    } catch (_) {}
+    } catch (e) {
+      previewFailed = true
+    }
+
+    if (previewFailed) {
+      const { isConfirmed: proceedAnyway } = await Swal.fire({
+        title: 'Không thể kiểm tra file sẽ bị xóa',
+        html: `Kết nối tới remote thất bại khi preview --delete.<br>Bạn có muốn tiếp tục <b>${direction.toUpperCase()} --delete</b> mà không biết file nào sẽ bị xóa không?`,
+        icon: 'error',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#374151',
+        confirmButtonText: 'Vẫn tiếp tục (nguy hiểm)',
+        cancelButtonText: 'Hủy bỏ',
+        background: '#131317',
+        color: '#F3F4F6',
+      })
+      if (!proceedAnyway) {
+        abortSync()
+        return
+      }
+    }
 
     if (deleteList.length > 0) {
       const dest = direction === 'push' ? 'Remote' : 'Local'
       const sample = deleteList.slice(0, 8).map(f => `  ${f}`).join('\n')
       const moreNote = deleteList.length > 8 ? `\n  … and ${deleteList.length - 8} more` : ''
-      const { isConfirmed, value: typed } = await Swal.fire({
-        title: `XÁC NHẬN XÓA ${deleteList.length} FILE`,
+      const { isConfirmed } = await Swal.fire({
+        title: `XÁC NHẬN: ${deleteList.length} FILE SẼ BỊ XÓA`,
         html:
-          `<b>${direction.toUpperCase()} --delete</b> sẽ xóa vĩnh viễn <b>${deleteList.length}</b> file(s) trên <b>${dest}</b>:<br>` +
+          `<b>${direction.toUpperCase()} --delete</b> sẽ xóa vĩnh viễn <b>${deleteList.length}</b> file(s) chỉ tồn tại trên <b>${dest}</b> (không có ở phía nguồn):<br>` +
           `<pre style="text-align:left;font-size:11px;background:#0a0f16;padding:8px;border-radius:6px;max-height:140px;overflow:auto;margin:10px 0;">${sample}${moreNote}</pre>` +
           `Nhập tên project <b>${project.name}</b> để xác nhận:`,
         input: 'text',
@@ -57,13 +89,11 @@ export async function startSync(project, direction, specificPaths = []) {
             Swal.showValidationMessage(`Nhập đúng "${project.name}" để xác nhận`)
             return false
           }
-          return true
+          return val
         }
       })
-      if (!isConfirmed || typed !== project.name) {
-        projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: false }
-        isLogExpanded.value = false
-        activeLogProjectId.value = null
+      if (!isConfirmed) {
+        abortSync()
         return
       }
     }
@@ -187,6 +217,8 @@ export async function openSelectDialog(project) {
       conflicts = info.filter(f => f.remote_exists)
     } catch (err) {
       console.error('Conflict check failed:', err)
+      Toast.fire({ icon: 'error', title: 'Không thể kiểm tra conflict với remote — hủy push' })
+      return
     }
   }
 

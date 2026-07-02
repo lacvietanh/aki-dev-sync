@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.7.1] - 2026-07-02
+
+#### Fixed
+- **PUSH/PULL with `--delete` completely stuck**: `preConfirm` in the Swal dialog returned `true` (boolean) instead of `val` (string), so the `typed !== project.name` check was always true and the sync aborted right after confirmation. Result: clicking the red confirm button did nothing at all.
+- **Delete preview error silently swallowed → unguarded destructive sync**: If SSH failed while running `get_sync_delete_preview`, `deleteList` stayed `[]` and the Swal warning was skipped — the `--delete` sync ran with no warning. Rust now checks rsync's exit code (non-zero → `Err` instead of returning an empty list as before), and JS asks the user whether to continue instead of staying silent.
+- **Sync could hang silently if SSH raised an interactive prompt**: rsync/hooks in `spawn_and_stream` inherited the app's stdin — if SSH asked for a hostkey/password (e.g. host key changed), the process waited for input forever, with no log and no error. stdin is now `Stdio::null()` → the prompt fails immediately as an error visible in the log.
+- **Baseline PUSH suppression wrongly suppressed locally modified files (EC-3b)**: The old logic suppressed every baseline file that appeared in `push_files`, unable to distinguish "remote deleted the file" from "user modified the file locally". The baseline now stores each file's `mtime` instead of just its name: local `mtime` unchanged since the last sync → remote deleted it → suppress; `mtime` changed → user modified it → keep in push_count. Backward compat: old baselines (Vec\<String\>) are migrated with `mtime=0` → no suppression (conservative) until the next sync writes a new baseline.
+- **Log panel closed when canceling the delete dialog**: While viewing project A's log, clicking PUSH on project B (which has a delete dialog) and then canceling closed A's log panel. The `activeLogProjectId`/`isLogExpanded` state is now saved before being overwritten and restored on cancel.
+- **SELECT push: conflict check failure silently swallowed**: If `get_file_conflict_info` failed (SSH down), `conflicts = []` and the push proceeded with no overwrite warning. An error toast is now shown and the push is aborted.
+
+---
+
 ### [1.7.0] - 2026-06-30
 
 #### Added
@@ -22,7 +34,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Exclude list side-by-side layout**: PUSH and PULL configuration panels are now displayed side-by-side (50/50) in Project Settings, collapsing to vertical only below ~560px viewport width, saving significant vertical space.
 
 #### Changed
-- **`dev:debug` npm script**: `AKI_DEBUG=1 npm run tauri dev` — chạy dev mode với debug logging bật. Tách khỏi `dev` thông thường để không làm ồn log khi dùng bình thường.
+- **`dev:debug` npm script**: `AKI_DEBUG=1 npm run tauri dev` — runs dev mode with debug logging enabled. Split from the regular `dev` script so normal usage stays free of log noise.
 - **Git commands non-blocking**: `run_git_command`, `get_git_info`, and `get_project_files` Rust commands now run inside `spawn_blocking`, preventing async executor starvation during long git operations (large repos, slow fetch/push).
 - **Git modal — buttons disabled during initial load**: `isGitLoading` is now set while the initial git status loads on modal open, preventing accidental clicks before data is ready.
 - **Build time format simplified**: Titlebar build stamp now shows `x.x.x HHMM` only — no `v` prefix, no date, just version and 4-digit time, compact and unambiguous.
@@ -197,7 +209,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **`ChangelogModal.vue`**: Replaced ad-hoc `Swal.fire()` inline HTML changelog with a proper `BaseModal`-based component. Uses themed scoped CSS matching app dark style, `renderMarkdown` computed once, `runMermaid()` via `watch` on body ref. `AppHeader.vue` no longer imports `Swal`, `changelogText`, or `renderMarkdown` directly.
 
 #### Changed
-- **Store extraction (`sshStore.js`, `logStore.js`)**: Module-scope `ref` trong `useSsh.js` và `useLogs.js` tách ra store files riêng — HMR không còn tạo ref mới khi edit composable, giữ đúng singleton behavior.
+- **Store extraction (`sshStore.js`, `logStore.js`)**: Module-scope `ref`s in `useSsh.js` and `useLogs.js` extracted into dedicated store files — HMR no longer creates fresh refs when a composable is edited, preserving correct singleton behavior.
 - **Dead CSS removal (`main.css`)**: Deleted 10 unused rule blocks — `.mr-2`, `.text-center`, `.badge-sync-git`, `.badge-push-special`, `.col-log`, `.btn-log-toggle` (+ `:hover`, `.log-active`), `.btn-action-terminal` (+ `:hover`, `:active`), `.btn-action-vscode` (+ `:hover`, `:active`), `.action-vscode-icon`, `.hooks-grid`. None referenced in any Vue template.
 - **`AgentUsage.vue` dead props removed**: `locationType` and `hostName` props deleted — never referenced in template or script body, were being passed from `AgentUsageSection.vue` for no purpose.
 - **`AgentUsage.vue` clock timer guard**: `ccClockTimer` `setInterval` now only starts when `agentId === 'claudecode'` — was running 1-minute ticks on every Antigravity instance even though `ccNow` is unused there.
@@ -296,7 +308,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Auto Force Sync on Reset**: `UsageProgressBar.vue` now emits a `timeout` event exactly once when the countdown timer crosses zero (reset time reached). For Claude Code bars, `AgentUsage.vue` maps `@timeout` to `force-sync` (previously mapped to `retry`), triggering an automatic quota refresh instead of just re-reading the stale cache file.
 
 #### Research
-- Confirmed via live SSH testing (2026-06-23): `claude -p /usage` makes a real network call to the Anthropic OAuth API (`~/.claude/.credentials.json`) and does **not** require an active Claude Code session. Previous assumption that it read from RAM session was incorrect. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.7-analyze.md`.is not loaded.
+- Confirmed via live SSH testing (2026-06-23): `claude -p /usage` makes a real network call to the Anthropic OAuth API (`~/.claude/.credentials.json`) and does **not** require an active Claude Code session. Previous assumption that it read from RAM session was incorrect. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.7-analyze.md`.
 
 ---
 

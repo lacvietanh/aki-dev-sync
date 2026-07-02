@@ -1,5 +1,6 @@
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::time::UNIX_EPOCH;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -58,7 +59,10 @@ fn spawn_and_stream(
     project_id: &str,
     label: &str,
 ) -> Result<(), String> {
+    // Null stdin so ssh/rsync can never block on an interactive prompt
+    // (hostkey/password) — in a GUI app that would hang the sync silently.
     let mut child = command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -132,13 +136,16 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 }
 
 // ─── Tier 2 Baseline Manifest ─────────────────────────────────────────────────
-// Written after every full successful sync. On the next status check, both
-// PUSH and PULL dry-run files are classified against the baseline:
+// Written after every full successful sync as HashMap<filename, mtime_secs>.
+// On the next status check, both PUSH and PULL dry-run files are classified:
 //   PULL side:  in baseline + missing locally  → local deleted it  → push_count
 //               not in baseline                → remote created it → pull_count
-//   PUSH side:  in baseline                   → remote deleted it → suppress push_count
-//               not in baseline               → local created it  → push_count
-// This eliminates the ambiguity in both directions (EC-3 + its symmetric case).
+//   PUSH side:  in baseline + local mtime UNCHANGED → remote deleted it → suppress push_count
+//               in baseline + local mtime CHANGED   → user edited it  → keep in push_count
+//               not in baseline                     → local created it → push_count
+// The mtime comparison is key: it distinguishes "remote deleted the file" (mtime
+// unchanged since last sync) from "user modified the file" (mtime changed), without
+// requiring an extra SSH call. This eliminates the ambiguity in both directions.
 // Baselines are stored in Tauri's appDataDir (set via APP_DATA_DIR on first
 // command call). If APP_DATA_DIR is not yet set, the legacy ~/.aki path is used
 // as a fallback so read_baseline can also find baselines written by old builds.
@@ -167,7 +174,11 @@ fn legacy_baseline_path(project_id: &str) -> PathBuf {
         .join(format!("{}.json", project_id))
 }
 
-fn collect_local_files(base: &std::path::Path, current: &std::path::Path, out: &mut Vec<String>) {
+fn collect_local_files_with_mtime(
+    base: &std::path::Path,
+    current: &std::path::Path,
+    out: &mut HashMap<String, u64>,
+) {
     let entries = match std::fs::read_dir(current) {
         Ok(e) => e,
         Err(_) => return,
@@ -183,17 +194,22 @@ fn collect_local_files(base: &std::path::Path, current: &std::path::Path, out: &
             continue;
         }
         if path.is_dir() {
-            collect_local_files(base, &path, out);
+            collect_local_files_with_mtime(base, &path, out);
         } else {
-            out.push(rel);
+            let mtime = path.metadata().ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            out.insert(rel, mtime);
         }
     }
 }
 
 fn write_baseline(local_path: &str, project_id: &str) -> Result<(), String> {
     let base = std::path::Path::new(local_path);
-    let mut files: Vec<String> = Vec::new();
-    collect_local_files(base, base, &mut files);
+    let mut files: HashMap<String, u64> = HashMap::new();
+    collect_local_files_with_mtime(base, base, &mut files);
 
     let json = serde_json::to_string(&files)
         .map_err(|e| format!("baseline serialize: {}", e))?;
@@ -208,13 +224,20 @@ fn write_baseline(local_path: &str, project_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn read_baseline(project_id: &str) -> Option<HashSet<String>> {
-    // Try appDataDir location first; fall back to legacy ~/.aki path for smooth upgrades.
+fn read_baseline(project_id: &str) -> Option<HashMap<String, u64>> {
     let content = std::fs::read_to_string(baseline_path(project_id))
         .or_else(|_| std::fs::read_to_string(legacy_baseline_path(project_id)))
         .ok()?;
-    let files: Vec<String> = serde_json::from_str(&content).ok()?;
-    Some(files.into_iter().collect())
+    // New format (≥1.7.1): HashMap<String, u64> — filename → mtime_secs
+    if let Ok(map) = serde_json::from_str::<HashMap<String, u64>>(&content) {
+        return Some(map);
+    }
+    // Old format (<1.7.1): Vec<String> — migrate with mtime=0 so suppression is disabled
+    // for all entries until the next successful sync writes a new-format baseline.
+    if let Ok(files) = serde_json::from_str::<Vec<String>>(&content) {
+        return Some(files.into_iter().map(|f| (f, 0u64)).collect());
+    }
+    None
 }
 
 fn build_rsync_args(
@@ -500,11 +523,11 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
 /// PULL side (EC-3): file in pull_files + in baseline + missing locally
 ///   → local deleted it → reclassify to push_count (PUSH --delete propagates this)
 ///
-/// PUSH side (EC-3 symmetric): file in push_files + in baseline
-///   → remote deleted it (both sides had it at last sync; now only Mac does)
-///   → suppress from push_count (remote deleted intentionally; PULL --delete removes from Mac)
-///   This is the common case when coding on the remote server (files deleted on remote
-///   show up as Mac-has-it-remote-doesn't, but the correct action is PULL not PUSH).
+/// PUSH side: file in push_files + in baseline + local mtime UNCHANGED since baseline
+///   → remote deleted it (file not modified locally, so remote must have removed it)
+///   → suppress from push_count.
+///   If local mtime CHANGED → user modified the file → keep in push_count.
+///   mtime == 0 means old-format baseline (pre-1.7.1) → don't suppress (conservative).
 ///
 /// Falls back to raw counts when no baseline exists (first run or cleared).
 fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
@@ -517,16 +540,30 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
     let (reclassified_to_push, real_pull): (Vec<_>, Vec<_>) = pull_files.into_iter().partition(|f| {
         if let Some(ref bl) = baseline {
             let local_full = std::path::Path::new(&project.local_path).join(f);
-            bl.contains(f) && !local_full.exists()
+            bl.contains_key(f) && !local_full.exists()
         } else {
             false
         }
     });
 
-    // PUSH side: remote deleted file since last sync → suppress from push_count
+    // PUSH side: suppress only when local mtime matches baseline mtime, meaning the file
+    // was NOT modified locally since last sync → remote deleted it (not a local edit).
     let (_, real_push): (Vec<_>, Vec<_>) = push_files.into_iter().partition(|f| {
         if let Some(ref bl) = baseline {
-            bl.contains(f)
+            if let Some(&baseline_mtime) = bl.get(f) {
+                if baseline_mtime == 0 {
+                    return false; // Old-format entry — conservative: don't suppress
+                }
+                let local_full = std::path::Path::new(&project.local_path).join(f);
+                let current_mtime = local_full.metadata().ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                current_mtime == baseline_mtime
+            } else {
+                false
+            }
         } else {
             false
         }
@@ -587,6 +624,11 @@ pub async fn get_sync_delete_preview(
             .args(&args)
             .output()
             .map_err(|e| format!("rsync delete preview failed: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("rsync exited non-zero: {}", stderr.trim()));
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let deletes: Vec<String> = stdout
