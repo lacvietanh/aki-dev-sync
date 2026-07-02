@@ -521,17 +521,16 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         .map_err(|e| format!("Failed to run node script: {}", e))?;
 
     if !output.status.success() {
+        // Every non-zero exit here is a *transient monitor* condition, never a user-facing
+        // fault: the IDE isn't running, is mid-restart, hasn't opened its Connect port yet,
+        // was just signed out, or a single localhost RPC probe timed out. To the UI they all
+        // mean the same thing — "no live reading this poll" — and the frontend already handles
+        // that (composable null path shows the last cached account). Surfacing any of them as
+        // an IPC Err only produced a flickering error banner every poll: that WAS the usage
+        // instability. So swallow all AG script failures to Ok(None); just log the reason.
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // "Not authenticated" (signed out) is treated the same as "not running": a soft empty
-        // state, not a repeating IPC error — otherwise every poll after a manual logout would
-        // surface a scary error banner for a perfectly normal, expected state.
-        if stderr.contains("command not found")
-            || stderr.contains("is not running")
-            || stderr.contains("Not authenticated")
-        {
-            return Ok(None);
-        }
-        return Err(format!("Antigravity usage error: {}", stderr));
+        logger::debug("USAGE:antigravity", &format!("soft-miss (offline→cache): {}", stderr.trim()));
+        return Ok(None);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -588,6 +587,48 @@ fn antigravity_support_dir() -> Result<std::path::PathBuf, String> {
     }
 }
 
+/// globalState keys that hold the live Antigravity OAuth session. Deleting these forces a
+/// real re-login while leaving every other globalState row (settings, extension state) intact.
+const ANTIGRAVITY_AUTH_KEYS: &[&str] = &[
+    "antigravityUnifiedStateSync.oauthToken",
+    "antigravityUnifiedStateSync.userStatus",
+];
+
+/// Delete the OAuth session rows from `User/globalStorage/state.vscdb` (and `.backup`) via the
+/// system `sqlite3`. Best-effort: any failure (no sqlite3, file absent) is a silent no-op so a
+/// partial logout still wipes cookies + Keychain. Must be called only after the IDE is quit.
+fn remove_antigravity_auth_rows(base: &std::path::Path) {
+    let where_in = ANTIGRAVITY_AUTH_KEYS
+        .iter()
+        .map(|k| format!("'{}'", k))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!("DELETE FROM ItemTable WHERE key IN ({});", where_in);
+
+    for db_name in ["state.vscdb", "state.vscdb.backup"] {
+        let db = base.join("User/globalStorage").join(db_name);
+        if !db.is_file() {
+            continue;
+        }
+        let out = Command::new("sqlite3")
+            .arg(&db)
+            .arg(&sql)
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                logger::info("LOGOUT:antigravity", &format!("cleared auth rows from {}", db_name));
+            }
+            Ok(o) => {
+                let err = String::from_utf8_lossy(&o.stderr);
+                logger::error("LOGOUT:antigravity", &format!("sqlite3 failed on {}: {}", db_name, err.trim()));
+            }
+            Err(e) => {
+                logger::error("LOGOUT:antigravity", &format!("could not run sqlite3 on {}: {}", db_name, e));
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn logout_antigravity() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -615,6 +656,18 @@ pub async fn logout_antigravity() -> Result<(), String> {
                 let _ = std::fs::remove_file(&path);
             }
         }
+
+        // THE actual credential. Antigravity keeps its live OAuth session in VS Code's
+        // globalState SQLite store (User/globalStorage/state.vscdb) under the keys
+        // `antigravityUnifiedStateSync.oauthToken` / `.userStatus`. These are NOT Electron
+        // safeStorage ciphertext (they carry no v10/v11 prefix), so wiping cookies and the
+        // Keychain "Safe Storage" key above does NOT invalidate them — the IDE re-reads the
+        // token verbatim on next launch and silently signs back in. That was the "logout does
+        // nothing" bug. We must delete these two rows from state.vscdb (and its .backup, which
+        // Antigravity restores from if the primary is missing). The app is already quit above,
+        // so the SQLite file is unlocked. macOS ships /usr/bin/sqlite3; deleting only these two
+        // keys leaves all other globalState (settings, extension state, rules) untouched.
+        remove_antigravity_auth_rows(&base);
 
         // The actual OAuth session survives a plain file wipe: Electron's `safeStorage`
         // encrypts it and stores only the ciphertext in app files (state.vscdb etc.), while

@@ -68,41 +68,63 @@ sequenceDiagram
   * `models`: Autocomplete/model metadata (for backward compatibility).
   * `quotaSummary`: Structured list of groups and buckets, including remaining fractions and reset times.
 
-## Signed-Out Detection (2026-07-03)
+## Signed-Out Detection & usage-flow stability (fixed 2026-07-03, 1.9.1)
 
-`GetUserStatus` returns HTTP `401` once the user has signed out of Antigravity while the language
-server process is still running (a very different case from "process not running", which the UI
-must not conflate). `get-antigravity-usage.js` now uses `Promise.allSettled` (not `Promise.all` +
-`.catch(() => null)`, which discarded the actual status code) so the rejection reason for
-`getUserStatus` can be inspected: a `401`/`unauthorized` match emits `{"error": "Not authenticated — signed out of Antigravity."}` on stderr instead of the generic connection-failure message.
-`agent_usage.rs::get_antigravity_usage` matches `"Not authenticated"` the same way it already
-matched `"is not running"` / `"command not found"` — all three return `Ok(None)`, a quiet empty
-state, instead of `Err` (which would otherwise surface a repeating IPC error banner every poll
-after an entirely normal, expected sign-out). The frontend's empty-state copy was reworded from
-"IDE not running" to "Not connected — open & sign in to Antigravity to monitor" so it stays
-accurate for both causes.
+When the user is signed out while the language server is still running, `GetUserStatus` does **not**
+reliably return `401`. On the current Antigravity build it returns **HTTP `500`** with body
+`{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` — the server answers, but has
+no session, so the account-derived model config is nil (empirically verified on this machine after
+a real logout). The earlier code assumed signed-out == `401`, so it mislabeled this as a generic
+connection failure. `get-antigravity-usage.js` still uses `Promise.allSettled` to keep the raw
+rejection reason, and now classifies **both** signatures as signed-out:
 
-## Log Out (2026-07-03)
+- classic: HTTP `401` / `unauthorized`
+- current: HTTP `500` matching `is nil` / `GetCascadeModelConfigData`
+
+**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100%
+stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing:
+`agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"`
+/ `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case — port
+not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set
+`error.value` in `useAgentUsage.js`, flashing an error banner every poll. AG usage is a best-effort
+monitor and the frontend already has a graceful null path (show the last cached account), so
+`get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason
+at debug level. Result: transient/offline/signed-out states show the cached account (or the
+"Not connected — open & sign in to Antigravity to monitor" empty state), never a repeating banner.
+
+## Log Out (fixed 2026-07-03, v1.9.x → next)
 
 Antigravity's account dropdown (in `AgentUsage.vue`, opened by clicking the email) has a **Log Out**
-row that calls the `logout_antigravity` Tauri command. Deleting the Chromium-level session files
-alone (Cookies, Local/Session Storage, Network Persistent State, etc. — under
-`~/Library/Application Support/Antigravity IDE`) does **not** actually sign the user out: the OAuth
-token is encrypted at rest by Electron's `safeStorage` API, and the AES key for that encryption
-lives in exactly **one** macOS Keychain item, named `"<app name> Safe Storage"` (verified via
-`security find-generic-password -s "Antigravity IDE Safe Storage"` — a single, precisely-named
-lookup, never a keychain scan/dump). `logout_antigravity`:
+row that calls the `logout_antigravity` Tauri command.
 
-1. Quits the app (`osascript quit app` then `pkill -f` as a fallback) so nothing holds the files open.
-2. Deletes the account-only Chromium files (`ANTIGRAVITY_ACCOUNT_ONLY_PATHS` in `agent_usage.rs`).
-3. Deletes the single `"Antigravity IDE Safe Storage"` Keychain item via
-   `security delete-generic-password -s "..."` — this is what actually forces re-login, since the
-   ciphertext stored in `state.vscdb`/`storage.json` becomes permanently undecryptable without it.
+**Where the credential actually lives (empirically verified on this machine).** The live OAuth
+session is stored in VS Code's globalState SQLite store,
+`User/globalStorage/state.vscdb`, in the `ItemTable` under two keys:
+
+- `antigravityUnifiedStateSync.oauthToken` (~1 KB)
+- `antigravityUnifiedStateSync.userStatus` (~8 KB — account/email/quota)
+
+These values are **not** Electron `safeStorage` ciphertext — they carry no `v10`/`v11` prefix
+(inspected without materializing the token; first byte `0x43` = base64 protobuf, the Connect-RPC
+wire form). The earlier theory that the token was `safeStorage`-encrypted and that deleting the
+`"Antigravity IDE Safe Storage"` Keychain item made it "permanently undecryptable" was **wrong**:
+because the token isn't encrypted with that key, wiping cookies + the Keychain item left the token
+fully readable, so the IDE re-read it on next launch and silently signed back in. That was the
+"logout does nothing" bug in 1.9.
+
+`logout_antigravity` now:
+
+1. Quits the app (`osascript quit app` then `pkill -f` fallback) so nothing holds the files open.
+2. Deletes the account-only Chromium files (`ANTIGRAVITY_ACCOUNT_ONLY_PATHS`).
+3. **Deletes the two auth rows** (`ANTIGRAVITY_AUTH_KEYS`) from `state.vscdb` **and** `state.vscdb.backup`
+   (Antigravity restores from the backup if the primary is missing) via the system `/usr/bin/sqlite3`
+   — `remove_antigravity_auth_rows()`. This is what actually forces re-login. A `DELETE ... WHERE key IN (...)`
+   touches only those two rows and leaves all other globalState intact (verified: 2 keys removed, 1632 rows preserved).
+4. Deletes the `"Antigravity IDE Safe Storage"` Keychain item (defense-in-depth — harmless, and covers
+   any future build that *does* move to `safeStorage`).
 
 `User/` (settings, keybindings, snippets, extensions, workspaceStorage) and the rest of
 `globalStorage/` are never touched, so extensions, rules, and permissions survive a logout intact.
-This mirrors the standard "reset to fresh install" trick documented for Antigravity/Codeium-family
-IDEs (Electron `safeStorage` + Keychain), not a bespoke mechanism.
 
 ## Execution Environment
 

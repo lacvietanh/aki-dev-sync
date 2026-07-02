@@ -543,7 +543,15 @@ async function main() {
     if (!rawStatus) {
       const reason = statusResult.status === 'rejected' ? String(statusResult.reason?.message || '') : '';
       debug('getUserStatus failed:', reason);
-      if (/\b401\b/.test(reason) || /unauthorized/i.test(reason)) {
+      // Signed-out signatures observed on real IDE builds:
+      //   • classic:  HTTP 401 / "unauthorized"
+      //   • current:  HTTP 500 "GetCascadeModelConfigData() is nil" — the language server is up
+      //     and answering, but has no session, so the model-config it derives from the account is
+      //     nil. Both mean "signed out", which the Rust layer treats as a soft empty state (cache),
+      //     never a repeating error banner.
+      const signedOut = /\b401\b/.test(reason) || /unauthorized/i.test(reason)
+        || (/\b500\b/.test(reason) && /is nil|GetCascadeModelConfigData/i.test(reason));
+      if (signedOut) {
         console.error(JSON.stringify({ error: 'Not authenticated — signed out of Antigravity.' }));
       } else {
         console.error(JSON.stringify({ error: 'Could not fetch user status from Antigravity Connect API.' }));
