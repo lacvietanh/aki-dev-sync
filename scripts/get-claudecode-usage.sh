@@ -56,27 +56,10 @@ except Exception as e:
         _log "stale_check: resets_at=0 or empty → no stale check, treating as valid"
     fi
 
-    # ── 5. Read subscription metadata ─────────────────────────────────────
-    SUB_TYPE="Unknown"
-    TIER="Unknown"
-    if [ -f "$CREDS" ]; then
-        FOUND=$(grep -o '"subscriptionType"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
-        [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
-        FOUND_TIER=$(grep -o '"rateLimitTier"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
-        [ -n "$FOUND_TIER" ] && TIER="$FOUND_TIER"
-        _log "meta: creds_found=yes subtype=$SUB_TYPE tier=$TIER"
-    else
-        _log "meta: creds_found=no (subtype=Unknown tier=Unknown)"
-    fi
-
-    # ── 6. Write stdout payload ───────────────────────────────────────────
-    _log "stdout_write: emitting cache_json + MTIME=$MTIME SUBTYPE=$SUB_TYPE TIER=$TIER"
-    cat "$FILE"
-    echo "|||MTIME|||$MTIME"
-    echo "|||SUBTYPE|||$SUB_TYPE"
-    echo "|||TIER|||$TIER"
-
-    # ── 7. Auth info ──────────────────────────────────────────────────────
+    # ── 5. Auth info ──────────────────────────────────────────────────────
+    # Fetched before subscription-metadata below because newer Claude Code versions no
+    # longer keep `.credentials.json` on disk (moved to OS keychain) — `claude auth status`
+    # is the one source that still works either way, and it also carries subscriptionType.
     AUTH_CACHE="$HOME/.claude/auth-cache.json"
     AUTH_CACHE_EXISTS=$([ -f "$AUTH_CACHE" ] && echo yes || echo no)
     _log "auth: cache_exists=$AUTH_CACHE_EXISTS"
@@ -98,6 +81,30 @@ except Exception as e:
         fi
     fi
 
+    # ── 6. Read subscription metadata ─────────────────────────────────────
+    SUB_TYPE="Unknown"
+    TIER="Unknown"
+    if [ -f "$CREDS" ]; then
+        FOUND=$(grep -o '"subscriptionType"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
+        [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
+        FOUND_TIER=$(grep -o '"rateLimitTier"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
+        [ -n "$FOUND_TIER" ] && TIER="$FOUND_TIER"
+        _log "meta: creds_found=yes subtype=$SUB_TYPE tier=$TIER"
+    else
+        _log "meta: creds_found=no — falling back to auth status"
+    fi
+    if [ "$SUB_TYPE" = "Unknown" ]; then
+        FOUND=$(printf '%s' "$AUTH_INFO" | grep -o '"subscriptionType"\s*:\s*"[^"]*"' | head -n 1 | awk -F'"' '{print $4}')
+        [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
+        _log "meta: auth_status subtype=$SUB_TYPE"
+    fi
+
+    # ── 7. Write stdout payload ───────────────────────────────────────────
+    _log "stdout_write: emitting cache_json + MTIME=$MTIME SUBTYPE=$SUB_TYPE TIER=$TIER"
+    cat "$FILE"
+    echo "|||MTIME|||$MTIME"
+    echo "|||SUBTYPE|||$SUB_TYPE"
+    echo "|||TIER|||$TIER"
     echo "|||AUTHINFO|||$AUTH_INFO"
     _log "stdout_write: done — all delimiters emitted"
 else

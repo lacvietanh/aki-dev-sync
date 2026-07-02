@@ -8,6 +8,7 @@
 - [docs/feat/sync-flow.md](feat/sync-flow.md) — Core sync flow: Push, Pull, Select special files, Dry-Run and status indicators
 - [docs/feat/app-update-check.md](feat/app-update-check.md) — Automatic and manual App Update Check mechanism using GitHub Releases API and semantic version comparison
 - [docs/feat/git-operations.md](feat/git-operations.md) — Git Modal Operations (Commit, Fetch, Push, Status logs) and logging policies (loud vs silent)
+- [docs/feat/remote-mode.md](feat/remote-mode.md) — Single global Remote Mode master switch: what it gates (sync buttons, Open popup, background/manual diff checks, CC remote usage), where the switch lives
 
 
 

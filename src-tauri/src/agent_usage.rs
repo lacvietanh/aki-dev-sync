@@ -18,16 +18,35 @@ fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
     run_remote_script_timeout(host, script, REMOTE_SCRIPT_TIMEOUT_SECS)
 }
 
+fn is_local_host(host: &str) -> bool {
+    host == "local" || host == "localhost"
+}
+
 /// Like [`run_remote_script`] but kills the remote process if it overruns `timeout_secs`,
 /// returning an explicit timeout error instead of blocking forever.
+///
+/// `host == "local"`/`"localhost"` runs `script` through a local `sh` instead of SSH — this
+/// is how Claude Code usage is monitored when it runs on the same machine as this app, no
+/// remote involved. The scripts under scripts/*.sh are pure POSIX sh against `$HOME`, so they
+/// work identically local or remote.
 fn run_remote_script_timeout(host: &str, script: &str, timeout_secs: u64) -> Result<Output, String> {
-    let mut child = Command::new("ssh")
-        .args([host, "sh"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn SSH: {}", e))?;
+    let local = is_local_host(host);
+    let mut child = if local {
+        Command::new("sh")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn local sh: {}", e))?
+    } else {
+        Command::new("ssh")
+            .args([host, "sh"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn SSH: {}", e))?
+    };
 
     // Drain stdout/stderr on dedicated threads BEFORE writing stdin, so a large script
     // can't deadlock against a full output pipe that ssh isn't draining yet.
@@ -62,13 +81,18 @@ fn run_remote_script_timeout(host: &str, script: &str, timeout_secs: u64) -> Res
                     let _ = child.wait();
                     // Killing the local SSH client leaves the remote `claude -p` running as
                     // an orphan — wastes quota and can create unintended sessions. Fire a
-                    // best-effort pkill on the remote to clean up. Fire-and-forget: the
-                    // cleanup result does not affect this error path.
+                    // best-effort pkill to clean it up (over SSH for a remote host, or directly
+                    // for the local machine). Fire-and-forget: the cleanup result does not
+                    // affect this error path.
                     let host_cleanup = host.to_string();
                     std::thread::spawn(move || {
-                        let _ = Command::new("ssh")
-                            .args([host_cleanup.as_str(), "pkill", "-f", "claude -p"])
-                            .output();
+                        let _ = if local {
+                            Command::new("pkill").args(["-f", "claude -p"]).output()
+                        } else {
+                            Command::new("ssh")
+                                .args([host_cleanup.as_str(), "pkill", "-f", "claude -p"])
+                                .output()
+                        };
                     });
                     return Err(format!(
                         "remote script timed out after {}s (local killed, remote cleanup fired) host={}",
@@ -498,7 +522,13 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("command not found") || stderr.contains("is not running") {
+        // "Not authenticated" (signed out) is treated the same as "not running": a soft empty
+        // state, not a repeating IPC error — otherwise every poll after a manual logout would
+        // surface a scary error banner for a perfectly normal, expected state.
+        if stderr.contains("command not found")
+            || stderr.contains("is not running")
+            || stderr.contains("Not authenticated")
+        {
             return Ok(None);
         }
         return Err(format!("Antigravity usage error: {}", stderr));
@@ -515,4 +545,94 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         fetched_at: now.clone(),
         file_modified_at: now,
     }))
+}
+
+/// Must match the actual /Applications/*.app bundle name — used for `osascript quit app`,
+/// `pkill`, the Application Support folder name, and the "<name> Safe Storage" Keychain item.
+const ANTIGRAVITY_APP_NAME: &str = "Antigravity IDE";
+
+/// Electron userData files that hold only the logged-in web session (cookies, chromium
+/// local/session storage, network identity state) — deleting these is equivalent to a
+/// browser "sign out", while leaving User/ (settings, keybindings, snippets, extensions,
+/// workspaceStorage) and globalStorage/ (extension state incl. rules/permissions) untouched.
+const ANTIGRAVITY_ACCOUNT_ONLY_PATHS: &[&str] = &[
+    "Cookies",
+    "Cookies-journal",
+    "Local Storage",
+    "Session Storage",
+    "Network Persistent State",
+    "DIPS",
+    "DIPS-wal",
+    "TransportSecurity",
+    "Trust Tokens",
+    "Trust Tokens-journal",
+];
+
+fn antigravity_support_dir() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not resolve home directory".to_string())?;
+    let home = std::path::PathBuf::from(home);
+
+    #[cfg(target_os = "macos")]
+    {
+        Ok(home.join("Library/Application Support").join(ANTIGRAVITY_APP_NAME))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var("APPDATA").map_err(|_| "APPDATA not set".to_string())?;
+        Ok(std::path::PathBuf::from(appdata).join(ANTIGRAVITY_APP_NAME))
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        Ok(home.join(".config").join(ANTIGRAVITY_APP_NAME))
+    }
+}
+
+#[tauri::command]
+pub async fn logout_antigravity() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Quit the app first so Chromium isn't holding these files open while we delete them.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("osascript")
+                .args(["-e", &format!(r#"quit app "{}""#, ANTIGRAVITY_APP_NAME)])
+                .output();
+            std::thread::sleep(Duration::from_millis(800));
+            let _ = Command::new("pkill").args(["-f", ANTIGRAVITY_APP_NAME]).output();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = Command::new("pkill").args(["-f", ANTIGRAVITY_APP_NAME]).output();
+            std::thread::sleep(Duration::from_millis(800));
+        }
+
+        let base = antigravity_support_dir()?;
+        for name in ANTIGRAVITY_ACCOUNT_ONLY_PATHS {
+            let path = base.join(name);
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            } else if path.is_file() {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+
+        // The actual OAuth session survives a plain file wipe: Electron's `safeStorage`
+        // encrypts it and stores only the ciphertext in app files (state.vscdb etc.), while
+        // the AES key itself lives in exactly one macOS Keychain item named
+        // "<AppName> Safe Storage". Deleting that single, precisely-named item — not a
+        // keychain scan/dump — makes the stored ciphertext permanently undecryptable, which
+        // is what actually forces re-login, without touching User/ or globalStorage/ (so
+        // extensions, settings, rules, and permissions all survive untouched).
+        #[cfg(target_os = "macos")]
+        {
+            let service = format!("{} Safe Storage", ANTIGRAVITY_APP_NAME);
+            let _ = Command::new("security")
+                .args(["delete-generic-password", "-s", &service])
+                .output();
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }

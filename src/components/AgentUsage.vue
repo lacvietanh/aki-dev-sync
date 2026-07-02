@@ -9,9 +9,12 @@
         <div class="agent-name-row">
           <span class="agent-name">{{ agentName }}</span>
           <span v-if="data && claudeTierDisplay" class="agent-plan-badge claude">
-            Claude {{ claudeTierDisplay }}
+            {{ claudeTierDisplay }}
           </span>
           <span v-if="data?.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">{{ data.email }}</span>
+          <button v-if="data?.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
+            <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
+          </button>
           <span v-if="ccOrgName" class="agent-org" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
         </div>
       </div>
@@ -50,7 +53,7 @@
                 class="agent-account ag-account-trigger"
                 :class="{ 'email-blurred': !showEmail }"
               >- {{ emailLocal(data.email) }}</span>
-              <div v-if="accountMenuOpen && accounts.length" class="ag-account-menu" @click.stop>
+              <div v-if="accountMenuOpen" class="ag-account-menu" @click.stop>
                 <button
                   v-for="acc in accounts"
                   :key="acc.email"
@@ -64,8 +67,15 @@
                     <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
                   </span>
                 </button>
+                <button class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" title="Sign out — keeps settings/extensions/rules">
+                  <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : 'fa-right-from-bracket'"></i>
+                  <span>{{ loggingOut ? 'Logging out…' : 'Log Out' }}</span>
+                </button>
               </div>
             </span>
+            <button v-if="data && data.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
+              <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
+            </button>
           </div>
         </div>
       </div>
@@ -118,9 +128,13 @@
       </div>
 
       <!-- Empty state: only show when no data AND no cache available -->
+      <div v-else-if="!data && !loading && sourceOff" class="usage-empty">
+        <i class="fa-solid fa-power-off mb-1"></i><br>
+        <span>Monitoring off</span>
+      </div>
       <div v-else-if="!data && !loading" class="usage-empty">
         <i class="fa-solid" :class="agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1'"></i><br>
-        <span>{{ agentId === 'antigravity' ? 'IDE not running (Open Antigravity to monitor)' : 'No data — waiting for next session' }}</span>
+        <span>{{ agentId === 'antigravity' ? 'Not connected — open & sign in to Antigravity to monitor' : 'No data — waiting for next session' }}</span>
         <button v-if="agentId === 'claudecode'" @click="$emit('force-sync')" class="btn-ui-action btn-sync-now" style="margin-top: 8px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" title="Force Sync Quota">
           <i class="fa-solid fa-arrows-rotate"></i>
           <span>Force Sync</span>
@@ -216,6 +230,7 @@
 // @docs docs/arch/usage-antigravity.md
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import Swal from 'sweetalert2';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
 import { refreshSettings } from '../store/refreshStore';
@@ -230,13 +245,14 @@ const props = defineProps({
   isCached: { type: Boolean, default: false },
   cachedAt: { type: Number, default: null },
   showEmail: { type: Boolean, default: true },
+  sourceOff: { type: Boolean, default: false },
   // AG-only multi-account view (unused for Claude Code)
   accounts: { type: Array, default: () => [] },
   viewingEmail: { default: null },
   activeEmail: { default: null }
 });
 
-const emit = defineEmits(['retry', 'force-sync', 'select-account']);
+const emit = defineEmits(['retry', 'force-sync', 'select-account', 'toggle-email']);
 
 // AG account-switch dropdown
 const accountMenuOpen = ref(false);
@@ -248,6 +264,30 @@ function pickAccount(email) {
   // Picking the live/active account returns to the follow-live view (viewingEmail = null).
   emit('select-account', email === props.activeEmail ? null : email);
   accountMenuOpen.value = false;
+}
+const loggingOut = ref(false);
+async function logoutAntigravity() {
+  if (loggingOut.value) return;
+  accountMenuOpen.value = false;
+  const { isConfirmed } = await Swal.fire({
+    title: 'Đăng xuất Antigravity?',
+    html: 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#374151',
+    confirmButtonText: 'Đăng xuất',
+    cancelButtonText: 'Hủy',
+    background: '#131317',
+    color: '#F3F4F6',
+  });
+  if (!isConfirmed) return;
+  loggingOut.value = true;
+  try {
+    await invoke('logout_antigravity');
+  } finally {
+    loggingOut.value = false;
+  }
 }
 // Design lock: the header shows only the local part (before @) to keep width stable when the
 // active/cached account changes; the full email is shown in the dropdown rows.
@@ -499,6 +539,7 @@ async function handleIconClick() {
   box-shadow: none;
 }
 
+
 .agent-header {
   display: flex;
   justify-content: space-between;
@@ -554,6 +595,22 @@ async function handleIconClick() {
   font-size: 10px;
   color: var(--text-darker);
   font-weight: 500;
+}
+
+.btn-eye-inline {
+  background: transparent;
+  border: none;
+  color: var(--text-darker);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.4;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.btn-eye-inline:hover {
+  opacity: 1;
+  color: var(--text-muted);
 }
 
 .email-blurred {
@@ -634,6 +691,22 @@ async function handleIconClick() {
   border-radius: 50%;
   background: var(--accent-cyan);
   box-shadow: 0 0 5px var(--accent-cyan);
+}
+.ag-logout-item {
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0 0 4px 4px;
+  color: #f87171;
+}
+.ag-logout-item:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+.ag-logout-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .agent-org {

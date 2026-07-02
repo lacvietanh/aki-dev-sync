@@ -37,9 +37,34 @@ Dữ liệu `stdin` của `statusLine` hook có cấu trúc:
 ~/.claude/statusline-command.sh      → Script nhận stdin JSON từ Claude Code
 ~/.claude/rate-limits-cache.json     → File cache (do chúng ta tạo bằng cách dump stdin)
 ~/.claude/.credentials.json          → OAuth credentials (subscriptionType, rateLimitTier, accessToken)
+                                        — ⚠️ có thể KHÔNG tồn tại trên bản Claude Code mới (credential
+                                        storage đã chuyển sang OS keychain); xem fallback bên dưới.
 ~/.claude/auth-cache.json            → Auth info cache (email, orgName) — do provision tạo một lần/session
 ~/.claude/projects/**/*.jsonl        → Transcript files (fallback ước lượng token nếu cần)
 ```
+
+### Local Machine Monitoring (no SSH)
+
+Claude Code có thể được theo dõi ngay trên máy đang chạy Aki Dev Sync, không cần SSH tới remote nào.
+`run_remote_script_timeout()` (Rust) kiểm tra `is_local_host(host)` (`host == "local" || "localhost"`) và
+rẽ nhánh: local thì spawn `Command::new("sh")` trực tiếp, nếu không thì `ssh host sh` như cũ. Cùng một
+script POSIX `sh` chạy được cả hai đường vì nó chỉ đụng `$HOME` — không cần sửa gì ở `scripts/*.sh`.
+`get_antigravity_usage()` cũng theo cùng pattern (`zsh -lc node` local / `ssh host node` remote).
+Ở tầng UI, nguồn "Claude Code (local)" và "Claude Code (remote)" là hai instance độc lập của
+`useAgentUsage()`, mỗi cái tự bật/tắt polling qua flag `enabled` riêng — xem `docs/feat/remote-mode.md`
+cho cách nguồn remote được gate bởi công tắc Remote Mode toàn cục.
+
+### Subscription Tier Fallback — `claude auth status` (2026-07-03)
+
+Trên các bản Claude Code mới, `~/.claude/.credentials.json` không còn tồn tại (credential storage
+chuyển sang OS keychain) → `SUB_TYPE`/`TIER` luôn `Unknown` → badge PRO/Max biến mất dù usage % vẫn đọc
+đúng (usage đọc từ `rate-limits-cache.json`, file khác, không liên quan). `claude auth status` (đã được
+gọi sẵn trong script để lấy email/org) trả về `subscriptionType` trực tiếp trong JSON, không phụ thuộc
+file credentials. `get-claudecode-usage.sh` giờ chạy khối "Auth info" **trước** khối "subscription
+metadata": nếu đọc từ `.credentials.json` ra `Unknown`, thử parse `subscriptionType` từ output
+`claude auth status` (đã cache ở `auth-cache.json`) trước khi kết luận `Unknown`. `rateLimitTier` không
+có nguồn thay thế nên vẫn `Unknown` nếu file credentials thiếu — chỉ ảnh hưởng phần "5x/20x" chi tiết,
+không ảnh hưởng badge Pro/Max chính.
 
 ### Self-Provisioning Logic
 
@@ -150,6 +175,8 @@ Rust (`agent_usage.rs`) split tuần tự theo từng delimiter, parse `|||AUTHI
 > _Cập nhật 2026-07-02 (fix false-100%): Bản vá statusLine nâng lên **v2** — turn thiếu `rate_limits` giờ **merge nguyên vẹn** `rate_limits` cũ thay vì ép `used_percentage=100`. Nguyên nhân gốc của "thỉnh thoảng CC full đỏ 100% rồi lượt sau về đúng": turn thiếu key này xảy ra cả khi chưa cạn quota, v1 fabricate 100% giả vào cache. `provision-claudecode.sh` thêm marker `# aki-rlcache v2` + migration 3 nhánh (xóa block v1 rồi tiêm v2) để host cũ được nâng cấp; `useAgentUsage.js` re-provision fire-and-forget 1 lần/host/session ở nhánh data-present. Cần rebuild trên Mac (script `include_str!`)._
 >
 > **Một tài khoản mỗi remote (by design):** Claude Code **KHÔNG** có cơ chế cache đa tài khoản như Antigravity (xem `usage-antigravity.md`). Mỗi remote host chắc chắn đăng nhập đúng một tài khoản `claude` và chỉ nên như vậy; usage đọc từ `~/.claude/rate-limits-cache.json` của chính host đó. Đổi host = đổi remote, không phải đổi account cùng máy._
+>
+> _Cập nhật 2026-07-03 (v1.9.0): Thêm local machine monitoring (`is_local_host`, không cần SSH). Fix badge PRO/Max biến mất trên bản Claude Code mới không còn `.credentials.json` — fallback đọc `subscriptionType` từ `claude auth status`. Badge bỏ chữ "Claude" lặp lại, chỉ còn tier. Layout đổi từ LOCAL/REMOTE cố định sang 2 panel tự chọn (`AgentUsageSlot.vue`) có khóa chống hiển thị trùng nguồn; nguồn remote không còn công tắc riêng, mirror công tắc Remote Mode toàn cục — xem `docs/feat/remote-mode.md`._
 
 ---
 
@@ -270,8 +297,9 @@ Mở DevTools F12 trong app Tauri → Console → filter `USAGE:` để chỉ th
   - [logger.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/logger.rs) — Logger module: `DEBUG_MODE` global flag (check `--debug` / `AKI_DEBUG`), ghi log vào `{appdata}/usage.log` (cùng thư mục `projects.json`), in stderr khi debug mode. IPC commands: `is_debug_mode()`, `get_log_path()`.
 - **Frontend:**
   - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue composable theo dõi & đồng bộ agent usage. Guards: `isSyncing` (forceSync), `isChecking` (checkUsage).
-  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — Layout LOCAL/REMOTE split, eye-toggle email per column, pass `selectedSshHost` computed từ `useSsh.js`.
-  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Card hiển thị quota. CC header: tier badge, email, orgName (suppresses Anthropic default). AG header: email full. Dùng `RefreshRing` cho countdown reload.
+  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — Sở hữu 3 nguồn dùng chung (`ag`, `ccLocal`, `ccRemote`) và render 2 `AgentUsageSlot`. `ccRemote.enabled` mirror trực tiếp `remoteModeStore` (không có toggle riêng) — xem `docs/feat/remote-mode.md`.
+  - [AgentUsageSlot.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSlot.vue) — Mỗi panel tự chọn LOCAL/REMOTE và (trong LOCAL) AG/CC; eye-toggle email per slot; đồng bộ lựa chọn với `usageViewStore` để hai panel không hiển thị trùng nguồn.
+  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Card hiển thị quota. CC header: tier badge (chỉ hiện tier, không lặp lại "Claude"), email, orgName (suppresses Anthropic default). AG header: email full + dropdown tài khoản (kèm mục Log Out). Dùng `RefreshRing` cho countdown reload.
   - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) — SVG radial progress circle với tooltip reset time (dùng cho Antigravity buckets).
   - [RefreshRing.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/RefreshRing.vue) — SVG `stroke-dashoffset` countdown ring tái dùng được. Hai mode: `overlay` (position absolute trên button, dùng trong AgentUsage) và `inline` (16px trong flex row, dùng trong ProjectTable header cho git/diff timer).
   - ~~UsageProgressBar.vue~~ — Đã xóa ở v1.3.0, thay bởi UsageCircle + CC horizontal bars.

@@ -68,6 +68,42 @@ sequenceDiagram
   * `models`: Autocomplete/model metadata (for backward compatibility).
   * `quotaSummary`: Structured list of groups and buckets, including remaining fractions and reset times.
 
+## Signed-Out Detection (2026-07-03)
+
+`GetUserStatus` returns HTTP `401` once the user has signed out of Antigravity while the language
+server process is still running (a very different case from "process not running", which the UI
+must not conflate). `get-antigravity-usage.js` now uses `Promise.allSettled` (not `Promise.all` +
+`.catch(() => null)`, which discarded the actual status code) so the rejection reason for
+`getUserStatus` can be inspected: a `401`/`unauthorized` match emits `{"error": "Not authenticated — signed out of Antigravity."}` on stderr instead of the generic connection-failure message.
+`agent_usage.rs::get_antigravity_usage` matches `"Not authenticated"` the same way it already
+matched `"is not running"` / `"command not found"` — all three return `Ok(None)`, a quiet empty
+state, instead of `Err` (which would otherwise surface a repeating IPC error banner every poll
+after an entirely normal, expected sign-out). The frontend's empty-state copy was reworded from
+"IDE not running" to "Not connected — open & sign in to Antigravity to monitor" so it stays
+accurate for both causes.
+
+## Log Out (2026-07-03)
+
+Antigravity's account dropdown (in `AgentUsage.vue`, opened by clicking the email) has a **Log Out**
+row that calls the `logout_antigravity` Tauri command. Deleting the Chromium-level session files
+alone (Cookies, Local/Session Storage, Network Persistent State, etc. — under
+`~/Library/Application Support/Antigravity IDE`) does **not** actually sign the user out: the OAuth
+token is encrypted at rest by Electron's `safeStorage` API, and the AES key for that encryption
+lives in exactly **one** macOS Keychain item, named `"<app name> Safe Storage"` (verified via
+`security find-generic-password -s "Antigravity IDE Safe Storage"` — a single, precisely-named
+lookup, never a keychain scan/dump). `logout_antigravity`:
+
+1. Quits the app (`osascript quit app` then `pkill -f` as a fallback) so nothing holds the files open.
+2. Deletes the account-only Chromium files (`ANTIGRAVITY_ACCOUNT_ONLY_PATHS` in `agent_usage.rs`).
+3. Deletes the single `"Antigravity IDE Safe Storage"` Keychain item via
+   `security delete-generic-password -s "..."` — this is what actually forces re-login, since the
+   ciphertext stored in `state.vscdb`/`storage.json` becomes permanently undecryptable without it.
+
+`User/` (settings, keybindings, snippets, extensions, workspaceStorage) and the rest of
+`globalStorage/` are never touched, so extensions, rules, and permissions survive a logout intact.
+This mirrors the standard "reset to fresh install" trick documented for Antigravity/Codeium-family
+IDEs (Electron `safeStorage` + Keychain), not a bespoke mechanism.
+
 ## Execution Environment
 
 The script is compiled into the Tauri binary via `include_str!` inside [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) and executed in a shell using `zsh -lc node` for local targets or `ssh <host> node` for remote targets. 
@@ -134,7 +170,8 @@ in `localStorage` under `aki-antigravity-usage-cache-v2`:
   - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) — Tauri Rust backend executor command handler.
 - **Frontend:**
   - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue frontend composable managing state. Guards: `isSyncing` (forceSync), `isChecking` (checkUsage).
-  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — LOCAL/REMOTE split layout; Antigravity bound to `localHostRef = ref('local')`.
-  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Usage card component. Antigravity header shows full email with eye-toggle visibility.
+  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — Owns the `ag` source (always `host = 'local'`) and renders two `AgentUsageSlot` display panels.
+  - [AgentUsageSlot.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSlot.vue) — Each panel independently picks LOCAL/REMOTE and, within LOCAL, AG/CC; synced with `usageViewStore` so both panels can't show AG at once.
+  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Usage card component. Antigravity header shows full email with eye-toggle visibility and an account dropdown with per-account switching plus the Log Out action.
   - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) — SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
   - [RefreshRing.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/RefreshRing.vue) — Countdown ring on the reload button (overlay mode).

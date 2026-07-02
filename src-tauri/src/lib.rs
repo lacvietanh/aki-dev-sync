@@ -71,6 +71,7 @@ pub fn run() {
             agent_usage::provision_agent_usage,
             agent_usage::force_sync_agent_usage,
             agent_usage::get_agent_usage,
+            agent_usage::logout_antigravity,
             system::macos_open,
             system::open_remote_subprocess,
             system::check_ide_availability,

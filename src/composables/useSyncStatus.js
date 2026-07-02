@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { projects, projectRuntime } from '../store/projectStore'
+import { remoteModeEnabled } from '../store/remoteModeStore'
 import { useLogs } from './useLogs'
 
 export async function checkProjectSyncStatus(project) {
+  if (!remoteModeEnabled.value) return
   if (projectRuntime.value[project.id]?.syncing) return
   try {
     const result = await invoke('check_sync_status', { project })

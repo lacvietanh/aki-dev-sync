@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import Swal from 'sweetalert2'
 import { projectRuntime, Toast } from '../store/projectStore'
+import { remoteModeEnabled } from '../store/remoteModeStore'
 import { useLogs } from './useLogs'
 import { saveProjectsList } from './useProjectConfig'
 import { fetchGitStatus } from './useGit'
@@ -9,6 +10,10 @@ import { fetchGitStatus } from './useGit'
 const { appendGlobalLog, appendLog, projectLogs, activeLogProjectId, isLogExpanded } = useLogs()
 
 export async function startSync(project, direction, specificPaths = []) {
+  if (!remoteModeEnabled.value) {
+    Toast.fire({ icon: 'warning', title: 'Remote Mode is off' })
+    return
+  }
   if (projectRuntime.value[project.id]?.syncing) {
     Toast.fire({ icon: 'warning', title: `${project.name} is syncing, please wait` })
     return

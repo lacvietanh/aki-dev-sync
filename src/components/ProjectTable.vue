@@ -156,7 +156,7 @@
                       </div>
 
                       <!-- REMOTE -->
-                      <div v-if="p.remote_host && p.remote_path" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
+                      <div v-if="p.remote_host && p.remote_path && remoteModeEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
                         <div class="popup-section-label">☁️ REMOTE (SSH)</div>
                         <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
                           <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
@@ -175,7 +175,7 @@
                   </div>
                 </div>
 
-              <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :disabled="projectRuntime[p.id]?.syncing" title="Select specific files to push (native file picker)">
+              <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" :title="remoteModeEnabled ? 'Select specific files to push (native file picker)' : 'Remote Mode is off'">
                 <i class="fa-solid fa-hand-pointer btn-select-icon-only" style="display: none;"></i>
                 <span class="btn-text">SELECT</span>
               </button>
@@ -197,8 +197,8 @@
                         'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
                       }"
                       @click="startSync(p, 'push')"
-                      :disabled="projectRuntime[p.id]?.syncing"
-                      :title="projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'"
+                      :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled"
+                      :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'"
                     >
                       <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
                     </button>
@@ -224,8 +224,8 @@
                         'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
                       }"
                       @click="startSync(p, 'pull')"
-                      :disabled="projectRuntime[p.id]?.syncing"
-                      :title="projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'"
+                      :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled"
+                      :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'"
                     >
                       <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
                     </button>
@@ -257,6 +257,7 @@ import { useLogs } from '../composables/useLogs';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
 import { Toast, ideAvailability, iconTimestamp } from '../store/projectStore';
+import { remoteModeEnabled } from '../store/remoteModeStore';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 

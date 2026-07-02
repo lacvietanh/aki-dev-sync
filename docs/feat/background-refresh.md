@@ -28,6 +28,8 @@ Automatic background polling that keeps three independent data types fresh witho
 
 **Implementation:** `useSyncStatus.js` → `checkProjectSyncStatus(project)` → Tauri command `check_sync_status` → `count_rsync_changes()` in `sync.rs`.
 
+**Gated by Remote Mode:** `checkProjectSyncStatus()` early-returns if the global `remoteModeEnabled` switch (see [remote-mode.md](remote-mode.md)) is off — covers this interval poll and the manual Refresh path in one place, since both call the same function.
+
 **Result:** `hasPendingPush` and `hasPendingPull` written into `projectRuntime`. On startup both are initialized to `null` (not `undefined`) — buttons render in a faint "checking" state (`.btn-sync-checking`) until the first check resolves. After that: `true` → fully lit, `false` → dim (`.btn-sync-clean`).
 
 **Planned interval:** 60s (unchanged).
@@ -61,15 +63,17 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 ### 3. Agent Usage (`usage_interval_s`)
 
-**What it fetches:** Claude Code and Antigravity quota/usage data from the remote host. Reads a cached JSON file via SSH.
+**What it fetches:** Claude Code and Antigravity quota/usage data — locally on this machine and/or from a selected remote host.
 
-**Cost:** Low-medium. One SSH `cat` per agent per interval. Two agents = two SSH calls per tick.
+**Sources (v1.9.0):** three independent, toggleable `useAgentUsage()` instances live in `AgentUsageSection.vue` — `ag` (Antigravity, always `host = 'local'`), `ccLocal` (Claude Code, always `host = 'local'`), `ccRemote` (Claude Code, `host` = selected SSH host). Each polls only while its own `enabled` flag is true; polling is entirely decoupled from which of the two `AgentUsageSlot` display panels (if any) currently shows it. `ag`/`ccLocal` have their own per-source power switch (persisted in `localStorage`); `ccRemote.enabled` is not independent — it mirrors the global `remoteModeEnabled` switch (see [remote-mode.md](remote-mode.md)), so remote usage polling stops the instant Remote Mode is turned off.
 
-**Trigger:** Starts when a remote host is selected (watch with `immediate: true`). Polls every 30s. Cleaned up on component unmount.
+**Cost:** Local reads (`ag`, `ccLocal`) run a local shell/`zsh -lc node`, no network. Remote (`ccRemote`) is one SSH `cat`/probe per interval, only while Remote Mode is on and a host is selected.
 
-**Implementation:** `useAgentUsage.js` (composable, component-lifecycle bound) → Tauri command `get_agent_usage`. Two instances in `AgentUsageSection.vue`: one for `claudecode`, one for `antigravity`.
+**Trigger:** Local sources start immediately (default ON). `ccRemote` starts once a host is selected AND Remote Mode is on. Polls every 30s. Cleaned up on component unmount.
 
-**Planned interval:** 30s (current) — acceptable since it's a single lightweight SSH read.
+**Implementation:** `useAgentUsage.js` (composable) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_remote_script_timeout` via `is_local_host(host)`.
+
+**Planned interval:** 30s (current) — acceptable since it's a single lightweight read.
 
 ---
 

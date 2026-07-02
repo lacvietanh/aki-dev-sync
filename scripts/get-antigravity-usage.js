@@ -527,20 +527,27 @@ async function main() {
 
     debug(`Connected to Connect API at ${probeResult.baseUrl}`);
     
-    // Call userStatus and retrieveUserQuotaSummary in parallel
-    const [rawStatus, rawSummary] = await Promise.all([
-      getUserStatus(probeResult.baseUrl, processInfo.csrfToken).catch(err => {
-        debug('getUserStatus failed:', err.message);
-        return null;
-      }),
-      retrieveUserQuotaSummary(probeResult.baseUrl, processInfo.csrfToken).catch(err => {
-        debug('retrieveUserQuotaSummary failed:', err.message);
-        return null;
-      })
+    // Call userStatus and retrieveUserQuotaSummary in parallel. allSettled (not all+catch->null)
+    // so a 401 from getUserStatus can still be distinguished from other failures below — that's
+    // the "signed out" case, not a generic connection error, and the two need different handling
+    // upstream (Rust treats "Not authenticated" like "IDE not running": a soft empty state, not
+    // a repeating error the UI has to surface every poll).
+    const [statusResult, summaryResult] = await Promise.allSettled([
+      getUserStatus(probeResult.baseUrl, processInfo.csrfToken),
+      retrieveUserQuotaSummary(probeResult.baseUrl, processInfo.csrfToken)
     ]);
 
+    const rawStatus = statusResult.status === 'fulfilled' ? statusResult.value : null;
+    const rawSummary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
+
     if (!rawStatus) {
-      console.error(JSON.stringify({ error: 'Could not fetch user status from Antigravity Connect API.' }));
+      const reason = statusResult.status === 'rejected' ? String(statusResult.reason?.message || '') : '';
+      debug('getUserStatus failed:', reason);
+      if (/\b401\b/.test(reason) || /unauthorized/i.test(reason)) {
+        console.error(JSON.stringify({ error: 'Not authenticated — signed out of Antigravity.' }));
+      } else {
+        console.error(JSON.stringify({ error: 'Could not fetch user status from Antigravity Connect API.' }));
+      }
       process.exit(1);
     }
 

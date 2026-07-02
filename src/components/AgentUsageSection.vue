@@ -1,104 +1,70 @@
 <template>
   <div class="agent-usage-section">
     <div class="usage-split-layout">
-      <!-- Local Engine -->
-      <div class="usage-column">
-        <div class="column-header">
-          <h3 class="column-title"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> LOCAL</h3>
-          <button class="btn-eye-toggle" @click="toggleLocalEmail" :aria-label="showLocalEmail ? 'Hide email' : 'Show email'" :title="showLocalEmail ? 'Hide email' : 'Show email'">
-            <i class="fa-regular" :class="showLocalEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
-          </button>
-        </div>
-        <AgentUsage
-          agentId="antigravity"
-          agentName="Antigravity"
-          :data="antigravityData"
-          :loading="antigravityLoading"
-          :error="antigravityError"
-          :stale="antigravityStale"
-          :isCached="antigravityIsCached"
-          :cachedAt="antigravityCachedAt"
-          :showEmail="showLocalEmail"
-          :accounts="antigravityAccounts"
-          :viewing-email="antigravityViewingEmail"
-          :active-email="antigravityActiveEmail"
-          @retry="antigravityRefresh"
-          @force-sync="antigravityForceSync"
-          @select-account="antigravitySelectAccount"
-        />
-      </div>
+      <AgentUsageSlot
+        slot-id="A"
+        default-top-tab="local"
+        default-local-sub="ag"
+        :ag="ag"
+        :cc-local="ccLocal"
+        :cc-remote="ccRemote"
+      />
 
       <div class="column-divider"></div>
 
-      <!-- Remote -->
-      <div class="usage-column">
-        <div class="column-header">
-          <h3 class="column-title"><i class="fa-solid fa-cloud text-amber mr-1"></i> REMOTE</h3>
-          <button class="btn-eye-toggle" @click="toggleRemoteEmail" :aria-label="showRemoteEmail ? 'Hide email' : 'Show email'" :title="showRemoteEmail ? 'Hide email' : 'Show email'">
-            <i class="fa-regular" :class="showRemoteEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
-          </button>
-        </div>
-        <AgentUsage
-          agentId="claudecode"
-          agentName="Claude Code"
-          :data="claudeData"
-          :loading="claudeLoading"
-          :error="claudeError"
-          :stale="claudeStale"
-          :showEmail="showRemoteEmail"
-          @retry="claudeForceSync"
-          @force-sync="claudeForceSync"
-        />
-      </div>
+      <AgentUsageSlot
+        slot-id="B"
+        default-top-tab="remote"
+        default-local-sub="ag"
+        :ag="ag"
+        :cc-local="ccLocal"
+        :cc-remote="ccRemote"
+      />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import AgentUsage from './AgentUsage.vue';
+import { ref, computed, reactive } from 'vue';
+import AgentUsageSlot from './AgentUsageSlot.vue';
 import { useSsh } from '../composables/useSsh';
 import { useAgentUsage } from '../composables/useAgentUsage';
+import { remoteModeEnabled } from '../store/remoteModeStore';
 
 const { selectedSshHost } = useSsh();
 
-const showLocalEmail = ref(localStorage.getItem('aki-show-local-email') !== 'false');
-const showRemoteEmail = ref(localStorage.getItem('aki-show-remote-email') !== 'false');
-
-function toggleLocalEmail() {
-  showLocalEmail.value = !showLocalEmail.value;
-  localStorage.setItem('aki-show-local-email', String(showLocalEmail.value));
+// Three independent, toggleable usage sources shared by both display slots. Polling is
+// driven purely by each source's own `enabled` flag (persisted), not by which slot (if
+// any) currently has it selected for display — so a slot can show a source that's off
+// (rendered as "Monitoring off" or last-known cached data by AgentUsage) without that
+// implicitly turning it on, and turning a source on/off doesn't care who's looking at it.
+function useToggleableSource(agentKey, resolveHost, storageKey, defaultEnabled) {
+  const enabled = ref(
+    localStorage.getItem(storageKey) !== null
+      ? localStorage.getItem(storageKey) === 'true'
+      : defaultEnabled
+  );
+  function toggle() {
+    enabled.value = !enabled.value;
+    localStorage.setItem(storageKey, String(enabled.value));
+  }
+  const hostRef = computed(() => (enabled.value ? resolveHost() : null));
+  const hook = useAgentUsage(agentKey, hostRef);
+  return reactive({ enabled, toggle, ...hook });
 }
-function toggleRemoteEmail() {
-  showRemoteEmail.value = !showRemoteEmail.value;
-  localStorage.setItem('aki-show-remote-email', String(showRemoteEmail.value));
-}
-// Setup Claude Code (remote) monitoring
-const {
-  data: claudeData,
-  loading: claudeLoading,
-  error: claudeError,
-  stale: claudeStale,
-  forceSync: claudeForceSync
-} = useAgentUsage('claudecode', selectedSshHost);
 
-// Setup Antigravity (local) monitoring - host is 'local'
-const localHostRef = ref('local');
-const {
-  data: antigravityData,
-  loading: antigravityLoading,
-  error: antigravityError,
-  stale: antigravityStale,
-  isCached: antigravityIsCached,
-  cachedAt: antigravityCachedAt,
-  refresh: antigravityRefresh,
-  forceSync: antigravityForceSync,
-  accounts: antigravityAccounts,
-  viewingEmail: antigravityViewingEmail,
-  activeEmail: antigravityActiveEmail,
-  selectAccount: antigravitySelectAccount
-} = useAgentUsage('antigravity', localHostRef);
+// Local sources cost nothing (no SSH round trip) — on by default, each with its own
+// independent power switch inside the LOCAL tab.
+const ag = useToggleableSource('antigravity', () => 'local', 'aki-src-ag-enabled', true);
+const ccLocal = useToggleableSource('claudecode', () => 'local', 'aki-src-cclocal-enabled', true);
 
+// Remote has no switch of its own — it is entirely governed by the single global Remote
+// Mode switch in AppHeader (`remoteModeStore`), same as project pull/push/select/open and
+// the background remote-diff checks. `enabled` here just mirrors that global flag so
+// AgentUsage/AgentUsageSlot can read it the same way they read the other two sources'
+// `enabled` (cached-badge / "Monitoring off" behavior, disabling the host picker, etc.).
+const ccRemoteHostRef = computed(() => (remoteModeEnabled.value ? selectedSshHost.value : null));
+const ccRemote = reactive({ enabled: remoteModeEnabled, ...useAgentUsage('claudecode', ccRemoteHostRef) });
 </script>
 
 <style scoped>
@@ -117,49 +83,9 @@ const {
   align-items: stretch;
 }
 
-.usage-column {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.column-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 4px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
-}
-
-.btn-eye-toggle {
-  background: transparent;
-  border: none;
-  color: var(--text-darker);
-  cursor: pointer;
-  padding: 2px 4px;
-  font-size: 10px;
-  line-height: 1;
-  opacity: 0.5;
-  transition: opacity 0.15s ease, color 0.15s ease;
-}
-.btn-eye-toggle:hover {
-  opacity: 1;
-  color: var(--text-muted);
-}
-
-.column-title {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--text-muted);
-  letter-spacing: 0.5px;
-}
-
 .column-divider {
   width: 1px;
   background: rgba(255, 255, 255, 0.05);
   margin: 0 4px;
 }
-
 </style>

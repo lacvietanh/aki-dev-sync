@@ -169,6 +169,8 @@ export function useAgentUsage(agentName, hostRef) {
 
   let pollTimer = null;
   let pollCount = 0;
+  let lastFetchedAt = null;     // Unix seconds of the last successful live fetch
+  let lastNonNullHost = null;   // for distinguishing "toggled off" from "switched to a different host"
   let provisioned = false;
   let initialSyncDone = false;
   let staleResetSyncDone = false;
@@ -195,8 +197,9 @@ export function useAgentUsage(agentName, hostRef) {
 
   const checkUsage = async () => {
     if (!hostRef.value) {
-      data.value = null;
-      error.value = null;
+      // Source disabled — leave any last-known data in place (the host watcher below
+      // already marked it isCached when the toggle flipped off) instead of wiping it.
+      loading.value = false;
       return;
     }
     if (isChecking) {
@@ -231,6 +234,7 @@ export function useAgentUsage(agentName, hostRef) {
           staleResetSyncDone = false;
 
           const fetchedAt = parseInt(res.fetched_at, 10);
+          lastFetchedAt = fetchedAt;
           const nowSec = Date.now() / 1000;
 
           // ── Stale detection ──────────────────────────────────────────────
@@ -488,7 +492,12 @@ export function useAgentUsage(agentName, hostRef) {
   }
 
   watch(() => hostRef.value, (newHost) => {
-    ulog('host changed', { newHost, resetting_all_flags: true }, 'info');
+    // A source can be toggled off/on (host -> null -> same host again) without ever
+    // actually changing which machine it points at. Only wipe data on a REAL host
+    // change (e.g. switching the selected SSH remote) — toggling off should keep the
+    // last-known reading on screen, marked as cached, not blank the card.
+    const realHostChange = !!newHost && !!lastNonNullHost && newHost !== lastNonNullHost;
+    ulog('host changed', { newHost, lastNonNullHost, realHostChange }, 'info');
     provisioned = false;
     initialSyncDone = false;
     staleResetSyncDone = false;
@@ -496,11 +505,19 @@ export function useAgentUsage(agentName, hostRef) {
     isChecking = false;
     forceSyncFailCount = 0;
     pollCount = 0;
-    data.value = null;
     error.value = null;
-    isCached.value = false;
-    cachedAt.value = null;
+
+    if (realHostChange) {
+      data.value = null;
+      isCached.value = false;
+      cachedAt.value = null;
+    } else if (!newHost && data.value !== null) {
+      isCached.value = true;
+      cachedAt.value = lastFetchedAt;
+    }
+
     if (newHost) {
+      lastNonNullHost = newHost;
       checkUsage();
     }
     restartPollTimer();

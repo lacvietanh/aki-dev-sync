@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.9.0] - 2026-07-03
+
+#### Added
+- **Per-source ON/OFF monitoring switches**: usage monitoring is now built from three independent sources — Antigravity (local), Claude Code (local), Claude Code (remote via SSH). Antigravity and Claude Code (local) each have their own power icon that starts/stops polling without affecting the others; both default ON (no SSH cost). Claude Code (remote) has no switch of its own — see the Remote Mode entry below. Turning a source off no longer blanks its card: the last-known reading stays visible marked *cached* instead of disappearing, and only shows "Monitoring off" when there was never any data to begin with.
+- **Claude Code local monitoring**: Claude Code usage can now be read directly off this machine (no SSH) — the backend's remote-script runner (`agent_usage.rs`) gained a `host == "local"` path that runs the existing provision/get/force-sync scripts through a local shell instead of `ssh host sh`; the scripts themselves needed no changes since they were already pure POSIX `sh` against `$HOME`.
+- **Two independent display slots (LOCAL | REMOTE tabs)**: each half of the usage section now freely picks LOCAL or REMOTE and, within LOCAL, which agent (AG/CC) to show — instead of a fixed "local on the left, remote on the right" layout. REMOTE mode surfaces the SSH host picker directly next to the REMOTE tab, alongside the Remote Mode power icon (see below).
+- **Duplicate-view lock between the two display slots**: `src/store/usageViewStore.js` tracks what each panel is currently showing; a panel disables (rather than auto-swaps) any tab/source already shown by the other panel, so the two panels can never both display the same source. Also resolves the case where both panels' restored (`localStorage`) selections would otherwise collide on load.
+- **Remote Mode — single global master switch** (`src/store/remoteModeStore.js`): one flag now gates every remote-touching code path app-wide — PUSH/PULL/SELECT buttons, the Open popup's remote IDE options, background *and* manual remote-diff checks, and Claude Code remote usage monitoring. Lives as a power icon inside the usage widget's REMOTE tab, next to the SSH host picker (contextual — visible only when that tab is active), not a separate always-on header control. Defaults ON. See `docs/feat/remote-mode.md`.
+- **Antigravity Log Out**: a destructive-styled row in the AG account dropdown that quits Antigravity and clears its session. Deleting Chromium-level session files (Cookies, Local/Session Storage, network state) alone does not sign the user out — the OAuth token is encrypted by Electron's `safeStorage`, whose AES key lives in exactly one macOS Keychain item (`"Antigravity IDE Safe Storage"`). `logout_antigravity` deletes that single, precisely-named item (never a keychain scan/dump) plus the account-only Chromium files; `User/` and the rest of `globalStorage/` are untouched, so settings, extensions, and rules survive intact.
+
+#### Fixed
+- **Claude Code PRO/Max badge missing**: `get-claudecode-usage.sh` only read `subscriptionType`/`rateLimitTier` from `~/.claude/.credentials.json`, which no longer exists on newer Claude Code versions (credential storage moved to the OS keychain) — usage % still worked (different file) but the tier badge silently disappeared. The script now falls back to `claude auth status` (already called for email/org) when the credentials file is missing or yields `Unknown`.
+- **Antigravity sign-out spammed a repeating IPC error**: after a manual Antigravity logout, every poll logged `"Could not fetch user status from Antigravity Connect API"` — a scary error for an entirely expected state. `get-antigravity-usage.js` now distinguishes a `401` (signed out) from other connection failures via `Promise.allSettled`, and `agent_usage.rs` treats "Not authenticated" the same as "IDE not running": a quiet empty state, not an error. Empty-state copy reworded to "Not connected — open & sign in to Antigravity to monitor" so it's accurate either way.
+
+#### Changed
+- **Claude plan badge text simplified**: shows just the tier (`Pro`, `Max 5x`) instead of `Claude Pro` / `Claude Max 5x` — the agent name column already reads "Claude Code", so the prefix was redundant.
+
+---
+
 ### [1.8.0] - 2026-07-02
 
 #### Added
