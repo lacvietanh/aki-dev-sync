@@ -59,9 +59,10 @@ Vì dữ liệu thật chỉ tồn tại thoáng qua trong `stdin` khi `statusLi
 
 Trong quá trình sử dụng thực tế, chúng ta đã phát hiện 2 điểm mù (Blind Spots) của Claude CLI và API Anthropic:
 
-### Lỗi A: Hội chứng "Mất tích" Rate Limits (Khi chạm nóc 100%)
-Khi người dùng dùng cạn kiệt Quota, API của Anthropic sẽ trả về lỗi HTTP `429 Too Many Requests`. Thay vì truyền nguyên vẹn gói JSON cũ với thông báo 100%, Claude Code CLI lại tự ý **CẮT BỎ HOÀN TOÀN** cục `rate_limits` ra khỏi luồng JSON truyền vào `statusLine`.
+### Lỗi A: Hội chứng "Mất tích" Rate Limits (turn thiếu `rate_limits`)
+Claude Code CLI thỉnh thoảng **CẮT BỎ** cục `rate_limits` khỏi luồng JSON truyền vào `statusLine`. Điều này xảy ra khi chạm nóc Quota (HTTP `429`) — nhưng **cũng xảy ra ở nhiều turn bình thường**, không chỉ lúc cạn quota.
 - **Hệ quả:** File cache bị mất key `rate_limits`, UI của App không đọc được % và thời gian reset, dẫn đến việc thanh Progress Bar biến mất hoàn toàn.
+- **⚠️ Bẫy của cách vá cũ (v1):** Bản vá đầu tiên ép `used_percentage = 100` cho mọi window mỗi khi turn thiếu `rate_limits`. Vì turn thiếu key này xảy ra cả khi **chưa** cạn quota, cache bị ghi 100% giả → UI **nhấp nháy đỏ 100%** rồi tự sửa ở turn kế. Bản vá **v2** khắc phục bằng cách **giữ nguyên `rate_limits` cũ** (merge verbatim) thay vì fabricate — xem §3.
 
 ### Lỗi B: Sự cố đồng bộ Quota khi chạy ngầm qua SSH
 App chạy ngầm `claude --model haiku -p /usage` để cố lấy thông tin quota. Trong thực tế triển khai, lệnh này đã gặp phải 2 sự cố kỹ thuật:
@@ -83,8 +84,11 @@ App chạy ngầm `claude --model haiku -p /usage` để cố lấy thông tin q
 ### Luồng Bị động (Passive Flow - Quá trình Provision)
 Bắt trọn mọi hoạt động chat của User và đề phòng Lỗi A.
 - Khi người dùng kết nối, lệnh [provision_agent_usage](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) sẽ tiêm (inject) một đoạn mã jq + bash thông minh vào script `statusline-command.sh` trên máy chủ từ xa thông qua [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh).
-- **Thuật toán thông minh:** Nếu luồng JSON của Claude đẩy ra *KHÔNG CÓ* `rate_limits` (do lỗi 429), script sẽ tự động chui vào file `rate-limits-cache.json` cũ, **COPY** lại mốc thời gian Reset, ép giá trị `% used = 100`, rồi hòa trộn (Merge) vào JSON mới để ghi ra file.
+- **Thuật toán (v2):** Nếu luồng JSON của Claude đẩy ra *KHÔNG CÓ* `rate_limits`, script chui vào file `rate-limits-cache.json` cũ và **merge nguyên vẹn** cục `rate_limits` cũ (cả `used_percentage` lẫn `resets_at`) vào JSON mới rồi ghi ra file — **không fabricate** giá trị. Khi cạn quota thật, % cuối cùng thường ≥90 nên UI vẫn đỏ đúng; `resets_at` được giữ nên STALE_RESET auto-recovery vẫn chạy. Không còn cảnh nhấp nháy 100% giả.
 - Mọi dữ liệu xịn xò (session, cwd, tokens, v.v.) được giữ nguyên. UI không bao giờ bị sập thanh Progress.
+- **Version marker + migration:** Block tiêm vào mở đầu bằng comment `# aki-rlcache v2`. `provision-claudecode.sh` kiểm tra 3 nhánh idempotent: (1) đã có `aki-rlcache v2` → bỏ qua; (2) có block v1 (không marker) → `sed` xóa dải từ dòng `rl_input=` tới dòng `printf ... rate-limits-cache.json` rồi tiêm v2; (3) chưa từng vá → tiêm v2. Nhờ vậy host **đã vá v1 vẫn được nâng lên v2**.
+- **Re-provision cho host cũ:** `useAgentUsage.js` gọi `provision()` fire-and-forget một lần/host/session ngay ở nhánh **data-present** của `checkUsage()` (host có cache luôn rơi vào nhánh này, không bao giờ vào null-path vốn là nơi duy nhất gọi provision trước đây). `provision()` idempotent và set cờ `provisioned` ngay đầu nên chỉ chạy đúng một lần, không thêm latency.
+- **⚠️ Cần rebuild:** script được nhúng bằng `include_str!` (compile-time) → phải build lại app trên Mac để host nhận bản v2.
 
 ### Luồng Chủ động (Active Flow - Force Sync)
 
@@ -142,6 +146,10 @@ Rust (`agent_usage.rs`) split tuần tự theo từng delimiter, parse `|||AUTHI
 > _Cập nhật 2026-06-25 (fix dash/pipefail): `force-sync-claudecode.sh` dòng `set -o pipefail 2>/dev/null || true` giết dash ngay exit 2 (special built-in usage error thoát trước `|| true`, `2>/dev/null` nuốt lỗi) → `force-sync` chết im lặng trên mọi remote dùng dash. Đây là root cause của "load mãi / no data sau reset" tồn tại từ refactor `98fa2b7` (đổi `ssh host <cmd>` login-shell → `ssh host sh` dash). Sửa bằng `( set -o pipefail ) 2>/dev/null && set -o pipefail`. Post-mortem đầy đủ: `docs/research/claude-usage-dash-pipefail-regression.md`._
 >
 > _Cập nhật 2026-06-25 (v1.3.3): Tích hợp logging toàn pipeline. `logger.rs` mới: ghi `{appdata}/usage.log` (appdata = `app.path().app_data_dir()`, cùng dir với `projects.json`), stderr khi `--debug`/`AKI_DEBUG=1`, IPC `is_debug_mode()`+`get_log_path()`. `agent_usage.rs` emit `GET_USAGE`/`FORCE_SYNC`/`PROVISION` tags tại mọi decision point; shell stderr được relay line-by-line vào log file; FORCE_SYNC parse từng field của diagnostic JSON riêng lẻ. Shell scripts log env (zsh/bash path, login claude path), timing từng bước (`dur_s`), probe details (start/end/exit), cleanup stats. Timestamp format `YYYY-MM-DD HH:MM:SS.mmm` (UTC cho Rust, local cho JS). `useAgentUsage.js` log `loading=true/false` transition, `invoking`/`returned` cho mỗi IPC call, stale computation với đầy đủ inputs (`five_hour.state`, `until_reset_s`, `reset_overdue_s`)._
+>
+> _Cập nhật 2026-07-02 (fix false-100%): Bản vá statusLine nâng lên **v2** — turn thiếu `rate_limits` giờ **merge nguyên vẹn** `rate_limits` cũ thay vì ép `used_percentage=100`. Nguyên nhân gốc của "thỉnh thoảng CC full đỏ 100% rồi lượt sau về đúng": turn thiếu key này xảy ra cả khi chưa cạn quota, v1 fabricate 100% giả vào cache. `provision-claudecode.sh` thêm marker `# aki-rlcache v2` + migration 3 nhánh (xóa block v1 rồi tiêm v2) để host cũ được nâng cấp; `useAgentUsage.js` re-provision fire-and-forget 1 lần/host/session ở nhánh data-present. Cần rebuild trên Mac (script `include_str!`)._
+>
+> **Một tài khoản mỗi remote (by design):** Claude Code **KHÔNG** có cơ chế cache đa tài khoản như Antigravity (xem `usage-antigravity.md`). Mỗi remote host chắc chắn đăng nhập đúng một tài khoản `claude` và chỉ nên như vậy; usage đọc từ `~/.claude/rate-limits-cache.json` của chính host đó. Đổi host = đổi remote, không phải đổi account cùng máy._
 
 ---
 

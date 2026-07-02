@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.8.0] - 2026-07-02
+
+#### Added
+- **Antigravity multi-account usage cache + account dropdown**: AG usage is now cached **per account (by email)** in `localStorage` (`aki-antigravity-usage-cache-v2`, shape `{accounts:{[email]:{data,fetchedAt}}, lastActiveEmail}`), keeping the history of every account seen on the machine. Clicking the email in the AG header opens a dropdown listing each cached account with its cached-ago time and a "live" dot on the active one; selecting a previous account pins the view to its cached usage (shown with the *Cached* badge) while the background poll keeps refreshing the active account. The old single-blob key is migrated once then removed. No new DOM element added (Extreme Narrow). **Claude Code intentionally does not get this** — one account per remote host by design (noted in code + docs).
+
+#### Fixed
+- **Antigravity showed the wrong account after switching**: The AG offline cache was a single un-keyed blob, so when a live fetch returned `null` (the language server restarts right after an account switch — very common) the null branch displayed that stale blob = the *previous* account; whether you saw old or new depended on whether the fetch happened to succeed that tick (a race that persisted even across reload). The null branch now deterministically shows the **last-active account's** cache (labeled *Cached*), and the next successful fetch overwrites it with the true current account.
+- **Claude Code transiently showed 100% full red**: The remote statusline hook injected by `provision-claudecode.sh` fabricated `used_percentage = 100` on every rate-limit window whenever a Claude turn's JSON lacked `rate_limits`. That key is dropped on many ordinary turns — not just at genuine 429 exhaustion — so the cache was clobbered to a false 100% (red) until the next real turn corrected it. The hook (now marked `# aki-rlcache v2`) merges the previous `rate_limits` **verbatim** instead of fabricating; genuine exhaustion still shows the last-known % and preserves `resets_at` so STALE_RESET recovery keeps working. The provision script gained a version-aware, idempotent migration so hosts already patched with the buggy v1 block are upgraded (v1 block removed, v2 injected), and `useAgentUsage.js` re-provisions each host once per session so existing remotes actually receive the fix. **Requires a rebuild on the Mac** (script is embedded via `include_str!`).
+
+#### Changed
+- **Task-per-project badge split by pin state**: The tasks button now shows two overlay badges instead of one — pinned open tasks (amber, top-right, matching the pin colour) and normal open tasks (white, bottom-right) — each hidden when its count is 0.
+
+---
+
 ### [1.7.1] - 2026-07-02
 
 #### Fixed

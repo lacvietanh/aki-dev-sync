@@ -81,6 +81,52 @@ Using a login shell (`-lc`) is mandatory for desktop GUI execution since GUI app
 
 ---
 
+## Per-Account Cache (localStorage) & Account Dropdown
+
+Antigravity can switch the logged-in account on the same machine, so usage is cached **per email**
+in `localStorage` under `aki-antigravity-usage-cache-v2`:
+
+```json
+{
+  "accounts": {
+    "user@a.com": { "data": { ...usage, "email": "user@a.com" }, "fetchedAt": 1751430000 },
+    "user@b.com": { "data": { ... }, "fetchedAt": 1751420000 }
+  },
+  "lastActiveEmail": "user@a.com"
+}
+```
+
+* **Migration:** the old single-blob key `aki-antigravity-usage-cache` is migrated once (keyed by the
+  blob's `data.email`) into the v2 map, then removed. Handled by `loadAgStore()` in `useAgentUsage.js`.
+* **Why it also fixes the stale-account bug:** previously the cache was one un-keyed blob. When a live
+  fetch returned `null` (the language server restarts right after an account switch — very common),
+  the null branch displayed that blob = the *previous* account; whether you saw old or new depended
+  on whether the fetch happened to succeed that tick (a race, persisted even across reload). Now the
+  null branch deterministically shows the **last-active account's** cache (labeled *Cached*), and the
+  next successful fetch overwrites it with the true current account. No more random flips.
+* **Account dropdown:** clicking the email in the AG header (`AgentUsage.vue`) opens a dropdown listing
+  every cached account with its cached-ago time and a "live" dot on the active one. Selecting a
+  non-active account **pins** the view to that account's cache (`isCached` badge shown) while the
+  background poll keeps fetching and updating the active account's cache; selecting the live account
+  returns to follow-live. State lives in the composable: `accounts`, `viewingEmail`, `activeEmail`,
+  `selectAccount()`. The email-blur eye-toggle applies to dropdown rows too.
+
+> **Contrast with Claude Code:** CC deliberately has **no** multi-account cache — exactly one account
+> per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
+
+### Design locks (by design — do not "fix")
+
+- **CC has no multi-account cache.** One account per remote host; do not add an AG-style store to CC.
+- **`viewingEmail` is not persisted.** Pinning the view to a previous account is transient; every
+  reload returns to the follow-live view of the active account.
+- **Header shows the local part only.** The header email is truncated to the part before `@`
+  (`emailLocal()` in `AgentUsage.vue`) so the header width stays stable when the active/cached account
+  changes; the full email is shown in the dropdown rows and the tooltip.
+- **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always
+  carries `email`; no empty-email guard is added in the live cache path.
+
+---
+
 ## Related Source Files
 
 - **Backend / Scripts:**

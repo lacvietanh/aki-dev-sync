@@ -9,7 +9,9 @@
       @click="openTasksModal(project)"
     >
       <i class="fa-solid fa-list-check"></i>
-      <span v-if="summary.open > 0" class="task-badge">{{ summary.open }}</span>
+      <!-- Two overlay badges: pinned-open (amber, top) and normal-open (white, bottom) -->
+      <span v-if="summary.doing > 0" class="task-badge task-badge-pin">{{ summary.doing }}</span>
+      <span v-if="summary.todo > 0" class="task-badge task-badge-normal">{{ summary.todo }}</span>
     </button>
   </div>
 </template>
@@ -72,14 +74,11 @@ const summary = computed(() => {
 
 .task-badge {
   position: absolute;
-  top: -6px;
   right: -6px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--accent-cyan);
-  color: #04121a;
   font-size: 9px;
   font-weight: 800;
   line-height: 16px;
@@ -87,8 +86,17 @@ const summary = computed(() => {
   box-shadow: 0 0 0 2px var(--bg-primary);
 }
 
-.btn-task-trigger.has-doing .task-badge {
+/* Pinned open tasks — amber, top-right (matches the pin colour) */
+.task-badge-pin {
+  top: -6px;
   background: var(--accent-amber);
   color: #1a1000;
+}
+
+/* Normal open tasks — white, bottom-right */
+.task-badge-normal {
+  bottom: -6px;
+  background: #fff;
+  color: #04121a;
 }
 </style>

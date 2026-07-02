@@ -36,8 +36,35 @@
             <span v-if="data && data.userTier?.name" class="agent-plan-badge ag">
               {{ data.userTier.name }}
             </span>
-            <span v-if="data && data.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">
-              - {{ data.email }}
+            <!-- Email doubles as the account-switch trigger (no extra element — Extreme Narrow).
+                 The handler is on the wrapper because a blurred email has pointer-events:none. -->
+            <span
+              v-if="data && data.email"
+              class="ag-account-wrap"
+              role="button"
+              tabindex="0"
+              title="Switch account view"
+              @click.stop="toggleAccountMenu"
+            >
+              <span
+                class="agent-account ag-account-trigger"
+                :class="{ 'email-blurred': !showEmail }"
+              >- {{ emailLocal(data.email) }}</span>
+              <div v-if="accountMenuOpen && accounts.length" class="ag-account-menu" @click.stop>
+                <button
+                  v-for="acc in accounts"
+                  :key="acc.email"
+                  class="ag-account-item"
+                  :class="{ 'is-current': acc.email === (viewingEmail || activeEmail) }"
+                  @click="pickAccount(acc.email)"
+                >
+                  <span class="ag-account-email" :class="{ 'email-blurred': !showEmail }">{{ acc.email }}</span>
+                  <span class="ag-account-metacol">
+                    <span v-if="acc.email === activeEmail" class="ag-live-dot" title="Live account"></span>
+                    <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
+                  </span>
+                </button>
+              </div>
             </span>
           </div>
         </div>
@@ -45,7 +72,7 @@
 
       <div class="agent-status-badges">
         <!-- Show cached badge when AG is offline; stale badge otherwise -->
-        <span v-if="isCached" class="badge-cached" :title="'Data cached at ' + cachedAbsTime">Cached {{ cachedAgo }}</span>
+        <span v-if="isCached" class="cached-note" :title="'Data cached at ' + cachedAbsTime">cached {{ cachedAgo }}</span>
         <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
@@ -202,10 +229,42 @@ const props = defineProps({
   stale: Boolean,
   isCached: { type: Boolean, default: false },
   cachedAt: { type: Number, default: null },
-  showEmail: { type: Boolean, default: true }
+  showEmail: { type: Boolean, default: true },
+  // AG-only multi-account view (unused for Claude Code)
+  accounts: { type: Array, default: () => [] },
+  viewingEmail: { default: null },
+  activeEmail: { default: null }
 });
 
-const emit = defineEmits(['retry', 'force-sync']);
+const emit = defineEmits(['retry', 'force-sync', 'select-account']);
+
+// AG account-switch dropdown
+const accountMenuOpen = ref(false);
+function toggleAccountMenu() {
+  if (props.agentId !== 'antigravity') return;
+  accountMenuOpen.value = !accountMenuOpen.value;
+}
+function pickAccount(email) {
+  // Picking the live/active account returns to the follow-live view (viewingEmail = null).
+  emit('select-account', email === props.activeEmail ? null : email);
+  accountMenuOpen.value = false;
+}
+// Design lock: the header shows only the local part (before @) to keep width stable when the
+// active/cached account changes; the full email is shown in the dropdown rows.
+function emailLocal(email) {
+  const at = email.indexOf('@');
+  return at > 0 ? email.slice(0, at) : email;
+}
+function onDocClick() { accountMenuOpen.value = false; }
+function onDocKey(e) { if (e.key === 'Escape') accountMenuOpen.value = false; }
+onMounted(() => {
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onDocKey);
+});
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick);
+  document.removeEventListener('keydown', onDocKey);
+});
 
 // Antigravity 2.1.1+ Groups & Buckets detection
 const quotaSummaryGroups = computed(() => {
@@ -354,6 +413,19 @@ const cachedAbsTime = computed(() => {
   return `${hh}:${mm}`;
 });
 
+// Relative "cached N ago" for a given Unix-seconds timestamp (used by the account dropdown).
+// Reactive via agCacheNow (ticks every 10s).
+function formatAgo(sec) {
+  if (!sec) return '';
+  const diffS = agCacheNow.value - sec;
+  if (diffS < 60) return '<1m';
+  const mins = Math.floor(diffS / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h${rem}m` : `${hrs}h`;
+}
+
 const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
 const cc5hResetsAt = computed(() => props.data?.rate_limits?.five_hour?.resets_at ?? null);
 const cc5hColorClass = computed(() => pctColorClass(cc5hPct.value));
@@ -491,6 +563,79 @@ async function handleIconClick() {
   transition: filter 0.2s;
 }
 
+/* AG account-switch dropdown (anchored under the email) */
+.ag-account-wrap {
+  position: relative;
+  cursor: pointer;
+}
+.ag-account-trigger {
+  transition: color 0.15s ease;
+}
+.ag-account-wrap:hover .ag-account-trigger:not(.email-blurred) {
+  color: var(--accent-cyan);
+}
+.ag-account-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 3px;
+  background: #1a1d23; /* solid — --bg-tertiary is near-transparent and would show through */
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ag-account-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+.ag-account-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.ag-account-item.is-current {
+  background: rgba(0, 210, 255, 0.1);
+  color: var(--accent-cyan);
+}
+.ag-account-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-account-metacol {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.ag-account-time {
+  font-size: 9px;
+  color: var(--text-darker);
+}
+.ag-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 5px var(--accent-cyan);
+}
+
 .agent-org {
   font-size: 10px;
   color: var(--text-darker);
@@ -536,15 +681,11 @@ async function handleIconClick() {
   border-radius: 4px;
 }
 
-.badge-cached {
+/* Cached indicator: plain amber text, not a badge box (keeps the header narrow) */
+.cached-note {
   font-size: 9px;
   font-weight: 600;
-  text-transform: uppercase;
-  background: rgba(251, 146, 60, 0.12);
   color: rgba(251, 146, 60, 0.75);
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(251, 146, 60, 0.2);
 }
 
 .btn-ui-action {

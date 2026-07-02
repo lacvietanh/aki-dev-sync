@@ -19,8 +19,12 @@
           :isCached="antigravityIsCached"
           :cachedAt="antigravityCachedAt"
           :showEmail="showLocalEmail"
+          :accounts="antigravityAccounts"
+          :viewing-email="antigravityViewingEmail"
+          :active-email="antigravityActiveEmail"
           @retry="antigravityRefresh"
           @force-sync="antigravityForceSync"
+          @select-account="antigravitySelectAccount"
         />
       </div>
 
@@ -80,15 +84,19 @@ const {
 
 // Setup Antigravity (local) monitoring - host is 'local'
 const localHostRef = ref('local');
-const { 
-  data: antigravityData, 
-  loading: antigravityLoading, 
-  error: antigravityError, 
+const {
+  data: antigravityData,
+  loading: antigravityLoading,
+  error: antigravityError,
   stale: antigravityStale,
   isCached: antigravityIsCached,
   cachedAt: antigravityCachedAt,
   refresh: antigravityRefresh,
-  forceSync: antigravityForceSync
+  forceSync: antigravityForceSync,
+  accounts: antigravityAccounts,
+  viewingEmail: antigravityViewingEmail,
+  activeEmail: antigravityActiveEmail,
+  selectAccount: antigravitySelectAccount
 } = useAgentUsage('antigravity', localHostRef);
 
 </script>

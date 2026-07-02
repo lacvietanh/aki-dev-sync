@@ -75,21 +75,69 @@ async function logStartupInfo() {
   }
 }
 
-// ─── AG localStorage cache key ───────────────────────────────────────────────
-const AG_CACHE_KEY = 'aki-antigravity-usage-cache';
+// ─── AG localStorage cache (per-account) ─────────────────────────────────────
+// Antigravity can switch logged-in accounts on the same machine, so usage is cached
+// PER EMAIL. A dropdown (AgentUsage.vue header) lets the user inspect a previous
+// account's cached usage while another account is live.
+//
+// Store shape (v2): { accounts: { "<email>": { data, fetchedAt }, ... }, lastActiveEmail }
+//
+// NOTE: Claude Code deliberately has NO equivalent — exactly one account per remote host
+// by design (see docs/arch/usage-claudecode.md). Only Antigravity uses this store; the
+// switch to last-active-account on a null fetch also removes the old single-blob bug where
+// the display randomly flipped between accounts during an IDE restart.
+const AG_CACHE_KEY_V1 = 'aki-antigravity-usage-cache';    // legacy single-blob key
+const AG_CACHE_KEY = 'aki-antigravity-usage-cache-v2';    // per-account store
 
-function persistAgCache(dataObj, fetchedAt) {
-  try {
-    localStorage.setItem(AG_CACHE_KEY, JSON.stringify({ data: dataObj, fetchedAt }));
-  } catch (_) {}
+function saveAgStore(store) {
+  try { localStorage.setItem(AG_CACHE_KEY, JSON.stringify(store)); } catch (_) {}
 }
 
-function loadAgCache() {
+function loadAgStore() {
   try {
     const raw = localStorage.getItem(AG_CACHE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (_) { return null; }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.accounts) return parsed;
+    }
+    // One-time migration: v1 single-blob → v2 per-account map, keyed by the blob's email.
+    const v1raw = localStorage.getItem(AG_CACHE_KEY_V1);
+    if (v1raw) {
+      const v1 = JSON.parse(v1raw);
+      const email = v1?.data?.email;
+      const store = { accounts: {}, lastActiveEmail: null };
+      if (email) {
+        store.accounts[email] = { data: v1.data, fetchedAt: v1.fetchedAt };
+        store.lastActiveEmail = email;
+      }
+      saveAgStore(store);
+      localStorage.removeItem(AG_CACHE_KEY_V1);
+      return store;
+    }
+  } catch (_) {}
+  return { accounts: {}, lastActiveEmail: null };
+}
+
+function persistAgAccount(dataObj, fetchedAt) {
+  // AG always authenticates via Google, so a live payload always carries an email.
+  const email = dataObj.email;
+  const store = loadAgStore();
+  store.accounts[email] = { data: dataObj, fetchedAt };
+  store.lastActiveEmail = email;
+  saveAgStore(store);
+}
+
+function loadAgAccount(email) {
+  if (!email) return null;
+  const store = loadAgStore();
+  return store.accounts[email] || null;
+}
+
+function listAgAccounts() {
+  const store = loadAgStore();
+  return Object.entries(store.accounts)
+    .map(([email, v]) => ({ email, fetchedAt: v.fetchedAt }))
+    .sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
 }
 
 export function useAgentUsage(agentName, hostRef) {
@@ -103,6 +151,21 @@ export function useAgentUsage(agentName, hostRef) {
   // AG-only: tracks whether current data is from cache (AG offline) and when it was cached
   const isCached = ref(false);
   const cachedAt = ref(null); // Unix seconds
+
+  // AG-only: multi-account view state (unused for Claude Code — one account per remote).
+  // Design lock: viewingEmail is intentionally NOT persisted — pinning to a previous account is a
+  // transient inspection; every reload returns to the follow-live view of the active account.
+  const accounts = ref([]);       // dropdown list [{ email, fetchedAt }] sorted newest-first
+  const viewingEmail = ref(null); // null = follow live/active account; else a pinned email
+  const activeEmail = ref(null);  // email of the last successful live fetch
+  let latestLive = null;          // last successful live parse (for returning to live view)
+  let latestLiveStale = false;
+  const refreshAccounts = () => { accounts.value = listAgAccounts(); };
+  if (agentName === 'antigravity') {
+    const store = loadAgStore();
+    accounts.value = listAgAccounts();
+    activeEmail.value = store.lastActiveEmail;
+  }
 
   let pollTimer = null;
   let pollCount = 0;
@@ -164,11 +227,8 @@ export function useAgentUsage(agentName, hostRef) {
 
       if (res) {
         try {
-          data.value = JSON.parse(res.content);
+          const parsed = JSON.parse(res.content);
           staleResetSyncDone = false;
-          // When fresh data arrives, clear cached state
-          isCached.value = false;
-          cachedAt.value = null;
 
           const fetchedAt = parseInt(res.fetched_at, 10);
           const nowSec = Date.now() / 1000;
@@ -179,19 +239,36 @@ export function useAgentUsage(agentName, hostRef) {
           const dataAge = fetchedAt > 0 ? (nowSec - fetchedAt) : Infinity;
           let resetIsPast = false;
           if (agentName === 'claudecode') {
-            const fiveHour = data.value?.rate_limits?.five_hour;
-            resetIsPast = fiveHour?.resets_at > 0 && nowSec > fiveHour.resets_at;
+            const fh = parsed?.rate_limits?.five_hour;
+            resetIsPast = fh?.resets_at > 0 && nowSec > fh.resets_at;
           }
-          stale.value = resetIsPast || dataAge > 600;
+          const liveStale = resetIsPast || dataAge > 600;
 
-          // AG: persist live data to localStorage for offline cache
           if (agentName === 'antigravity') {
-            persistAgCache(data.value, fetchedAt);
-            ulog('ag cache persisted', { fetchedAt }, 'debug');
+            // Record this live fetch under its account email and refresh the dropdown.
+            // Only update the VISIBLE data when the user is viewing the live/active account
+            // (not pinned to a previous account's cache).
+            latestLive = parsed;
+            latestLiveStale = liveStale;
+            activeEmail.value = parsed?.email || activeEmail.value;
+            persistAgAccount(parsed, fetchedAt);
+            refreshAccounts();
+            if (viewingEmail.value === null || viewingEmail.value === activeEmail.value) {
+              data.value = parsed;
+              isCached.value = false;
+              cachedAt.value = null;
+              stale.value = liveStale;
+            }
+            ulog('ag live fetched', { email: activeEmail.value, viewing: viewingEmail.value, fetchedAt }, 'debug');
+          } else {
+            data.value = parsed;
+            isCached.value = false;
+            cachedAt.value = null;
+            stale.value = liveStale;
           }
 
-          const fiveHour = data.value?.rate_limits?.five_hour;
-          const sevenDay  = data.value?.rate_limits?.seven_day;
+          const fiveHour = parsed?.rate_limits?.five_hour;
+          const sevenDay  = parsed?.rate_limits?.seven_day;
           const mtime = parseInt(res.file_modified_at, 10);
           ulog('got data', {
             'five_hour.pct':      fiveHour?.used_percentage ?? null,
@@ -202,7 +279,7 @@ export function useAgentUsage(agentName, hostRef) {
             'seven_day.pct':      sevenDay?.used_percentage ?? null,
             mtime,
             file_age_s:           mtime > 0 ? Math.round(nowSec - mtime) : null,
-            stale:                stale.value,
+            stale:                liveStale,
             stale_reason:         resetIsPast ? 'resetIsPast' : dataAge > 600 ? 'dataAgeStale' : 'none',
             reset_overdue_s:      resetIsPast ? Math.round(nowSec - fiveHour.resets_at) : null,
             until_reset_s:        (!resetIsPast && fiveHour?.resets_at > 0)
@@ -217,6 +294,12 @@ export function useAgentUsage(agentName, hostRef) {
             initialSyncDone = true;
             ulog('first load ok (data present, no forceSync)', { 'resets_at': fiveHour?.resets_at ?? null }, 'info');
           }
+          // Re-provision existing hosts once per session (fire-and-forget). Hosts that already
+          // have a cache always land here (never the null path that used to call provision), so
+          // without this the upgraded statusline hook (aki-rlcache v2) would never reach them.
+          // provision() is idempotent and flips `provisioned` up front, so this runs at most once
+          // per host per session and does not block the read.
+          if (agentName === 'claudecode' && !provisioned) provision();
         } catch (e) {
           ulog('parse error', { err: String(e), content_preview: String(res.content).slice(0, 100) }, 'error');
           error.value = "Invalid usage data format.";
@@ -232,15 +315,23 @@ export function useAgentUsage(agentName, hostRef) {
             : 'transition_had_data_now_null (STALE_RESET)',
         }, 'info');
 
-        // AG offline: load last-known cache from localStorage instead of showing empty state
+        // AG offline: the live fetch failed (IDE mid-restart — common right after an account
+        // switch). Show the LAST-ACTIVE account's cache deterministically (never an ambiguous
+        // global blob), so the display can't randomly flip old/new. If the user pinned the view
+        // to a specific account, keep showing that one.
         if (agentName === 'antigravity') {
-          const cached = loadAgCache();
+          latestLive = null;
+          refreshAccounts();
+          const store = loadAgStore();
+          if (!activeEmail.value) activeEmail.value = store.lastActiveEmail;
+          const targetEmail = viewingEmail.value || store.lastActiveEmail;
+          const cached = loadAgAccount(targetEmail);
           if (cached) {
             data.value = cached.data;
             isCached.value = true;
             cachedAt.value = cached.fetchedAt;
             stale.value = true;
-            ulog('ag offline — loaded cache', { fetchedAt: cached.fetchedAt }, 'info');
+            ulog('ag offline — showing cached account', { email: targetEmail, fetchedAt: cached.fetchedAt }, 'info');
           } else {
             data.value = null;
             isCached.value = false;
@@ -345,6 +436,44 @@ export function useAgentUsage(agentName, hostRef) {
     }
   };
 
+  // AG-only: switch which account's usage is displayed. Pass null (or the active email) to
+  // return to the live view; pass another cached email to pin the view to that account's cache.
+  // The background poll keeps running and updating caches regardless of the selection.
+  const selectAccount = (email) => {
+    viewingEmail.value = email;
+    if (agentName !== 'antigravity') return;
+    if (email === null || email === activeEmail.value) {
+      if (latestLive) {
+        data.value = latestLive;
+        isCached.value = false;
+        cachedAt.value = null;
+        stale.value = latestLiveStale;
+      } else {
+        // No live data yet → fall back to the last-active account's cache.
+        const cached = loadAgAccount(loadAgStore().lastActiveEmail);
+        if (cached) {
+          data.value = cached.data;
+          isCached.value = true;
+          cachedAt.value = cached.fetchedAt;
+          stale.value = true;
+        } else {
+          data.value = null;
+          isCached.value = false;
+          cachedAt.value = null;
+        }
+      }
+    } else {
+      const cached = loadAgAccount(email);
+      if (cached) {
+        data.value = cached.data;
+        isCached.value = true;
+        cachedAt.value = cached.fetchedAt;
+        stale.value = true;
+      }
+    }
+    ulog('ag select account', { email, active: activeEmail.value }, 'info');
+  };
+
   function restartPollTimer() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
@@ -410,6 +539,11 @@ export function useAgentUsage(agentName, hostRef) {
     isCached,
     cachedAt,
     refresh: checkUsage,
-    forceSync
+    forceSync,
+    // AG-only multi-account view (harmless/unused for Claude Code)
+    accounts,
+    viewingEmail,
+    activeEmail,
+    selectAccount
   };
 }
