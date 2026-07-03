@@ -119,12 +119,28 @@ function loadAgStore() {
 }
 
 function persistAgAccount(dataObj, fetchedAt) {
-  // AG always authenticates via Google, so a live payload always carries an email.
-  const email = dataObj.email;
+  const email = dataObj?.email;
+  if (!email) return; // malformed/partial RPC response mid-transition — never write an undefined-keyed entry
   const store = loadAgStore();
-  store.accounts[email] = { data: dataObj, fetchedAt };
+  const existing = store.accounts[email];
+  // A live payload can succeed (GetUserStatus ok, exit 0) while quotaSummary is still null —
+  // e.g. RetrieveUserQuotaSummary rejected independently (Promise.allSettled) right after an
+  // account switch, while the language server is still re-establishing session state. Don't
+  // let that partial snapshot overwrite a previously-good cached quotaSummary for this email;
+  // otherwise the offline-fallback path can resurface a permanent N/A long after the real data
+  // was available. Still track lastActiveEmail so the header/fallback follow the right account.
+  if (dataObj.quotaSummary || !existing?.data?.quotaSummary) {
+    store.accounts[email] = { data: dataObj, fetchedAt };
+  }
   store.lastActiveEmail = email;
   saveAgStore(store);
+}
+
+function clearAgStore() {
+  try {
+    localStorage.removeItem(AG_CACHE_KEY);
+    localStorage.removeItem(AG_CACHE_KEY_V1);
+  } catch (_) {}
 }
 
 function loadAgAccount(email) {
@@ -176,6 +192,7 @@ export function useAgentUsage(agentName, hostRef) {
   let staleResetSyncDone = false;
   let isSyncing = false;
   let isChecking = false;
+  let pendingRecheck = false; // a poll/manual-reload arrived while a check was already in flight
   // Layer 4 (retry/backoff): if a force-sync fails, allow the next poll tick to retry by
   // clearing the one-shot guards — but cap consecutive auto-retries so a genuinely broken
   // remote (claude missing, network down) doesn't spawn probe sessions forever.
@@ -203,7 +220,11 @@ export function useAgentUsage(agentName, hostRef) {
       return;
     }
     if (isChecking) {
-      ulog('checkUsage skip (isChecking=true)', {}, 'debug');
+      // Don't silently drop this request (e.g. a manual "Reload" click landing mid-poll,
+      // common right after relaunching AG/switching accounts) — run once more immediately
+      // after the in-flight check finishes instead of waiting up to a full poll interval.
+      pendingRecheck = true;
+      ulog('checkUsage queued (isChecking=true)', {}, 'debug');
       return;
     }
     isChecking = true;
@@ -373,6 +394,10 @@ export function useAgentUsage(agentName, hostRef) {
       loading.value = false;
       isChecking = false;
       ulog('checkUsage done', { loading: false, isChecking: false, hasData: data.value !== null, hasError: !!error.value }, 'debug');
+      if (pendingRecheck) {
+        pendingRecheck = false;
+        checkUsage();
+      }
     }
   };
 
@@ -478,6 +503,27 @@ export function useAgentUsage(agentName, hostRef) {
     ulog('ag select account', { email, active: activeEmail.value }, 'info');
   };
 
+  // AG-only: called right after a successful logout. logout_antigravity wipes AG's own auth
+  // state (SQLite rows, keychain item, session cookies) but has no way to reach into this app's
+  // caches — without this, the offline-fallback path in checkUsage() keeps showing
+  // store.lastActiveEmail's cached blob (the just-logged-out account) until a live fetch for the
+  // NEW account happens to succeed, which can take several polls right after a fresh re-login.
+  const resetAccount = () => {
+    if (agentName !== 'antigravity') return;
+    clearAgStore();
+    data.value = null;
+    isCached.value = false;
+    cachedAt.value = null;
+    stale.value = false;
+    accounts.value = [];
+    viewingEmail.value = null;
+    activeEmail.value = null;
+    latestLive = null;
+    latestLiveStale = false;
+    ulog('ag account reset (post-logout)', {}, 'info');
+    checkUsage();
+  };
+
   function restartPollTimer() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
@@ -561,6 +607,7 @@ export function useAgentUsage(agentName, hostRef) {
     accounts,
     viewingEmail,
     activeEmail,
-    selectAccount
+    selectAccount,
+    resetAccount
   };
 }

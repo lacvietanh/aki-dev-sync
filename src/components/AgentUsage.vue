@@ -252,7 +252,7 @@ const props = defineProps({
   activeEmail: { default: null }
 });
 
-const emit = defineEmits(['retry', 'force-sync', 'select-account', 'toggle-email']);
+const emit = defineEmits(['retry', 'force-sync', 'select-account', 'toggle-email', 'logout-success']);
 
 // AG account-switch dropdown
 const accountMenuOpen = ref(false);
@@ -285,6 +285,10 @@ async function logoutAntigravity() {
   loggingOut.value = true;
   try {
     await invoke('logout_antigravity');
+    // AG's own auth state is now wiped, but this app's per-account cache/view-state isn't —
+    // without this, the display would keep following the just-logged-out account until a live
+    // fetch for the next login happens to succeed (can be several polls away).
+    emit('logout-success');
   } finally {
     loggingOut.value = false;
   }

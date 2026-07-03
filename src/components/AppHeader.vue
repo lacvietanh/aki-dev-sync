@@ -24,7 +24,7 @@
       </div>
       <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">
         <span v-if="newVersionAvailable" class="version-row">
-          <span class="update-badge" @click.stop="openLink(RELEASE_URL)" :title="'New version ' + newVersionAvailable + ' available! Click to download.'">
+          <span class="update-badge" @click.stop="showUpdateModal = true" :title="'New version ' + newVersionAvailable + ' available! Click for details.'">
             <i class="fa-solid fa-circle-arrow-up"></i> Update
           </span>
         </span>
@@ -56,6 +56,13 @@
 
         <RefreshSettingsModal :show="showRefreshSettings" @close="showRefreshSettings = false" />
         <ChangelogModal :show="showChangelogModal" @close="showChangelogModal = false" />
+        <UpdateModal
+          :show="showUpdateModal"
+          :version="newVersionAvailable"
+          :notes="latestReleaseNotes"
+          :download-url="latestDownloadUrl"
+          @close="dismissUpdateModal"
+        />
         <GlobalNoteModal />
 
         <!-- Custom Traffic Lights -->
@@ -80,18 +87,23 @@ import { useIntro } from '../composables/useIntro';
 import { openGlobalNote, noteContent } from '../composables/useGlobalNote';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
+import UpdateModal from './modals/UpdateModal.vue';
 import GlobalNoteModal from './modals/GlobalNoteModal.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
+const UPDATE_DISMISS_KEY = 'aki-devsync-update-dismissed';
 
 const appVersion = __APP_VERSION__;
 const buildTime = __BUILD_TIME__;
 const showRefreshSettings = ref(false);
 const showChangelogModal = ref(false);
+const showUpdateModal = ref(false);
 const isDev = import.meta.env.DEV;
 const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
+const latestReleaseNotes = ref('');
+const latestDownloadUrl = ref('');
 
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
@@ -111,19 +123,35 @@ const hasUpdate = (current, latest) => {
   return false;
 };
 
+function applyLatestRelease(latest) {
+  newVersionAvailable.value = latest.tag_name;
+  latestReleaseNotes.value = latest.body || '';
+  const dmgAsset = (latest.assets || []).find(a => a.name && a.name.endsWith('.dmg'));
+  latestDownloadUrl.value = dmgAsset ? dmgAsset.browser_download_url : latest.html_url || RELEASE_URL;
+}
+
 onMounted(async () => {
   try {
     const raw = await invoke('check_for_updates');
     const latest = JSON.parse(raw);
-    if (latest && latest.tag_name) {
-      if (hasUpdate(appVersion, latest.tag_name)) {
-        newVersionAvailable.value = latest.tag_name;
+    if (latest && latest.tag_name && hasUpdate(appVersion, latest.tag_name)) {
+      applyLatestRelease(latest);
+      const dismissedVersion = localStorage.getItem(UPDATE_DISMISS_KEY);
+      if (dismissedVersion !== latest.tag_name) {
+        showUpdateModal.value = true;
       }
     }
   } catch (e) {
     console.error('Failed to check for updates:', e);
   }
 });
+
+function dismissUpdateModal() {
+  showUpdateModal.value = false;
+  if (newVersionAvailable.value) {
+    localStorage.setItem(UPDATE_DISMISS_KEY, newVersionAvailable.value);
+  }
+}
 
 async function triggerManualUpdateCheck() {
   if (isCheckingUpdates.value) return;
@@ -133,12 +161,8 @@ async function triggerManualUpdateCheck() {
     const latest = JSON.parse(raw);
     if (latest && latest.tag_name) {
       if (hasUpdate(appVersion, latest.tag_name)) {
-        newVersionAvailable.value = latest.tag_name;
-        Toast.fire({
-          icon: 'success',
-          title: `New version ${latest.tag_name} is available!`,
-          text: 'Click the Update badge to download.'
-        });
+        applyLatestRelease(latest);
+        showUpdateModal.value = true;
       } else {
         newVersionAvailable.value = null;
         Toast.fire({

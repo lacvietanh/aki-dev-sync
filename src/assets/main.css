@@ -1306,3 +1306,9 @@ input:checked+.switch-sm .slider:before {
   width: 90%;
   max-height: 85vh;
 }
+
+.update-modal {
+  max-width: 640px;
+  width: 90%;
+  max-height: 70vh;
+}

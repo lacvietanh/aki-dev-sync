@@ -71,6 +71,7 @@
       @retry="activeSource.refresh"
       @force-sync="activeSource.forceSync"
       @select-account="activeSource.selectAccount"
+      @logout-success="activeSource.resetAccount"
       @toggle-email="toggleEmail"
     />
   </div>

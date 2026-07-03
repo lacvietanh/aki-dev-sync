@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.9.3] - 2026-07-03
+
+#### Added
+- **Auto-opening "Update Available" modal**: `check_for_updates` on startup already knew when a newer GitHub release existed, but only lit the header's "Update" badge — the user had to click through to the GitHub releases page to see what changed. New `UpdateModal.vue` renders the release's markdown `body` ("What's New") via the existing `renderMarkdown` util and adds a direct "Download DMG" button that opens the release's `.dmg` asset `browser_download_url` straight (via `macos_open`), skipping the browser detour entirely. The modal now auto-opens on launch when a new version is detected, gated by a `aki-devsync-update-dismissed` localStorage flag (keyed by version tag) so clicking "Later" doesn't re-nag on every subsequent launch — "Check for Updates" in the icon dropdown and the header badge both still always show it on demand.
+
+#### Fixed
+- **Antigravity account panel showed the just-logged-out or a permanently-N/A account after switching accounts**: three separate gaps in `useAgentUsage.js` compounded into "reload doesn't fix it." (1) `persistAgAccount` wrote every successful-exit live payload into the per-account cache unconditionally, even when `quotaSummary` came back `null` (the Connect RPC's `GetUserStatus` + `RetrieveUserQuotaSummary` are independent `Promise.allSettled` calls in `scripts/get-antigravity-usage.js`, so the latter can fail alone right after an account switch while the script still exits 0) — this permanently poisoned that email's cache with N/A, which could then resurface on any later offline-fallback read. Now a `quotaSummary: null` payload no longer overwrites an existing good cache entry for the same email. (2) `logout_antigravity` (Rust) correctly wiped AG's own session (SQLite auth rows, keychain item, cookies) but never touched this app's own state — `activeEmail`/`viewingEmail`/the localStorage account cache all kept pointing at the just-logged-out account, so after logging into a different account the UI kept falling back to the old one until a live fetch happened to land. `AgentUsage.vue` now emits `logout-success` after the backend call resolves, wired to a new `resetAccount()` on the composable that wipes the AG cache/view-state and immediately re-checks. (3) A manual "Reload" click landing while a poll was already in flight was silently dropped by the `isChecking` mutex with no queuing — `checkUsage()` now queues one immediate re-run instead of a no-op, so reload always does something even right after a relaunch when probes are slower.
+
+---
+
 ### [1.9.2] - 2026-07-03
 
 #### Added
