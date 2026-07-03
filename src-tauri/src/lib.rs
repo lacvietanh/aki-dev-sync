@@ -1,4 +1,5 @@
 mod agent_usage;
+mod claude_profile;
 mod git;
 mod global_note;
 mod logger;
@@ -85,6 +86,9 @@ pub fn run() {
             // global note
             global_note::read_global_note,
             global_note::write_global_note,
+            // claude profile switcher
+            claude_profile::get_claude_mode,
+            claude_profile::set_claude_profile,
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,

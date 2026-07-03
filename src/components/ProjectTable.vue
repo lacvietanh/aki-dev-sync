@@ -15,7 +15,7 @@
         <div class="grid-header-cell col-actions">
           <span class="th-with-ring">
             ACTIONS
-            <RefreshRing :interval-s="refreshSettings.remote_diff_interval_s" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
+            <RefreshRing :interval-s="remoteModeEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
           </span>
         </div>
       </div>
@@ -187,61 +187,61 @@
                   </div>
                 </div>
 
-              <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" :title="remoteModeEnabled ? 'Select specific files to push (native file picker)' : 'Remote Mode is off'">
-                <i class="fa-solid fa-hand-pointer btn-select-icon-only" style="display: none;"></i>
-                <span class="btn-text">SELECT</span>
-              </button>
+              <fieldset :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" class="remote-actions-fieldset" :title="!remoteModeEnabled ? 'Remote Mode is off' : ''">
+                <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :title="!remoteModeEnabled ? 'Remote Mode is off' : 'Select specific files to push (native file picker)'">
+                  <i class="fa-solid fa-hand-pointer btn-select-icon-only" style="display: none;"></i>
+                  <span class="btn-text">SELECT</span>
+                </button>
 
-              <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
-                <div class="dry-group-left">
-                  <label class="btn-tech-git-inline" :class="{ 'active': p.sync_git }" title="Include .git in Push">
-                    <input type="checkbox" v-model="p.sync_git" :disabled="projectRuntime[p.id]?.syncing" @change="saveProjectsList()" />
-                    <i class="fa-brands fa-git-alt btn-git-icon-only" style="display: none;"></i>
-                    <span class="btn-text">.git</span>
-                  </label>
-                  <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
-                    <button
-                      class="btn-tech btn-tech-push"
-                      :class="{
-                        'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false,
-                        'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
-                        'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
-                      }"
-                      @click="startSync(p, 'push')"
-                      :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled"
-                      :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'"
-                    >
-                      <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
-                    </button>
-                  </CountBadgeWrap>
-                </div>
+                <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
+                  <div class="dry-group-left">
+                    <label class="btn-tech-git-inline" :class="{ 'active': p.sync_git }" title="Include .git in Push">
+                      <input type="checkbox" v-model="p.sync_git" @change="saveProjectsList()" />
+                      <i class="fa-brands fa-git-alt btn-git-icon-only" style="display: none;"></i>
+                      <span class="btn-text">.git</span>
+                    </label>
+                    <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
+                      <button
+                        class="btn-tech btn-tech-push"
+                        :class="{
+                          'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false,
+                          'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
+                          'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                        }"
+                        @click="startSync(p, 'push')"
+                        :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'"
+                      >
+                        <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
+                      </button>
+                    </CountBadgeWrap>
+                  </div>
 
-                <div class="dry-toggle-center" title="Toggle Dry Run">
-                  <span class="dry-label">DRY</span>
-                  <label class="switch switch-sm">
-                    <input type="checkbox" v-model="p.dry_run" :disabled="projectRuntime[p.id]?.syncing" @change="saveProjectsList()" />
-                    <span class="slider"></span>
-                  </label>
-                </div>
+                  <div class="dry-toggle-center" title="Toggle Dry Run">
+                    <span class="dry-label">DRY</span>
+                    <label class="switch switch-sm">
+                      <input type="checkbox" v-model="p.dry_run" @change="saveProjectsList()" />
+                      <span class="slider"></span>
+                    </label>
+                  </div>
 
-                <div class="dry-group-right">
-                  <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
-                    <button
-                      class="btn-tech btn-tech-pull"
-                      :class="{
-                        'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false,
-                        'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
-                        'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
-                      }"
-                      @click="startSync(p, 'pull')"
-                      :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled"
-                      :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'"
-                    >
-                      <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
-                    </button>
-                  </CountBadgeWrap>
+                  <div class="dry-group-right">
+                    <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
+                      <button
+                        class="btn-tech btn-tech-pull"
+                        :class="{
+                          'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false,
+                          'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
+                          'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                        }"
+                        @click="startSync(p, 'pull')"
+                        :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'"
+                      >
+                        <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
+                      </button>
+                    </CountBadgeWrap>
+                  </div>
                 </div>
-              </div>
+              </fieldset>
 
               <button class="btn-tech btn-tech-secondary" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
                 <i class="fa-solid fa-file-lines btn-log-icon-only" style="display: none;"></i>
@@ -638,6 +638,22 @@ function formatTimeAgo(timestamp) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.remote-actions-fieldset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+fieldset:disabled .btn-tech-git-inline,
+fieldset:disabled .switch {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Giảm padding toàn diện cho các nút bấm trong bảng */

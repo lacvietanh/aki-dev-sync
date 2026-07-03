@@ -23,11 +23,19 @@ diag = {
 
 pct_match = re.search(r'(\d+)%\s*used', out, re.IGNORECASE)
 if not pct_match:
-    diag["parse_error"] = "no_pct_match"
-    print(json.dumps(diag))
-    sys.exit(0)
-
-pct = int(pct_match.group(1))
+    # After a quota reset, Claude's /usage no longer prints "X% used" — the session
+    # window is fresh with 0 usage. Treat any output that looks like a successful /usage
+    # response (contains "Claude" or "Usage" or a resets/session line) as pct=0 rather
+    # than a hard parse failure, so the cache still gets a valid resets_at written.
+    has_usage_context = bool(re.search(r'claude|usage|resets|session|limit|token', out, re.IGNORECASE))
+    if not has_usage_context or not out.strip():
+        diag["parse_error"] = "no_pct_match"
+        print(json.dumps(diag))
+        sys.exit(0)
+    pct = 0
+    diag["parse_error"] = "no_pct_match:assumed_zero"
+else:
+    pct = int(pct_match.group(1))
 diag["pct"] = pct
 resets_at = 0
 

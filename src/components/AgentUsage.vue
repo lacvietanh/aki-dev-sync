@@ -20,11 +20,15 @@
       </div>
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
+        <button class="btn-ui-action btn-profile" @click="showProfileModal = true" title="Claude Code Profile (Native / Proxy)" aria-label="Claude Code Profile Settings">
+          <i class="fa-solid fa-sliders"></i>
+        </button>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
-          <RefreshRing :interval-s="refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
+          <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
+      <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
     </div>
 
     <!-- Antigravity Header (Keep tiny logo + email) -->
@@ -85,7 +89,7 @@
         <span v-if="isCached" class="cached-note" :title="'Data cached at ' + cachedAbsTime">cached {{ cachedAgo }}</span>
         <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
-          <RefreshRing :interval-s="refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
+          <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
@@ -233,7 +237,10 @@ import { invoke } from '@tauri-apps/api/core';
 import Swal from 'sweetalert2';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
+import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
 import { refreshSettings } from '../store/refreshStore';
+
+const showProfileModal = ref(false);
 
 const props = defineProps({
   agentId: String,

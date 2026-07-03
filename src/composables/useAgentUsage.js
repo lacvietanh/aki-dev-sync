@@ -159,6 +159,7 @@ function listAgAccounts() {
 export function useAgentUsage(agentName, hostRef) {
   const ulog = makeLogger(agentName);
   logStartupInfo(); // one-time: resolves debug mode, enables console output
+  const a = agentName === 'antigravity' ? 'AG' : 'CC'; // abbreviation for log messages
 
   const data = ref(null);
   const loading = ref(false);
@@ -208,7 +209,7 @@ export function useAgentUsage(agentName, hostRef) {
       ulog('provision ok', {}, 'info');
     } catch (e) {
       provisioned = false;
-      ulog('provision error', { err: String(e) }, 'error');
+      ulog('provision err', { err: String(e) }, 'error');
     }
   };
 
@@ -224,13 +225,13 @@ export function useAgentUsage(agentName, hostRef) {
       // common right after relaunching AG/switching accounts) — run once more immediately
       // after the in-flight check finishes instead of waiting up to a full poll interval.
       pendingRecheck = true;
-      ulog('checkUsage queued (isChecking=true)', {}, 'debug');
+      ulog('queued', {}, 'debug');
       return;
     }
     isChecking = true;
     pollCount++;
 
-    ulog('checkUsage start', {
+    ulog('check start', {
       host: hostRef.value,
       poll: pollCount,
       hadData: data.value !== null,
@@ -245,9 +246,9 @@ export function useAgentUsage(agentName, hostRef) {
 
     try {
       const hadData = data.value !== null;
-      ulog('invoking get_agent_usage', { host: hostRef.value }, 'debug');
+      ulog('invoke get', { host: hostRef.value }, 'debug');
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
-      ulog('get_agent_usage returned', { hasResult: res !== null }, 'debug');
+      ulog('get ok', { hasResult: res !== null }, 'debug');
 
       if (res) {
         try {
@@ -275,9 +276,17 @@ export function useAgentUsage(agentName, hostRef) {
             // (not pinned to a previous account's cache).
             latestLive = parsed;
             latestLiveStale = liveStale;
+            const prevActive = activeEmail.value;
             activeEmail.value = parsed?.email || activeEmail.value;
             persistAgAccount(parsed, fetchedAt);
             refreshAccounts();
+            // Auto-reset pin when the live account changes: if the user had pinned account X
+            // but the live account is now Z (different email), holding the pin traps the UI
+            // on X's stale cache forever — the gate below blocks every new live fetch of Z.
+            // Clear viewingEmail so we follow the new live account automatically.
+            if (viewingEmail.value !== null && activeEmail.value !== prevActive && viewingEmail.value !== activeEmail.value) {
+              viewingEmail.value = null;
+            }
             if (viewingEmail.value === null || viewingEmail.value === activeEmail.value) {
               data.value = parsed;
               isCached.value = false;
@@ -317,7 +326,7 @@ export function useAgentUsage(agentName, hostRef) {
           // no session has written to it" — that is the null-result path below.
           if (agentName === 'claudecode' && !initialSyncDone) {
             initialSyncDone = true;
-            ulog('first load ok (data present, no forceSync)', { 'resets_at': fiveHour?.resets_at ?? null }, 'info');
+            ulog('cc first ok', { 'resets_at': fiveHour?.resets_at ?? null }, 'info');
           }
           // Re-provision existing hosts once per session (fire-and-forget). Hosts that already
           // have a cache always land here (never the null path that used to call provision), so
@@ -335,9 +344,9 @@ export function useAgentUsage(agentName, hostRef) {
           hadData,
           initialSyncDone,
           staleResetSyncDone,
-          null_reason: !hadData
-            ? (initialSyncDone ? 'repeated_null' : 'first_load_no_cache')
-            : 'transition_had_data_now_null (STALE_RESET)',
+          why: !hadData
+            ? (initialSyncDone ? 'repeat' : 'no_cache')
+            : 'STALE_RESET',
         }, 'info');
 
         // AG offline: the live fetch failed (IDE mid-restart — common right after an account
@@ -356,12 +365,12 @@ export function useAgentUsage(agentName, hostRef) {
             isCached.value = true;
             cachedAt.value = cached.fetchedAt;
             stale.value = true;
-            ulog('ag offline — showing cached account', { email: targetEmail, fetchedAt: cached.fetchedAt }, 'info');
+            ulog('ag offline cached', { email: targetEmail, fetchedAt: cached.fetchedAt }, 'info');
           } else {
             data.value = null;
             isCached.value = false;
             cachedAt.value = null;
-            ulog('ag offline — no cache available', {}, 'info');
+            ulog('ag offline no cache', {}, 'info');
           }
         } else {
           data.value = null;
@@ -369,21 +378,16 @@ export function useAgentUsage(agentName, hostRef) {
 
         if (agentName === 'claudecode' && !initialSyncDone) {
           initialSyncDone = true;
-          ulog('first load no cache → provision then forceSync', {}, 'info');
+          ulog('cc null: provision+fs', {}, 'info');
           await provision();
           forceSync();
         } else if (agentName === 'claudecode' && hadData && !staleResetSyncDone) {
-          // Transition: had data → now null = STALE_RESET. The cache was readable until
-          // this poll, so the hook is already installed — no provision needed. Recover
-          // once with a single force-sync.
           staleResetSyncDone = true;
-          ulog('STALE_RESET (had data → null) → forceSync (provision not needed)', {}, 'info');
+          ulog('cc STALE_RESET: fs', {}, 'info');
           forceSync();
         } else {
-          ulog('null received but no auto-forceSync triggered', {
-            reason: !hadData
-              ? 'hadData=false (already null from prev poll)'
-              : 'staleResetSyncDone=true (already triggered once)',
+          ulog('null: skip fs', {
+            reason: !hadData ? 'prev null' : 'stale done',
           }, 'debug');
         }
       }
@@ -393,7 +397,7 @@ export function useAgentUsage(agentName, hostRef) {
     } finally {
       loading.value = false;
       isChecking = false;
-      ulog('checkUsage done', { loading: false, isChecking: false, hasData: data.value !== null, hasError: !!error.value }, 'debug');
+      ulog('check done', { hasData: data.value !== null, hasError: !!error.value }, 'debug');
       if (pendingRecheck) {
         pendingRecheck = false;
         checkUsage();
@@ -403,63 +407,59 @@ export function useAgentUsage(agentName, hostRef) {
 
   const forceSync = async () => {
     if (!hostRef.value || isSyncing) {
-      ulog('forceSync skip', { reason: !hostRef.value ? 'no host' : 'already syncing' }, 'debug');
+      ulog('fs skip', { reason: !hostRef.value ? 'no host' : 'syncing' }, 'debug');
       return;
     }
     isSyncing = true;
     loading.value = true;
-    ulog('loading=true (forceSync)', {}, 'debug');
+    ulog('loading=true (fs)', {}, 'debug');
     error.value = null;
-    ulog('forceSync start', { host: hostRef.value, failCount: forceSyncFailCount }, 'info');
+    ulog('fs start', { host: hostRef.value, failCount: forceSyncFailCount }, 'info');
 
     let succeeded = false;
     try {
-      ulog('invoking force_sync_agent_usage', { host: hostRef.value }, 'debug');
+      ulog('invoke fs', { host: hostRef.value }, 'debug');
       // Rust now returns Err (rejects) when the remote script produced no output —
       // e.g. the shell died early. That lands in catch below and is treated as failure.
       const raw = await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
-      ulog('force_sync_agent_usage returned', { raw_len: String(raw).length }, 'debug');
+      ulog('fs invoke ok', { raw_len: String(raw).length }, 'debug');
       let diag = null;
       try {
         diag = JSON.parse(raw);
-        ulog('forceSync diagnostic', diag, 'debug');
+        ulog('fs diag', diag, 'debug');
       } catch (_) {
-        ulog('forceSync raw (not JSON)', { raw_preview: String(raw).slice(0, 200) }, 'debug');
+        ulog('fs raw (not JSON)', { raw_preview: String(raw).slice(0, 200) }, 'debug');
       }
       // claude ran but its output couldn't be parsed into usable data → soft failure.
       if (diag && diag.parsed === false) {
         throw new Error(`parser did not parse (parse_error=${diag.parse_error || 'unknown'})`);
       }
-      ulog('forceSync done, calling checkUsage', {}, 'info');
+      ulog('fs done: checkUsage', {}, 'info');
       await checkUsage();
       succeeded = data.value !== null;
-      ulog('forceSync complete', { data_loaded: succeeded }, 'info');
+      ulog('fs complete', { data_loaded: succeeded }, 'info');
     } catch (e) {
-      ulog('forceSync error', { err: String(e) }, 'error');
+      ulog('fs err', { err: String(e) }, 'error');
       error.value = e.toString();
     } finally {
       loading.value = false;
       isSyncing = false;
       if (succeeded) {
         forceSyncFailCount = 0;
-        ulog('forceSync finally', { isSyncing: false, outcome: 'success' }, 'info');
+        ulog('fs finally', { outcome: 'ok' }, 'info');
       } else {
         forceSyncFailCount++;
         if (forceSyncFailCount < MAX_FORCESYNC_RETRIES) {
           // Clear the one-shot guards so the next poll tick auto-retries (poll interval = backoff).
           initialSyncDone = false;
           staleResetSyncDone = false;
-          ulog('forceSync finally', {
-            isSyncing: false, outcome: 'fail-will-retry', failCount: forceSyncFailCount,
-          }, 'info');
+          ulog('fs finally', { outcome: 'retry', n: forceSyncFailCount }, 'info');
         } else {
           // Give up auto-retrying; keep guards set. Manual refresh still forces a fresh attempt.
           if (!error.value) {
             error.value = `Force sync failed ${forceSyncFailCount}× — auto-retry stopped. Try manual refresh.`;
           }
-          ulog('forceSync finally', {
-            isSyncing: false, outcome: 'fail-giveup', failCount: forceSyncFailCount,
-          }, 'error');
+          ulog('fs finally', { outcome: 'giveup', n: forceSyncFailCount }, 'error');
         }
       }
     }
@@ -500,7 +500,7 @@ export function useAgentUsage(agentName, hostRef) {
         stale.value = true;
       }
     }
-    ulog('ag select account', { email, active: activeEmail.value }, 'info');
+    ulog('ag select', { email, active: activeEmail.value }, 'info');
   };
 
   // AG-only: called right after a successful logout. logout_antigravity wipes AG's own auth
@@ -520,7 +520,7 @@ export function useAgentUsage(agentName, hostRef) {
     activeEmail.value = null;
     latestLive = null;
     latestLiveStale = false;
-    ulog('ag account reset (post-logout)', {}, 'info');
+    ulog('ag reset', {}, 'info');
     checkUsage();
   };
 
@@ -528,10 +528,10 @@ export function useAgentUsage(agentName, hostRef) {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     const s = refreshSettings.value.usage_interval_s;
-    ulog('poll timer restart', { interval_s: s, host: hostRef.value }, 'debug');
+    ulog('poll timer restart', { interval_s: s }, 'debug');
     if (hostRef.value && s > 0) {
       pollTimer = setInterval(() => {
-        ulog('poll tick', { poll: pollCount + 1, interval_s: s }, 'debug');
+        ulog('poll tick', { poll: pollCount + 1 }, 'debug');
         checkUsage();
       }, s * 1000);
     }
@@ -543,7 +543,7 @@ export function useAgentUsage(agentName, hostRef) {
     // change (e.g. switching the selected SSH remote) — toggling off should keep the
     // last-known reading on screen, marked as cached, not blank the card.
     const realHostChange = !!newHost && !!lastNonNullHost && newHost !== lastNonNullHost;
-    ulog('host changed', { newHost, lastNonNullHost, realHostChange }, 'info');
+    ulog('host change', { newHost, lastNonNullHost, realHostChange }, 'info');
     provisioned = false;
     initialSyncDone = false;
     staleResetSyncDone = false;
@@ -570,13 +570,13 @@ export function useAgentUsage(agentName, hostRef) {
   }, { immediate: true });
 
   watch(() => refreshSettings.value.usage_interval_s, (newVal) => {
-    ulog('interval changed', { new_interval_s: newVal }, 'debug');
+    ulog('interval changed', { interval_s: newVal }, 'debug');
     restartPollTimer();
   });
 
   watch(() => manualRefreshCount.value, (count) => {
     if (!hostRef.value) return;
-    ulog('manual refresh', { count, agent: agentName }, 'info');
+    ulog('refresh', { count, a }, 'info');
     // Manual refresh (Reload / Refresh buttons) = normal fresh load for all agents.
     // forceSync is NOT called here — it auto-triggers inside checkUsage() only when
     // the result is genuinely null (no cache / STALE_RESET). Resetting the one-shot

@@ -8,6 +8,14 @@ export const noteSaving = ref(false)
 let saveTimer = null
 let pendingSave = null
 
+export async function initGlobalNote() {
+  // Silent load on startup — just populates noteContent so AppHeader can
+  // show the yellow indicator without the user needing to open the note.
+  try {
+    noteContent.value = await invoke('read_global_note')
+  } catch (_) {}
+}
+
 export async function openGlobalNote() {
   showGlobalNote.value = true
   // Wait out any save still in flight so we don't clobber the just-saved

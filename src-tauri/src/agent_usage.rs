@@ -138,26 +138,32 @@ fn preview(s: &str, max: usize) -> String {
     } else {
         s
     };
-    s.replace('\n', "↵").replace('\r', "")
+    s.replace('\n', "\u{21b5}").replace('\r', "")
+}
+
+/// Returns "CC" for claudecode, "AG" for antigravity, or the agent name as-is.
+#[inline]
+fn ab(agent: &str) -> &str {
+    match agent {
+        "claudecode"  => "CC",
+        "antigravity" => "AG",
+        other         => other,
+    }
 }
 
 #[tauri::command]
 pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
-    logger::info("PROVISION", &format!("agent={} host={}", agent_name, host));
+    logger::info("PROVISION", &format!("{} host={}", ab(&agent_name), host));
 
     if agent_name != "claudecode" {
-        logger::debug("PROVISION", &format!("skip agent={} (not claudecode)", agent_name));
+        logger::debug("PROVISION", &format!("skip {}", ab(&agent_name)));
         return if agent_name == "antigravity" { Ok(true) } else { Err("Unknown agent".into()) };
     }
 
     const SCRIPT: &str = include_str!("../../scripts/provision-claudecode.sh");
     let output = run_remote_script(&host, SCRIPT)?;
     let ok = output.status.success();
-    logger::info("PROVISION", &format!(
-        "exit={} ok={}",
-        output.status.code().unwrap_or(-1),
-        ok
-    ));
+    logger::info("PROVISION", &format!("exit={} ok={}", output.status.code().unwrap_or(-1), ok));
     if !ok {
         let err = String::from_utf8_lossy(&output.stderr);
         let err_preview = preview(&err, 200);
@@ -169,10 +175,10 @@ pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<b
 
 #[tauri::command]
 pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<String, String> {
-    logger::info("FORCE_SYNC", &format!("─── start agent={} host={}", agent_name, host));
+    logger::info("FORCE_SYNC", &format!("{} host={}", ab(&agent_name), host));
 
     if agent_name != "claudecode" {
-        logger::debug("FORCE_SYNC", "SKIP: not supported for this agent");
+        logger::debug("FORCE_SYNC", &format!("skip {}", ab(&agent_name)));
         return Err("Force sync not supported for this agent".into());
     }
 
@@ -187,7 +193,7 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
         SHELL_PART, PYTHON_PARSER
     );
 
-    logger::debug("FORCE_SYNC", "launching SSH script (shell + python parser)...");
+    logger::debug("FORCE_SYNC", "launching");
     let output = run_remote_script(&host, &script)?;
 
     let exit_code = output.status.code().unwrap_or(-1);
@@ -195,7 +201,7 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     logger::debug("FORCE_SYNC", &format!(
-        "ssh_result: exit={} stdout_bytes={} stderr_bytes={}",
+        "exit={} stdout_b={} stderr_b={}",
         exit_code, stdout.len(), stderr.len()
     ));
 
@@ -210,11 +216,10 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
     // regression for many versions (see docs/research/claude-usage-dash-pipefail-regression.md).
     if stdout.is_empty() {
         logger::error("FORCE_SYNC", &format!(
-            "empty stdout (exit={} stderr_bytes={}) — parser produced nothing; \
-             remote shell likely died early (bashism on dash? claude missing? ssh fail?)",
+            "empty stdout exit={} stderr_b={}",
             exit_code, stderr.len()
         ));
-        logger::error("FORCE_SYNC", "─── done → FAILED (empty stdout)");
+        logger::error("FORCE_SYNC", "status=FAILED empty stdout");
         return Err(format!(
             "force-sync produced no output (exit={}). The remote script may have died early — \
              check the [FORCE_SYNC] shell lines in usage.log.",
@@ -222,7 +227,7 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
         ));
     }
 
-    logger::debug("FORCE_SYNC", &format!("diagnostic_raw: {}", preview(&stdout, 500)));
+    logger::debug("FORCE_SYNC", &format!("diag_raw: {}", preview(&stdout, 500)));
 
     // Parse and log each field of the diagnostic JSON individually.
     match serde_json::from_str::<serde_json::Value>(&stdout) {
@@ -238,51 +243,45 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
             let raw_prev   = diag.get("raw_preview").and_then(|v| v.as_str()).unwrap_or("");
 
             logger::info("FORCE_SYNC", &format!(
-                "diagnostic: parsed={} written={} pct={:?} resets_at={} raw_len={} year_fix={} overdue_s={:?}",
+                "diag parsed={} written={} pct={:?} resets_at={} raw_len={} year_fix={} overdue_s={:?}",
                 parsed, written, pct, resets_at, raw_len, year_fix, overdue
             ));
 
             if !parse_err.is_empty() {
-                logger::error("FORCE_SYNC", &format!("diagnostic: parse_error={}", parse_err));
+                logger::error("FORCE_SYNC", &format!("parse_error={}", parse_err));
             }
             if !raw_prev.is_empty() {
-                logger::debug("FORCE_SYNC", &format!("diagnostic: raw_preview={}", preview(raw_prev, 300)));
+                logger::debug("FORCE_SYNC", &format!("raw_preview={}", preview(raw_prev, 300)));
             }
 
             if year_fix {
                 let from = diag.get("year_fix_from").and_then(|v| v.as_i64()).unwrap_or(0);
                 let to   = diag.get("year_fix_to").and_then(|v| v.as_i64()).unwrap_or(0);
-                logger::info("FORCE_SYNC", &format!(
-                    "diagnostic: YEAR_FIX applied resets_at {} → {} (was >1h in past, pushed to next year)",
-                    from, to
-                ));
+                logger::info("FORCE_SYNC", &format!("year_fix from={} to={}", from, to));
             }
 
             if !parsed {
-                logger::error("FORCE_SYNC", "parser did not parse — cache NOT updated");
+                logger::error("FORCE_SYNC", "parse failed: cache not updated");
             } else if !written {
-                logger::error("FORCE_SYNC", "parsed ok but cache write FAILED");
+                logger::error("FORCE_SYNC", "write failed");
                 if let Some(we) = diag.get("write_error").and_then(|v| v.as_str()) {
-                    logger::error("FORCE_SYNC", &format!("diagnostic: write_error={}", we));
+                    logger::error("FORCE_SYNC", &format!("write_error={}", we));
                 }
             } else {
                 let now = now_secs();
                 let until_reset = resets_at - now;
                 logger::info("FORCE_SYNC", &format!(
-                    "─── done → SUCCESS: cache updated pct={:?} resets_at={} until_reset_s={}",
+                    "done: ok pct={:?} resets_at={} until_s={}",
                     pct, resets_at, until_reset
                 ));
             }
         }
         Err(e) => {
-            logger::error("FORCE_SYNC", &format!(
-                "stdout is not valid JSON err={} raw_preview={}",
-                e, preview(&stdout, 200)
-            ));
+            logger::error("FORCE_SYNC", &format!("json_parse err={} raw={}", e, preview(&stdout, 200)));
         }
     }
 
-    logger::debug("FORCE_SYNC", "─── done → returning diagnostic to JS");
+    logger::debug("FORCE_SYNC", "done: returning diag");
     Ok(stdout)
 }
 
@@ -311,17 +310,17 @@ pub async fn get_agent_usage(
 fn log_shell_stderr(tag: &str, stderr: &str) {
     let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
     if lines.is_empty() {
-        logger::debug(tag, "shell_stderr: (empty)");
+        logger::debug(tag, "stderr: (empty)");
         return;
     }
-    logger::debug(tag, &format!("shell_stderr: {} lines follow", lines.len()));
+    logger::debug(tag, &format!("stderr: {} lines", lines.len()));
     for line in lines {
-        logger::debug(tag, &format!("  shell| {}", line));
+        logger::debug(tag, &format!("  | {}", line));
     }
 }
 
 fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
-    logger::debug("GET_USAGE", &format!("─── start host={}", host));
+    logger::debug("GET_USAGE", &format!("start host={}", host));
 
     const SCRIPT: &str = include_str!("../../scripts/get-claudecode-usage.sh");
     let output = run_remote_script(host, SCRIPT)?;
@@ -331,37 +330,37 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     logger::debug("GET_USAGE", &format!(
-        "ssh_result: exit={} stdout_bytes={} stderr_bytes={}",
+        "exit={} stdout_b={} stderr_b={}",
         exit_code, stdout.len(), stderr.len()
     ));
 
     log_shell_stderr("GET_USAGE", &stderr);
 
     if !output.status.success() {
-        logger::error("GET_USAGE", &format!("FAIL: shell exit={} → returning None", exit_code));
+        logger::error("GET_USAGE", &format!("shell exit={}", exit_code));
         return Ok(None);
     }
 
     if stdout.trim().is_empty() {
-        logger::info("GET_USAGE", "no cache file on remote → None");
+        logger::info("GET_USAGE", "null: no cache");
         return Ok(None);
     }
 
     // STALE_RESET signal
     if stdout.trim() == "|||STALE_RESET|||" {
-        logger::info("GET_USAGE", "STALE_RESET: resets_at is in the past → None (JS will forceSync)");
+        logger::info("GET_USAGE", "null: STALE_RESET");
         return Ok(None);
     }
 
-    logger::debug("GET_USAGE", &format!("stdout_preview: {}", preview(&stdout, 300)));
+    logger::debug("GET_USAGE", &format!("stdout: {}", preview(&stdout, 300)));
 
     // ── Parse delimiter chain ─────────────────────────────────────────────
     // Expected: <json>|||MTIME|||<ts>|||SUBTYPE|||<st>|||TIER|||<tier>|||AUTHINFO|||<json>
 
     let parts: Vec<&str> = stdout.split("|||MTIME|||").collect();
-    logger::debug("GET_USAGE", &format!("parse MTIME split: {} parts (expected 2)", parts.len()));
+    logger::debug("GET_USAGE", &format!("mtime_parts={}", parts.len()));
     if parts.len() != 2 {
-        logger::error("GET_USAGE", "MTIME delimiter missing in stdout → None");
+        logger::error("GET_USAGE", "no MTIME delimiter");
         return Ok(None);
     }
 
@@ -370,36 +369,25 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 
     let mtime_split: Vec<&str> = after_mtime.split("|||SUBTYPE|||").collect();
     let mtime_sec = mtime_split[0].trim().parse::<i64>().unwrap_or(0);
-    logger::debug("GET_USAGE", &format!(
-        "parse mtime_sec={} (raw='{}') subtype_parts={}",
-        mtime_sec,
-        mtime_split[0].trim(),
-        mtime_split.len()
-    ));
+    logger::debug("GET_USAGE", &format!("mtime={} subtype_parts={}", mtime_sec, mtime_split.len()));
 
     let (sub_type, tier, auth_json) = if mtime_split.len() > 1 {
         let sub_split: Vec<&str> = mtime_split[1].split("|||TIER|||").collect();
         let st = sub_split[0].trim();
-        logger::debug("GET_USAGE", &format!(
-            "parse subtype='{}' tier_parts={}",
-            st, sub_split.len()
-        ));
+        logger::debug("GET_USAGE", &format!("subtype='{}' tier_parts={}", st, sub_split.len()));
         let (t, auth) = if sub_split.len() > 1 {
             let tier_split: Vec<&str> = sub_split[1].split("|||AUTHINFO|||").collect();
             let tier_val = tier_split[0].trim();
             let auth_val = if tier_split.len() > 1 { tier_split[1].trim() } else { "{}" };
-            logger::debug("GET_USAGE", &format!(
-                "parse tier='{}' authinfo_len={} authinfo_parts={}",
-                tier_val, auth_val.len(), tier_split.len()
-            ));
+            logger::debug("GET_USAGE", &format!("tier='{}' authinfo_b={}", tier_val, auth_val.len()));
             (tier_val, auth_val)
         } else {
-            logger::debug("GET_USAGE", "parse TIER delimiter missing → tier=Unknown auth={}");
+            logger::debug("GET_USAGE", "no TIER delimiter");
             ("Unknown", "{}")
         };
         (st, t, auth)
     } else {
-        logger::debug("GET_USAGE", "parse SUBTYPE delimiter missing → subtype/tier/auth all Unknown");
+        logger::debug("GET_USAGE", "no SUBTYPE delimiter");
         ("Unknown", "Unknown", "{}")
     };
 
@@ -407,14 +395,11 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
     let content_len = content_raw.len();
     let mut v: serde_json::Value = match serde_json::from_str(content_raw) {
         Ok(val) => {
-            logger::debug("GET_USAGE", &format!("json_parse: ok content_len={}", content_len));
+            logger::debug("GET_USAGE", &format!("json_ok b={}", content_len));
             val
         }
         Err(e) => {
-            logger::error("GET_USAGE", &format!(
-                "json_parse FAILED content_len={} err={} → using empty object",
-                content_len, e
-            ));
+            logger::error("GET_USAGE", &format!("json_parse err={} b={}", e, content_len));
             serde_json::Value::Object(Default::default())
         }
     };
@@ -431,19 +416,12 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
             Ok(auth) => {
                 let email = auth.get("email").and_then(|v| v.as_str()).unwrap_or("");
                 let org   = auth.get("orgName").and_then(|v| v.as_str()).unwrap_or("");
-                logger::debug("GET_USAGE", &format!(
-                    "auth_inject: email='{}' org='{}'",
-                    if email.is_empty() { "(none)" } else { email },
-                    if org.is_empty() { "(none)" } else { org }
-                ));
+                logger::debug("GET_USAGE", &format!("auth email='{}' org='{}'", email, org));
                 if !email.is_empty() { obj.insert("email".to_string(), serde_json::json!(email)); }
                 if !org.is_empty()   { obj.insert("orgName".to_string(), serde_json::json!(org)); }
             }
             Err(e) => {
-                logger::error("GET_USAGE", &format!(
-                    "auth_inject FAILED to parse authinfo json err={} authinfo_preview={}",
-                    e, preview(auth_json, 100)
-                ));
+                logger::error("GET_USAGE", &format!("auth_parse err={} preview={}", e, preview(auth_json, 100)));
             }
         }
     }
@@ -469,17 +447,11 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
                 format!("pct={} resets_at={}", pct, resets)
             })
             .unwrap_or_else(|| "absent".to_string());
-        logger::debug("GET_USAGE", &format!(
-            "rate_limits: five_hour=[{}]  seven_day=[{}]  server_now={}",
-            five_h, seven_d, now
-        ));
+        logger::debug("GET_USAGE", &format!("rl 5h=[{}] 7d=[{}]", five_h, seven_d));
     }
 
     let content = serde_json::to_string(&v).unwrap_or_default();
-    logger::debug("GET_USAGE", &format!(
-        "─── done → Ok(Some) mtime={} content_bytes={}",
-        mtime_sec, content.len()
-    ));
+    logger::debug("GET_USAGE", &format!("done mtime={} b={}", mtime_sec, content.len()));
     Ok(Some(AgentUsageResponse {
         content,
         fetched_at: now_secs().to_string(),
@@ -488,6 +460,8 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 }
 
 fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
+    logger::debug("USAGE:antigravity", &format!("start host={}", host));
+
     let script = include_str!("../../scripts/get-antigravity-usage.js");
 
     let mut command = if host == "local" || host == "localhost" {
@@ -520,6 +494,12 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         .wait_with_output()
         .map_err(|e| format!("Failed to run node script: {}", e))?;
 
+    let exit_code = output.status.code().unwrap_or(-1);
+    logger::debug("USAGE:antigravity", &format!(
+        "exit={} stdout_b={} stderr_b={}",
+        exit_code, output.stdout.len(), output.stderr.len()
+    ));
+
     if !output.status.success() {
         // Every non-zero exit here is a *transient monitor* condition, never a user-facing
         // fault: the IDE isn't running, is mid-restart, hasn't opened its Connect port yet,
@@ -529,16 +509,18 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         // an IPC Err only produced a flickering error banner every poll: that WAS the usage
         // instability. So swallow all AG script failures to Ok(None); just log the reason.
         let stderr = String::from_utf8_lossy(&output.stderr);
-        logger::debug("USAGE:antigravity", &format!("soft-miss (offline→cache): {}", stderr.trim()));
+        logger::debug("USAGE:antigravity", &format!("soft-miss: {}", stderr.trim()));
         return Ok(None);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if stdout.trim().is_empty() {
+        logger::debug("USAGE:antigravity", "done: null empty stdout");
         return Ok(None);
     }
 
     let now = now_secs().to_string();
+    logger::debug("USAGE:antigravity", &format!("done: ok b={}", stdout.len()));
     Ok(Some(AgentUsageResponse {
         content: stdout.to_string(),
         fetched_at: now.clone(),
@@ -616,7 +598,7 @@ fn remove_antigravity_auth_rows(base: &std::path::Path) {
             .output();
         match out {
             Ok(o) if o.status.success() => {
-                logger::info("LOGOUT:antigravity", &format!("cleared auth rows from {}", db_name));
+                logger::info("LOGOUT:antigravity", &format!("cleared {}", db_name));
             }
             Ok(o) => {
                 let err = String::from_utf8_lossy(&o.stderr);
