@@ -63,6 +63,9 @@
       <button class="btn-tech btn-tech-secondary" @click="handleFetch" :disabled="isGitLoading">
         <i class="fa-solid fa-download"></i> FETCH
       </button>
+      <button class="btn-tech btn-tech-secondary" @click="handlePull" :disabled="isGitLoading">
+        <i class="fa-solid fa-cloud-arrow-down"></i> PULL
+      </button>
       <button class="btn-tech btn-tech-secondary" @click="handlePush" :disabled="isGitLoading">
         <i class="fa-solid fa-upload"></i> PUSH
       </button>
@@ -96,6 +99,7 @@ const {
   fetchGitStatus,
   runGitFetch,
   runGitPush,
+  runGitPull,
   runGitCommit,
   projectChangelogText
 } = useProjects()
@@ -117,15 +121,20 @@ const formattedGitLog = computed(() => {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-  // Map ANSI color codes to styled HTML spans
+  // Map ANSI color codes to styled HTML spans. Covers what `git status`/`log` emit plus the
+  // extra codes `fetch`/`push`/`pull` use for progress and ref updates (magenta, blue, etc).
   html = html
     .replace(/\u001b\[31m/g, '<span style="color: var(--accent-red, #ef4444);">')
     .replace(/\u001b\[32m/g, '<span style="color: var(--accent-green, #10b981);">')
     .replace(/\u001b\[33m/g, '<span style="color: #f59e0b;">')
+    .replace(/\u001b\[34m/g, '<span style="color: #3b82f6;">')
+    .replace(/\u001b\[35m/g, '<span style="color: #d946ef;">')
     .replace(/\u001b\[36m/g, '<span style="color: #06b6d4;">')
     .replace(/\u001b\[1m/g, '<span style="font-weight: bold;">')
-    .replace(/\u001b\[m/g, '</span>')
-    .replace(/\u001b\[0m/g, '</span>')
+    .replace(/\u001b\[(?:0)?m/g, '</span>')
+    // Any other/unrecognized SGR or cursor-control sequence (e.g. \x1b[K clear-line during
+    // fetch/push progress) — drop silently rather than leaving raw escape bytes on screen.
+    .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '')
 
   return html
 })
@@ -152,6 +161,15 @@ async function handlePush() {
   if (!gitProject.value) return
   try {
     await runGitPush(gitProject.value)
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+async function handlePull() {
+  if (!gitProject.value) return
+  try {
+    await runGitPull(gitProject.value)
   } catch (e) {
     console.error(e)
   }

@@ -93,9 +93,11 @@
           <!-- Cell 3: Git Status -->
           <div class="grid-row-cell col-git-status">
             <div class="git-cell">
-              <button class="btn-action-git" @click="openGitModal(p)" title="Git Actions (Commit & Push to Remote Git)" aria-label="Git Actions">
-                <i class="fa-brands fa-git-alt"></i>
-              </button>
+              <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
+                <button class="btn-action-git" @click="openGitModal(p)" :title="projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : 'Git Actions (Commit & Push to Remote Git)'" aria-label="Git Actions">
+                  <i class="fa-brands fa-git-alt"></i>
+                </button>
+              </CountBadgeWrap>
               <span class="git-badge" :class="'git-' + (projectRuntime[p.id]?.git_status || 'Unknown').replace(' ', '-')">
                 {{ projectRuntime[p.id]?.git_status || '...' }}
               </span>
@@ -129,7 +131,12 @@
                     <div style="display: flex;">
                       <!-- LOCAL -->
                       <div style="flex: 1; min-width: 150px;">
-                        <div class="popup-section-label">💻 LOCAL</div>
+                        <div class="popup-section-label">
+                          <span>💻 LOCAL</span>
+                          <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
+                            <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                          </button>
+                        </div>
                         <div class="popup-item" @click="openIdeLocal('finder', p.local_path)">
                           <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
                         </div>
@@ -157,7 +164,12 @@
 
                       <!-- REMOTE -->
                       <div v-if="p.remote_host && p.remote_path && remoteModeEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
-                        <div class="popup-section-label">☁️ REMOTE (SSH)</div>
+                        <div class="popup-section-label">
+                          <span>☁️ REMOTE (SSH)</span>
+                          <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
+                            <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                          </button>
+                        </div>
                         <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
                           <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
                         </div>
@@ -187,8 +199,7 @@
                     <i class="fa-brands fa-git-alt btn-git-icon-only" style="display: none;"></i>
                     <span class="btn-text">.git</span>
                   </label>
-                  <div class="sync-btn-wrap">
-                    <span v-if="projectRuntime[p.id]?.pushCount > 0" class="sync-count-badge">{{ projectRuntime[p.id].pushCount }}</span>
+                  <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
                     <button
                       class="btn-tech btn-tech-push"
                       :class="{
@@ -202,7 +213,7 @@
                     >
                       <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
                     </button>
-                  </div>
+                  </CountBadgeWrap>
                 </div>
 
                 <div class="dry-toggle-center" title="Toggle Dry Run">
@@ -214,8 +225,7 @@
                 </div>
 
                 <div class="dry-group-right">
-                  <div class="sync-btn-wrap">
-                    <span v-if="projectRuntime[p.id]?.pullCount > 0" class="sync-count-badge">{{ projectRuntime[p.id].pullCount }}</span>
+                  <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
                     <button
                       class="btn-tech btn-tech-pull"
                       :class="{
@@ -229,7 +239,7 @@
                     >
                       <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
                     </button>
-                  </div>
+                  </CountBadgeWrap>
                 </div>
               </div>
 
@@ -260,6 +270,7 @@ import { Toast, ideAvailability, iconTimestamp } from '../store/projectStore';
 import { remoteModeEnabled } from '../store/remoteModeStore';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
+import CountBadgeWrap from './CountBadgeWrap.vue';
 
 const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSelectDialog, openConfig, openGitModal } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
@@ -343,15 +354,24 @@ function onRowDragEnd() {
 
 const IDE_LOCAL_ARGS = {
   finder: p => [p],
-  terminal: p => ['-a', 'Terminal', p],
   vscode: p => ['-a', 'Visual Studio Code', p],
   vscode_insiders: p => ['-a', 'Visual Studio Code - Insiders', p],
   antigravity: p => ['-a', 'Antigravity IDE', p],
 }
 
 async function openIdeLocal(ideName, path) {
-  const args = IDE_LOCAL_ARGS[ideName]?.(path)
-  if (args) try { await invoke('macos_open', { args }); } catch (e) { console.error(e); }
+  try {
+    // Terminal goes through a dedicated command (not `open -a Terminal <path>`) so it gets the
+    // same cold-start double-window fix as SSH terminal / run_project_command.
+    if (ideName === 'terminal') {
+      await invoke('open_local_terminal', { localPath: path });
+      return;
+    }
+    const args = IDE_LOCAL_ARGS[ideName]?.(path)
+    if (args) await invoke('macos_open', { args });
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 async function runProjectCommand(path, cmd) {
@@ -364,17 +384,47 @@ async function runProjectCommand(path, cmd) {
   }
 }
 
+async function resolveRemoteFullPath(host, path) {
+  let resolvedPath = path;
+  if (path.startsWith('~/') || path === '~' || path.includes('$HOME')) {
+    try {
+      resolvedPath = await invoke('resolve_remote_path', { host, path });
+    } catch (e) {
+      console.error('Failed to resolve remote path', e);
+    }
+  }
+  return resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
+}
+
+const copiedPathKey = ref(null);
+
+function flashCopied(key) {
+  copiedPathKey.value = key;
+  setTimeout(() => { if (copiedPathKey.value === key) copiedPathKey.value = null; }, 1500);
+}
+
+async function copyLocalPath(project) {
+  try {
+    await navigator.clipboard.writeText(project.local_path);
+    flashCopied(`local-${project.id}`);
+  } catch (e) {
+    console.error('Failed to copy local path', e);
+  }
+}
+
+async function copyRemotePath(project) {
+  try {
+    const fullPath = await resolveRemoteFullPath(project.remote_host, project.remote_path);
+    await navigator.clipboard.writeText(fullPath);
+    flashCopied(`remote-${project.id}`);
+  } catch (e) {
+    console.error('Failed to copy remote path', e);
+  }
+}
+
 async function openIdeRemote(ideName, host, path) {
   try {
-    let resolvedPath = path;
-    if (path.startsWith('~/') || path === '~' || path.includes('$HOME')) {
-      try {
-        resolvedPath = await invoke('resolve_remote_path', { host, path });
-      } catch (e) {
-        console.error('Failed to resolve remote path', e);
-      }
-    }
-    const remotePath = resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
+    const remotePath = await resolveRemoteFullPath(host, path);
     if (ideName === 'vscode') {
       await invoke('macos_open', { args: [`vscode://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else if (ideName === 'vscode_insiders') {
@@ -696,12 +746,29 @@ function formatTimeAgo(timestamp) {
 }
 
 .popup-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: rgba(255, 255, 255, 0.35);
   padding: 4px 12px 2px;
   user-select: none;
+}
+
+.popup-copy-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  transition: color 0.15s;
+}
+.popup-copy-btn:hover {
+  color: var(--accent-cyan, #00d2ff);
 }
 
 .popup-item {
@@ -772,30 +839,5 @@ function formatTimeAgo(timestamp) {
 
 .btn-sync-diverged {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
-}
-
-/* Count badge — absolute overlay above the button, zero impact on layout */
-.sync-btn-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.sync-count-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  z-index: 1;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  background: #ef4444;
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 14px;
-  text-align: center;
-  color: #fff;
-  pointer-events: none;
-  user-select: none;
 }
 </style>

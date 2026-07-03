@@ -18,6 +18,7 @@
 
 <script setup>
 import { onMounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import AppHeader from './components/AppHeader.vue';
 import AgentUsageSection from './components/AgentUsageSection.vue';
 import ProjectTable from './components/ProjectTable.vue';
@@ -34,7 +35,15 @@ import { useSsh } from './composables/useSsh';
 const { loadData } = useProjects();
 const { sshHosts } = useSsh();
 
+const LEGACY_BASELINE_CLEANUP_KEY = 'aki-legacy-baseline-cleanup-v1';
+
 onMounted(() => {
   loadData(sshHosts, false);
+
+  if (localStorage.getItem(LEGACY_BASELINE_CLEANUP_KEY) !== 'true') {
+    invoke('cleanup_legacy_baselines')
+      .then(() => localStorage.setItem(LEGACY_BASELINE_CLEANUP_KEY, 'true'))
+      .catch(() => {});
+  }
 });
 </script>

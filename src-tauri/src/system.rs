@@ -41,6 +41,47 @@ fn applescript_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Runs `shell_cmd` in Terminal.app via AppleScript, avoiding the double-window bug where a
+/// cold-started Terminal spawns its own default (home-dir) window at launch *and* `do script`
+/// spawns a second one for the command. When Terminal has to be launched from scratch, we reuse
+/// its freshly-created default window (`in window 1`) instead of letting `do script` open another;
+/// when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
+///
+/// The wait for that default window is a poll (up to ~2s, checking every 100ms), not a fixed
+/// `delay` — a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the
+/// window isn't up yet when we check, we'd fall through to `do script` opening a *second* window,
+/// and the slow default window would still appear on its own moments later (the exact "one window
+/// at $HOME + one at the right target" bug this helper exists to prevent).
+#[cfg(target_os = "macos")]
+fn open_terminal_with_command(shell_cmd: &str) -> Result<(), String> {
+    let safe_cmd = applescript_escape(shell_cmd);
+    let script = format!(
+        "tell application \"Terminal\"\n\
+         \tset wasOff to not running\n\
+         \tif wasOff then\n\
+         \t\tlaunch\n\
+         \t\trepeat 20 times\n\
+         \t\t\tif (count of windows) > 0 then exit repeat\n\
+         \t\t\tdelay 0.1\n\
+         \t\tend repeat\n\
+         \tend if\n\
+         \tif wasOff and (count of windows) > 0 then\n\
+         \t\tdo script \"{cmd}\" in window 1\n\
+         \telse\n\
+         \t\tdo script \"{cmd}\"\n\
+         \tend if\n\
+         \tactivate\n\
+         end tell",
+        cmd = safe_cmd
+    );
+    Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .spawn()
+        .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+    Ok(())
+}
+
 /// Passes args directly to macOS `open`. JS is responsible for building the arg list.
 #[tauri::command]
 pub fn macos_open(args: Vec<String>) -> Result<(), String> {
@@ -48,6 +89,19 @@ pub fn macos_open(args: Vec<String>) -> Result<(), String> {
         .args(&args)
         .spawn()
         .map_err(|e| format!("Failed to open: {}", e))?;
+    Ok(())
+}
+
+/// Opens a local Terminal window `cd`'d into `local_path`. Routed through
+/// `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it
+/// gets the same cold-start double-window protection as `run_project_command`/SSH terminal.
+#[tauri::command]
+pub fn open_local_terminal(local_path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let shell_cmd = format!("cd \"{}\"", local_path);
+        open_terminal_with_command(&shell_cmd)?;
+    }
     Ok(())
 }
 
@@ -62,16 +116,13 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             #[cfg(target_os = "macos")]
             {
                 let expanded = expand_remote_tilde(&path);
-                let safe_path = applescript_escape(&expanded);
-                let script = format!(
-                    "tell application \"Terminal\" to do script \"ssh {} -t 'mkdir -p \\\"{}\\\" && cd \\\"{}\\\" ; exec bash'\"",
-                    host, safe_path, safe_path
+                // Quotes here are shell quotes inside the ssh command, not AppleScript quotes —
+                // open_terminal_with_command applies the AppleScript escaping separately.
+                let shell_cmd = format!(
+                    "ssh {} -t 'mkdir -p \"{}\" && cd \"{}\" ; exec bash'",
+                    host, expanded, expanded
                 );
-                Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .spawn()
-                    .map_err(|e| format!("Failed to open remote terminal: {}", e))?;
+                open_terminal_with_command(&shell_cmd)?;
             }
             Ok(())
         }
@@ -312,17 +363,8 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
 pub fn run_project_command(local_path: String, cmd: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let safe_path = applescript_escape(&local_path);
-        let escaped_cmd = cmd.replace("\"", "\\\"");
-        let script = format!(
-            "tell application \"Terminal\" to do script \"cd \\\"{}\\\" && {}\"",
-            safe_path, escaped_cmd
-        );
-        create_command("osascript")
-            .arg("-e")
-            .arg(&script)
-            .spawn()
-            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+        let shell_cmd = format!("cd \"{}\" && {}", local_path, cmd);
+        open_terminal_with_command(&shell_cmd)?;
     }
     Ok(())
 }

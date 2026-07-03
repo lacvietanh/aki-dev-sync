@@ -21,6 +21,17 @@ fn get_rsync_versions() -> &'static Mutex<HashMap<String, String>> {
     RSYNC_VERSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+// Caches Tauri's appDataDir once per process so baseline_dir() (and anything else keyed off
+// it) resolves correctly. Safe to call from any command that has an AppHandle — OnceLock::set
+// is a no-op once the value is already populated.
+fn ensure_app_data_dir(app: &tauri::AppHandle) {
+    if APP_DATA_DIR.get().is_none() {
+        if let Ok(dir) = app.path().app_data_dir() {
+            let _ = APP_DATA_DIR.set(dir);
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 struct LogPayload {
     project_id: String,
@@ -150,14 +161,20 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 // command call). If APP_DATA_DIR is not yet set, the legacy ~/.aki path is used
 // as a fallback so read_baseline can also find baselines written by old builds.
 
+// Pre-appDataDir (<1.7.1) baseline location — sole source of truth for that path,
+// used by baseline_dir()'s fallback, legacy_baseline_path(), and cleanup_legacy_baselines().
+fn legacy_baseline_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".aki").join("devsync-baselines")
+}
+
 fn baseline_dir() -> PathBuf {
     if let Some(dir) = APP_DATA_DIR.get() {
         dir.join("baselines")
     } else {
         // Fallback: used if baseline_dir() is called before any Tauri command sets
         // APP_DATA_DIR (should not happen in practice).
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        PathBuf::from(home).join(".aki").join("devsync-baselines")
+        legacy_baseline_dir()
     }
 }
 
@@ -167,11 +184,7 @@ fn baseline_path(project_id: &str) -> PathBuf {
 
 // Legacy path from pre-appDataDir builds — read_baseline checks this as fallback.
 fn legacy_baseline_path(project_id: &str) -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home)
-        .join(".aki")
-        .join("devsync-baselines")
-        .join(format!("{}.json", project_id))
+    legacy_baseline_dir().join(format!("{}.json", project_id))
 }
 
 fn collect_local_files_with_mtime(
@@ -222,6 +235,41 @@ fn write_baseline(local_path: &str, project_id: &str) -> Result<(), String> {
     std::fs::write(&path, json)
         .map_err(|e| format!("baseline write: {}", e))?;
     Ok(())
+}
+
+/// One-shot migration off the pre-1.7.1 `~/.aki/devsync-baselines` path: copies any
+/// baseline files not already present in appDataDir, then removes the legacy dir.
+/// Frontend gates this behind a localStorage flag so it only runs once per install.
+/// Losing an unmigrated baseline is non-destructive — the next full sync just rewrites it.
+#[tauri::command]
+pub fn cleanup_legacy_baselines(app: tauri::AppHandle) -> Result<bool, String> {
+    ensure_app_data_dir(&app);
+
+    let legacy_dir = legacy_baseline_dir();
+    if !legacy_dir.exists() {
+        return Ok(false);
+    }
+
+    let new_dir = baseline_dir();
+    std::fs::create_dir_all(&new_dir).map_err(|e| format!("baseline mkdir: {}", e))?;
+
+    if let Ok(entries) = std::fs::read_dir(&legacy_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            if let Some(name) = path.file_name() {
+                let dest = new_dir.join(name);
+                if !dest.exists() {
+                    let _ = std::fs::copy(&path, &dest);
+                }
+            }
+        }
+    }
+
+    std::fs::remove_dir_all(&legacy_dir).map_err(|e| format!("legacy baseline cleanup: {}", e))?;
+    Ok(true)
 }
 
 fn read_baseline(project_id: &str) -> Option<HashMap<String, u64>> {
@@ -414,10 +462,7 @@ fn run_sync_blocking(
     // Write baseline after a full (non-dry, non-partial) sync so the next status
     // check can classify PULL/PUSH files against the last-known-good state (EC-3).
     if !dry_run && specific_paths.is_empty() {
-        // Cache appDataDir once per process so baseline_dir() resolves correctly.
-        if let Ok(dir) = window.app_handle().path().app_data_dir() {
-            let _ = APP_DATA_DIR.set(dir);
-        }
+        ensure_app_data_dir(&window.app_handle());
         let local_path = project.local_path.clone();
         let project_id = project.id.clone();
         if let Err(e) = write_baseline(&local_path, &project_id) {
@@ -578,11 +623,7 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
 #[tauri::command]
 pub async fn check_sync_status(app: tauri::AppHandle, project: SyncProject) -> Result<SyncStatusResult, String> {
     validate_project(&project)?;
-    // Cache appDataDir once — baseline_dir() uses it so read_baseline() resolves to the
-    // correct location even when this is the first command called (before any sync).
-    if let Ok(dir) = app.path().app_data_dir() {
-        let _ = APP_DATA_DIR.set(dir);
-    }
+    ensure_app_data_dir(&app);
     tauri::async_runtime::spawn_blocking(move || {
         let (push_count, pull_count) = compute_sync_counts(&project)?;
         Ok(SyncStatusResult {

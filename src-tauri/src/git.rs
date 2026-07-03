@@ -7,6 +7,7 @@ pub struct GitInfo {
     pub status: String,
     pub remote_url: String,
     pub log: String,
+    pub changed_count: usize,
 }
 
 #[derive(Serialize)]
@@ -75,10 +76,15 @@ pub async fn get_git_info(local_path: String) -> Result<GitInfo, String> {
                 status: "No Git".to_string(),
                 remote_url: String::new(),
                 log: "Not a git repository.".to_string(),
+                changed_count: 0,
             });
         }
 
         let porcelain = git_capture(path, &["-c", "core.quotepath=false", "status", "--porcelain"]);
+        let changed_count = porcelain
+            .as_deref()
+            .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
+            .unwrap_or(0);
         let status = match porcelain.as_deref() {
             None => "Git Error".to_string(),
             Some(s) if s.is_empty() => {
@@ -96,7 +102,7 @@ pub async fn get_git_info(local_path: String) -> Result<GitInfo, String> {
             log.push_str(&commits);
         }
 
-        Ok(GitInfo { status, remote_url, log })
+        Ok(GitInfo { status, remote_url, log, changed_count })
     }).await.map_err(|e| format!("Task error: {}", e))?
 }
 

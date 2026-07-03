@@ -2,7 +2,7 @@
 import { projects, projectRuntime, anySyncing, isReloading, Toast } from '../store/projectStore'
 import {
   showGitModal, gitProject, gitStatusText, fetchGitStatus, openGitModal, closeGitModal,
-  isGitLoading, runGitFetch, runGitPush, runGitCommit, projectChangelogText
+  isGitLoading, runGitFetch, runGitPush, runGitPull, runGitCommit, projectChangelogText
 } from './useGit'
 import {
   showConfigModal, editingProject,
@@ -19,7 +19,7 @@ export {
   projects, projectRuntime, anySyncing, isReloading, Toast,
   // git
   showGitModal, gitProject, gitStatusText, fetchGitStatus, openGitModal, closeGitModal,
-  isGitLoading, runGitFetch, runGitPush, runGitCommit, projectChangelogText,
+  isGitLoading, runGitFetch, runGitPush, runGitPull, runGitCommit, projectChangelogText,
   // config
   showConfigModal, editingProject,
   loadData, saveProjectsList, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
@@ -34,7 +34,7 @@ export function useProjects() {
   return {
     projects, projectRuntime, anySyncing, isReloading, Toast,
     showGitModal, gitProject, gitStatusText, fetchGitStatus, openGitModal, closeGitModal,
-    isGitLoading, runGitFetch, runGitPush, runGitCommit, projectChangelogText,
+    isGitLoading, runGitFetch, runGitPush, runGitPull, runGitCommit, projectChangelogText,
     showConfigModal, editingProject,
     loadData, saveProjectsList, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
     startSync, openSelectDialog,

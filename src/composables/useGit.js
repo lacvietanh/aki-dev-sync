@@ -10,7 +10,10 @@ export const projectChangelogText = ref(null)
 
 const { appendGlobalLog } = useLogs()
 
-export async function fetchGitStatus(projectId, silent = false) {
+// updateModalLog=false lets callers refresh the git_status/git_changed_count badge in the
+// background (e.g. right after a fetch/push/pull/commit) without clobbering the action's
+// own output that's currently on display in the Git Modal.
+export async function fetchGitStatus(projectId, silent = false, updateModalLog = true) {
   const project = projects.value.find(p => p.id === projectId)
   if (!project) return
   try {
@@ -21,9 +24,10 @@ export async function fetchGitStatus(projectId, silent = false) {
       git_status: info.status,
       git_log: info.log,
       remote_url: info.remote_url || "",
+      git_changed_count: info.changed_count || 0,
     }
     if (!silent) appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`)
-    if (gitProject.value && gitProject.value.id === projectId) {
+    if (updateModalLog && gitProject.value && gitProject.value.id === projectId) {
       gitStatusText.value = info.log || 'No Git history available.'
     }
   } catch (err) {
@@ -32,9 +36,10 @@ export async function fetchGitStatus(projectId, silent = false) {
       ...projectRuntime.value[projectId],
       git_status: "Git Error",
       git_log: errorLog,
+      git_changed_count: 0,
     }
     appendGlobalLog("ERROR", `Failed git status for "${project.name}": ${err}`)
-    if (gitProject.value && gitProject.value.id === projectId) {
+    if (updateModalLog && gitProject.value && gitProject.value.id === projectId) {
       gitStatusText.value = errorLog
     }
   }
@@ -72,59 +77,49 @@ export function closeGitModal() {
 
 export const isGitLoading = ref(false)
 
-export async function runGitFetch(project) {
+// `-c color.ui=always` forces git to emit ANSI color codes even though it isn't attached to a
+// TTY (it's a subprocess), so the modal can show the same colored output a real terminal would.
+const COLOR_ARGS = ["-c", "color.ui=always"]
+
+// Shared runner for fetch/push/pull/commit: each is one or more `run_git_command` invocations
+// whose combined output replaces the Git Modal's status pane (real terminal-like feedback,
+// not just a line in the global console), followed by a silent badge-only status refresh.
+async function runGitAction(project, verb, steps) {
   if (!project) return
   isGitLoading.value = true
-  gitStatusText.value = 'Running git fetch...'
-  appendGlobalLog("GIT", `Running git fetch for "${project.name}"...`)
+  gitStatusText.value = `Running git ${verb}...`
+  appendGlobalLog("GIT", `Running git ${verb} for "${project.name}"...`)
   try {
-    const res = await invoke("run_git_command", { localPath: project.local_path, args: ["fetch"] })
-    appendGlobalLog("GIT", `Git Fetch result for "${project.name}": ${res}`)
-    await fetchGitStatus(project.id)
+    let combined = ''
+    for (const args of steps) {
+      const res = await invoke("run_git_command", { localPath: project.local_path, args })
+      combined += (combined ? '\n' : '') + res
+    }
+    appendGlobalLog("GIT", `Git ${verb} result for "${project.name}": ${combined}`)
+    gitStatusText.value = combined || `(git ${verb}: no output)`
+    await fetchGitStatus(project.id, true, false)
   } catch (err) {
-    appendGlobalLog("ERROR", `Git Fetch failed for "${project.name}": ${err}`)
-    gitStatusText.value = `Git Fetch failed:\n${err}`
+    appendGlobalLog("ERROR", `Git ${verb} failed for "${project.name}": ${err}`)
+    gitStatusText.value = `Git ${verb} failed:\n${err}`
     throw err
   } finally {
     isGitLoading.value = false
   }
 }
 
-export async function runGitPush(project) {
-  if (!project) return
-  isGitLoading.value = true
-  gitStatusText.value = 'Running git push...'
-  appendGlobalLog("GIT", `Running git push for "${project.name}"...`)
-  try {
-    const res = await invoke("run_git_command", { localPath: project.local_path, args: ["push"] })
-    appendGlobalLog("GIT", `Git Push result for "${project.name}": ${res}`)
-    await fetchGitStatus(project.id)
-  } catch (err) {
-    appendGlobalLog("ERROR", `Git Push failed for "${project.name}": ${err}`)
-    gitStatusText.value = `Git Push failed:\n${err}`
-    throw err
-  } finally {
-    isGitLoading.value = false
-  }
+export function runGitFetch(project) {
+  return runGitAction(project, 'fetch', [[...COLOR_ARGS, "fetch"]])
 }
 
-export async function runGitCommit(project, message) {
+export function runGitPush(project) {
+  return runGitAction(project, 'push', [[...COLOR_ARGS, "push"]])
+}
+
+export function runGitPull(project) {
+  return runGitAction(project, 'pull', [[...COLOR_ARGS, "pull"]])
+}
+
+export function runGitCommit(project, message) {
   if (!project || !message.trim()) return
-  isGitLoading.value = true
-  gitStatusText.value = 'Running git commit...'
-  appendGlobalLog("GIT", `Running git commit for "${project.name}"...`)
-  try {
-    // Stage all changes first
-    await invoke("run_git_command", { localPath: project.local_path, args: ["add", "-A"] })
-    // Commit staged changes
-    const res = await invoke("run_git_command", { localPath: project.local_path, args: ["commit", "-m", message] })
-    appendGlobalLog("GIT", `Git Commit result for "${project.name}": ${res}`)
-    await fetchGitStatus(project.id)
-  } catch (err) {
-    appendGlobalLog("ERROR", `Git Commit failed for "${project.name}": ${err}`)
-    gitStatusText.value = `Git Commit failed:\n${err}`
-    throw err
-  } finally {
-    isGitLoading.value = false
-  }
+  return runGitAction(project, 'commit', [["add", "-A"], [...COLOR_ARGS, "commit", "-m", message]])
 }
