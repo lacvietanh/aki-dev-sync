@@ -172,6 +172,33 @@ in `localStorage` under `aki-antigravity-usage-cache-v2`:
 > **Contrast with Claude Code:** CC deliberately has **no** multi-account cache — exactly one account
 > per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
 
+## Log Out behavior & cache retention (PO decision, chốt 2026-07-07 — nguồn chân lý)
+
+**Mục tiêu của cache multi-account**: xem được hiện trạng lần cuối (last-known state) của **từng**
+account, vì AG native chỉ hiển thị được 1 account tại 1 thời điểm. Cache tồn tại để bù đắp đúng giới
+hạn đó — không phải để "dọn dẹp" hay "ẩn" tài khoản không còn active.
+
+- **Sau khi Log Out 1 account trong app**: header hiện **như bình thường** — không có xử lý đặc biệt,
+  không blank/reset về trạng thái trống. `resetAccount()` chỉ kích một lần `checkUsage()` ngay (đẩy
+  nhanh việc phát hiện account mới nếu người dùng sắp login lại) — **không** xóa `data`, `activeEmail`,
+  `viewingEmail`, hay bất kỳ entry nào trong `accounts`. Chấm "live" (`ag-live-dot`) đã tự nhiên di
+  chuyển sang account mới active ngay khi nó có live fetch đầu tiên — không cần thêm indicator/badge
+  riêng cho "account này vừa logout".
+- **Thời hạn giữ trong dropdown: vô hạn.** Không có cơ chế dọn theo thời gian/số lượng. Một account đã
+  từng xuất hiện thì luôn có mặt trong dropdown cho tới khi bị dọn thủ công (không có UI cho việc này
+  ở v1 — nếu cần, đó là yêu cầu riêng).
+- **Hiển thị "hiện trạng lần cuối": tooltip hiện tại là đủ** (`cachedAgo`/`cachedAbsTime` trong
+  `AgentUsage.vue`) — không cần thêm timestamp tường minh ở dòng dropdown.
+
+### Lịch sử — vì sao mục này tồn tại (tránh tái phạm)
+
+1.9.3 (`a26b8f5` → `b082d0d`) từng thêm `resetAccount()` gọi `clearAgStore()` để giải quyết vấn đề
+"header vẫn hiện account vừa logout" — nhưng đó **không phải là bug** theo mục tiêu thật của tính năng
+(xem đầu mục này), và cách giải quyết (xóa toàn bộ store) là một regression nghiêm trọng: mỗi lần
+logout xóa sạch lịch sử mọi account, không chỉ account vừa logout. Đã sửa 2026-07-07: `resetAccount()`
+không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard — Multi-entity State" trong
+`CLAUDE.md` (repo root) cho nguyên tắc chung rút ra từ sự việc này.
+
 ### Design locks (by design — do not "fix")
 
 - **CC has no multi-account cache.** One account per remote host; do not add an AG-style store to CC.
@@ -182,6 +209,10 @@ in `localStorage` under `aki-antigravity-usage-cache-v2`:
   changes; the full email is shown in the dropdown rows and the tooltip.
 - **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always
   carries `email`; no empty-email guard is added in the live cache path.
+- **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache
+  retention" above — this is a deliberate product decision, not a gap to "fix" later.
+- **No retention limit on cached accounts.** Do not add a cleanup/expiry mechanism unless explicitly
+  requested — infinite retention is the intended behavior.
 
 ---
 

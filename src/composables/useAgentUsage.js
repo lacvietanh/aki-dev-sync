@@ -136,13 +136,6 @@ function persistAgAccount(dataObj, fetchedAt) {
   saveAgStore(store);
 }
 
-function clearAgStore() {
-  try {
-    localStorage.removeItem(AG_CACHE_KEY);
-    localStorage.removeItem(AG_CACHE_KEY_V1);
-  } catch (_) {}
-}
-
 function loadAgAccount(email) {
   if (!email) return null;
   const store = loadAgStore();
@@ -507,25 +500,21 @@ export function useAgentUsage(agentName, hostRef) {
     ulog('ag select', { email, active: activeEmail.value }, 'info');
   };
 
-  // AG-only: called right after a successful logout. logout_antigravity wipes AG's own auth
-  // state (SQLite rows, keychain item, session cookies) but has no way to reach into this app's
-  // caches — without this, the offline-fallback path in checkUsage() keeps showing
-  // store.lastActiveEmail's cached blob (the just-logged-out account) until a live fetch for the
-  // NEW account happens to succeed, which can take several polls right after a fresh re-login.
+  // AG-only: called right after a successful logout. logout_antigravity wipes AG's own auth state
+  // (SQLite rows, keychain item, session cookies) but this composable's own cache/view-state is
+  // deliberately left untouched — see "Log Out behavior & cache retention" in
+  // docs/arch/usage-antigravity.md (PO decision, 2026-07-07): the header showing the just-logged-out
+  // account's last-known data until a new account goes live is the INTENDED behavior (the whole
+  // point of the per-account cache is to keep showing each account's last-known state), not a bug.
+  //
+  // Regression note: 1.9.3 (`a26b8f5`/`b082d0d`) treated that as a bug and cleared the account on
+  // logout — `clearAgStore()` ended up wiping the ENTIRE per-account history, not just the
+  // just-logged-out account, silently erasing every other cached account too. Fixed 2026-07-07 by
+  // removing the clearing behavior entirely, per the corrected product decision above.
   const resetAccount = () => {
     if (agentName !== 'antigravity') return;
-    clearAgStore();
-    data.value = null;
-    isCached.value = false;
-    cachedAt.value = null;
-    stale.value = false;
-    accounts.value = [];
-    viewingEmail.value = null;
-    activeEmail.value = null;
-    latestLive = null;
-    latestLiveStale = false;
-    ulog('ag reset', {}, 'info');
-    checkUsage();
+    ulog('ag logout: recheck', {}, 'info');
+    checkUsage(); // just an immediate poll to pick up a new login sooner — no state is cleared
   };
 
   function restartPollTimer() {
