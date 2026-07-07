@@ -14,18 +14,24 @@
               r="15"
               stroke-width="3"
             />
-            <!-- Active Progress Circle -->
-            <circle
-              v-if="hasPercentage && percentage > 0"
-              class="circle-fill"
-              :class="colorClass"
-              cx="18"
-              cy="18"
-              r="15"
-              stroke-width="3"
-              :stroke-dasharray="94.25"
-              :stroke-dashoffset="strokeDashOffset"
-            />
+            <!-- Active Progress Circle — wrapped in Vue's native <Transition> so appearing/
+                 disappearing (N/A <-> real data, e.g. right after an account switch momentarily
+                 clears percentage) fades via Vue's own enter/leave lifecycle instead of an
+                 abrupt v-if mount/unmount. The persistent :stroke-dashoffset CSS transition
+                 below still handles same-element percentage changes while mounted. -->
+            <Transition name="circle-fill">
+              <circle
+                v-if="hasPercentage && percentage > 0"
+                class="circle-fill"
+                :class="colorClass"
+                cx="18"
+                cy="18"
+                r="15"
+                stroke-width="3"
+                :stroke-dasharray="94.25"
+                :stroke-dashoffset="strokeDashOffset"
+              />
+            </Transition>
           </svg>
           <div class="percentage-inner" :class="[colorClass, { 'is-na': !hasPercentage }]">
             {{ displayPercentage }}
@@ -240,6 +246,17 @@ export default {
   fill: none;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.5s ease-in-out;
+}
+
+/* Vue <Transition name="circle-fill"> hooks — fade in/out on mount/unmount (N/A <-> real data) */
+.circle-fill-enter-active,
+.circle-fill-leave-active {
+  transition: opacity 0.3s ease-in-out;
+}
+
+.circle-fill-enter-from,
+.circle-fill-leave-to {
+  opacity: 0;
 }
 
 .percentage-inner {
