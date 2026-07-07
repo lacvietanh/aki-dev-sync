@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# akiadvise skill scratch report (single overwritten file, not a doc source of truth)
+ADVISE.html
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

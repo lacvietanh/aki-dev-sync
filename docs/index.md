@@ -13,7 +13,7 @@
 
 
 ## Architecture
-- [docs/arch/usage-claudecode.md](arch/usage-claudecode.md) — Claude Code quota monitoring: statusLine hook, Hybrid Patching, known limitations (Lỗi A/B)
+- [docs/arch/usage-claudecode.md](arch/usage-claudecode.md) — Claude Code quota monitoring: statusLine hook, Hybrid Patching, known limitations (Lỗi A/B/C)
 - [docs/arch/usage-antigravity.md](arch/usage-antigravity.md) — Antigravity quota monitoring: local Language Server Connect RPC flow
 - [docs/arch/logger.md](arch/logger.md) — Logger module: 3 levels (error/info/debug), production-silent default, auto-truncate 1MB
 
@@ -23,15 +23,19 @@
 - [docs/ref/titlebar-sacred-boundary.md](ref/titlebar-sacred-boundary.md) — Sacred boundary rule: no UI element may overlap the custom titlebar zone (top 42px)
 
 ## Research
+- [docs/research/claude-app-usage-measurement.md](research/claude-app-usage-measurement.md) — Đo usage tài khoản Claude khi chỉ dùng Claude app: pool chung Pro/Max, endpoint `oauth/usage` (P3), endpoint claude.ai + sessionKey, tool cộng đồng, khuyến nghị fix điểm mù freshness (Lỗi C)
 - [docs/research/aki-dev-sync-ag-cc-usage-flow.md](research/aki-dev-sync-ag-cc-usage-flow.md) — So sánh flow của project vs cộng đồng, lợi thế native approach (phục vụ bài viết akidev)
 - [docs/research/claude-usage-1.2.x-analyze.md](research/claude-usage-1.2.x-analyze.md) — Phân tích các vấn đề bug quota display + đề xuất cải thiện (v1.2.x)
 - [docs/research/claude-usage-dash-pipefail-regression.md](research/claude-usage-dash-pipefail-regression.md) — Post-mortem: `set -o pipefail` giết dash → force-sync chết im lặng → "load mãi / no data sau reset" (root cause + fix + phòng ngừa)
 - [docs/research/sync-button-semantic-analysis.md](research/sync-button-semantic-analysis.md) — PUSH/PULL button semantic intent vs reality: incident log, code analysis, EC-1..EC-7 + EC-3-sym, `-u`+`--delete` incoherence, Tier 2 baseline (bidirectional, appDataDir), DRY RUN guard bug — all resolved
 
 ## Plans (Active)
+- [docs/plan/claudecode-oauth-usage-p3.md](plan/claudecode-oauth-usage-p3.md) — P3 OAuth usage polling: fix điểm mù freshness Lỗi C (usage đứng im khi chỉ dùng Claude app). Phase 1 code landed but no-op on Mac (no `.credentials.json`, keychain-only). **Toàn bộ plan tạm dừng 2026-07-08** (deprioritized cho release) — cũng ghi nhận 1 bug liên quan chưa fix: email header kẹt ở account cũ sau khi đổi account CC.
 - [docs/plan/deferred-auto-update.md](plan/deferred-auto-update.md) — Tauri v2 self-update (deferred)
+- [docs/plan/investigate-ag-account-switch-detection.md](plan/investigate-ag-account-switch-detection.md) — AG doesn't pick up an in-app account switch until Antigravity is quit+reopened; hypothesis is Antigravity itself doesn't restart its language_server process on switch (external limitation, not our polling). Light PID-check test protocol for Mac, no rebuild needed.
 
 ## Plans (Completed)
+- [docs/plan/done/verify-antigravity-account-stability.md](plan/done/verify-antigravity-account-stability.md) — AG account-switch stability: item A superseded (wrong expectation corrected — see `docs/arch/usage-antigravity.md`), item B done, item C dropped (diagnostic-only, no bug depended on it)
 - [docs/plan/done/fix-sync-divergence-safety.md](plan/done/fix-sync-divergence-safety.md) — Prevent accidental destructive PUSH: DIVERGED state, delete-confirm, `-u`+`--delete` fix, Tier 2 baseline, DRY RUN guard — all done
 - [docs/plan/done/project-task-list.md](plan/done/project-task-list.md) — Per-project task list: data model, hover-popover UX, file changes
 - [docs/plan/done/total-refactor-by-akirule.md](plan/done/total-refactor-by-akirule.md) — Full PROCODING refactor plan
