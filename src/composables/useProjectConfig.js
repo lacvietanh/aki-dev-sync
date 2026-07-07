@@ -164,6 +164,7 @@ export async function createNewProject(sshHosts) {
       hooks: { pre_pull_cmd: null, post_pull_cmd: null, pre_push_cmd: null, post_push_cmd: null, run_hooks_on_remote: true },
       last_sync_action: null,
       last_sync_time: null,
+      last_sync_host: null,
       last_sync_status: null,
       sync_git: true,
       dry_run: true,

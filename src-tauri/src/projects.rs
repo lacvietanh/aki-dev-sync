@@ -51,6 +51,10 @@ pub struct SyncProject {
     pub hooks: SyncHooks,
     pub last_sync_action: Option<String>,
     pub last_sync_time: Option<u64>,
+    // Host the last sync action ran against. A project may point to different
+    // remotes over time (remote_host is editable), so record it per action.
+    #[serde(default)]
+    pub last_sync_host: Option<String>,
     #[serde(default = "default_true")]
     pub dry_run: bool,
     #[serde(default = "default_true")]
@@ -161,6 +165,7 @@ mod tests {
             },
             last_sync_action: None,
             last_sync_time: None,
+            last_sync_host: None,
             dry_run: true,
             sync_git: false,
             delete_on_pull: false,

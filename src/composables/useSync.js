@@ -127,6 +127,7 @@ export async function startSync(project, direction, specificPaths = []) {
     })
     project.last_sync_action = actionName + (isDryRun ? " (Dry)" : "")
     project.last_sync_time = Math.floor(Date.now() / 1000)
+    project.last_sync_host = project.remote_host
     project.last_sync_status = "success"
     await saveProjectsList()
     fetchGitStatus(project.id)

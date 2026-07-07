@@ -110,6 +110,7 @@
               {{ p.last_sync_action }} <span class="sync-time">{{ formatTimeAgo(p.last_sync_time) }}</span>
             </div>
             <div v-else class="text-muted">Never</div>
+            <div v-if="p.last_sync_action && p.last_sync_host" class="sync-host" :title="`Last action host: ${p.last_sync_host}`">{{ p.last_sync_host }}</div>
           </div>
 
           <!-- Cell 5: Actions -->
@@ -632,6 +633,17 @@ function formatTimeAgo(timestamp) {
 /* Transition Group list styles */
 .project-list-move {
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Tiny host line under the LAST ACT badge — which remote the action ran against */
+.sync-host {
+  font-size: 9px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .git-cell {

@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.9.4] - 2026-07-07
+
+#### Added
+- **LAST ACT column shows which remote host the last action ran against**: a project's `remote_host` is editable, so over time one project can sync against different remotes — but the LAST ACT badge only said `PUSH 2h ago` with no clue *where to*. New persisted `last_sync_host` field (`SyncProject` in `src-tauri/src/projects.rs`, `#[serde(default)]` for old `projects.json` records) is stamped with the project's current `remote_host` on every successful sync (`useSync.js`), and rendered as a tiny muted one-line text (9px, ellipsized, full host in tooltip) under the badge in `ProjectTable.vue`. Hidden entirely when no action has run yet — no extra element in the "Never" state.
+
+---
+
 ### [1.9.3] - 2026-07-03
 
 #### Added
