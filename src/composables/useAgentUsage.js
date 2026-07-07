@@ -258,11 +258,16 @@ export function useAgentUsage(agentName, hostRef) {
           const fetchedAt = parseInt(res.fetched_at, 10);
           lastFetchedAt = fetchedAt;
           const nowSec = Date.now() / 1000;
+          const mtimeSec = parseInt(res.file_modified_at, 10);
 
           // ── Stale detection ──────────────────────────────────────────────
-          // Use fetched_at age as the universal stale signal (works for both
-          // AG and Claude Code — rate_limits only exists on Claude Code).
-          const dataAge = fetchedAt > 0 ? (nowSec - fetchedAt) : Infinity;
+          // file_modified_at (cache mtime), not fetched_at: for AG the two are
+          // identical (the script writes fresh data on every live poll), but for
+          // Claude Code fetched_at is always ≈0 right after Rust reads the file —
+          // that blinded this badge to a cache frozen mid-window (statusLine/oauth
+          // both silent, resets_at still in the future) — the exact freshness
+          // blind spot behind Lỗi C. mtime is the data's true age either way.
+          const dataAge = mtimeSec > 0 ? (nowSec - mtimeSec) : Infinity;
           let resetIsPast = false;
           if (agentName === 'claudecode') {
             const fh = parsed?.rate_limits?.five_hour;
@@ -303,7 +308,6 @@ export function useAgentUsage(agentName, hostRef) {
 
           const fiveHour = parsed?.rate_limits?.five_hour;
           const sevenDay  = parsed?.rate_limits?.seven_day;
-          const mtime = parseInt(res.file_modified_at, 10);
           ulog('got data', {
             'five_hour.pct':      fiveHour?.used_percentage ?? null,
             'five_hour.resets_at': fiveHour?.resets_at ?? null,
@@ -311,8 +315,8 @@ export function useAgentUsage(agentName, hostRef) {
                                     ? (nowSec > fiveHour.resets_at ? 'PAST' : 'future')
                                     : 'no_reset',
             'seven_day.pct':      sevenDay?.used_percentage ?? null,
-            mtime,
-            file_age_s:           mtime > 0 ? Math.round(nowSec - mtime) : null,
+            mtime: mtimeSec,
+            file_age_s:           mtimeSec > 0 ? Math.round(nowSec - mtimeSec) : null,
             stale:                liveStale,
             stale_reason:         resetIsPast ? 'resetIsPast' : dataAge > 600 ? 'dataAgeStale' : 'none',
             reset_overdue_s:      resetIsPast ? Math.round(nowSec - fiveHour.resets_at) : null,

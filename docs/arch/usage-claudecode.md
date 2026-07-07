@@ -94,6 +94,26 @@ App chạy ngầm `claude --model haiku -p /usage` để cố lấy thông tin q
 - **Trễ 3 giây do thiếu `< /dev/null`:** Khi chạy qua SSH subshell không phải TTY, Claude CLI sẽ chờ nhập liệu từ stdin trong 3 giây trước khi xử lý tiếp, in cảnh báo ra stderr. Do đó, quá trình đồng bộ bị trễ từ ~2s lên hơn 5s.
 - **Parser bị sập khi Quota Reset (0% used):** Khi quota reset hoàn toàn (hoặc chưa tiêu tốn token nào), output của `/usage` trả về `Current session: 0% used` và **không kèm theo** mốc thời gian reset kế tiếp. Do regex parser cũ quá cứng nhắc, việc không khớp chuỗi thời gian dẫn đến lỗi parse, khiến file cache không được cập nhật. Kết hợp với logic vô hiệu hóa cache cũ khi qua giờ reset, UI sẽ bị kẹt vĩnh viễn ở trạng thái "No data - waiting for next session".
 
+### Lỗi C: Điểm mù freshness — usage đứng im khi chỉ dùng Claude app (xác nhận 2026-07-07)
+
+Pool usage của Pro/Max là **chung toàn tài khoản** (claude.ai app, Desktop, mobile, Cowork, Claude Code
+— Anthropic xác nhận chính thức). `rate_limits` mà statusLine hook nhận được vì vậy **đã bao gồm app
+usage** — nhưng hook chỉ fire **theo từng turn của Claude Code**. Khi người dùng chỉ dùng Claude app
+(incident thực tế 2026-07-07: dùng Cowork cả ngày, không mở CC), không có turn nào → cache không được
+ghi mới → UI đứng im ở con số của turn CC cuối cùng, dù quota thật đang bị app tiêu.
+
+- Nhánh force-sync `/usage` **không cứu được**: nó là họ P2 (local JSONL), hoàn toàn mù với app usage.
+- Probe session cứu được (tạo turn thật → hook fire → số server mới) nhưng tốn quota và chỉ chạy ở
+  STALE_RESET/first-load — không phải cơ chế refresh định kỳ.
+- **Fixed by P3 writer (Phase 1 code landed 2026-07-07, chưa Mac-verify):** `scripts/get-claudecode-usage.sh`
+  poll `GET https://api.anthropic.com/api/oauth/usage` (OAuth token từ `~/.claude/.credentials.json`,
+  header `anthropic-beta: oauth-2025-04-20` + `User-Agent: claude-code/2.1.0` bắt buộc) TRƯỚC
+  stale-check, gate 60s, merge vào cùng cache statusLine hook ghi. Server-side, account-level, realtime,
+  không tốn quota, không cần turn CC. Khi oauth khỏe, force-sync/probe trở thành unreachable tự nhiên
+  (không sửa, không xóa) — candidate xóa ở Phase 2 (xem plan). Chi tiết thiết kế, rủi ro, checklist
+  recon còn mở: `docs/plan/claudecode-oauth-usage-p3.md`; tool cộng đồng tham khảo:
+  `docs/research/claude-app-usage-measurement.md`.
+
 **⚠️ Giới hạn quan trọng của `/usage` (xác nhận 2026-06-24):** Lệnh `/usage` **KHÔNG** thực hiện network call đến Anthropic API. Output của nó ghi rõ: *"Approximate, based on local sessions on this machine — does not include other devices or claude.ai"*. Tức là nó **chỉ đọc file JSONL local** (`~/.claude/projects/**/*.jsonl`) rồi tính toán locally — là **họ P2**, không phải P3. Kết quả:
 - Chỉ phản ánh session trên chính máy `bien`, không phản ánh tài khoản tổng thể.
 - Nếu người dùng khác dùng Claude Code trên máy khác, `/usage` trên `bien` **không thay đổi**.
