@@ -4,7 +4,40 @@
 // @docs docs/arch/logger.md
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import Swal from 'sweetalert2';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
+
+// The actual command run on the remote by force-sync-claudecode.sh — shown verbatim in the
+// give-up debug alert so a dev can immediately try it by hand over SSH.
+const FORCE_SYNC_PROMPT = 'claude --model haiku -p /usage';
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Fires once, only when force-sync gives up after MAX_FORCESYNC_RETRIES attempts. Every user of
+// this app is a dev — the small inline red text doesn't say what was actually run or what came
+// back, so this surfaces the prompt + raw output/parse diagnostics for immediate debugging.
+function showForceSyncDebugAlert({ host, error, diag }) {
+  const rows = [
+    ['Host', host],
+    ['Prompt run', FORCE_SYNC_PROMPT],
+    ['Error', error],
+  ];
+  if (diag) {
+    rows.push(['parse_error', diag.parse_error ?? '(none)']);
+    rows.push(['raw output (preview)', diag.raw_preview || '(empty)']);
+    rows.push(['raw_len', diag.raw_len]);
+  }
+  const html = rows.map(([k, v]) => `<div style="text-align:left;margin-bottom:6px"><b>${escapeHtml(k)}:</b> <code style="white-space:pre-wrap">${escapeHtml(v)}</code></div>`).join('');
+  Swal.fire({
+    icon: 'error',
+    title: 'Force sync gave up',
+    html,
+    confirmButtonText: 'OK',
+    width: 560,
+  });
+}
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 // Three levels matching logger.rs contract:
@@ -414,13 +447,13 @@ export function useAgentUsage(agentName, hostRef) {
     ulog('fs start', { host: hostRef.value, failCount: forceSyncFailCount }, 'info');
 
     let succeeded = false;
+    let diag = null;
     try {
       ulog('invoke fs', { host: hostRef.value }, 'debug');
       // Rust now returns Err (rejects) when the remote script produced no output —
       // e.g. the shell died early. That lands in catch below and is treated as failure.
       const raw = await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
       ulog('fs invoke ok', { raw_len: String(raw).length }, 'debug');
-      let diag = null;
       try {
         diag = JSON.parse(raw);
         ulog('fs diag', diag, 'debug');
@@ -457,6 +490,10 @@ export function useAgentUsage(agentName, hostRef) {
             error.value = `Force sync failed ${forceSyncFailCount}× — auto-retry stopped. Try manual refresh.`;
           }
           ulog('fs finally', { outcome: 'giveup', n: forceSyncFailCount }, 'error');
+          // Every user of this app is a dev — the inline red text alone doesn't say what
+          // was actually run or what came back. Surface it once, on give-up (not every
+          // retry), so the failure is debuggable straight from the shipped build.
+          showForceSyncDebugAlert({ host: hostRef.value, error: error.value, diag });
         }
       }
     }
