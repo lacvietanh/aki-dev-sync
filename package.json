@@ -1,7 +1,7 @@
 {
   "name": "aki-dev-sync",
   "private": true,
-  "version": "1.9.4",
+  "version": "1.9.5",
   "type": "module",
   "scripts": {
     "dev": "node scripts/check-env.js && node scripts/lint-remote-scripts.js && vite",
