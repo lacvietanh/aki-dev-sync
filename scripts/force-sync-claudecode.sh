@@ -44,14 +44,18 @@ _log "blank_dir: path=$BLANK_DIR mkdir_exit=$BLANK_MKDIR_EXIT dir_exists=$BLANK_
 
 # ── 3. run_usage helper ───────────────────────────────────────────────────
 run_usage() {
+    # Capture claude's stderr instead of discarding it (was 2>/dev/null): on the
+    # intermittent empty-output bug it is the ONLY clue why claude printed nothing.
+    _RU_ERR="/tmp/aki-usage-stderr-$NOW_TS"
     if [ "$ZSH_PATH" != "none" ]; then
-        _log "run_usage: using zsh -lc | cd $BLANK_DIR && claude --model haiku -p /usage < /dev/null"
-        zsh -lc "cd '$BLANK_DIR' && claude --model haiku -p /usage < /dev/null 2>/dev/null"
+        _RU_OUT=$(zsh -lc "cd '$BLANK_DIR' && claude --model haiku -p /usage < /dev/null" 2>"$_RU_ERR")
     else
-        _log "run_usage: using bash -lc | cd $BLANK_DIR && claude --model haiku -p /usage < /dev/null"
-        bash -lc "cd '$BLANK_DIR' && claude --model haiku -p /usage < /dev/null 2>/dev/null"
+        _RU_OUT=$(bash -lc "cd '$BLANK_DIR' && claude --model haiku -p /usage < /dev/null" 2>"$_RU_ERR")
     fi
     _log "run_usage: exit=$?"
+    [ -z "$_RU_OUT" ] && _log "run_usage: EMPTY stdout — claude stderr=$(head -c 600 "$_RU_ERR" 2>/dev/null | tr '\n' ' ')"
+    rm -f "$_RU_ERR"
+    printf '%s' "$_RU_OUT"
 }
 
 # ── 4. First /usage run ───────────────────────────────────────────────────
@@ -82,13 +86,17 @@ RESETS_CHECK=$(printf '%s' "$OUT" | python3 -c "
 import re, datetime, sys, time
 out = sys.stdin.read()
 now = int(time.time())
-m = re.search(r'resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)', out, re.IGNORECASE)
+# Current CLI writes 'resets Jul 14 at 9:59am' (no comma, ':MM' optional); older CLI wrote
+# 'resets Jul 14, 9:59am'. Accept both separators, minutes optional (found 2026-07-08 — this
+# used to never match current output, so probe_needed was YES on every force-sync).
+m = re.search(r'resets\s+([a-zA-Z]+\s+\d+)(?:,|\s+at)\s+(\d+)(?::(\d+))?\s*([ap]m)', out, re.IGNORECASE)
 if not m:
     print('no_match:0')
     sys.exit(0)
 year = datetime.datetime.now().year
 try:
-    ds = '{} {} {}:{}{}'.format(m.group(1), year, m.group(2), m.group(3), m.group(4))
+    minutes = m.group(3) or '00'
+    ds = '{} {} {}:{}{}'.format(m.group(1), year, m.group(2), minutes, m.group(4))
     dt = datetime.datetime.strptime(ds, '%b %d %Y %I:%M%p')
     ts = int(dt.timestamp())
     overdue_s = now - ts  # positive = in past
@@ -180,13 +188,14 @@ if [ "$HAS_RESETS" = "0" ] || [ "$RESETS_IS_FUTURE" != "1" ]; then
 import re, datetime, sys, time
 out = sys.stdin.read()
 now = int(time.time())
-m = re.search(r'resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)', out, re.IGNORECASE)
+m = re.search(r'resets\s+([a-zA-Z]+\s+\d+)(?:,|\s+at)\s+(\d+)(?::(\d+))?\s*([ap]m)', out, re.IGNORECASE)
 if not m:
     print('no_match')
     sys.exit(0)
 year = datetime.datetime.now().year
 try:
-    ds = '{} {} {}:{}{}'.format(m.group(1), year, m.group(2), m.group(3), m.group(4))
+    minutes = m.group(3) or '00'
+    ds = '{} {} {}:{}{}'.format(m.group(1), year, m.group(2), minutes, m.group(4))
     dt = datetime.datetime.strptime(ds, '%b %d %Y %I:%M%p')
     ts = int(dt.timestamp())
     overdue_s = now - ts

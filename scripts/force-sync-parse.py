@@ -39,14 +39,19 @@ else:
 diag["pct"] = pct
 resets_at = 0
 
+# Current CLI writes "resets Jul 14 at 9:59am" (no comma, ":MM" optional — "10am" alone when
+# exactly on the hour); older CLI wrote "resets Jul 14, 9:59am". Accept both separators and
+# make minutes optional (found 2026-07-08, was silently writing resets_at=0 on every real
+# response — see docs/plan/claudecode-oauth-usage-p3.md).
 reset_match = re.search(
-    r'resets\s*([a-zA-Z]+\s+\d+),\s*(\d+):(\d+)([ap]m)',
+    r'resets\s+([a-zA-Z]+\s+\d+)(?:,|\s+at)\s+(\d+)(?::(\d+))?\s*([ap]m)',
     out,
     re.IGNORECASE,
 )
 if reset_match:
     year = datetime.datetime.now().year
-    date_str = f"{reset_match.group(1)} {year} {reset_match.group(2)}:{reset_match.group(3)}{reset_match.group(4)}"
+    minutes = reset_match.group(3) or "00"
+    date_str = f"{reset_match.group(1)} {year} {reset_match.group(2)}:{minutes}{reset_match.group(4)}"
     try:
         dt = datetime.datetime.strptime(date_str, "%b %d %Y %I:%M%p")
         resets_at = int(dt.timestamp())
