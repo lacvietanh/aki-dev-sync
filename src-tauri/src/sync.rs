@@ -477,6 +477,23 @@ fn run_sync_blocking(
     Ok(())
 }
 
+/// Pulls one named file from `host:remote_dir/filename` into `local_dir/filename` via rsync.
+/// For one-off single-file syncs (e.g. REPORT.html) that don't need the full project
+/// push/pull pipeline in `build_rsync_args`/`run_sync` (which only honors `specific_paths` on
+/// push) — reuse this instead of hand-rolling another `create_command("rsync")` call site.
+pub fn rsync_pull_file(host: &str, remote_dir: &str, filename: &str, local_dir: &str) -> Result<(), String> {
+    let remote_src = format!("{}:{}/{}", host, remote_dir.trim_end_matches('/'), filename);
+    let local_dest = format!("{}/{}", local_dir.trim_end_matches('/'), filename);
+    let out = crate::system::create_command("rsync")
+        .args(["-az", &remote_src, &local_dest])
+        .output()
+        .map_err(|e| format!("Failed to run rsync: {}", e))?;
+    if !out.status.success() {
+        return Err(format!("rsync failed: {}", String::from_utf8_lossy(&out.stderr)));
+    }
+    Ok(())
+}
+
 /// Expands `~/` or `~` to `$HOME` for use in remote shell contexts.
 pub fn expand_remote_tilde(path: &str) -> String {
     if path.starts_with("~/") {

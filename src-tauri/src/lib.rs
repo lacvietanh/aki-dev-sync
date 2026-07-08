@@ -79,6 +79,7 @@ pub fn run() {
             system::open_remote_subprocess,
             system::check_ide_availability,
             system::resolve_remote_path,
+            system::resolve_report_html,
             system::check_for_updates,
             system::check_project_stack,
             system::run_project_command,

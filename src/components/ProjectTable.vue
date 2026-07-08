@@ -124,10 +124,13 @@
 
                 <!-- Open Popup (Native CSS Hover with fixed positioning) -->
                 <div class="open-popup" :style="projectRuntime[p.id]?.popupStyle">
-                  <div class="popup-header" :title="p.name">
+                  <div class="popup-header" :title="p.name" style="display: flex; align-items: center;">
                     <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                     <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 18px;"></i>
-                    <span>{{ p.name }}</span>
+                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
+                    <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
+                      <i class="fa-solid fa-file-lines"></i> REPORT
+                    </button>
                   </div>
                     <div style="display: flex;">
                       <!-- LOCAL -->
@@ -385,16 +388,30 @@ async function runProjectCommand(path, cmd) {
   }
 }
 
+// (host, path) -> absolute path. The remote $HOME never changes within a session, so a
+// resolved path is stable — cache it and pay the SSH round-trip at most once per host+path.
+// Only IDE-open needs this now (copy uses the raw path); the cache keeps repeated opens instant.
+const resolvedPathCache = new Map();
+
 async function resolveRemoteFullPath(host, path) {
-  let resolvedPath = path;
-  if (path.startsWith('~/') || path === '~' || path.includes('$HOME')) {
-    try {
-      resolvedPath = await invoke('resolve_remote_path', { host, path });
-    } catch (e) {
-      console.error('Failed to resolve remote path', e);
-    }
+  const needsResolve = path.startsWith('~/') || path === '~' || path.includes('$HOME');
+  if (!needsResolve) {
+    return path.startsWith('/') ? path : `/${path}`;
   }
-  return resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
+  const key = `${host} ${path}`;
+  const cached = resolvedPathCache.get(key);
+  if (cached) return cached;
+
+  let resolvedPath = path;
+  try {
+    resolvedPath = await invoke('resolve_remote_path', { host, path });
+  } catch (e) {
+    console.error('Failed to resolve remote path', e);
+  }
+  const full = resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
+  // Only cache a real resolve (SSH succeeded → value changed); never pin a failed fallback.
+  if (resolvedPath !== path) resolvedPathCache.set(key, full);
+  return full;
 }
 
 const copiedPathKey = ref(null);
@@ -415,11 +432,32 @@ async function copyLocalPath(project) {
 
 async function copyRemotePath(project) {
   try {
-    const fullPath = await resolveRemoteFullPath(project.remote_host, project.remote_path);
-    await navigator.clipboard.writeText(fullPath);
+    // Copy the stored remote path verbatim — mirror copyLocalPath. `~` is a valid,
+    // portable path on the remote (shells/scp/rsync expand it there), so copying it
+    // needs zero network work. The old code awaited resolveRemoteFullPath here, which
+    // fired a blocking SSH `echo $HOME` per click (system.rs) and froze the UI for
+    // seconds — for an operation that is just "copy an existing field".
+    await navigator.clipboard.writeText(project.remote_path);
     flashCopied(`remote-${project.id}`);
   } catch (e) {
     console.error('Failed to copy remote path', e);
+  }
+}
+
+// Pulls REPORT.html from the remote first if it's newer than the local copy (or local has none),
+// then opens the local file in the OS default browser — REPORT.html is a self-contained HTML/JS/CSS
+// page (akihtmlreport skill output) that the app's own strict CSP would otherwise break.
+async function openReportHtml(project) {
+  try {
+    const path = await invoke('resolve_report_html', {
+      localPath: project.local_path,
+      remoteHost: project.remote_host || null,
+      remotePath: project.remote_path || null,
+    });
+    await invoke('macos_open', { args: [path] });
+  } catch (e) {
+    console.error('Failed to open REPORT.html', e);
+    Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
   }
 }
 

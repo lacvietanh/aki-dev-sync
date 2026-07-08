@@ -256,27 +256,82 @@ pub fn check_ide_availability() -> IdeAvailability {
 }
 
 #[tauri::command]
-pub fn resolve_remote_path(host: String, path: String) -> Result<String, String> {
+pub async fn resolve_remote_path(host: String, path: String) -> Result<String, String> {
     if !path.starts_with("~/") && path != "~" && !path.contains("$HOME") {
         return Ok(path);
     }
-    
-    let expanded = expand_remote_tilde(&path);
-    
-    let mut command = create_command("ssh");
-    // Pass the command as a single argument so SSH passes it intact to the remote shell.
-    // Otherwise SSH concatenates multiple args with spaces and `bash -c` gets split.
-    let script = format!("bash -c \"echo {}\"", expanded);
-    command.args([&host, &script]);
-    
-    let output = command.output()
-        .map_err(|e| format!("Failed to resolve remote path: {}", e))?;
-        
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Err(format!("SSH error resolving path: {}", String::from_utf8_lossy(&output.stderr)))
+
+    // The SSH round-trip is blocking IO. This command used to be a plain `pub fn`, so Tauri
+    // ran it on the main thread and the whole UI froze for the duration of the network call.
+    // Move it onto the blocking pool (CLAUDE.md "async fn + blocking subprocess" pitfall) so
+    // the UI stays responsive while the resolve is in flight.
+    tauri::async_runtime::spawn_blocking(move || {
+        let expanded = expand_remote_tilde(&path);
+
+        let mut command = create_command("ssh");
+        // Pass the command as a single argument so SSH passes it intact to the remote shell.
+        // Otherwise SSH concatenates multiple args with spaces and `bash -c` gets split.
+        let script = format!("bash -c \"echo {}\"", expanded);
+        command.args([&host, &script]);
+
+        let output = command
+            .output()
+            .map_err(|e| format!("Failed to resolve remote path: {}", e))?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        } else {
+            Err(format!("SSH error resolving path: {}", String::from_utf8_lossy(&output.stderr)))
+        }
+    })
+    .await
+    .map_err(|e| format!("resolve_remote_path task join error: {}", e))?
+}
+
+/// Resolves the local path of a project's `REPORT.html` (produced by the akihtmlreport skill),
+/// pulling it from the remote first if the remote's copy is newer. Local-only projects (no
+/// remote_host/remote_path) just check local. Errors only when neither side has the file.
+///
+/// Deliberately thin: mtime comparison reuses `git::get_file_conflict_info` (the existing
+/// local/remote stat-diff primitive, used by the SELECT conflict check) and the pull reuses
+/// `sync::rsync_pull_file` — no bespoke SSH stat script or rsync invocation here.
+#[tauri::command]
+pub async fn resolve_report_html(
+    local_path: String,
+    remote_host: Option<String>,
+    remote_path: Option<String>,
+) -> Result<String, String> {
+    let host = remote_host.unwrap_or_default();
+    let rpath = remote_path.unwrap_or_default();
+
+    let local_exists = std::path::Path::new(&local_path).join("REPORT.html").exists();
+
+    let mut remote_exists = false;
+    let mut remote_mtime = 0i64;
+    let mut local_mtime = 0i64;
+    if !host.is_empty() && !rpath.is_empty() {
+        let info = crate::git::get_file_conflict_info(
+            local_path.clone(),
+            host.clone(),
+            rpath.clone(),
+            vec!["REPORT.html".to_string()],
+        )
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "internal error: no conflict-info result".to_string())?;
+        remote_exists = info.remote_exists;
+        remote_mtime = info.remote_mtime;
+        local_mtime = info.local_mtime;
     }
+
+    if !local_exists && !remote_exists {
+        return Err("No REPORT.html found locally or on the remote.".to_string());
+    }
+    if remote_exists && (!local_exists || remote_mtime > local_mtime) {
+        crate::sync::rsync_pull_file(&host, &rpath, "REPORT.html", &local_path)?;
+    }
+    Ok(std::path::Path::new(&local_path).join("REPORT.html").to_string_lossy().to_string())
 }
 
 #[tauri::command]
