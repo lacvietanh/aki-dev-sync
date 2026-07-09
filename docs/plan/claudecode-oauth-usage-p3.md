@@ -112,6 +112,14 @@ lần tới bug xảy ra sẽ biết *lý do* (auth fail / timeout / rate-limit 
 mù. **Không thêm retry ở shell** — JS (`useAgentUsage.js`) đã auto-retry tới `MAX_FORCESYNC_RETRIES` ở
 poll kế; probe vốn đã là 1 nhịp đánh thức. Root cause cuối cùng chờ 1 log stderr thật.
 
+**🔑 BREAKTHROUGH 2026-07-09 (thực nghiệm trên Mac) — nguồn reset-time native, không cần oauth/keychain.**
+Ba sự thật đo trực tiếp (chi tiết: `docs/research/claude-headless-rate-limit-event-2026-07-09.md`):
+1. **Headless `claude -p` KHÔNG fire statusLine hook** (cache mtime bất động sau probe). Giả định "probe → hook ghi cache" trong `usage-claudecode.md` là sai. Probe chỉ ghi transcript JSONL local để `/usage` đọc lại → cả pipeline treo trên text `/usage` (fragile: bug regex + `raw_len=0`).
+2. **`claude -p '…' --output-format json` phát `rate_limit_event`** chứa `rate_limit_info.resetsAt` + `rateLimitType:"five_hour"` + `status` — server-truth, trong response của chính turn probe. Ổn định 2/2 run.
+3. Giới hạn: không có `%`, không có `seven_day`, chưa verify ở đúng 0%-sau-reset.
+
+→ Hướng mới cho case `no_pct_match`: force-sync đọc `rate_limit_info.resetsAt` từ probe JSON thay vì parse `/usage` text. **Giải quyết use-case Mac mà không cần oauth token** (Mac để token trong Keychain, không có `.credentials.json` → oauth-poll Phase 1 chết trên Mac). Một turn, mọi máy. Chờ user quyết implement vs Mac-verify-ranh-giới trước.
+
 ## 🔑 BREAKTHROUGH 2026-07-08 — nguồn identity đúng là `~/.claude.json → oauthAccount`, đi vòng hẳn qua `claude auth status`
 
 Recon runtime trực tiếp trên host Linux (đọc key, che value) đã lật ngược giả định của cả plan này:

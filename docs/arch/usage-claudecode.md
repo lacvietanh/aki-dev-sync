@@ -103,8 +103,10 @@ usage** — nhưng hook chỉ fire **theo từng turn của Claude Code**. Khi n
 ghi mới → UI đứng im ở con số của turn CC cuối cùng, dù quota thật đang bị app tiêu.
 
 - Nhánh force-sync `/usage` **không cứu được**: nó là họ P2 (local JSONL), hoàn toàn mù với app usage.
-- Probe session cứu được (tạo turn thật → hook fire → số server mới) nhưng tốn quota và chỉ chạy ở
-  STALE_RESET/first-load — không phải cơ chế refresh định kỳ.
+- Probe session cứu được reset-time (tạo turn thật; turn đó **tự mang** `rate_limit_event.resetsAt`
+  trong response) nhưng chỉ chạy ở STALE_RESET/first-load — không phải cơ chế refresh định kỳ.
+  ⚠️ **ĐÍNH CHÍNH 2026-07-09:** probe **KHÔNG** fire statusLine hook (headless `-p` không render
+  status line) — xem block cập nhật cuối §2 và `docs/research/claude-headless-rate-limit-event-2026-07-09.md`.
 - **Fixed by P3 writer (Phase 1 code landed 2026-07-07, chưa Mac-verify):** `scripts/get-claudecode-usage.sh`
   poll `GET https://api.anthropic.com/api/oauth/usage` (OAuth token từ `~/.claude/.credentials.json`,
   header `anthropic-beta: oauth-2025-04-20` + `User-Agent: claude-code/2.1.0` bắt buộc) TRƯỚC
@@ -140,7 +142,7 @@ Bắt trọn mọi hoạt động chat của User và đề phòng Lỗi A.
 **Mục đích duy nhất:** `forceSync` chỉ phục vụ trường hợp **không có session hoạt động nên không đọc được thông tin từ file cache** — tức là khi `get_agent_usage` trả về `null`. Khi đọc cache thành công (kể cả khi `resets_at = 0`), không có lý do force sync.
 
 Rust Backend ([agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs)) kích hoạt script [force-sync-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/force-sync-claudecode.sh):
-  - **Cơ chế tự động Probe Session (v1.2.9, cải tiến v1.3.2):** Lệnh `/usage` (họ P2) chỉ đọc local JSONL logs. Nếu trong 5h qua không có local session nào, nó sẽ báo `0% used` và **không hiển thị** mốc `resets_at`. Probe được kích hoạt trong **hai trường hợp**: (1) output không có từ khóa `resets` — không có session local nào trong window hiện tại; (2) output có `resets` nhưng mốc thời gian đã qua — `/usage` echo lại `resets_at` cũ từ `rate-limits-cache.json` (xảy ra ngay sau quota reset khi cache chưa được làm mới). Trường hợp (2) là lý do UI bị stuck "No data" sau reset dù STALE_RESET auto-recovery đã fire. Probe chạy `claude --model haiku -p "respond with ok" < /dev/null` → statusLine hook fire → ghi `resets_at` mới vào cache → `/usage` lần 2 hiện mốc future. Kiểm tra thực hiện bằng Python inline ngay trong script.
+  - **Cơ chế tự động Probe Session (v1.2.9, cải tiến v1.3.2):** Lệnh `/usage` (họ P2) chỉ đọc local JSONL logs. Nếu trong 5h qua không có local session nào, nó sẽ báo `0% used` và **không hiển thị** mốc `resets_at`. Probe được kích hoạt trong **hai trường hợp**: (1) output không có từ khóa `resets` — không có session local nào trong window hiện tại; (2) output có `resets` nhưng mốc thời gian đã qua — `/usage` echo lại `resets_at` cũ từ `rate-limits-cache.json` (xảy ra ngay sau quota reset khi cache chưa được làm mới). Trường hợp (2) là lý do UI bị stuck "No data" sau reset dù STALE_RESET auto-recovery đã fire. Probe chạy `claude --model haiku -p "respond with ok" < /dev/null` → ~~statusLine hook fire → ghi `resets_at` mới vào cache~~ → `/usage` lần 2 hiện mốc future. Kiểm tra thực hiện bằng Python inline ngay trong script. **⚠️ ĐÍNH CHÍNH 2026-07-09 (thực nghiệm trên Mac):** probe **KHÔNG** fire statusLine hook — headless `-p` không render status line nên hook (chỉ chạy interactive) không đụng vào. Cơ chế thật: probe ghi một **transcript JSONL local** chứa `rate_limit_event` mới; `/usage` (đọc JSONL local) đọc lại transcript đó — vì vậy mới cần chạy `/usage` **lần 2**. Đồng thời phát hiện: `claude -p '…' --output-format json` trả thẳng `rate_limit_info.resetsAt` trong response của turn — nguồn reset-time native, một turn, mọi máy. Xem block cập nhật cuối §2 + `docs/research/claude-headless-rate-limit-event-2026-07-09.md`.
 - **⚠️ Cơ chế thực tế của `/usage`:** Lệnh này **KHÔNG** gọi Anthropic API để lấy quota tài khoản tổng thể, nó **chỉ đọc local JSONL files** (`~/.claude/projects/**/*.jsonl`) rồi tính toán offline. Do đó, nó phản ánh chính xác mốc reset của chu kỳ hiện tại mà thiết bị này tham gia, nhưng không bao gồm hoạt động trên thiết bị khác.
 - **Các kịch bản kích hoạt Force Sync (và KHÔNG kích hoạt):**
   1. **Chưa có cache (First load, no cache):** `get_agent_usage` trả `null` (không tìm thấy file cache trên remote) → `checkUsage()` tự động kích hoạt Force Sync một lần (cờ `initialSyncDone`). Đây là trường hợp "không có session nào viết vào JSONL." Đây cũng là trường hợp **duy nhất** chạy `provision()` (cài statusLine hook): cache chưa từng đọc được nên hook có thể chưa tồn tại. Flow tuần tự một luồng: `await provision()` **rồi mới** `forceSync()` — không còn hai phiên SSH chạy song song tới cùng host (vốn làm log đan xen + tăng tải đúng lúc đang bận). `provision` nuốt lỗi của chính nó; `forceSync` parse `/usage` trực tiếp, không phụ thuộc hook, nên provision fail không chặn recovery. (`forceSync` cố ý giữ fire-and-forget vì nó kết thúc bằng `checkUsage()` — `await` ở đây sẽ bị chính cờ `isChecking` của lượt ngoài chặn lại.)
@@ -197,6 +199,12 @@ Rust (`agent_usage.rs`) split tuần tự theo từng delimiter, parse `|||AUTHI
 > **Một tài khoản mỗi remote (by design):** Claude Code **KHÔNG** có cơ chế cache đa tài khoản như Antigravity (xem `usage-antigravity.md`). Mỗi remote host chắc chắn đăng nhập đúng một tài khoản `claude` và chỉ nên như vậy; usage đọc từ `~/.claude/rate-limits-cache.json` của chính host đó. Đổi host = đổi remote, không phải đổi account cùng máy._
 >
 > _Cập nhật 2026-07-03 (v1.9.0): Thêm local machine monitoring (`is_local_host`, không cần SSH). Fix badge PRO/Max biến mất trên bản Claude Code mới không còn `.credentials.json` — fallback đọc `subscriptionType` từ `claude auth status`. Badge bỏ chữ "Claude" lặp lại, chỉ còn tier. Layout đổi từ LOCAL/REMOTE cố định sang 2 panel tự chọn (`AgentUsageSlot.vue`) có khóa chống hiển thị trùng nguồn; nguồn remote không còn công tắc riêng, mirror công tắc Remote Mode toàn cục — xem `docs/feat/remote-mode.md`._
+>
+> _**Cập nhật 2026-07-09 (ĐÍNH CHÍNH lớn — thực nghiệm trực tiếp trên Mac):**_
+> - _**Headless `claude -p` KHÔNG fire statusLine hook.** Chạy probe → `rate-limits-cache.json` mtime bất động. Hook chỉ chạy trong session interactive (render status line mỗi turn). Mọi câu trong doc này nói "probe → hook fire → ghi cache" (§Lỗi C, §Luồng Chủ động, mermaid Force Sync) là **SAI** và đã gạch/đánh dấu inline. Cơ chế thật: probe ghi **transcript JSONL local** chứa `rate_limit_event`; `/usage` đọc lại transcript đó (nên phải chạy `/usage` lần 2)._
+> - _**Nguồn reset-time native mới:** `claude -p '…' --output-format json` trả thẳng `rate_limit_info.resetsAt` (window đang bind, vd `five_hour`) trong response của turn. Một turn, mọi máy, không keychain, miễn nhiễm bug regex "resets" + bug `raw_len=0`. Giới hạn đo được: không có `%`, không có `seven_day`; chưa verify ở đúng ranh giới 0%-sau-reset. Đây là ứng viên thay đường `/usage`-text cho reset-time._
+> - _**Modal force-sync giveup:** giờ chỉ hiện dưới `--debug` (`useAgentUsage.js`), không còn bắn cho user thường. **Hiển thị 5h:** khi `five_hour.resets_at == seven_day.resets_at` (Claude báo trùng lúc 5h idle 0%), 5h hiển thị N/A thay vì mốc "5 ngày" sai (`AgentUsage.vue`)._
+> - _Điều tra đầy đủ + bằng chứng: `docs/research/claude-headless-rate-limit-event-2026-07-09.md`._
 
 ---
 
@@ -237,7 +245,7 @@ flowchart TD
 
     RunUsage --> ResetFuture{"output có resets và là tương lai?"}
     ResetFuture -- "có" --> Parse
-    ResetFuture -- "không (no session / stale echo)" --> Probe["Probe session:<br/>claude --model haiku -p 'respond with ok'<br/>→ statusLine hook ghi resets_at mới"]
+    ResetFuture -- "không (no session / stale echo)" --> Probe["Probe session:<br/>claude --model haiku -p 'respond with ok'<br/>→ ghi transcript JSONL local chứa rate_limit_event<br/>(KHÔNG fire statusLine hook — đính chính 2026-07-09)"]
     Probe --> RunUsage2["/usage lần 2"] --> Parse["force-sync-parse.py:<br/>ghi rate_limits.five_hour vào cache"]
     Parse --> Recheck["forceSync → checkUsage() lần nữa"]
     Recheck --> CU

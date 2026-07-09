@@ -215,6 +215,8 @@ export function useAgentUsage(agentName, hostRef) {
   let lastFetchedAt = null;     // Unix seconds of the last successful live fetch
   let lastNonNullHost = null;   // for distinguishing "toggled off" from "switched to a different host"
   let provisioned = false;
+  let provisionFailCount = 0;       // bound provision retries (a down host must not retry forever)
+  const MAX_PROVISION_RETRIES = 3;
   let initialSyncDone = false;
   let staleResetSyncDone = false;
   let isSyncing = false;
@@ -233,9 +235,19 @@ export function useAgentUsage(agentName, hostRef) {
     try {
       await invoke('provision_agent_usage', { agentName, host: hostRef.value });
       ulog('provision ok', {}, 'info');
+      provisionFailCount = 0;
     } catch (e) {
-      provisioned = false;
-      ulog('provision err', { err: String(e) }, 'error');
+      // Genuine failure (transport/host down). Allow a bounded number of retries on later ticks so
+      // a host coming back online gets provisioned — but never retry forever (that was the 30s
+      // retry storm when the script wrongly exited 1 on empty auth; the script now exits 0, so the
+      // only failures reaching here are real transport errors, which still deserve a cap).
+      provisionFailCount += 1;
+      if (provisionFailCount < MAX_PROVISION_RETRIES) {
+        provisioned = false;
+      } else {
+        ulog('provision giveup', { n: provisionFailCount }, 'error');
+      }
+      ulog('provision err', { err: String(e), n: provisionFailCount }, 'error');
     }
   };
 
@@ -490,10 +502,13 @@ export function useAgentUsage(agentName, hostRef) {
             error.value = `Force sync failed ${forceSyncFailCount}× — auto-retry stopped. Try manual refresh.`;
           }
           ulog('fs finally', { outcome: 'giveup', n: forceSyncFailCount }, 'error');
-          // Every user of this app is a dev — the inline red text alone doesn't say what
-          // was actually run or what came back. Surface it once, on give-up (not every
-          // retry), so the failure is debuggable straight from the shipped build.
-          showForceSyncDebugAlert({ host: hostRef.value, error: error.value, diag });
+          // The raw prompt + stderr dump is a DEV diagnostic, not a user-facing error. A normal
+          // user must never see it (a first-run/reset-boundary give-up reads as a crash) — the
+          // inline red text above already conveys the failure. Surface the modal only under
+          // --debug, where the operator explicitly asked for diagnostics.
+          if (_isDebugMode) {
+            showForceSyncDebugAlert({ host: hostRef.value, error: error.value, diag });
+          }
         }
       }
     }
@@ -575,6 +590,7 @@ export function useAgentUsage(agentName, hostRef) {
     const realHostChange = !!newHost && !!lastNonNullHost && newHost !== lastNonNullHost;
     ulog('host change', { newHost, lastNonNullHost, realHostChange }, 'info');
     provisioned = false;
+    provisionFailCount = 0;
     initialSyncDone = false;
     staleResetSyncDone = false;
     isSyncing = false;

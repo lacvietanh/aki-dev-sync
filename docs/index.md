@@ -28,6 +28,7 @@
 - [docs/research/claude-usage-1.2.x-analyze.md](research/claude-usage-1.2.x-analyze.md) — Phân tích các vấn đề bug quota display + đề xuất cải thiện (v1.2.x)
 - [docs/research/claude-usage-dash-pipefail-regression.md](research/claude-usage-dash-pipefail-regression.md) — Post-mortem: `set -o pipefail` giết dash → force-sync chết im lặng → "load mãi / no data sau reset" (root cause + fix + phòng ngừa)
 - [docs/research/sync-button-semantic-analysis.md](research/sync-button-semantic-analysis.md) — PUSH/PULL button semantic intent vs reality: incident log, code analysis, EC-1..EC-7 + EC-3-sym, `-u`+`--delete` incoherence, Tier 2 baseline (bidirectional, appDataDir), DRY RUN guard bug — all resolved
+- [docs/research/claude-headless-rate-limit-event-2026-07-09.md](research/claude-headless-rate-limit-event-2026-07-09.md) — ĐÍNH CHÍNH: headless `-p` KHÔNG fire statusLine hook; `--output-format json` trả `rate_limit_info.resetsAt` — nguồn reset-time native, một turn, mọi máy, không keychain (bằng chứng thực nghiệm Mac)
 
 ## Plans (Active)
 - [docs/plan/claudecode-oauth-usage-p3.md](plan/claudecode-oauth-usage-p3.md) — P3 OAuth usage polling: fix điểm mù freshness Lỗi C (usage đứng im khi chỉ dùng Claude app). Phase 1 code landed but no-op on Mac (no `.credentials.json`, keychain-only). **Toàn bộ plan tạm dừng 2026-07-08** (deprioritized cho release) — cũng ghi nhận 1 bug liên quan chưa fix: email header kẹt ở account cũ sau khi đổi account CC.

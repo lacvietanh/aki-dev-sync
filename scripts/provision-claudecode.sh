@@ -34,7 +34,19 @@ EOF
     sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
     rm -f "${FILE}.bak"
 fi
-# Cache auth info (email, orgName) for UI — runs once per host session
+# Cache auth info (email, orgName) for UI — runs once per host session.
+# BEST-EFFORT: this must NOT decide the script's exit code. The provisioning contract is the
+# statusline patch above (already done by here); auth caching is a side task. Previously the final
+# `[ "$AUTH_JSON" != '{}' ] && printf ...` line made the script's exit status hostage to the test,
+# so an empty auth ('{}') returned exit 1 → the JS caller flipped `provisioned=false` and retried
+# every 30s forever (retry storm). We now always `exit 0` and surface an empty-auth as a diagnostic.
 AUTH_CACHE="$HOME/.claude/auth-cache.json"
 AUTH_JSON=$(bash -lc 'claude auth status 2>/dev/null' 2>/dev/null || echo '{}')
-[ "$AUTH_JSON" != '{}' ] && printf '%s' "$AUTH_JSON" > "$AUTH_CACHE"
+if [ "$AUTH_JSON" != '{}' ]; then
+    printf '%s' "$AUTH_JSON" > "$AUTH_CACHE"
+else
+    # Empty auth is a REAL signal, not noise: it correlates with `/usage` returning empty (Bug B).
+    # Surface it to stderr (the Rust side logs non-empty provision stderr at ERROR) but do not fail.
+    printf '[SHELL:provision] claude auth status returned empty ({}) — CLI may be unable to authenticate\n' >&2
+fi
+exit 0

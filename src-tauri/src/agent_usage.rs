@@ -164,11 +164,17 @@ pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<b
     let output = run_remote_script(&host, SCRIPT)?;
     let ok = output.status.success();
     logger::info("PROVISION", &format!("exit={} ok={}", output.status.code().unwrap_or(-1), ok));
+    let err = String::from_utf8_lossy(&output.stderr);
     if !ok {
-        let err = String::from_utf8_lossy(&output.stderr);
         let err_preview = preview(&err, 200);
         logger::error("PROVISION", &format!("stderr={}", err_preview));
         return Err(format!("Provision failed: {}", err));
+    }
+    // The script now always exits 0 (auth caching is best-effort), but a non-empty stderr still
+    // carries the [SHELL:provision] empty-auth diagnostic — a real signal correlated with Bug B
+    // (empty /usage). Log it at ERROR so it lands in usage.log even in production (no --debug).
+    if !err.trim().is_empty() {
+        logger::error("PROVISION", &format!("stderr (non-fatal)={}", preview(&err, 200)));
     }
     Ok(true)
 }
@@ -220,6 +226,7 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
             exit_code, stderr.len()
         ));
         logger::error("FORCE_SYNC", "status=FAILED empty stdout");
+        log_shell_stderr_error("FORCE_SYNC", &stderr);
         return Err(format!(
             "force-sync produced no output (exit={}). The remote script may have died early — \
              check the [FORCE_SYNC] shell lines in usage.log.",
@@ -262,6 +269,12 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
 
             if !parsed {
                 logger::error("FORCE_SYNC", "parse failed: cache not updated");
+                // raw_preview is often empty here (that IS the bug — `/usage` returned nothing),
+                // so the shell stderr is the only clue to WHY. Surface both at error level.
+                if !raw_prev.is_empty() {
+                    logger::error("FORCE_SYNC", &format!("raw_preview={}", preview(raw_prev, 300)));
+                }
+                log_shell_stderr_error("FORCE_SYNC", &stderr);
             } else if !written {
                 logger::error("FORCE_SYNC", "write failed");
                 if let Some(we) = diag.get("write_error").and_then(|v| v.as_str()) {
@@ -278,6 +291,7 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
         }
         Err(e) => {
             logger::error("FORCE_SYNC", &format!("json_parse err={} raw={}", e, preview(&stdout, 200)));
+            log_shell_stderr_error("FORCE_SYNC", &stderr);
         }
     }
 
@@ -316,6 +330,22 @@ fn log_shell_stderr(tag: &str, stderr: &str) {
     logger::debug(tag, &format!("stderr: {} lines", lines.len()));
     for line in lines {
         logger::debug(tag, &format!("  | {}", line));
+    }
+}
+
+/// Emit shell stderr at ERROR level — used only on FORCE_SYNC failure paths so the diagnostic
+/// (e.g. `run_usage: EMPTY stdout — claude stderr=…`, the one clue to WHY `/usage` was empty)
+/// lands in usage.log even in production, where info/debug are suppressed. Do not call on the
+/// happy path — that would spam the file on every successful sync.
+fn log_shell_stderr_error(tag: &str, stderr: &str) {
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        logger::error(tag, "shell stderr on failure: (empty — the remote wrote nothing to stderr)");
+        return;
+    }
+    logger::error(tag, &format!("shell stderr on failure: {} lines", lines.len()));
+    for line in lines {
+        logger::error(tag, &format!("  | {}", line));
     }
 }
 

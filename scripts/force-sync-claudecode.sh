@@ -132,14 +132,62 @@ if [ "$HAS_RESETS" = "0" ] || [ "$RESETS_IS_FUTURE" != "1" ]; then
     _log "probe: starting dir=$PROBE_DIR reason=has_resets=$HAS_RESETS,resets_is_future=$RESETS_IS_FUTURE"
     PROBE_START=$(date +%s)
 
+    # NATIVE RESET-TIME SOURCE: run the probe with --output-format json and capture it. A turn's own
+    # JSON response carries `rate_limit_info.resetsAt` (server truth, real epoch, no year-guessing)
+    # for the currently-binding window, WITHOUT depending on the fragile `/usage` text render that
+    # intermittently comes back empty (Bug B). We export resetsAt + rateLimitType so the parser can
+    # use them as the AUTHORITATIVE five_hour reset (see force-sync-parse.py). When `/usage` text is
+    # empty but this JSON has a five_hour resetsAt, the parser recovers instead of giving up. When the
+    # JSON itself is empty too (CLI/auth truly dead), we degrade exactly as before (text fallback).
+    PROBE_ERR="/tmp/aki-probe-stderr-$NOW_TS"
     if [ "$ZSH_PATH" != "none" ]; then
-        _log "probe: cmd=zsh -lc 'mkdir -p $PROBE_DIR && cd $PROBE_DIR && claude --model haiku -p respond_with_ok < /dev/null'"
-        zsh -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && claude --model haiku -p \"respond with ok\" < /dev/null >/dev/null 2>&1"
+        _log "probe: cmd=zsh -lc 'mkdir -p $PROBE_DIR && cd $PROBE_DIR && claude --model haiku -p respond_with_ok --output-format json < /dev/null'"
+        PROBE_OUT=$(zsh -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && claude --model haiku -p \"respond with ok\" --output-format json < /dev/null" 2>"$PROBE_ERR")
     else
-        _log "probe: cmd=bash -lc 'mkdir -p $PROBE_DIR && cd $PROBE_DIR && claude --model haiku -p respond_with_ok < /dev/null'"
-        bash -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && claude --model haiku -p \"respond with ok\" < /dev/null >/dev/null 2>&1"
+        _log "probe: cmd=bash -lc 'mkdir -p $PROBE_DIR && cd $PROBE_DIR && claude --model haiku -p respond_with_ok --output-format json < /dev/null'"
+        PROBE_OUT=$(bash -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && claude --model haiku -p \"respond with ok\" --output-format json < /dev/null" 2>"$PROBE_ERR")
     fi
     PROBE_EXIT=$?
+
+    # Extract resetsAt (epoch int) + rateLimitType from anywhere in the JSON event array, emit them as
+    # two space-separated fields ("<epoch> <type>", or "0 none" when absent) for the shell to export.
+    PROBE_OUT_LEN=$(printf '%s' "$PROBE_OUT" | wc -c | tr -d ' ')
+    if [ "$PROBE_OUT_LEN" -gt 0 ]; then
+        PROBE_JSON_PARSED=$(printf '%s' "$PROBE_OUT" | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    print('0 none'); sys.exit(0)
+def find(o, key):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == key: return v
+            r = find(v, key)
+            if r is not None: return r
+    elif isinstance(o, list):
+        for x in o:
+            r = find(x, key)
+            if r is not None: return r
+    return None
+ra = find(data, 'resetsAt')
+if ra is None: ra = find(data, 'resets_at')
+rt = find(data, 'rateLimitType') or 'none'
+try:
+    ra = int(ra)
+except Exception:
+    ra = 0
+print('{} {}'.format(ra, rt))
+" 2>/dev/null)
+    else
+        PROBE_JSON_PARSED="0 none"
+        _log "probe_json: EMPTY output — claude stderr=$(head -c 400 "$PROBE_ERR" 2>/dev/null | tr '\n' ' ')"
+    fi
+    rm -f "$PROBE_ERR"
+    CLAUDE_SYNC_JSON_RESETS_AT=$(printf '%s' "$PROBE_JSON_PARSED" | cut -d' ' -f1)
+    CLAUDE_SYNC_JSON_TYPE=$(printf '%s' "$PROBE_JSON_PARSED" | cut -d' ' -f2)
+    export CLAUDE_SYNC_JSON_RESETS_AT CLAUDE_SYNC_JSON_TYPE
+    _log "probe_json: len=$PROBE_OUT_LEN resets_at=$CLAUDE_SYNC_JSON_RESETS_AT type=$CLAUDE_SYNC_JSON_TYPE (exported for parser)"
     PROBE_END=$(date +%s)
     PROBE_DUR=$((PROBE_END - PROBE_START))
     _log "probe: done exit=$PROBE_EXIT dur_s=$PROBE_DUR"

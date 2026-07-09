@@ -478,7 +478,15 @@ function formatAgo(sec) {
 }
 
 const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
-const cc5hResetsAt = computed(() => props.data?.rate_limits?.five_hour?.resets_at ?? null);
+const cc5hResetsAt = computed(() => {
+  const r5 = props.data?.rate_limits?.five_hour?.resets_at ?? null;
+  // Claude reports 5h.resets_at == 7d.resets_at when the 5h window sits idle at 0% with no
+  // fresh API traffic to establish a real boundary. Drawing that far-future "5-day" reset is
+  // misleading, so treat it as unknown → the reset line falls into its existing N/A state.
+  const r7 = props.data?.rate_limits?.seven_day?.resets_at ?? null;
+  if (r5 && r7 && r5 === r7) return null;
+  return r5;
+});
 const cc5hColorClass = computed(() => pctColorClass(cc5hPct.value));
 const cc5hResetLine = computed(() => formatResetLine(cc5hResetsAt.value, ccNow.value));
 
