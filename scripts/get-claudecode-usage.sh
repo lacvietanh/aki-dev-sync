@@ -239,9 +239,15 @@ except Exception as e:
         AUTH_MTIME=$(stat -c %Y "$AUTH_CACHE" 2>/dev/null || stat -f %m "$AUTH_CACHE" 2>/dev/null)
         AUTH_CACHE_AGE=$((NOW - AUTH_MTIME))
     fi
-    _log "auth: cache_exists=$AUTH_CACHE_EXISTS age=${AUTH_CACHE_AGE}s"
+    _log "auth: cache_exists=$AUTH_CACHE_EXISTS age=${AUTH_CACHE_AGE}s force=${AKI_FORCE_AUTH_REFRESH:-0}"
 
-    if [ "$AUTH_CACHE_EXISTS" = "yes" ] && [ "$AUTH_CACHE_AGE" -lt "$AUTH_REFRESH_AGE_S" ]; then
+    # AKI_FORCE_AUTH_REFRESH=1 is set by the Rust caller exactly once per host per app launch
+    # (see cc_auth_force_needed in agent_usage.rs). Without this, a CC account switch made
+    # while the cache is still <5min old would keep showing the old email even right after
+    # reopening the app — the TTL alone can't tell "still valid" apart from "just went stale
+    # because the user switched accounts". Forcing one real check on app open closes that gap
+    # without adding any extra polling for the (rare) mid-session switch case.
+    if [ "$AUTH_CACHE_EXISTS" = "yes" ] && [ "$AUTH_CACHE_AGE" -lt "$AUTH_REFRESH_AGE_S" ] && [ "${AKI_FORCE_AUTH_REFRESH:-0}" != "1" ]; then
         AUTH_INFO=$(python3 -c "import json,sys; d=json.load(open('$AUTH_CACHE')); print(json.dumps(d))" 2>/dev/null || echo '{}')
         _log "auth: source=cache (fresh, age=${AUTH_CACHE_AGE}s)"
     else

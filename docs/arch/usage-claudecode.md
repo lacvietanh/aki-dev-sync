@@ -39,7 +39,9 @@ Dữ liệu `stdin` của `statusLine` hook có cấu trúc:
 ~/.claude/.credentials.json          → OAuth credentials (subscriptionType, rateLimitTier, accessToken)
                                         — ⚠️ có thể KHÔNG tồn tại trên bản Claude Code mới (credential
                                         storage đã chuyển sang OS keychain); xem fallback bên dưới.
-~/.claude/auth-cache.json            → Auth info cache (email, orgName) — do provision tạo một lần/session
+~/.claude/auth-cache.json            → Auth info cache (email, orgName) — ghi bởi `provision-claudecode.sh`
+                                        (mỗi host session) và làm mới bởi `get-claudecode-usage.sh`
+                                        (TTL 300s, force-refresh ở lần check đầu mỗi app-launch từ 1.9.7)
 ~/.claude/projects/**/*.jsonl        → Transcript files (fallback ước lượng token nếu cần)
 ```
 
@@ -75,7 +77,7 @@ Vì dữ liệu thật chỉ tồn tại thoáng qua trong `stdin` khi `statusLi
 3. Kiểm tra chuỗi `rate-limits-cache`.
 4. Nếu chưa có: dùng `sed` để inject đoạn mã jq + bash ngay sau dòng `input=$(cat)`. File tạm `/tmp/patch.sh` được dọn dẹp qua `trap EXIT`; file `.bak` của `sed -i.bak` cũng được xóa ngay.
 5. Nếu đã có: bỏ qua (idempotent).
-6. **Auth Info (v1.3.0):** Cuối `provision-claudecode.sh`, chạy `bash -lc 'claude auth status'` (login shell đảm bảo PATH có `claude`), ghi kết quả JSON vào `~/.claude/auth-cache.json`. Chạy một lần mỗi host session.
+6. **Auth Info (v1.3.0):** Cuối `provision-claudecode.sh`, chạy `bash -lc 'claude auth status'` (login shell đảm bảo PATH có `claude`), ghi kết quả JSON vào `~/.claude/auth-cache.json`. Chạy một lần mỗi host session. Từ 1.9.7, `get-claudecode-usage.sh` bổ sung TTL 300s + force-refresh ở lần check đầu mỗi app-launch để tự làm mới file này giữa các session — xem §2 Lỗi email account-switch.
 7. Từ đó trở đi: đọc `~/.claude/rate-limits-cache.json` qua SSH bằng script [get-claudecode-usage.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-claudecode-usage.sh).
 
 ---

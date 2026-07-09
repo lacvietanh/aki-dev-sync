@@ -1,72 +1,33 @@
 # Plan: P3 OAuth usage polling — fix điểm mù freshness (Lỗi C)
 
-## BUG — Email hiển thị sai khi đổi tài khoản Claude Code (v1.9.3, ghi nhận 2026-07-07) — ✅ FIXED 2026-07-08 (root cause tĩnh, cần Mac-verify phần dư)
+Status: **DONE (closed) — 2026-07-10.** Mục tiêu gốc của plan (Lỗi C — usage đứng im khi chỉ dùng
+Claude app) không đạt trên Mac (Phase 1 no-op, keychain-only credentials) và bị deprioritize từ
+2026-07-08 — không tiếp tục theo đuổi, không phải bug đang mở. Bug email account-switch (mục ngay
+dưới) đã fix ở 1.9.7.
 
-**Repro**: login CC bằng `lacvietanh@gmail.com` → sau đó login lại bằng `vietanhmusic@gmail.com`
-→ restart app hoặc reload bất kỳ số lần nào.
+## BUG — Email hiển thị sai khi đổi tài khoản Claude Code — ✅ FIXED 1.9.7 (2026-07-10), verified
 
-**Actual**: header vẫn hiện email `lacvietanh...` (tài khoản CŨ).
-**Expected**: header phải hiện `vietanhmusic...` — tài khoản đang active.
+**Repro cũ**: đổi account CC → mở/reload app → header vẫn hiện email account CŨ trong khi usage %
+đã đúng của account mới (hai field lấy từ hai nguồn khác nhau, không đồng bộ).
 
-**Bằng chứng lệch pha rõ nhất**: số usage (%) hiển thị **đúng** là của `vietanhmusic` — chỉ riêng
-cái label email bị kẹt ở tài khoản cũ. Tức là hai phần "số usage" và "label email" đang lấy từ hai
-nguồn/thời điểm khác nhau, không đồng bộ khi tài khoản đổi (không phải toàn bộ pipeline đứng im).
+**Lịch sử ngắn gọn** (chi tiết đầy đủ đã gỡ khỏi doc này, xem git log / CHANGELOG nếu cần đào lại):
+1.9.4 sửa `auth-cache.json` từ "ghi 1 lần duy nhất" → TTL 300s tự làm mới. Test Mac 2026-07-08 cho
+kết quả khó hiểu (gate đã chạy đúng nhưng email vẫn sai) khiến nghi vấn dịch sang "bản thân CLI
+`claude auth status` trả identity cũ" — plan tạm dừng ở đó.
 
-**Liên quan nghi vấn tới scope plan này**: đây đúng lớp vấn đề "cache SSOT, nhiều writer không
-đồng bộ" mà P3 đang xử lý cho usage — email/account label (`data.email` trong
-`useAgentUsage.js`, hiển thị ở `AgentUsage.vue:14`) là một field khác trong cùng payload/cache có
-thể đang bị stale-write hoặc không được overwrite đúng lúc login mới ghi cache. Chưa root-cause,
-cần điều tra riêng (không tự động gộp fix vào Phase 1 P3 nếu nguyên nhân khác nhánh).
+**Root cause thật (chốt 2026-07-10):** TTL không phân biệt được "cache còn hợp lệ" với "cache vừa
+hết hạn vì user vừa đổi account" — nếu user mở lại app trong vòng 5 phút sau khi đổi account, vẫn
+đọc cache "trông có vẻ mới" nhưng sai. Fix: lần check đầu tiên mỗi host mỗi lần mở app giờ luôn ép
+chạy lại `claude auth status` thật, bỏ qua tuổi cache (`cc_auth_force_needed()` trong
+`agent_usage.rs`, cờ `AKI_FORCE_AUTH_REFRESH` trong `get-claudecode-usage.sh`). Verified bằng
+`--debug` build thật + user xác nhận hoạt động đúng sau khi đổi account + mở lại app. Nghi vấn "CLI
+tự trả identity cũ" từ 2026-07-08 hoá ra không phải root cause — test hôm đó chỉ ngồi chờ TTL hết
+hạn *trong lúc app vẫn chạy*, chưa từng thử restart app thật.
 
-**Root cause tìm được 2026-07-08 (đọc code tĩnh, `get-claudecode-usage.sh` + `useAgentUsage.js` +
-`agent_usage.rs` — không phải statusLine hook, không phải pin JS):**
-
-`~/.claude/auth-cache.json` (nguồn của field `email`/`orgName`) trước đây chỉ được ghi **MỘT LẦN**:
-`get-claudecode-usage.sh` chỉ chạy `claude auth status` (và ghi cache) trong nhánh `else` — tức
-**chỉ khi file chưa tồn tại**. Một khi đã ghi lần đầu, mọi lần đọc sau `cat` verbatim file đó **mãi
-mãi**, không có logic nào phát hiện account đã đổi để chạy lại. Trong khi đó `rate_limits` (số usage
-%) có writer riêng (oauth-poll block, độc lập) nên vẫn tươi — đúng khớp triệu chứng "số đúng, email
-sai". JS (`useAgentUsage.js`) và Rust (`agent_usage.rs`) không cache/pin email ở tầng của chúng —
-chúng chỉ hiển thị verbatim những gì shell script đưa lên mỗi poll.
-
-**Fix đã áp dụng (`scripts/get-claudecode-usage.sh`, 2026-07-08):** đổi điều kiện từ "file không tồn
-tại → chạy" thành "file không tồn tại HOẶC cũ hơn `AUTH_REFRESH_AGE_S=300s` → chạy lại". Cache vẫn
-được dùng để tránh spawn `claude auth status` mỗi 30s-poll, nhưng giờ tự làm mới trong vòng tối đa 5
-phút — không cần restart app. Nếu `claude auth status` fail/rỗng ở một chu kỳ, fallback về cache cũ
-(không blank email), thử lại chu kỳ sau. Đã unit-test 4 nhánh bằng fake `$HOME` + fake binary
-`claude` (no-cache/fresh-cache/stale-cache-refresh/refresh-fails-fallback) — cả 4 đúng hành vi.
-
-**Phần CHƯA verify được (cần Mac, đọc code không đủ):** fix trên đúng nếu nguyên nhân gốc là "chỉ
-chạy 1 lần"; nhưng còn một khả năng dư chưa loại trừ — bản thân `claude auth status` (chính CLI của
-Anthropic, không phải code của chúng ta) có thể trả về identity CŨ do cache/session nội bộ riêng của
-nó, độc lập với việc app này gọi lại nó bao nhiêu lần.
-**⚠️ Cần rebuild trên Mac để có hiệu lực** (script nhúng bằng `include_str!`, compile-time).
-
-**Kết quả test thật trên Mac (2026-07-08, sau rebuild với fix `AUTH_REFRESH_AGE_S=300`):** user xác
-nhận đã rebuild + relogin account khác + đợi qua gate 5 phút — **usage % cập nhật đúng (qua statusLine
-hook), nhưng email vẫn kẹt ở account cũ.** Điều này loại bỏ khả năng "chỉ chạy 1 lần" — script ĐÃ chạy
-lại `claude auth status` đúng như thiết kế (gate hoạt động đúng), nhưng lệnh đó tự nó trả về identity
-cũ. Kết luận: root cause đã dịch chuyển hẳn sang **bản thân CLI `claude auth status`** (hoặc cách app
-invoke nó qua `bash -lc` từ subprocess Tauri — có thể khác PATH/HOME với terminal tương tác thật),
-không còn là vấn đề ở tầng cache của script `get-claudecode-usage.sh` nữa.
-
-**Bằng chứng bổ sung (tra cứu docs chính thức `code.claude.com/docs/en/statusline`, 2026-07-08):** đầy
-đủ schema JSON stdin của statusLine hook (`session_id`, `transcript_path`, `cwd`, `model`, `workspace`,
-`version`, `cost`, `context_window`, `rate_limits`, `exceeds_200k_tokens`, `prompt_id`, `worktree`) —
-**không có field email/user/account nào**. Nghĩa là "usage đúng nhưng email sai" không phải nghịch lý:
-usage refresh được vì nó nằm ngay trong response mỗi turn (server trả rate_limits của account đang
-login), còn email hoàn toàn phải đi qua side-channel riêng biệt `claude auth status` — không có cách
-nào dùng chung 1 luồng để lấy cả hai như kỳ vọng ban đầu.
-
-**⏸️ TẠM DỪNG 2026-07-08 (quyết định user, quá tải việc khác).** Bước chẩn đoán tiếp theo đã đề xuất
-nhưng CHƯA làm — chỉ 1 lệnh nhẹ, không cần rebuild, làm khi nào rảnh:
-```
-claude auth status
-```
-chạy trực tiếp trong Terminal (không qua app) ngay sau khi relogin account khác — nếu lệnh này TỰ NÓ
-cũng trả email cũ → bug ở chính CLI Anthropic, không sửa được từ phía mình; nếu trả đúng email mới →
-bug nằm ở cách app invoke nó (PATH/HOME của subprocess khác terminal thật), sửa được. Không backlog
-ép buộc — chỉ làm tiếp khi user chủ động muốn.
+**Dọn kèm theo:** `provision-claudecode.sh` từng gọi `claude auth status` một lần nữa mỗi
+host/session (kể cả khi statusline đã patch sẵn) — giờ dư thừa vì `get-claudecode-usage.sh` đã đảm
+bảo freshness. Thu hẹp lại: chỉ ghi `auth-cache.json` trong nhánh patch-lần-đầu (host hoàn toàn
+mới), bỏ lệnh gọi trùng cho host đã provision sẵn.
 
 ## 🐛 BUG XÁC NHẬN 2026-07-08 — regex parse "resets" trong force-sync không khớp format CLI hiện tại
 

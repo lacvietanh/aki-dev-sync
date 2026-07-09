@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.9.7] - 2026-07-10
+
+#### Fixed
+- **Claude Code header email could still show the just-switched-away-from account for up to 5 minutes after reopening the app**: the 1.9.4 fix added a 5-minute TTL (`AUTH_REFRESH_AGE_S=300`) so `~/.claude/auth-cache.json` no longer echoed the same email forever, but the TTL is purely time-based — it can't tell "cache is still valid" apart from "cache just went stale because the user switched CC accounts a moment ago." An account switch followed by reopening the app within that 5-minute window still read the fresh-looking (but wrong) cached email. Also confirmed Force Sync/Reload never touched `auth-cache.json` at all, so there was no way to manually correct it either — only waiting out the TTL worked. Fixed by making the very first Claude Code usage check per host, per app launch, bypass the cache regardless of its age: `cc_auth_force_needed()` (`agent_usage.rs`) tracks per-host first-call state for the process lifetime and sets `AKI_FORCE_AUTH_REFRESH=1` for that one call; `get-claudecode-usage.sh` now skips the cached-auth branch whenever that flag is set, forcing a real `claude auth status` run. Verified live (`--debug` build) and by the user with a real account switch + app restart. Deliberately scoped to app-open only (matches how rare account switches actually are) — periodic polling still uses the unchanged 300s TTL, no new background checks added.
+
+---
+
 ### [1.9.6] - 2026-07-09
 
 #### Fixed

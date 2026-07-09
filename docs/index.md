@@ -31,11 +31,11 @@
 - [docs/research/claude-headless-rate-limit-event-2026-07-09.md](research/claude-headless-rate-limit-event-2026-07-09.md) — ĐÍNH CHÍNH: headless `-p` KHÔNG fire statusLine hook; `--output-format json` trả `rate_limit_info.resetsAt` — nguồn reset-time native, một turn, mọi máy, không keychain (bằng chứng thực nghiệm Mac)
 
 ## Plans (Active)
-- [docs/plan/claudecode-oauth-usage-p3.md](plan/claudecode-oauth-usage-p3.md) — P3 OAuth usage polling: fix điểm mù freshness Lỗi C (usage đứng im khi chỉ dùng Claude app). Phase 1 code landed but no-op on Mac (no `.credentials.json`, keychain-only). **Toàn bộ plan tạm dừng 2026-07-08** (deprioritized cho release) — cũng ghi nhận 1 bug liên quan chưa fix: email header kẹt ở account cũ sau khi đổi account CC.
 - [docs/plan/deferred-auto-update.md](plan/deferred-auto-update.md) — Tauri v2 self-update (deferred)
 - [docs/plan/investigate-ag-account-switch-detection.md](plan/investigate-ag-account-switch-detection.md) — AG doesn't pick up an in-app account switch until Antigravity is quit+reopened; hypothesis is Antigravity itself doesn't restart its language_server process on switch (external limitation, not our polling). Light PID-check test protocol for Mac, no rebuild needed.
 
 ## Plans (Completed)
+- [docs/plan/done/claudecode-oauth-usage-p3.md](plan/done/claudecode-oauth-usage-p3.md) — P3 OAuth usage polling (Lỗi C freshness fix): Phase 1 code landed but no-op on Mac (keychain-only credentials) — **deprioritized/closed, not pursued further**. Embedded bug (email header kẹt ở account cũ sau khi đổi account CC) — **✅ FIXED 1.9.7**, verified by user.
 - [docs/plan/done/verify-antigravity-account-stability.md](plan/done/verify-antigravity-account-stability.md) — AG account-switch stability: item A superseded (wrong expectation corrected — see `docs/arch/usage-antigravity.md`), item B done, item C dropped (diagnostic-only, no bug depended on it)
 - [docs/plan/done/fix-sync-divergence-safety.md](plan/done/fix-sync-divergence-safety.md) — Prevent accidental destructive PUSH: DIVERGED state, delete-confirm, `-u`+`--delete` fix, Tier 2 baseline, DRY RUN guard — all done
 - [docs/plan/done/project-task-list.md](plan/done/project-task-list.md) — Per-project task list: data model, hover-popover UX, file changes

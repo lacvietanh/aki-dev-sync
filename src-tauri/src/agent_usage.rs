@@ -4,8 +4,10 @@
 
 use crate::logger;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::process::{Command, Output, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Hard ceiling for any `ssh host sh` call. A hung `claude -p` probe (network/API stall)
@@ -349,11 +351,32 @@ fn log_shell_stderr_error(tag: &str, stderr: &str) {
     }
 }
 
+/// True the first time it's called for a given host in this app process, false after —
+/// used to force one bypass of the auth-cache TTL right after app launch (see
+/// `AKI_FORCE_AUTH_REFRESH` in get-claudecode-usage.sh). A CC account switch is rare and
+/// happens outside the app, so there's no reliable in-app event to hook; "app was just
+/// opened" is the one moment a stale cached email is most likely to be noticed and easiest
+/// to guarantee correct, without adding any extra polling.
+fn cc_auth_force_needed(host: &str) -> bool {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
+    seen.lock().unwrap().insert(host.to_string())
+}
+
 fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
     logger::debug("GET_USAGE", &format!("start host={}", host));
 
     const SCRIPT: &str = include_str!("../../scripts/get-claudecode-usage.sh");
-    let output = run_remote_script(host, SCRIPT)?;
+    let force_auth = cc_auth_force_needed(host);
+    let script_owned;
+    let script: &str = if force_auth {
+        logger::info("GET_USAGE", "first check this session — forcing auth refresh (bypass cache TTL)");
+        script_owned = format!("AKI_FORCE_AUTH_REFRESH=1\n{}", SCRIPT);
+        &script_owned
+    } else {
+        SCRIPT
+    };
+    let output = run_remote_script(host, script)?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout);
