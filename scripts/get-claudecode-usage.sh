@@ -99,7 +99,8 @@ if expires_at and time.time() * 1000 > expires_at:
         sys.exit(0)
     touch_marker()
     try:
-        subprocess.run(['bash', '-lc', 'claude auth status'], capture_output=True, timeout=15)
+        _claude_bin = os.environ.get('CLAUDE_BIN', 'claude')
+        subprocess.run(['bash', '-lc', "'" + _claude_bin + "' auth status"], capture_output=True, timeout=15)
     except Exception as e:
         log('auth status failed: ' + str(e))
     try:
@@ -259,7 +260,7 @@ except Exception as e:
         # % updated correctly but the header email stayed stuck on the old account). Bounded to
         # once per AUTH_REFRESH_AGE_S so a normal 30s poll interval doesn't spawn `claude auth
         # status` every tick.
-        AUTH_INFO=$(bash -lc 'claude auth status 2>/dev/null' 2>/dev/null || echo '{}')
+        AUTH_INFO=$(bash -lc "'$CLAUDE_BIN' auth status 2>/dev/null" 2>/dev/null || echo '{}')
         AUTH_LEN=$(printf '%s' "$AUTH_INFO" | wc -c | tr -d ' ')
         _log "auth: source=claude_auth_status output_len=$AUTH_LEN"
         if [ "$AUTH_INFO" != '{}' ] && [ "$AUTH_LEN" -gt 2 ]; then

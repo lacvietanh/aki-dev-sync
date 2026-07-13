@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.9.8] - 2026-07-13
+
+#### Fixed
+- **Force-sync/provision intermittently failed with `exit=127 command not found: claude` right after app launch, self-healing within minutes** — a PATH race, not a parsing or auth bug. `force-sync-claudecode.sh`, `provision-claudecode.sh`, and `get-claudecode-usage.sh` all resolve `claude` by asking a `zsh -lc`/`bash -lc` login shell for its PATH; when these scripts were spawned right at/near cold start, the user's shell rc/profile (nvm, path_helper, etc.) had not always finished sourcing yet, so the login shell's PATH did not include `claude`'s install dir. Confirmed live in `usage.log`: two consecutive force-sync runs failed this way within 1s of a `STARTUP` line, then the identical command succeeded manually minutes later. Root-cause fixed once at the single funnel all three scripts pass through (`run_remote_script_timeout`, `agent_usage.rs`): a preamble now resolves `$CLAUDE_BIN` via static, well-known install paths (`~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin`) — a file-existence check with zero dependency on rc-sourcing timing — before falling back to the previous `command -v`/login-shell lookup. All three scripts now invoke `"$CLAUDE_BIN"` instead of bare `claude`, so any future script sent through the same funnel inherits the fix automatically. Verified with `env -i` (empty PATH, worst case) and a live dry run: `claude` resolves and `/usage` returns real output where the old code would have hit `exit=127`. Mac-only path list for now (this app ships macOS only); extend when Linux/Windows ships. Documented as a general pattern in `CLAUDE.md` (new GLOBAL TAURI STACK section, reusable across future Tauri projects) since any subprocess spawning a login shell to find a user-installed CLI is subject to the same race, not just this one binary.
+
+---
+
 ### [1.9.7] - 2026-07-10
 
 #### Fixed

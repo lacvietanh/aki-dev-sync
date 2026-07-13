@@ -24,6 +24,37 @@ fn is_local_host(host: &str) -> bool {
     host == "local" || host == "localhost"
 }
 
+/// Prepended to every script sent through [`run_remote_script_timeout`], local or remote.
+/// Resolves a `claude` binary path into `$CLAUDE_BIN` via static, deterministic file checks
+/// BEFORE falling back to PATH/login-shell lookup.
+///
+/// WHY: force-sync/provision were seen failing with `exit=127 command not found: claude`
+/// inside `zsh -lc`/`bash -lc`, seconds after this app's own cold start, then succeeding
+/// again minutes later with the identical command — a PATH race against the user's shell
+/// rc/profile (nvm, path_helper, etc.) not having finished sourcing yet at that exact
+/// moment. A `[ -x "$path" ]` file-existence test has no dependency on rc-sourcing timing,
+/// so trying known install locations first structurally removes the race instead of
+/// patching each call site that happens to invoke `claude` today.
+///
+/// NOTE: mac-only path list for now — this app currently ships for macOS only (see
+/// CLAUDE.md). If a Linux/Windows build ships later, extend the list below.
+const CLAUDE_BIN_RESOLVER_PREAMBLE: &str = r#"
+_resolve_claude_bin() {
+    for _c in "$HOME/.local/bin/claude" "$HOME/.claude/local/claude" \
+              /opt/homebrew/bin/claude /usr/local/bin/claude; do
+        [ -x "$_c" ] && { printf '%s' "$_c"; return; }
+    done
+    command -v claude 2>/dev/null && return
+    if command -v zsh >/dev/null 2>&1; then
+        zsh -lc 'command -v claude' 2>/dev/null && return
+    fi
+    bash -lc 'command -v claude' 2>/dev/null
+}
+CLAUDE_BIN=$(_resolve_claude_bin)
+[ -z "$CLAUDE_BIN" ] && CLAUDE_BIN=claude
+export CLAUDE_BIN
+"#;
+
 /// Like [`run_remote_script`] but kills the remote process if it overruns `timeout_secs`,
 /// returning an explicit timeout error instead of blocking forever.
 ///
@@ -66,6 +97,9 @@ fn run_remote_script_timeout(host: &str, script: &str, timeout_secs: u64) -> Res
     });
 
     if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(CLAUDE_BIN_RESOLVER_PREAMBLE.as_bytes())
+            .map_err(|e| format!("Failed to write to SSH stdin: {}", e))?;
         stdin
             .write_all(script.as_bytes())
             .map_err(|e| format!("Failed to write to SSH stdin: {}", e))?;
