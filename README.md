@@ -93,6 +93,33 @@ The parts I'm quietly proud of — the clever bits that make the boring stuff "j
 
 **Requirements:** `rsync` and `ssh` available on your `PATH` (preinstalled on macOS), plus an SSH host you can reach.
 
+## 🖥 Bonus: Aki StatusLine for Claude Code
+
+A polished one-line statusline for the Claude Code CLI itself — no Aki Dev Sync install required.
+
+![Aki Claude Code StatusLine](share/aki-statusLine/demo.png)
+
+```
+aki@Aki-M | kinhdich.akinet.me | opus 4.8 med | ctx 5% 56.9k/1M | 5h:38%  7d:52% | 3h21m +148/-24 $8.08
+```
+
+Identity, workspace, model + effort, context window %, 5h/7d rate limits, and session duration/lines/cost on one line, with 4-tier dynamic color (green/yellow/orange/red) and rate-limit caching (`aki-rlcache v2`) so the 5h/7d numbers survive turns where Claude Code omits `rate_limits`.
+
+```bash
+cp share/aki-statusLine/statusline.sh ~/.claude/statusline-command.sh
+chmod +x ~/.claude/statusline-command.sh
+```
+
+Then add to `~/.claude/settings.json`:
+
+```json
+"statusLine": { "type": "command", "command": "$HOME/.claude/statusline-command.sh" }
+```
+
+Requires `jq` on `PATH` (macOS: `brew install jq`, Ubuntu: `apt install jq`).
+
+This script is also the default preset behind the in-app **Statusline Customizer** (the terminal icon next to the Claude Code Profile button in the Claude Code panel) — use the app if you want to toggle fields, reorder groups, recolor labels, and push the result to remote hosts without hand-editing.
+
 ## 🛠 Tech Stack
 
 - **Frontend:** Vue 3 + Vite, vanilla CSS
