@@ -151,6 +151,112 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
     }
 }
 
+const SSH_COLOR_MARKER_BEGIN: &str = "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync — safe to remove) ---";
+const SSH_COLOR_MARKER_END: &str = "# --- Aki SSH remote color END ---";
+
+/// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is
+/// active, then resets on exit — the same OSC 11/111 background-swap trick the user already
+/// hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running
+/// strips any previously-installed block (between the markers) before writing a fresh one, so
+/// repeated installs never duplicate.
+const SSH_COLOR_SNIPPET: &str = r#"
+ssh() {
+  printf '\033]11;#1a0f0f\007'
+  command ssh "$@"
+  printf '\033]111\007'
+}
+"#;
+
+/// Local-machine-only: the background swap needs to happen in the *local* shell that is
+/// launching `ssh`, so there is nothing to push to remote hosts here (unlike the statusline
+/// customizer, which does need per-host rollout).
+///
+/// `spawn_blocking`-wrapped per CLAUDE.md's blocking-UI rule: even "just" file I/O is a
+/// synchronous syscall, and the house rule now has zero exceptions for that — every command
+/// touching disk or a subprocess goes through the blocking thread-pool, no case-by-case judgment
+/// calls about whether a given file happens to be small.
+#[tauri::command]
+pub async fn install_ssh_terminal_color() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let zshrc_path = std::path::Path::new(&home).join(".zshrc");
+        let existing = std::fs::read_to_string(&zshrc_path).unwrap_or_default();
+
+        let mut kept_lines: Vec<&str> = Vec::new();
+        let mut skipping = false;
+        for line in existing.lines() {
+            if line == SSH_COLOR_MARKER_BEGIN {
+                skipping = true;
+                continue;
+            }
+            if line == SSH_COLOR_MARKER_END {
+                skipping = false;
+                continue;
+            }
+            if !skipping {
+                kept_lines.push(line);
+            }
+        }
+
+        let mut new_content = kept_lines.join("\n");
+        if !new_content.is_empty() && !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+        new_content.push_str(SSH_COLOR_MARKER_BEGIN);
+        new_content.push_str(SSH_COLOR_SNIPPET);
+        new_content.push_str(SSH_COLOR_MARKER_END);
+        new_content.push('\n');
+
+        if zshrc_path.exists() {
+            let backup_path = std::path::Path::new(&home).join(".zshrc.aki-bak");
+            if !backup_path.exists() {
+                std::fs::copy(&zshrc_path, &backup_path).map_err(|e| e.to_string())?;
+            }
+        }
+        std::fs::write(&zshrc_path, new_content).map_err(|e| e.to_string())?;
+        Ok(zshrc_path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+/// Resolves the local AkiClaudeDoc checkout by trying well-known candidate paths first (same
+/// conservative pattern as the CLAUDE_BIN resolver — a file-existence check has no dependency on
+/// where any given machine happens to keep its dev tree), so it's never a guess. Its exact
+/// location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to
+/// pointing the user at the GitHub repo to clone it.
+fn find_akiclaudedoc_install_script(home: &str) -> Option<String> {
+    let candidates = [
+        "/Volumes/DEV/AkiClaudeDoc/install.sh".to_string(),
+        format!("{}/AkiClaudeDoc/install.sh", home),
+        format!("{}/dev/AkiClaudeDoc/install.sh", home),
+        format!("{}/Developer/AkiClaudeDoc/install.sh", home),
+        format!("{}/Documents/AkiClaudeDoc/install.sh", home),
+    ];
+    candidates.into_iter().find(|c| std::path::Path::new(c).exists())
+}
+
+/// Runs the local AkiClaudeDoc `install.sh` in a visible Terminal window (the script prints
+/// colored progress output the user should see), or errors out pointing at the repo to clone if
+/// no checkout is found on this machine.
+#[tauri::command]
+pub fn install_akiclaudedoc() -> Result<(), String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    match find_akiclaudedoc_install_script(&home) {
+        #[cfg(target_os = "macos")]
+        Some(script) => {
+            let shell_cmd = format!("bash \"{}\"", script);
+            open_terminal_with_command(&shell_cmd)
+        }
+        #[cfg(not(target_os = "macos"))]
+        Some(_) => Ok(()),
+        None => Err(
+            "Không tìm thấy AkiClaudeDoc trên máy này. Clone repo trước: https://github.com/lacvietanh/AkiClaudeDoc"
+                .to_string(),
+        ),
+    }
+}
+
 use std::sync::{Mutex, OnceLock};
 use std::collections::HashMap;
 use crate::projects::SyncProject;
@@ -334,24 +440,46 @@ pub async fn resolve_report_html(
     Ok(std::path::Path::new(&local_path).join("REPORT.html").to_string_lossy().to_string())
 }
 
+/// Looks for `filename` in `~/Downloads` so the update modal can offer to open an
+/// already-downloaded installer instead of re-triggering a browser download.
+/// `file_name()` strips any directory components from the (externally-sourced,
+/// GitHub API) filename to prevent escaping the Downloads directory.
 #[tauri::command]
-pub fn check_for_updates() -> Result<String, String> {
-    let out = create_command("curl")
-        .args(&[
-            "-s",
-            "-H", "User-Agent: aki-dev-sync",
-            "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest"
-        ])
-        .output()
-        .map_err(|e| format!("Failed to check for updates: {}", e))?;
-    
-    if out.status.success() {
-        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-        Ok(stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        Err(if stderr.trim().is_empty() { "Network error checking for updates".to_string() } else { stderr })
-    }
+pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
+    let safe_name = std::path::Path::new(&filename)
+        .file_name()
+        .ok_or_else(|| "Invalid filename".to_string())?;
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(&home).join("Downloads").join(safe_name);
+    Ok(if path.exists() { Some(path.to_string_lossy().to_string()) } else { None })
+}
+
+/// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates" —
+/// `curl`'s blocking network wait must never sit on the command-dispatch thread (a slow or dead
+/// network would freeze the whole app on launch). `spawn_blocking` per CLAUDE.md's blocking-UI
+/// rule.
+#[tauri::command]
+pub async fn check_for_updates() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let out = create_command("curl")
+            .args(&[
+                "-s",
+                "-H", "User-Agent: aki-dev-sync",
+                "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest"
+            ])
+            .output()
+            .map_err(|e| format!("Failed to check for updates: {}", e))?;
+
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            Ok(stdout)
+        } else {
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            Err(if stderr.trim().is_empty() { "Network error checking for updates".to_string() } else { stderr })
+        }
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 

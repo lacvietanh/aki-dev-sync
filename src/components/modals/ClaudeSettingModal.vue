@@ -48,9 +48,19 @@
 
             <div class="section-label">Apply to <span class="hint">(local + configured remote hosts)</span></div>
             <div class="host-list">
-              <label v-for="h in hostOptions" :key="h" class="host-chip" :class="{ active: selectedHosts.includes(h) }">
+              <label
+                v-for="h in hostOptions"
+                :key="h"
+                class="host-chip"
+                :class="{ active: selectedHosts.includes(h), warn: hostStatus[h] && hostStatus[h].claude_installed && !hostStatus[h].statusline_configured }"
+              >
                 <input type="checkbox" :value="h" v-model="selectedHosts" />
                 {{ h === 'local' ? 'Local (this machine)' : h }}
+                <i
+                  v-if="hostStatus[h] && hostStatus[h].claude_installed && !hostStatus[h].statusline_configured"
+                  class="fa-solid fa-triangle-exclamation warn-icon"
+                  title="Statusline not installed on this host yet — auto-installing…"
+                ></i>
               </label>
               <div v-if="hostOptions.length === 1" class="hint no-remotes">No remote hosts configured yet — add a project with a remote host to push there too.</div>
             </div>
@@ -148,6 +158,7 @@ const busy = ref(false);
 const status = reactive({ msg: '', err: false });
 const results = ref([]);
 const selectedHosts = ref(['local']);
+const hostStatus = ref({});
 
 watch(cfg, () => localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)), { deep: true });
 
@@ -170,7 +181,36 @@ watch(() => props.show, async (val) => {
       Object.assign(cfg, remote);
     } catch { /* keep local default */ }
   }
+  checkAndAutoInstall();
 });
+
+// Warns when a host has Claude Code but no statusline wired up yet, then auto-installs it
+// there — hosts with no Claude Code at all are skipped since this app's Claude-only features
+// don't apply to them.
+async function checkAndAutoInstall() {
+  try {
+    const list = await invoke('check_statusline_status', { hosts: hostOptions.value });
+    const map = {};
+    for (const s of list) map[s.host] = s;
+    hostStatus.value = map;
+
+    const toInstall = list.filter(s => s.claude_installed && !s.statusline_configured).map(s => s.host);
+    if (!toInstall.length) return;
+
+    const config = JSON.parse(JSON.stringify(cfg));
+    const autoResults = await invoke('apply_statusline_config', { config, targetHosts: toInstall });
+    for (const r of autoResults) {
+      if (hostStatus.value[r.host]) hostStatus.value[r.host].statusline_configured = r.ok;
+    }
+    const ok = autoResults.filter(r => r.ok).map(r => r.host);
+    if (ok.length) {
+      status.err = false;
+      status.msg = `Auto-installed statusline on: ${ok.join(', ')}. Restart Claude Code (or open a new terminal) to see it.`;
+    }
+  } catch (e) {
+    console.error('Statusline status check failed:', e);
+  }
+}
 
 function move(idx, dir) {
   const to = idx + dir;
@@ -277,8 +317,8 @@ const previewHtml = computed(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  width: 480px;
-  max-width: calc(100vw - 32px);
+  width: 90vw;
+  max-width: 1100px;
   max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
@@ -472,6 +512,8 @@ const previewHtml = computed(() => {
 
 .host-chip input { accent-color: #d97757; cursor: pointer; }
 .host-chip.active { color: #fba97a; border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
+.host-chip.warn { border-color: rgba(251, 191, 36, 0.5); }
+.warn-icon { color: #fbbf24; font-size: 9px; }
 
 .no-remotes { width: 100%; font-size: 10px; }
 

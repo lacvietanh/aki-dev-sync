@@ -343,9 +343,54 @@ pub fn get_default_statusline_config() -> StatuslineConfig {
     default_config()
 }
 
+#[derive(Serialize, Clone)]
+pub struct StatuslineHostStatus {
+    pub host: String,
+    pub claude_installed: bool,
+    pub statusline_configured: bool,
+}
+
+/// Detects, per host, whether Claude Code is present and whether our statusline script is
+/// already wired into `settings.json`. Reuses the same `$CLAUDE_BIN` resolver preamble every
+/// other remote script gets (see `agent_usage::run_remote_script`), so detection isn't racing
+/// the same PATH-sourcing timing issue described in CLAUDE.md.
+///
+/// `run_remote_script` is fully synchronous (blocking `Command`/poll loop, one host after
+/// another). Per CLAUDE.md's blocking-UI rule, that must never run on the command-dispatch
+/// thread directly — `spawn_blocking` offloads it to Tauri's blocking thread-pool.
+#[tauri::command]
+pub async fn check_statusline_status(hosts: Vec<String>) -> Vec<StatuslineHostStatus> {
+    const PROBE: &str = r#"
+if command -v "$CLAUDE_BIN" >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then echo "CLAUDE=1"; else echo "CLAUDE=0"; fi
+if [ -f "$HOME/.claude/statusline-command.sh" ] && [ -f "$HOME/.claude/settings.json" ] && grep -q "statusline-command.sh" "$HOME/.claude/settings.json" 2>/dev/null; then echo "SL=1"; else echo "SL=0"; fi
+"#;
+    tauri::async_runtime::spawn_blocking(move || {
+        hosts
+            .into_iter()
+            .map(|host| {
+                let (claude_installed, statusline_configured) = match run_remote_script(&host, PROBE) {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        (stdout.contains("CLAUDE=1"), stdout.contains("SL=1"))
+                    }
+                    Err(_) => (false, false),
+                };
+                StatuslineHostStatus { host, claude_installed, statusline_configured }
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Pushes the generated statusline script + settings.json patch to every host in `target_hosts`
 /// ("local" for this machine, otherwise an ssh host string — same convention as the rest of the
 /// app's remote infra). Each host is applied independently; one failing host doesn't block others.
+///
+/// `spawn_blocking`-wrapped for the same reason as `check_statusline_status` above — see
+/// CLAUDE.md's blocking-UI rule. This was the actual bug behind the Statusline Customizer
+/// freezing the whole app on open: the auto-install path calls this immediately, and it used to
+/// run its blocking SSH loop straight on the async executor thread.
 #[tauri::command]
 pub async fn apply_statusline_config(
     config: StatuslineConfig,
@@ -354,28 +399,32 @@ pub async fn apply_statusline_config(
     let body = generate_statusline_script(&config);
     let installer = build_installer_script(&body);
 
-    let mut results = Vec::new();
-    for host in target_hosts {
-        let outcome = run_remote_script(&host, &installer);
-        let result = match outcome {
-            Ok(output) => {
-                let ok = output.status.success();
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                HostApplyResult {
-                    host: host.clone(),
-                    ok,
-                    message: if ok { "Applied".to_string() } else { stderr },
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results = Vec::new();
+        for host in target_hosts {
+            let outcome = run_remote_script(&host, &installer);
+            let result = match outcome {
+                Ok(output) => {
+                    let ok = output.status.success();
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    HostApplyResult {
+                        host: host.clone(),
+                        ok,
+                        message: if ok { "Applied".to_string() } else { stderr },
+                    }
                 }
-            }
-            Err(e) => HostApplyResult { host: host.clone(), ok: false, message: e },
-        };
-        crate::logger::info(
-            "STATUSLINE",
-            &format!("apply host={} ok={} msg={}", result.host, result.ok, preview(&result.message, 200)),
-        );
-        results.push(result);
-    }
-    Ok(results)
+                Err(e) => HostApplyResult { host: host.clone(), ok: false, message: e },
+            };
+            crate::logger::info(
+                "STATUSLINE",
+                &format!("apply host={} ok={} msg={}", result.host, result.ok, preview(&result.message, 200)),
+            );
+            results.push(result);
+        }
+        results
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))
 }
 
 fn preview(s: &str, max: usize) -> String {

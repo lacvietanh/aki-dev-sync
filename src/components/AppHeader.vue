@@ -16,6 +16,15 @@
               <a href="#" @click.prevent="triggerManualUpdateCheck" class="icon-dropdown-item">
                 <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Check for Updates
               </a>
+              <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local">
+                <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
+              </a>
+              <a href="#" @click.prevent="openLink(AKICLAUDEDOC_REPO_URL)" class="icon-dropdown-item">
+                <i class="fa-brands fa-github"></i> AkiClaudeDoc Repo
+              </a>
+              <a href="#" @click.prevent="installAkiClaudeDoc" class="icon-dropdown-item">
+                <i class="fa-solid fa-download"></i> Install AkiClaudeDoc
+              </a>
             </div>
           </span>
           Aki Dev Sync
@@ -61,6 +70,7 @@
           :version="newVersionAvailable"
           :notes="latestReleaseNotes"
           :download-url="latestDownloadUrl"
+          :release-url="latestReleaseUrl"
           @close="dismissUpdateModal"
         />
         <GlobalNoteModal />
@@ -92,6 +102,7 @@ import GlobalNoteModal from './modals/GlobalNoteModal.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
+const AKICLAUDEDOC_REPO_URL = 'https://github.com/lacvietanh/AkiClaudeDoc';
 const UPDATE_DISMISS_KEY = 'aki-devsync-update-dismissed';
 
 const appVersion = __APP_VERSION__;
@@ -104,6 +115,7 @@ const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
 const latestReleaseNotes = ref('');
 const latestDownloadUrl = ref('');
+const latestReleaseUrl = ref('');
 
 const { startDragging, minimize, closeWin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
@@ -128,6 +140,7 @@ function applyLatestRelease(latest) {
   latestReleaseNotes.value = latest.body || '';
   const dmgAsset = (latest.assets || []).find(a => a.name && a.name.endsWith('.dmg'));
   latestDownloadUrl.value = dmgAsset ? dmgAsset.browser_download_url : latest.html_url || RELEASE_URL;
+  latestReleaseUrl.value = latest.html_url || RELEASE_URL;
 }
 
 onMounted(async () => {
@@ -192,6 +205,27 @@ async function triggerManualUpdateCheck() {
 
 function openLink(url) {
   invoke('macos_open', { args: [url] }).catch(console.error);
+}
+
+async function enableSshTerminalColor() {
+  try {
+    await invoke('install_ssh_terminal_color');
+    Toast.fire({
+      icon: 'success',
+      title: 'SSH terminal color enabled',
+      text: 'Open a new terminal window for it to take effect.'
+    });
+  } catch (e) {
+    Toast.fire({ icon: 'error', title: 'Failed to enable SSH terminal color', text: String(e) });
+  }
+}
+
+async function installAkiClaudeDoc() {
+  try {
+    await invoke('install_akiclaudedoc');
+  } catch (e) {
+    Toast.fire({ icon: 'error', title: 'AkiClaudeDoc not found on this machine', text: String(e) });
+  }
 }
 
 function handleRefresh() {

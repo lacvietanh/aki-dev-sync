@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.10.1] - 2026-07-15
+
+#### Fixed
+- **Update dialog title showed a doubled "v" ("vv1.10.0")**: `newVersionAvailable` (`AppHeader.vue`) is set from GitHub's `tag_name`, which already carries a `v` prefix; `UpdateModal.vue`'s title template unconditionally prepended another one. Now a `displayVersion` computed strips any existing `v` before re-adding exactly one, and cargo/npm version fields — separately audited this release — never carry a `v` (see `CLAUDE.md` § Version string format).
+- **Statusline Customizer froze the entire app window on open**: the new auto-install check (below) ran `check_statusline_status`'s SSH/local probe as a plain synchronous `#[tauri::command]`, and `apply_statusline_config` called its blocking SSH loop directly inside an `async fn` without `spawn_blocking` — both block the command-dispatch thread, freezing window repaint and input for as long as the probe/apply takes. Also caught and fixed the same pre-existing class in `check_for_updates` (blocking `curl` on every app launch, no timeout). All three are now properly `async fn` + `tauri::async_runtime::spawn_blocking`, matching the pattern already used correctly elsewhere in this codebase (`git.rs`, `agent_usage.rs`). `CLAUDE.md` gets a new ABSOLUTE, zero-exception "never block the UI" rule so this class doesn't recur, pushed into the shared `AkiClaudeDoc` rule corpus as a new `RULE-stack-tauri.md` (this repo previously only had a copy-pasted "GLOBAL TAURI STACK" section, not a shared file).
+
+#### Added
+- **Update dialog "Release Page" button**: opens the GitHub release's `html_url` directly (new `releaseUrl` prop), alongside the existing "Download DMG" button.
+- **Update dialog re-downloads smarter**: clicking "Download DMG" now checks `~/Downloads` first (new `find_in_downloads` command) and opens the already-downloaded `.dmg` directly (mounting it) instead of re-triggering a browser download when the file is already present. Falls back to the browser download URL otherwise. Does not attempt to self-terminate the running app — the user still finishes the drag-to-Applications step manually.
+- **Statusline Customizer modal widened to 90vw** (was a fixed 480px) — the live ANSI preview line no longer wraps awkwardly on typical window sizes.
+- **Statusline install detection + auto-install**: new `check_statusline_status` command reports, per host, whether Claude Code is present and whether `~/.claude/statusline-command.sh` is already wired into `settings.json`. Opening the Statusline Customizer now auto-applies the current config to any host that has Claude Code but no statusline configured yet (with a warning icon on the host chip while that's in flight), and silently skips hosts with no Claude Code at all since this app's Claude-only features don't apply there.
+- **SSH Terminal Color** (`Enable SSH Terminal Color` in the app-icon dropdown menu): installs an idempotent `ssh()` zsh wrapper into `~/.zshrc` (OSC 11/111 background tint while a remote session is active, reset on exit) so a remote shell is visually distinguishable from local at a glance. Local-machine-only by design — the background swap has to live in the shell that launches `ssh`, so there's nothing to roll out to remote hosts. Guarded by begin/end markers so re-running never duplicates, and backs up the pre-existing `~/.zshrc` once to `~/.zshrc.aki-bak`.
+- **AkiClaudeDoc menu items**: "AkiClaudeDoc Repo" opens the GitHub repo; "Install AkiClaudeDoc" runs the local checkout's `install.sh` in a visible Terminal window, resolved via well-known candidate paths (mirrors the existing `$CLAUDE_BIN` resolver pattern) since the checkout location varies per machine — falls back to an error pointing at the repo to clone when no local checkout is found.
+
+#### Changed
+- **Versioning rule tightened (ABSOLUTE) after a real regression**: git tags had silently drifted from bare semver (`1.8.0`…`1.9.7`) to `v`-prefixed (`v1.9.8`, `v1.10.0`) partway through the project's history, which is exactly what caused the doubled-"v" UI bug above. `CLAUDE.md` now states explicitly that the version *attribute itself* (`package.json`, `Cargo.toml`, git tags) must never contain a `v` prefix — display-only `v` (UI badges, GitHub Release titles) is unaffected and always was fine. Same rule pushed into the shared `AkiClaudeDoc` rule corpus (`RULE-release.md`) so it applies to every Aki project, not just this one. This release's tag is cut bare (`1.10.1`, not `v1.10.1`) to restore the original convention.
+
+---
+
 ### [1.10.0] - 2026-07-15
 
 #### Added

@@ -76,12 +76,15 @@ pub fn run() {
             agent_usage::get_agent_usage,
             agent_usage::logout_antigravity,
             system::macos_open,
+            system::install_ssh_terminal_color,
+            system::install_akiclaudedoc,
             system::open_local_terminal,
             system::open_remote_subprocess,
             system::check_ide_availability,
             system::resolve_remote_path,
             system::resolve_report_html,
             system::check_for_updates,
+            system::find_in_downloads,
             system::check_project_stack,
             system::run_project_command,
             system::read_project_changelog,
@@ -94,6 +97,7 @@ pub fn run() {
             // statusline customizer
             statusline::get_default_statusline_config,
             statusline::apply_statusline_config,
+            statusline::check_statusline_status,
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,

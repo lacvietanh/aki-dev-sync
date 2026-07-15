@@ -3,7 +3,7 @@
     <template #title>
       <div style="display: flex; align-items: center; gap: 8px;">
         <i class="fa-solid fa-circle-arrow-up" style="font-size: 16px; color: var(--accent-cyan);"></i>
-        <span>Update Available — v{{ version }}</span>
+        <span>Update Available — {{ displayVersion }}</span>
       </div>
     </template>
     <div class="modal-body update-body">
@@ -11,6 +11,9 @@
     </div>
     <div class="update-footer">
       <button class="btn-tech btn-tech-secondary" @click="$emit('close')">Later</button>
+      <button class="btn-tech btn-tech-secondary" @click="openRelease" :disabled="!releaseUrl">
+        <i class="fa-solid fa-arrow-up-right-from-square"></i> Release Page
+      </button>
       <button class="btn-tech btn-tech-primary" @click="download" :disabled="!downloadUrl">
         <i class="fa-solid fa-download"></i> Download DMG
       </button>
@@ -29,13 +32,32 @@ const props = defineProps({
   version: String,
   notes: String,
   downloadUrl: String,
+  releaseUrl: String,
 });
 defineEmits(['close']);
 
 const renderedNotes = computed(() => renderMarkdown(props.notes || '_No release notes provided._'));
+const displayVersion = computed(() => `v${(props.version || '').replace(/^v/i, '')}`);
 
-function download() {
+function openRelease() {
+  if (!props.releaseUrl) return;
+  invoke('macos_open', { args: [props.releaseUrl] }).catch(console.error);
+}
+
+async function download() {
   if (!props.downloadUrl) return;
+  try {
+    const filename = decodeURIComponent(props.downloadUrl.split('/').pop().split('?')[0]);
+    const existing = await invoke('find_in_downloads', { filename });
+    if (existing) {
+      // Already downloaded — open the local file directly (mounts the DMG) instead
+      // of re-triggering a browser download.
+      invoke('macos_open', { args: [existing] }).catch(console.error);
+      return;
+    }
+  } catch (e) {
+    console.error('Failed to check existing download:', e);
+  }
   invoke('macos_open', { args: [props.downloadUrl] }).catch(console.error);
 }
 </script>
