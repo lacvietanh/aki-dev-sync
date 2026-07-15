@@ -23,12 +23,16 @@
         <button class="btn-ui-action btn-profile" @click="showProfileModal = true" title="Claude Code Profile (Native / Proxy)" aria-label="Claude Code Profile Settings">
           <i class="fa-solid fa-sliders"></i>
         </button>
+        <button class="btn-ui-action btn-statusline" @click="showStatuslineModal = true" title="Statusline Customizer" aria-label="Statusline Customizer">
+          <i class="fa-solid fa-terminal"></i>
+        </button>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
       <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
+      <ClaudeSettingModal :show="showStatuslineModal" @close="showStatuslineModal = false" />
     </div>
 
     <!-- Antigravity Header (Keep tiny logo + email) -->
@@ -238,9 +242,11 @@ import Swal from 'sweetalert2';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
 import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
+import ClaudeSettingModal from './modals/ClaudeSettingModal.vue';
 import { refreshSettings } from '../store/refreshStore';
 
 const showProfileModal = ref(false);
+const showStatuslineModal = ref(false);
 
 const props = defineProps({
   agentId: String,

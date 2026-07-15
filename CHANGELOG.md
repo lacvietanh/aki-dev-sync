@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.10.0] - 2026-07-15
+
+#### Added
+- **Statusline Customizer**: a new "Statusline Customizer" button next to the existing Claude Code Profile button opens a modal to build `~/.claude/statusline-command.sh` visually instead of hand-editing it over chat. Toggle which groups appear (identity, cwd, model+effort, context window, 5h/7d rate limits, session duration/lines/cost, and an experimental git-branch field), reorder them with up/down, recolor the plain-label fields (cwd/model/session/git — identity and all %/+/- values keep their meaningful locked colors), tune the 3 color-tier thresholds (default 50/70/85), and see a live ANSI-accurate preview before applying. One "Apply" push writes the generated script + patches `statusLine` in `settings.json` on the local machine and/or any configured remote host (checkbox list sourced from the project table's `remote_host`s), reusing the existing `ssh host sh` execution path — no new transport code. Safety: the very first Apply to a host backs up any pre-existing hand-edited script to `statusline-command.sh.aki-bak` before overwriting; the mandatory `aki-rlcache v2` rate-limit caching block is always emitted and is not user-togglable, since usage tracking depends on it. New Rust module `src-tauri/src/statusline.rs`; new `src/components/modals/ClaudeSettingModal.vue`. Field catalog covers the groups already locked in during planning (see `docs/plan/statusline-customizer.md`), not the full statusLine JSON schema — architecture (one match arm + one catalog entry per field) makes adding more straightforward later.
+- **`share/aki-statusLine/`**: the hand-tuned statusline script (now also the customizer's default preset) published as a standalone drop-in asset for Claude Code users who don't run Aki Dev Sync — `cp` it to `~/.claude/statusline-command.sh`, no app install needed. README gets a new section with the demo infographic and install steps.
+
+---
+
 ### [1.9.8] - 2026-07-13
 
 #### Fixed

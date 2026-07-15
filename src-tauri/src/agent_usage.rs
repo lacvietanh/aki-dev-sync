@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 
 /// Sends `script` to `ssh host sh` via stdin and returns the combined output.
-fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
+pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
     run_remote_script_timeout(host, script, REMOTE_SCRIPT_TIMEOUT_SECS)
 }
 

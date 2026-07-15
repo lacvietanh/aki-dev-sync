@@ -5,6 +5,7 @@ mod global_note;
 mod logger;
 mod projects;
 mod ssh;
+mod statusline;
 mod sync;
 mod system;
 
@@ -90,6 +91,9 @@ pub fn run() {
             // claude profile switcher
             claude_profile::get_claude_mode,
             claude_profile::set_claude_profile,
+            // statusline customizer
+            statusline::get_default_statusline_config,
+            statusline::apply_statusline_config,
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,
