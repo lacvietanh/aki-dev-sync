@@ -25,11 +25,12 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import AgentUsageSlot from './AgentUsageSlot.vue';
 import { useSsh } from '../composables/useSsh';
 import { useAgentUsage } from '../composables/useAgentUsage';
 import { remoteModeEnabled } from '../store/remoteModeStore';
+import { claudeMode } from '../store/claudeModeStore';
 
 const { selectedSshHost } = useSsh();
 
@@ -38,25 +39,39 @@ const { selectedSshHost } = useSsh();
 // any) currently has it selected for display — so a slot can show a source that's off
 // (rendered as "Monitoring off" or last-known cached data by AgentUsage) without that
 // implicitly turning it on, and turning a source on/off doesn't care who's looking at it.
-function useToggleableSource(agentKey, resolveHost, storageKey, defaultEnabled) {
+// `lockedRef`, when provided, blocks manual toggle() calls (guarded again at the UI layer
+// in AgentUsageSlot.vue) — used for Claude Code local monitoring, which reads straight from
+// the native Anthropic account API/pricing and is meaningless once Proxy mode reroutes
+// traffic elsewhere (see claudeModeStore.js).
+function useToggleableSource(agentKey, resolveHost, storageKey, defaultEnabled, lockedRef = null) {
   const enabled = ref(
     localStorage.getItem(storageKey) !== null
       ? localStorage.getItem(storageKey) === 'true'
       : defaultEnabled
   );
   function toggle() {
+    if (lockedRef?.value) return;
     enabled.value = !enabled.value;
     localStorage.setItem(storageKey, String(enabled.value));
   }
   const hostRef = computed(() => (enabled.value ? resolveHost() : null));
   const hook = useAgentUsage(agentKey, hostRef);
-  return reactive({ enabled, toggle, ...hook });
+  return reactive({ enabled, toggle, locked: lockedRef || computed(() => false), ...hook });
 }
 
 // Local sources cost nothing (no SSH round trip) — on by default, each with its own
 // independent power switch inside the LOCAL tab.
 const ag = useToggleableSource('antigravity', () => 'local', 'aki-src-ag-enabled', true);
-const ccLocal = useToggleableSource('claudecode', () => 'local', 'aki-src-cclocal-enabled', true);
+const ccLocalLocked = computed(() => claudeMode.value === 'proxy');
+const ccLocal = useToggleableSource('claudecode', () => 'local', 'aki-src-cclocal-enabled', true, ccLocalLocked);
+
+// Proxy mode ON forces monitoring off (locked, can't be manually re-enabled — see toggle()
+// above). Proxy mode OFF just unlocks the switch; it does NOT auto-restore a prior enabled
+// state, by design, to keep this behavior simple and predictable — the user turns it back
+// on themselves, same as any other fresh "off" state.
+watch(claudeMode, (mode) => {
+  if (mode === 'proxy') ccLocal.enabled = false;
+});
 
 // Remote has no switch of its own — it is entirely governed by the single global Remote
 // Mode switch in AppHeader (`remoteModeStore`), same as project pull/push/select/open and

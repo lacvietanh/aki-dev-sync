@@ -30,11 +30,11 @@
             class="tab src-tab"
             :class="{ 'is-active': localSub === src.key }"
             :disabled="peerView === `local-${src.key}`"
-            :title="peerView === `local-${src.key}` ? 'Already shown in the other panel' : `${src.title} monitoring ${src.source.enabled ? 'ON — click to turn off' : 'OFF — click to turn on'}`"
+            :title="peerView === `local-${src.key}` ? 'Already shown in the other panel' : src.source.locked ? `${src.title} monitoring locked OFF — Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.source.enabled ? 'ON — click to turn off' : 'OFF — click to turn on'}`"
             @click="localSub = src.key"
           >
-            <i class="fa-solid fa-power-off src-power" :class="src.source.enabled ? 'is-on' : 'is-off'"
-               @click.stop="src.source.toggle()"></i>
+            <i class="fa-solid fa-power-off src-power" :class="[src.source.enabled ? 'is-on' : 'is-off', { 'is-locked': src.source.locked }]"
+               @click.stop="!src.source.locked && src.source.toggle()"></i>
             <img :src="src.icon" class="src-icon" alt="" />
             <span>{{ src.label }}</span>
           </button>
@@ -65,6 +65,7 @@
       :cachedAt="activeSource.cachedAt"
       :showEmail="showEmail"
       :sourceOff="!activeSource.enabled"
+      :locked="!!activeSource.locked"
       :accounts="activeSource.accounts"
       :viewing-email="activeSource.viewingEmail"
       :active-email="activeSource.activeEmail"
@@ -220,6 +221,13 @@ const activeSource = computed(() => {
 }
 .src-power.is-off {
   color: #6b7280;
+}
+.src-power.is-locked {
+  color: #4b5563;
+  cursor: not-allowed;
+}
+.src-power.is-locked:hover {
+  background: transparent;
 }
 .remote-power {
   font-size: 10px;

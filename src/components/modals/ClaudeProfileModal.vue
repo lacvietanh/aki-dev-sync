@@ -6,6 +6,9 @@
           <div class="modal-header">
             <span class="modal-title">
               <i class="fa-solid fa-sliders"></i> Claude Code Profile
+              <span class="scope-tag" title="This always edits ~/.claude/settings.json on this machine — there is no remote-host target">
+                <i class="fa-solid fa-laptop-code"></i> Local
+              </span>
             </span>
             <button class="modal-close" @click="$emit('close')" title="Close">
               <i class="fa-solid fa-xmark"></i>
@@ -14,16 +17,16 @@
 
           <div class="modal-body">
             <div class="proxy-fields">
-              <input v-model="cfg.endpoint" class="field-input" type="url" placeholder="Endpoint URL" title="customApiUrl — proxy API base URL" spellcheck="false" />
+              <input v-model="cfg.endpoint" class="field-input" type="url" placeholder="Endpoint URL" title="env.ANTHROPIC_BASE_URL — proxy API base URL" spellcheck="false" />
               <div class="key-row">
-                <input v-model="cfg.apiKey" class="field-input key-input" :type="showKey ? 'text' : 'password'" placeholder="API Key" title="apiKey — proxy API key" spellcheck="false" />
+                <input v-model="cfg.apiKey" class="field-input key-input" :type="showKey ? 'text' : 'password'" placeholder="API Key" title="env.ANTHROPIC_AUTH_TOKEN — proxy API key" spellcheck="false" />
                 <button class="btn-eye" @click="showKey = !showKey" :title="showKey ? 'Hide key' : 'Show key'">
                   <i class="fa-regular" :class="showKey ? 'fa-eye' : 'fa-eye-slash'"></i>
                 </button>
               </div>
-              <input v-model="cfg.modelOpus" class="field-input" type="text" :placeholder="DEFAULTS.opus" title="ANTHROPIC_DEFAULT_OPUS_MODEL — leave blank to use default" spellcheck="false" />
-              <input v-model="cfg.modelSonnet" class="field-input" type="text" :placeholder="DEFAULTS.sonnet" title="ANTHROPIC_DEFAULT_SONNET_MODEL — leave blank to use default" spellcheck="false" />
-              <input v-model="cfg.modelHaiku" class="field-input" type="text" :placeholder="DEFAULTS.haiku" title="ANTHROPIC_DEFAULT_HAIKU_MODEL — leave blank to use default" spellcheck="false" />
+              <input v-model="cfg.modelOpus" class="field-input" type="text" :placeholder="DEFAULTS.opus" title="env.ANTHROPIC_DEFAULT_OPUS_MODEL — leave blank to use default" spellcheck="false" />
+              <input v-model="cfg.modelSonnet" class="field-input" type="text" :placeholder="DEFAULTS.sonnet" title="env.ANTHROPIC_DEFAULT_SONNET_MODEL — leave blank to use default" spellcheck="false" />
+              <input v-model="cfg.modelHaiku" class="field-input" type="text" :placeholder="DEFAULTS.haiku" title="env.ANTHROPIC_DEFAULT_HAIKU_MODEL — leave blank to use default" spellcheck="false" />
             </div>
 
             <div v-if="status.msg" class="status-msg" :class="status.err ? 'err' : 'ok'">
@@ -61,6 +64,7 @@
 <script setup>
 import { ref, reactive, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { claudeMode as currentMode, refreshClaudeMode } from '../../store/claudeModeStore';
 
 const props = defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
@@ -76,7 +80,6 @@ function loadCfg() {
 const cfg = reactive(loadCfg());
 const showKey = ref(false);
 const busy = ref(false);
-const currentMode = ref('native');
 const status = reactive({ msg: '', err: false });
 
 watch(cfg, () => localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...cfg })));
@@ -85,8 +88,7 @@ watch(() => props.show, async (val) => {
   if (!val) return;
   status.msg = '';
   Object.assign(cfg, loadCfg());
-  try { currentMode.value = await invoke('get_claude_mode'); }
-  catch { currentMode.value = 'native'; }
+  await refreshClaudeMode();
 });
 
 async function applyMode(mode) {
@@ -161,6 +163,26 @@ async function applyMode(mode) {
 
 .modal-title i {
   color: #d97757;
+}
+
+.scope-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.3px;
+  margin-left: 2px;
+}
+
+.scope-tag i {
+  color: #94a3b8;
+  font-size: 9px;
 }
 
 .modal-close {

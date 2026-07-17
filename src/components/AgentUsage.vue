@@ -11,7 +11,7 @@
           <span v-if="data && claudeTierDisplay" class="agent-plan-badge claude">
             {{ claudeTierDisplay }}
           </span>
-          <span v-if="data?.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">{{ data.email }}</span>
+          <span v-if="data?.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">{{ truncEmail(data.email) }}</span>
           <button v-if="data?.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
             <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
           </button>
@@ -20,19 +20,11 @@
       </div>
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-profile" @click="showProfileModal = true" title="Claude Code Profile (Native / Proxy)" aria-label="Claude Code Profile Settings">
-          <i class="fa-solid fa-sliders"></i>
-        </button>
-        <button class="btn-ui-action btn-statusline" @click="showStatuslineModal = true" title="Statusline Customizer" aria-label="Statusline Customizer">
-          <i class="fa-solid fa-terminal"></i>
-        </button>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude — Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
       </div>
-      <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
-      <ClaudeSettingModal :show="showStatuslineModal" @close="showStatuslineModal = false" />
     </div>
 
     <!-- Antigravity Header (Keep tiny logo + email) -->
@@ -45,7 +37,7 @@
           <div class="agent-name">
             {{ agentName }}
             <span v-if="data && data.userTier?.name" class="agent-plan-badge ag">
-              {{ data.userTier.name }}
+              {{ data.userTier.name.replace('Google', 'GG') }}
             </span>
             <!-- Email doubles as the account-switch trigger (no extra element — Extreme Narrow).
                  The handler is on the wrapper because a blurred email has pointer-events:none. -->
@@ -60,7 +52,7 @@
               <span
                 class="agent-account ag-account-trigger"
                 :class="{ 'email-blurred': !showEmail }"
-              >- {{ emailLocal(data.email) }}</span>
+              >{{ truncEmail(data.email) }}</span>
               <div v-if="accountMenuOpen" class="ag-account-menu" @click.stop>
                 <button
                   v-for="acc in accounts"
@@ -90,9 +82,9 @@
 
       <div class="agent-status-badges">
         <!-- Show cached badge when AG is offline; stale badge otherwise -->
-        <span v-if="isCached" class="cached-note" :title="'Data cached at ' + cachedAbsTime">cached {{ cachedAgo }}</span>
+        <span v-if="isCached" class="cached-note" :title="'Data cached at ' + cachedAbsTime">{{ cachedAgo }}</span>
         <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && $emit('retry')" :disabled="loading" :title="loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude — Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
@@ -100,12 +92,12 @@
     </div>
 
     <div class="agent-body">
-      <div v-if="error" class="usage-error">
-        <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ error }}</span>
+      <div v-if="uiStatus.kind === 'error'" class="usage-error">
+        <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ uiStatus.text }}</span>
       </div>
 
       <!-- Skeleton circles with fieldset wrapper for AG -->
-      <div v-else-if="loading && !data" class="usage-circles-skeleton">
+      <div v-else-if="uiStatus.kind === 'loading'" class="usage-circles-skeleton">
         <div v-if="agentId === 'claudecode'" class="cc-skeleton-block">
           <div class="skeleton-bar-header"></div>
           <div class="skeleton-bar-track"></div>
@@ -135,21 +127,24 @@
         </div>
       </div>
 
-      <!-- Empty state: only show when no data AND no cache available -->
-      <div v-else-if="!data && !loading && sourceOff" class="usage-empty">
-        <i class="fa-solid fa-power-off mb-1"></i><br>
-        <span>Monitoring off</span>
+      <!-- Off state (manual toggle OR locked-by-proxy) takes priority over stale cached bars —
+           this must not require `!data` to trigger, otherwise flipping the source off leaves
+           the last-fetched bars on screen until the next app launch. -->
+      <div v-else-if="uiStatus.kind === 'off'" class="usage-empty">
+        <i class="fa-solid" :class="uiStatus.icon"></i><br>
+        <span>{{ uiStatus.text }}</span>
       </div>
-      <div v-else-if="!data && !loading" class="usage-empty">
-        <i class="fa-solid" :class="agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1'"></i><br>
-        <span>{{ agentId === 'antigravity' ? 'Not connected — open & sign in to Antigravity to monitor' : 'No data — waiting for next session' }}</span>
+
+      <div v-else-if="uiStatus.kind === 'empty'" class="usage-empty">
+        <i class="fa-solid" :class="uiStatus.icon"></i><br>
+        <span>{{ uiStatus.text }}</span>
         <button v-if="agentId === 'claudecode'" @click="$emit('force-sync')" class="btn-ui-action btn-sync-now" style="margin-top: 8px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" title="Force Sync Quota">
           <i class="fa-solid fa-arrows-rotate"></i>
           <span>Force Sync</span>
         </button>
       </div>
 
-      <div v-else-if="data" class="usage-bars-container">
+      <div v-else-if="uiStatus.kind === 'data'" class="usage-bars-container">
         <!-- Render Claude Code specific circular progress (2 circles) -->
         <template v-if="agentId === 'claudecode'">
           <div class="cc-bars-block">
@@ -241,12 +236,7 @@ import { invoke } from '@tauri-apps/api/core';
 import Swal from 'sweetalert2';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
-import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
-import ClaudeSettingModal from './modals/ClaudeSettingModal.vue';
 import { refreshSettings } from '../store/refreshStore';
-
-const showProfileModal = ref(false);
-const showStatuslineModal = ref(false);
 
 const props = defineProps({
   agentId: String,
@@ -259,10 +249,36 @@ const props = defineProps({
   cachedAt: { type: Number, default: null },
   showEmail: { type: Boolean, default: true },
   sourceOff: { type: Boolean, default: false },
+  // True when sourceOff is forced (not user-toggled) — e.g. Claude Code local monitoring
+  // locked off while Proxy mode is active. Swaps the off-state message to explain why.
+  locked: { type: Boolean, default: false },
   // AG-only multi-account view (unused for Claude Code)
   accounts: { type: Array, default: () => [] },
   viewingEmail: { default: null },
   activeEmail: { default: null }
+});
+
+// Single source of truth for which body view to render. Priority: error > loading > off
+// (manual or locked) > empty (no data yet) > data. Off is checked before data on purpose —
+// otherwise flipping a source off leaves the last-fetched bars on screen until relaunch.
+const uiStatus = computed(() => {
+  if (props.error) return { kind: 'error', text: props.error };
+  if (props.sourceOff) {
+    return {
+      kind: 'off',
+      icon: 'fa-power-off mb-1',
+      text: props.locked ? 'Monitor only for native Claude — Proxy mode active' : 'Monitoring off',
+    };
+  }
+  if (props.loading && !props.data) return { kind: 'loading' };
+  if (!props.data) {
+    return {
+      kind: 'empty',
+      icon: props.agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1',
+      text: props.agentId === 'antigravity' ? 'Not connected — open & sign in to Antigravity to monitor' : 'No data — waiting for next session',
+    };
+  }
+  return { kind: 'data' };
 });
 
 const emit = defineEmits(['retry', 'force-sync', 'select-account', 'toggle-email', 'logout-success']);
@@ -306,11 +322,10 @@ async function logoutAntigravity() {
     loggingOut.value = false;
   }
 }
-// Design lock: the header shows only the local part (before @) to keep width stable when the
-// active/cached account changes; the full email is shown in the dropdown rows.
-function emailLocal(email) {
-  const at = email.indexOf('@');
-  return at > 0 ? email.slice(0, at) : email;
+// Design lock: the header shows a max-10-char truncated email to keep width stable when the
+// active/cached account changes; the full email is shown in the dropdown rows untouched.
+function truncEmail(email) {
+  return email.length > 10 ? email.slice(0, 10) + '…' : email;
 }
 function onDocClick() { accountMenuOpen.value = false; }
 function onDocKey(e) { if (e.key === 'Escape') accountMenuOpen.value = false; }
@@ -586,7 +601,7 @@ async function handleIconClick() {
 .agent-title-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
 }
 
 .agent-icon-wrapper {
@@ -802,6 +817,12 @@ async function handleIconClick() {
 .btn-ui-action:hover {
   background: var(--bg-tertiary);
   color: var(--text-light);
+}
+
+.btn-ui-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .agent-body {

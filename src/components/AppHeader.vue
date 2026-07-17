@@ -3,9 +3,9 @@
     <header class="top-header" data-tauri-drag-region @mousedown.prevent="startDragging">
       <div class="logo-section" data-tauri-drag-region>
         <h1 data-tauri-drag-region>
-          <span class="app-icon-menu" @mousedown.stop title="Links">
+          <span class="app-icon-menu" @mousedown.stop title="Menu — links, updates & utilities">
             <img src="/titlebar-icon.png" class="app-icon icon-glow" />
-            <span class="icon-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+            <span class="menu-affordance"><i class="fa-solid fa-bars"></i></span>
             <div class="icon-dropdown">
               <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
                 <i class="fa-brands fa-github"></i> GitHub Repository
@@ -16,9 +16,26 @@
               <a href="#" @click.prevent="triggerManualUpdateCheck" class="icon-dropdown-item">
                 <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Check for Updates
               </a>
+              <div class="icon-dropdown-separator"></div>
+              <a
+                href="#"
+                @click.prevent="!(anySyncing || isReloading) && openSshConfig()"
+                class="icon-dropdown-item"
+                :class="{ 'item-disabled': anySyncing || isReloading }"
+                title="Edit SSH Config (Local) — edits this machine's ~/.ssh/config"
+              >
+                <i class="fa-solid fa-edit"></i> Edit SSH Config (Local)
+              </a>
               <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local">
                 <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
               </a>
+              <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item" title="Build ~/.claude/statusline-command.sh visually, apply to local and/or any configured remote host">
+                <i class="fa-solid fa-terminal"></i> Statusline Customizer
+              </a>
+              <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) — Native / Proxy settings for ~/.claude/settings.json on this machine">
+                <i class="fa-solid fa-sliders"></i> Claude Code Profile (Local)
+              </a>
+              <div class="icon-dropdown-separator"></div>
               <a href="#" @click.prevent="openLink(AKICLAUDEDOC_REPO_URL)" class="icon-dropdown-item">
                 <i class="fa-brands fa-github"></i> AkiClaudeDoc Repo
               </a>
@@ -50,13 +67,9 @@
         <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="anySyncing || isReloading">
           <i class="fa-solid fa-plus"></i> <span class="btn-text">PROJECT</span>
         </button>
-        <button class="btn-tech btn-tech-secondary" @click="openSshConfig" title="Edit SSH Config" :disabled="anySyncing || isReloading">
-          <i class="fa-solid fa-edit"></i> <span class="">SSH</span>
-        </button>
         <div class="btn-group-refresh">
-          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" title="Refresh all — git, remote diff, usage" :disabled="anySyncing || isReloading">
+          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="isReloading ? 'Refreshing all — git, remote diff, usage…' : 'Refresh all — git, remote diff, usage'" :disabled="anySyncing || isReloading">
             <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i>
-            <span class="btn-text">{{ isReloading ? 'REFRESHING...' : 'REFRESH' }}</span>
           </button>
           <button class="btn-tech btn-tech-secondary btn-refresh-settings" @click="showRefreshSettings = true" title="Background Refresh Settings" :disabled="isReloading">
             <i class="fa-solid fa-sliders"></i>
@@ -74,8 +87,18 @@
           @close="dismissUpdateModal"
         />
         <GlobalNoteModal />
+        <ClaudeSettingModal :show="showStatuslineModal" @close="showStatuslineModal = false" />
+        <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
 
         <!-- Custom Traffic Lights -->
+        <div
+          class="titlebar-button pin-btn"
+          :class="{ active: isPinned }"
+          @click="togglePin"
+          :title="isPinned ? 'Unpin from all Spaces' : 'Pin window on top across all Spaces'"
+        >
+          <i class="fa-solid fa-thumbtack"></i>
+        </div>
         <div class="titlebar-button minimize-btn" @click="minimize" title="Minimize">
           <i class="fa-solid fa-window-minimize"></i>
         </div>
@@ -99,6 +122,8 @@ import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
 import UpdateModal from './modals/UpdateModal.vue';
 import GlobalNoteModal from './modals/GlobalNoteModal.vue';
+import ClaudeSettingModal from './modals/ClaudeSettingModal.vue';
+import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
@@ -110,6 +135,8 @@ const buildTime = __BUILD_TIME__;
 const showRefreshSettings = ref(false);
 const showChangelogModal = ref(false);
 const showUpdateModal = ref(false);
+const showStatuslineModal = ref(false);
+const showProfileModal = ref(false);
 const isDev = import.meta.env.DEV;
 const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
@@ -117,7 +144,7 @@ const latestReleaseNotes = ref('');
 const latestDownloadUrl = ref('');
 const latestReleaseUrl = ref('');
 
-const { startDragging, minimize, closeWin } = useAppWindow();
+const { startDragging, minimize, closeWin, isPinned, togglePin, restorePin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
 const { createNewProject, loadData, anySyncing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
@@ -144,6 +171,7 @@ function applyLatestRelease(latest) {
 }
 
 onMounted(async () => {
+  restorePin();
   try {
     const raw = await invoke('check_for_updates');
     const latest = JSON.parse(raw);
@@ -242,30 +270,37 @@ function handleCreateNew() {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: 6px;
   cursor: pointer;
-  padding: 2px 3px;
-  border-radius: 5px;
+  padding: 2px;
+  border-radius: 6px;
   transition: background 0.15s;
   vertical-align: middle;
-  margin-right: 4px;
+  margin-right: 6px;
 }
 
 .app-icon-menu:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 210, 255, 0.08);
 }
 
-.icon-chevron {
-  font-size: 10px;
-  color: #94a3b8;
-  line-height: 1;
-  margin-top: 1px;
-  transition: color 0.15s, transform 0.2s;
+.menu-affordance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  color: #a5f3fc;
+  background: rgba(0, 210, 255, 0.08);
+  border: 1px solid rgba(0, 210, 255, 0.25);
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
-.app-icon-menu:hover .icon-chevron {
-  color: #cbd5e1;
-  transform: rotate(180deg);
+.app-icon-menu:hover .menu-affordance {
+  color: #fff;
+  background: rgba(0, 210, 255, 0.2);
+  box-shadow: inset 0 0 8px rgba(0, 210, 255, 0.3);
 }
 
 .icon-dropdown {
@@ -329,6 +364,18 @@ function handleCreateNew() {
   color: #94a3b8;
 }
 
+.icon-dropdown-item.item-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.icon-dropdown-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 6px;
+}
+
 .btn-intro {
   position: relative;
   margin-right: 4px;
@@ -377,6 +424,7 @@ function handleCreateNew() {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right: none;
+  padding: 0 10px;
 }
 
 .btn-refresh-settings {
@@ -478,5 +526,15 @@ function handleCreateNew() {
 .update-badge:hover {
   background: rgba(16, 185, 129, 0.25);
   color: #fff;
+}
+
+.pin-btn.active {
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.15);
+  box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.pin-btn.active i {
+  transform: rotate(45deg);
 }
 </style>

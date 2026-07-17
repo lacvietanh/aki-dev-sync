@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.11.0] - 2026-07-17
+
+#### Added
+- **Pin window across all macOS Spaces**: thumbtack toggle in the titlebar (next to Minimize/Close) keeps the window on top and visible across Spaces, via `setAlwaysOnTop` + `setVisibleOnAllWorkspaces` (`useAppWindow.js`); state persists to `localStorage` and restores on launch. Still yields to another app running full-screen in the same Space — that's macOS's own full-screen behavior, not a gap to close.
+- **Claude Code local usage monitor locks off while Proxy mode is active**: native usage data (rate-limit %, email/org, session cost) reads straight from Anthropic's own account API, which has no visibility into a proxy's actual traffic — so the LOCAL tab's Claude Code toggle is force-disabled (dimmed, tooltip explains why) whenever Proxy mode is on. New shared `claudeModeStore.js` tracks the mode; switching back to native unlocks the toggle without auto re-enabling monitoring.
+
+#### Changed
+- **Project table narrowed**: `PROJECT`/`TASKS`/`GIT`/`LAST` column widths retuned (`--grid-cols: 13.5rem 2.2rem 5rem 3.8rem 1fr` → `12rem 2.5rem 2.5rem 2.5rem 1fr`), and the git status text label ("Dirty"/"Clean"/"Ahead"/"No Git"/"Git Error") dropped in favor of button-state styling — count badge for changed files, blue glow for `Ahead`, grayed-out for `No Git`/`Git Error` (tooltip still spells out the exact state). The old narrow-width `!important` rule that force-showed icons was replaced by one rule that just hides button text below 800px (the always-narrow `.actions-wrapper` button padding itself is unchanged); per-button icon/text was simplified too — SELECT is now icon-only (hand-pointer + upload, tooltip explains the pick-then-push/bypass-exclude/DRY-independent behavior), the `.git` checkbox dropped its icon for text-only, and LOG's icon (previously hidden by an inline style a stray `!important` rule silently canceled anyway) is now just always shown next to its text. Header labels shortened to `PROJECTS (n)` and `LAST` (full text in tooltip). Default window width reduced 875px → 720px to match.
+- **Agent usage panel decluttered**: header icon-to-label gap tightened (`8px` → `2px`); account emails truncated to 10 chars in the header (full email still in the account-switch dropdown); Antigravity's plan badge collapses "Google" → "GG"; the AG cached-time note drops the word "cached". Body state rendering (`AgentUsage.vue`) consolidated from ad hoc `v-if`/`v-else-if` chains into one `uiStatus` computed resolving `error` → `off` → `loading` → `empty` → `data`, fixing a bug where toggling a source off (or Proxy-mode locking it off) left stale usage bars on screen until relaunch. New `locked` prop swaps the off-state message to "Monitor only for native Claude — Proxy mode active" when a lock, not the user, turned it off.
+- **App-icon menu is now the single home for local-only admin actions**: Claude Code Profile, Statusline Customizer, and Edit SSH Config moved out of the always-visible header row / usage panel (where Profile and Statusline could render duplicated across the two usage slots) into the app-icon dropdown, each labeled "(Local)" since none of them take a remote-host target — the Profile modal also carries a "Local" scope tag as a second confirmation. The dropdown trigger swapped from a small chevron to a `fa-bars` icon in a pill for better discoverability, and its items are now grouped with separators (links/updates, local utilities, AkiClaudeDoc).
+- **Refresh button is icon-only** (tooltip carries the "Refresh all…" label); the pin-window icon uses the app's red "engaged" toggle color instead of blue.
+- Removed dead CSS left over from earlier refactors (`main.css`: `.mt-2`, `.text-sm`, `.special-modal`, `.header-special h2`, `.loading-state`, `.file-list`/`.file-item`, `.btn-sm`, `.btn-push`).
+
+---
+
 ### [1.10.1] - 2026-07-15
 
 #### Fixed

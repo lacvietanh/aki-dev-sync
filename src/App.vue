@@ -32,6 +32,7 @@ import ProjectTasksModal from './components/modals/ProjectTasksModal.vue';
 import { useProjects } from './composables/useProjects';
 import { useSsh } from './composables/useSsh';
 import { initGlobalNote } from './composables/useGlobalNote';
+import { refreshClaudeMode } from './store/claudeModeStore';
 
 const { loadData } = useProjects();
 const { sshHosts } = useSsh();
@@ -41,6 +42,7 @@ const LEGACY_BASELINE_CLEANUP_KEY = 'aki-legacy-baseline-cleanup-v1';
 onMounted(() => {
   loadData(sshHosts, false);
   initGlobalNote();
+  refreshClaudeMode();
 
   if (localStorage.getItem(LEGACY_BASELINE_CLEANUP_KEY) !== 'true') {
     invoke('cleanup_legacy_baselines')

@@ -3,7 +3,7 @@
     <div class="projects-grid" :class="{ 'dragging-active': dragFromIndex !== null }">
       <!-- Header -->
       <div class="grid-header">
-        <div class="grid-header-cell col-project-info">PROJECT / PATH</div>
+        <div class="grid-header-cell col-project-info">PROJECTS ({{ projects.length }})</div>
         <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
         <div class="grid-header-cell col-git-status" title="LOCAL GIT">
           <span class="th-with-ring">
@@ -11,7 +11,7 @@
             <RefreshRing :interval-s="refreshSettings.git_interval_s" :refresh-key="gitRefreshKey" stroke-color="rgba(16, 185, 129, 0.6)" />
           </span>
         </div>
-        <div class="grid-header-cell col-last-sync">LAST ACT</div>
+        <div class="grid-header-cell col-last-sync" title="LAST ACTION">LAST</div>
         <div class="grid-header-cell col-actions">
           <span class="th-with-ring">
             ACTIONS
@@ -45,32 +45,30 @@
 
         <!-- Project Rows -->
         <div
-          v-for="(p, index) in projects"
-          :key="p.id"
-          class="grid-row"
-          :class="{ 'row-syncing': projectRuntime[p.id]?.syncing, 'row-dragging': dragFromIndex === index }"
-          draggable="true"
-          @dragstart="onRowDragStart(index, $event)"
-          @dragover.prevent="onRowDragOver(index, $event)"
-          @dragenter.prevent
-          @drop.prevent="onRowDrop(index)"
-          @dragend="onRowDragEnd"
-          @mousedown="onRowMouseDown"
-        >
+             v-for="(p, index) in projects"
+             :key="p.id"
+             class="grid-row"
+             :class="{ 'row-syncing': projectRuntime[p.id]?.syncing, 'row-dragging': dragFromIndex === index }"
+             draggable="true"
+             @dragstart="onRowDragStart(index, $event)"
+             @dragover.prevent="onRowDragOver(index, $event)"
+             @dragenter.prevent
+             @drop.prevent="onRowDrop(index)"
+             @dragend="onRowDragEnd"
+             @mousedown="onRowMouseDown">
           <!-- Cell 1: Project Info -->
           <div class="grid-row-cell col-project-info">
             <div style="display: flex; align-items: center; gap: 12px;">
               <!-- Project Icon (drag handle) -->
               <div
-                class="project-drag-handle icon-glow"
-                title="Kéo để sắp xếp"
-                @mousedown="isHandleMouseDown = true"
-              >
+                   class="project-drag-handle icon-glow"
+                   title="Kéo để sắp xếp"
+                   @mousedown="isHandleMouseDown = true">
                 <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" @error="failedIcons[p.id] = true" />
                 <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
               </div>
 
-              <div style="flex: 1; min-width: 0; padding-right: 16px;">
+              <div style="flex: 1; min-width: 0; padding-right: 6px;">
                 <div class="project-name" style="display: flex; justify-content: space-between; align-items: center;">
                   <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
                   <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" style="color: var(--accent-cyan); font-size: 11px; text-decoration: none; display: flex; align-items: center; gap: 4px;">
@@ -94,13 +92,18 @@
           <div class="grid-row-cell col-git-status">
             <div class="git-cell">
               <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
-                <button class="btn-action-git" @click="openGitModal(p)" :title="projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : 'Git Actions (Commit & Push to Remote Git)'" aria-label="Git Actions">
+                <button
+                        class="btn-action-git"
+                        :class="{
+                          'git-no-repo': ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
+                          'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
+                        }"
+                        @click="openGitModal(p)"
+                        :title="projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error — click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote — click to push' : 'Git Actions (Commit & Push to Remote Git)'"
+                        aria-label="Git Actions">
                   <i class="fa-brands fa-git-alt"></i>
                 </button>
               </CountBadgeWrap>
-              <span class="git-badge" :class="'git-' + (projectRuntime[p.id]?.git_status || 'Unknown').replace(' ', '-')">
-                {{ projectRuntime[p.id]?.git_status || '...' }}
-              </span>
             </div>
           </div>
 
@@ -132,89 +135,86 @@
                       <i class="fa-solid fa-file-lines"></i> REPORT
                     </button>
                   </div>
-                    <div style="display: flex;">
-                      <!-- LOCAL -->
-                      <div style="flex: 1; min-width: 150px;">
-                        <div class="popup-section-label">
-                          <span>💻 LOCAL</span>
-                          <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
-                            <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
-                          </button>
+                  <div style="display: flex;">
+                    <!-- LOCAL -->
+                    <div style="flex: 1; min-width: 150px;">
+                      <div class="popup-section-label">
+                        <span>💻 LOCAL</span>
+                        <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
+                          <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                        </button>
+                      </div>
+                      <div class="popup-item" @click="openIdeLocal('finder', p.local_path)">
+                        <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
+                      </div>
+                      <div class="popup-item" @click="openIdeLocal('terminal', p.local_path)">
+                        <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
+                      </div>
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
+                        <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
+                      </div>
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
+                        <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
+                      </div>
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
+                        <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
+                      </div>
+                      <div v-if="getDevCmd(p) || getBuildCmd(p)" class="popup-run-row">
+                        <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getDevCmd(p))" :title="getDevCmd(p)">
+                          <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
                         </div>
-                        <div class="popup-item" @click="openIdeLocal('finder', p.local_path)">
-                          <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
-                        </div>
-                        <div class="popup-item" @click="openIdeLocal('terminal', p.local_path)">
-                          <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
-                        </div>
-                        <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
-                          <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
-                        </div>
-                        <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
-                          <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
-                        </div>
-                        <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
-                          <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
-                        </div>
-                        <div v-if="getDevCmd(p) || getBuildCmd(p)" class="popup-run-row">
-                          <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getDevCmd(p))" :title="getDevCmd(p)">
-                            <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
-                          </div>
-                          <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getBuildCmd(p))" :title="getBuildCmd(p)">
-                            <i class="fa-solid fa-hammer" style="width:14px; color: #f59e0b;"></i> BUILD
-                          </div>
+                        <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getBuildCmd(p))" :title="getBuildCmd(p)">
+                          <i class="fa-solid fa-hammer" style="width:14px; color: #f59e0b;"></i> BUILD
                         </div>
                       </div>
+                    </div>
 
-                      <!-- REMOTE -->
-                      <div v-if="p.remote_host && p.remote_path && remoteModeEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
-                        <div class="popup-section-label">
-                          <span>☁️ REMOTE (SSH)</span>
-                          <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
-                            <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
-                          </button>
-                        </div>
-                        <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
-                          <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
-                        </div>
-                        <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
-                          <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
-                        </div>
-                        <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
-                          <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
-                        </div>
-                        <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
-                          <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
-                        </div>
+                    <!-- REMOTE -->
+                    <div v-if="p.remote_host && p.remote_path && remoteModeEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
+                      <div class="popup-section-label">
+                        <span>☁️ REMOTE (SSH)</span>
+                        <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
+                          <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                        </button>
+                      </div>
+                      <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
+                        <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
+                      </div>
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
+                        <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
+                      </div>
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
+                        <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
+                      </div>
+                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
+                        <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
 
               <fieldset :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" class="remote-actions-fieldset" :title="!remoteModeEnabled ? 'Remote Mode is off' : ''">
-                <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :title="!remoteModeEnabled ? 'Remote Mode is off' : 'Select specific files to push (native file picker)'">
-                  <i class="fa-solid fa-hand-pointer btn-select-icon-only" style="display: none;"></i>
-                  <span class="btn-text">SELECT</span>
+                <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :title="!remoteModeEnabled ? 'Remote Mode is off' : 'Pick specific files/folders (native file picker) and push only those to Remote — bypasses this project\'s exclude list, unaffected by the DRY toggle'">
+                  <i class="fa-solid fa-upload"></i>
                 </button>
 
                 <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                   <div class="dry-group-left">
                     <label class="btn-tech-git-inline" :class="{ 'active': p.sync_git }" title="Include .git in Push">
                       <input type="checkbox" v-model="p.sync_git" @change="saveProjectsList()" />
-                      <i class="fa-brands fa-git-alt btn-git-icon-only" style="display: none;"></i>
                       <span class="btn-text">.git</span>
                     </label>
                     <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
                       <button
-                        class="btn-tech btn-tech-push"
-                        :class="{
-                          'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false,
-                          'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
-                          'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
-                        }"
-                        @click="startSync(p, 'push')"
-                        :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'"
-                      >
+                              class="btn-tech btn-tech-push"
+                              :class="{
+                                'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false,
+                                'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
+                                'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                              }"
+                              @click="startSync(p, 'push')"
+                              :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
                         <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
                       </button>
                     </CountBadgeWrap>
@@ -231,15 +231,14 @@
                   <div class="dry-group-right">
                     <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
                       <button
-                        class="btn-tech btn-tech-pull"
-                        :class="{
-                          'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false,
-                          'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
-                          'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
-                        }"
-                        @click="startSync(p, 'pull')"
-                        :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'"
-                      >
+                              class="btn-tech btn-tech-pull"
+                              :class="{
+                                'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false,
+                                'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
+                                'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                              }"
+                              @click="startSync(p, 'pull')"
+                              :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
                         <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
                       </button>
                     </CountBadgeWrap>
@@ -248,7 +247,7 @@
               </fieldset>
 
               <button class="btn-tech btn-tech-secondary" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
-                <i class="fa-solid fa-file-lines btn-log-icon-only" style="display: none;"></i>
+                <i class="fa-solid fa-file-lines btn-log-icon-only"></i>
                 <span class="btn-text">LOG</span>
               </button>
 
@@ -325,23 +324,23 @@ function onRowMouseDown(event) {
 
 function onRowDragOver(index, event) {
   if (dragFromIndex.value === null || dragFromIndex.value === index) return;
-  
+
   // Tính toán toạ độ để xác định chuột đã vượt qua trung điểm của hàng đích chưa.
   // Điều này ngăn chặn triệt để hiện tượng nhảy hàng liên tục (feedback loop/jittering) khi vừa chạm biên.
   const rect = event.currentTarget.getBoundingClientRect();
   const threshold = rect.top + rect.height / 2;
   const fromIndex = dragFromIndex.value;
-  
+
   // Kéo xuống: chỉ swap khi chuột đi qua nửa dưới của hàng đích
   if (fromIndex < index && event.clientY < threshold) return;
-  
+
   // Kéo lên: chỉ swap khi chuột đi qua nửa trên của hàng đích
   if (fromIndex > index && event.clientY > threshold) return;
-  
+
   const arr = [...projects.value];
   const [movedItem] = arr.splice(fromIndex, 1);
   arr.splice(index, 0, movedItem);
-  
+
   projects.value = arr;
   dragFromIndex.value = index;
 }
@@ -502,7 +501,7 @@ function formatTimeAgo(timestamp) {
 <style scoped>
 .projects-table-container {
   width: 100%;
-  --grid-cols: 13.5rem 2.2rem 5rem 3.8rem 1fr;
+  --grid-cols: 12rem 2.5rem 2.5rem 2.5rem 1fr;
   --grid-gap: 0.5rem;
 }
 
@@ -572,7 +571,7 @@ function formatTimeAgo(timestamp) {
 
 .grid-header-cell:first-child,
 .grid-row-cell:first-child {
-  padding-left: 12px;
+  padding-left: 6px;
   text-align: left;
 }
 
@@ -607,9 +606,10 @@ function formatTimeAgo(timestamp) {
 .th-with-ring {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
   padding-right: 8px;
 }
+
 
 /* Drag handle: project icon vùng */
 .project-drag-handle {
@@ -638,7 +638,8 @@ function formatTimeAgo(timestamp) {
   content: '';
   position: absolute;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.45); /* Nền tối mờ phủ lên trên ảnh */
+  background-color: rgba(0, 0, 0, 0.45);
+  /* Nền tối mờ phủ lên trên ảnh */
   background-image:
     radial-gradient(circle, rgba(255, 255, 255, 0.8) 1.2px, transparent 1.2px);
   background-size: 5px 5px;
@@ -647,7 +648,8 @@ function formatTimeAgo(timestamp) {
   transition: opacity 0.15s;
   pointer-events: none;
   border-radius: 6px;
-  z-index: 1; /* Nổi lên trên cùng ảnh icon */
+  z-index: 1;
+  /* Nổi lên trên cùng ảnh icon */
 }
 
 .project-drag-handle:hover::before {
@@ -706,9 +708,13 @@ fieldset:disabled .switch {
   pointer-events: none;
 }
 
-/* Giảm padding toàn diện cho các nút bấm trong bảng */
 .actions-wrapper .btn-tech {
   padding: 0 8px !important;
+}
+
+.actions-wrapper .btn-tech-push,
+.actions-wrapper .btn-tech-pull {
+  padding: 0 6px !important;
 }
 
 .actions-wrapper .btn-tech-git-inline {
@@ -716,43 +722,11 @@ fieldset:disabled .switch {
 }
 
 .actions-wrapper .btn-action-open {
-  padding: 0 6px !important;
+  padding: 0 10px !important;
 }
 
-@media (max-width: 800px) {
-  .projects-table-container {
-    --grid-cols: 11rem 2.2rem 4.5rem 3.5rem 1fr;
-    --grid-gap: 0.25rem;
-  }
-
-  .col-tasks,
-  .col-git-status,
-  .col-last-sync,
-  .col-actions {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-  }
-
-  .actions-wrapper .btn-tech,
-  .actions-wrapper .btn-action-open,
-  .actions-wrapper .btn-tech-git-inline {
-    padding: 0 12px !important;
-  }
-
-  .actions-wrapper .btn-tech .btn-text,
-  .actions-wrapper .btn-tech-git-inline .btn-text {
-    display: none !important;
-  }
-
-  .actions-wrapper .btn-select-icon-only,
-  .actions-wrapper .btn-git-icon-only,
-  .actions-wrapper .btn-log-icon-only {
-    display: inline-block !important;
-  }
-
-  .actions-wrapper .btn-action-open i {
-    margin-left: 0 !important;
-  }
+.actions-wrapper .btn-action-open i {
+  margin-left: 0 !important;
 }
 
 /* Open Popup */
@@ -833,6 +807,7 @@ fieldset:disabled .switch {
   letter-spacing: 0.1em;
   transition: color 0.15s;
 }
+
 .popup-copy-btn:hover {
   color: var(--accent-cyan, #00d2ff);
 }
@@ -905,5 +880,20 @@ fieldset:disabled .switch {
 
 .btn-sync-diverged {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
+}
+
+@media (max-width: 800px) {
+  .actions-wrapper .btn-action-open .btn-text,
+  .actions-wrapper .btn-tech-secondary .btn-text {
+    display: none !important;
+  }
+
+  .dry-toggle-center {
+    padding: 0 4px !important;
+  }
+
+  .actions-wrapper .btn-tech-git-inline {
+    padding: 0 4px !important;
+  }
 }
 </style>

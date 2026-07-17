@@ -118,7 +118,7 @@ Then add to `~/.claude/settings.json`:
 
 Requires `jq` on `PATH` (macOS: `brew install jq`, Ubuntu: `apt install jq`).
 
-This script is also the default preset behind the in-app **Statusline Customizer** (the terminal icon next to the Claude Code Profile button in the Claude Code panel) — use the app if you want to toggle fields, reorder groups, recolor labels, and push the result to remote hosts without hand-editing.
+This script is also the default preset behind the in-app **Statusline Customizer** (in the app-icon menu, top-left titlebar) — use the app if you want to toggle fields, reorder groups, recolor labels, and push the result to remote hosts without hand-editing.
 
 ## 🛠 Tech Stack
 
