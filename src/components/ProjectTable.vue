@@ -6,13 +6,13 @@
         <div class="grid-header-cell col-project-info col-project-info-header">
           <span>PROJECTS ({{ projects.length }})</span>
           <button
-            class="btn-tech btn-tech-primary btn-icon-only btn-new-project-inline"
+            class="btn-tech btn-tech-primary btn-new-project-inline"
             @click="handleCreateNew"
             :disabled="anySyncing || isReloading"
             title="New Project"
             aria-label="New Project"
           >
-            <i class="fa-solid fa-plus"></i>
+            <i class="fa-solid fa-plus"></i> NEW
           </button>
         </div>
         <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
@@ -605,8 +605,8 @@ function formatTimeAgo(timestamp) {
 
 .btn-new-project-inline {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  height: 24px;
+  padding: 0 10px;
   font-size: 10px;
   box-shadow: 0 0 6px rgba(0, 210, 255, 0.25);
 }
