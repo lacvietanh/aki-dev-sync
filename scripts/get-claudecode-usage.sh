@@ -176,7 +176,7 @@ existing['rate_limits']['seven_day'] = seven
 tmp = CACHE + '.tmp'
 with open(tmp, 'w') as f:
     json.dump(existing, f)
-os.replace(tmp, CACHE)  # atomic — never races statusLine hook's non-atomic write
+os.replace(tmp, CACHE)  # atomic — statusLine hook (aki-rlcache v3+) also writes atomically now
 
 log('ok pct_5h=' + str(five['used_percentage']) + ' resets_at=' + str(five['resets_at']))
 PYEOF

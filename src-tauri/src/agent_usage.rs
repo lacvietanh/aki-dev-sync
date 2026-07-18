@@ -17,14 +17,88 @@ const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 
 /// Sends `script` to `ssh host sh` via stdin and returns the combined output.
 pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
-    run_remote_script_timeout(host, script, REMOTE_SCRIPT_TIMEOUT_SECS)
+    run_interpreter_timeout(host, Interpreter::Sh, script, REMOTE_SCRIPT_TIMEOUT_SECS)
+}
+
+/// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script
+/// (not POSIX `sh`) piped over the same funnel. Generalizes the timeout/kill/drain machinery
+/// instead of duplicating it — see docs/plan/fix-usage-monitor-freeze.md P2: AG's IPC previously
+/// had no timeout at all, so a blackholed SSH/local probe wedged `isChecking` permanently.
+pub(crate) fn run_remote_node_timeout(host: &str, script: &str) -> Result<Output, String> {
+    run_interpreter_timeout(host, Interpreter::Node, script, REMOTE_SCRIPT_TIMEOUT_SECS)
 }
 
 fn is_local_host(host: &str) -> bool {
     host == "local" || host == "localhost"
 }
 
-/// Prepended to every script sent through [`run_remote_script_timeout`], local or remote.
+/// Which interpreter to invoke for a given probe, and how — each script family needs a
+/// different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid
+/// JS, so it must never be sent ahead of a `node` script).
+#[derive(Clone, Copy)]
+enum Interpreter {
+    /// CC: local `sh`, remote `ssh host sh`. Gets [`CLAUDE_BIN_RESOLVER_PREAMBLE`] prepended.
+    Sh,
+    /// AG: local `zsh -lc node` (login shell — resolves `node` via nvm/PATH, same rc-sourcing
+    /// race as CLAUDE_BIN, see stack-tauri rule), remote `ssh host node`. No preamble.
+    Node,
+}
+
+impl Interpreter {
+    fn spawn(self, host: &str, local: bool) -> std::io::Result<std::process::Child> {
+        let mut cmd = match (self, local) {
+            (Interpreter::Sh, true) => Command::new("sh"),
+            (Interpreter::Sh, false) => {
+                let mut c = Command::new("ssh");
+                c.args([host, "sh"]);
+                c
+            }
+            (Interpreter::Node, true) => {
+                let mut c = Command::new("zsh");
+                c.args(["-lc", "node"]);
+                c
+            }
+            (Interpreter::Node, false) => {
+                let mut c = Command::new("ssh");
+                c.args([host, "node"]);
+                c
+            }
+        };
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    }
+
+    fn preamble(self) -> &'static str {
+        match self {
+            Interpreter::Sh => CLAUDE_BIN_RESOLVER_PREAMBLE,
+            Interpreter::Node => "",
+        }
+    }
+
+    /// Best-effort orphan cleanup after a kill — only meaningful for the CC `claude -p` probe
+    /// (a real quota-costing session that can be left running remotely). AG's `node` probe is a
+    /// short local IDE RPC with no equivalent named process pattern safe to `pkill -f`, so this
+    /// is a no-op for [`Interpreter::Node`].
+    fn cleanup_orphan(self, host: &str, local: bool) {
+        if !matches!(self, Interpreter::Sh) {
+            return;
+        }
+        let host_cleanup = host.to_string();
+        std::thread::spawn(move || {
+            let _ = if local {
+                Command::new("pkill").args(["-f", "claude -p"]).output()
+            } else {
+                Command::new("ssh")
+                    .args([host_cleanup.as_str(), "pkill", "-f", "claude -p"])
+                    .output()
+            };
+        });
+    }
+}
+
+/// Prepended to every `sh` script sent through [`run_interpreter_timeout`], local or remote.
 /// Resolves a `claude` binary path into `$CLAUDE_BIN` via static, deterministic file checks
 /// BEFORE falling back to PATH/login-shell lookup.
 ///
@@ -55,36 +129,29 @@ CLAUDE_BIN=$(_resolve_claude_bin)
 export CLAUDE_BIN
 "#;
 
-/// Like [`run_remote_script`] but kills the remote process if it overruns `timeout_secs`,
-/// returning an explicit timeout error instead of blocking forever.
+/// Kills the remote/local process if it overruns `timeout_secs`, returning an explicit timeout
+/// error instead of blocking forever. One funnel for every interpreter this app spawns a script
+/// through (SSoT — see stack-tauri rule's PATH-race preamble note: one funnel, not per-call-site
+/// patches) — [`Interpreter`] selects the local/remote invocation and preamble.
 ///
-/// `host == "local"`/`"localhost"` runs `script` through a local `sh` instead of SSH — this
-/// is how Claude Code usage is monitored when it runs on the same machine as this app, no
-/// remote involved. The scripts under scripts/*.sh are pure POSIX sh against `$HOME`, so they
-/// work identically local or remote.
-fn run_remote_script_timeout(host: &str, script: &str, timeout_secs: u64) -> Result<Output, String> {
+/// `host == "local"`/`"localhost"` runs `script` through the interpreter's local invocation
+/// instead of SSH — this is how usage is monitored when the agent runs on the same machine as
+/// this app, no remote involved.
+fn run_interpreter_timeout(
+    host: &str,
+    interpreter: Interpreter,
+    script: &str,
+    timeout_secs: u64,
+) -> Result<Output, String> {
     let local = is_local_host(host);
-    let mut child = if local {
-        Command::new("sh")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn local sh: {}", e))?
-    } else {
-        Command::new("ssh")
-            .args([host, "sh"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn SSH: {}", e))?
-    };
+    let mut child = interpreter
+        .spawn(host, local)
+        .map_err(|e| format!("Failed to spawn {}: {}", if local { "local process" } else { "SSH" }, e))?;
 
     // Drain stdout/stderr on dedicated threads BEFORE writing stdin, so a large script
     // can't deadlock against a full output pipe that ssh isn't draining yet.
-    let mut out_pipe = child.stdout.take().ok_or("SSH stdout pipe missing")?;
-    let mut err_pipe = child.stderr.take().ok_or("SSH stderr pipe missing")?;
+    let mut out_pipe = child.stdout.take().ok_or("stdout pipe missing")?;
+    let mut err_pipe = child.stderr.take().ok_or("stderr pipe missing")?;
     let out_handle = std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = out_pipe.read_to_end(&mut buf);
@@ -97,13 +164,16 @@ fn run_remote_script_timeout(host: &str, script: &str, timeout_secs: u64) -> Res
     });
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(CLAUDE_BIN_RESOLVER_PREAMBLE.as_bytes())
-            .map_err(|e| format!("Failed to write to SSH stdin: {}", e))?;
+        let preamble = interpreter.preamble();
+        if !preamble.is_empty() {
+            stdin
+                .write_all(preamble.as_bytes())
+                .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+        }
         stdin
             .write_all(script.as_bytes())
-            .map_err(|e| format!("Failed to write to SSH stdin: {}", e))?;
-        // stdin dropped here → closes the pipe so the remote shell sees EOF
+            .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+        // stdin dropped here → closes the pipe so the remote process sees EOF
     }
 
     // Poll for completion with a hard timeout; kill on overrun.
@@ -115,29 +185,16 @@ fn run_remote_script_timeout(host: &str, script: &str, timeout_secs: u64) -> Res
                 if start.elapsed() >= Duration::from_secs(timeout_secs) {
                     let _ = child.kill();
                     let _ = child.wait();
-                    // Killing the local SSH client leaves the remote `claude -p` running as
-                    // an orphan — wastes quota and can create unintended sessions. Fire a
-                    // best-effort pkill to clean it up (over SSH for a remote host, or directly
-                    // for the local machine). Fire-and-forget: the cleanup result does not
-                    // affect this error path.
-                    let host_cleanup = host.to_string();
-                    std::thread::spawn(move || {
-                        let _ = if local {
-                            Command::new("pkill").args(["-f", "claude -p"]).output()
-                        } else {
-                            Command::new("ssh")
-                                .args([host_cleanup.as_str(), "pkill", "-f", "claude -p"])
-                                .output()
-                        };
-                    });
+                    // Fire-and-forget: the cleanup result does not affect this error path.
+                    interpreter.cleanup_orphan(host, local);
                     return Err(format!(
-                        "remote script timed out after {}s (local killed, remote cleanup fired) host={}",
+                        "script timed out after {}s (local killed, cleanup fired) host={}",
                         timeout_secs, host
                     ));
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
-            Err(e) => return Err(format!("Failed to poll remote script: {}", e)),
+            Err(e) => return Err(format!("Failed to poll script: {}", e)),
         }
     };
 
@@ -189,15 +246,26 @@ fn ab(agent: &str) -> &str {
 
 #[tauri::command]
 pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
-    logger::info("PROVISION", &format!("{} host={}", ab(&agent_name), host));
+    // run_remote_script (below) is fully synchronous (wait/poll loop, up to
+    // REMOTE_SCRIPT_TIMEOUT_SECS). Running it directly on the async executor starves a tokio
+    // worker for the same duration — spawn_blocking offloads to the blocking thread-pool, same
+    // pattern as get_agent_usage/logout_antigravity (P5, docs/plan/fix-usage-monitor-freeze.md;
+    // this pair was the one gap the stack-tauri never-block-the-UI audit had missed).
+    tauri::async_runtime::spawn_blocking(move || provision_agent_usage_sync(&agent_name, &host))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result<bool, String> {
+    logger::info("PROVISION", &format!("{} host={}", ab(agent_name), host));
 
     if agent_name != "claudecode" {
-        logger::debug("PROVISION", &format!("skip {}", ab(&agent_name)));
+        logger::debug("PROVISION", &format!("skip {}", ab(agent_name)));
         return if agent_name == "antigravity" { Ok(true) } else { Err("Unknown agent".into()) };
     }
 
     const SCRIPT: &str = include_str!("../../scripts/provision-claudecode.sh");
-    let output = run_remote_script(&host, SCRIPT)?;
+    let output = run_remote_script(host, SCRIPT)?;
     let ok = output.status.success();
     logger::info("PROVISION", &format!("exit={} ok={}", output.status.code().unwrap_or(-1), ok));
     let err = String::from_utf8_lossy(&output.stderr);
@@ -217,10 +285,17 @@ pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<b
 
 #[tauri::command]
 pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<String, String> {
-    logger::info("FORCE_SYNC", &format!("{} host={}", ab(&agent_name), host));
+    // Same spawn_blocking rationale as provision_agent_usage_sync above (P5).
+    tauri::async_runtime::spawn_blocking(move || force_sync_agent_usage_sync(&agent_name, &host))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+fn force_sync_agent_usage_sync(agent_name: &str, host: &str) -> Result<String, String> {
+    logger::info("FORCE_SYNC", &format!("{} host={}", ab(agent_name), host));
 
     if agent_name != "claudecode" {
-        logger::debug("FORCE_SYNC", &format!("skip {}", ab(&agent_name)));
+        logger::debug("FORCE_SYNC", &format!("skip {}", ab(agent_name)));
         return Err("Force sync not supported for this agent".into());
     }
 
@@ -236,7 +311,7 @@ pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<
     );
 
     logger::debug("FORCE_SYNC", "launching");
-    let output = run_remote_script(&host, &script)?;
+    let output = run_remote_script(host, &script)?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -551,35 +626,20 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
 
     let script = include_str!("../../scripts/get-antigravity-usage.js");
 
-    let mut command = if host == "local" || host == "localhost" {
-        let mut c = Command::new("zsh");
-        c.args(["-lc", "node"]);
-        c.stdin(Stdio::piped())
-         .stdout(Stdio::piped())
-         .stderr(Stdio::piped());
-        c
-    } else {
-        let mut c = Command::new("ssh");
-        c.args([host, "node"]);
-        c.stdin(Stdio::piped())
-         .stdout(Stdio::piped())
-         .stderr(Stdio::piped());
-        c
+    // P2 (docs/plan/fix-usage-monitor-freeze.md): this used to spawn+wait_with_output() with
+    // NO timeout — a blackholed SSH/local probe wedged `isChecking` permanently on the JS side,
+    // freezing every subsequent poll tick for this source. Routed through the same bounded
+    // funnel as CC (run_interpreter_timeout / Interpreter::Node) so it always resolves within
+    // REMOTE_SCRIPT_TIMEOUT_SECS. A timeout is swallowed to Ok(None) — same "transient monitor
+    // condition" policy as the non-zero-exit branch below, so it reads as one more silent
+    // poll-miss instead of a new flickering error state that didn't exist before this fix.
+    let output = match run_remote_node_timeout(host, script) {
+        Ok(o) => o,
+        Err(e) => {
+            logger::debug("USAGE:antigravity", &format!("soft-miss (spawn/timeout): {}", e));
+            return Ok(None);
+        }
     };
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Failed to spawn node: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(script.as_bytes())
-            .map_err(|e| format!("Failed to write script to node stdin: {}", e))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed to run node script: {}", e))?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     logger::debug("USAGE:antigravity", &format!(

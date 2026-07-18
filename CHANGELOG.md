@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.12.0] - 2026-07-18
+
+#### Added
+- **Usage monitor self-heals after macOS sleep/occlusion** (`useAgentUsage.js`): reset-time countdowns and quota bars used to freeze intermittently — sometimes recovering on their own, sometimes stuck until a manual webview reload — because WKWebView suspends/throttles `setInterval` while the window is fully occluded, minimized, or the machine sleeps, which silently stalls every poll-driven recovery layer underneath it. Two module-scoped listeners, shared by all three usage sources (AG/CC-local/CC-remote), now drive recovery: `visibilitychange`/`focus` triggers an immediate refresh the moment the window is looked at again, and a 7s watchdog heartbeat catches suspends that never flip `document.visibilityState` (pure occlusion). Investigated whether the new pin-across-Spaces window (1.11.0) was itself the trigger — it isn't (`useAppWindow.js` only touches window APIs, never the poll/IPC path); pinning just makes the window visible more often, so the freeze got *noticed* more, not caused more. Full writeup: `docs/plan/fix-usage-monitor-freeze.md`.
+- **Claude Code 5-hour bar now auto-refreshes at its own reset boundary** (`AgentUsage.vue`): mirrors the boundary-trigger Antigravity's `UsageCircle` already had — previously CC relied entirely on a server-script-side stale check that shared the same freeze exposure as the bug above.
+
+#### Fixed
+- **Antigravity usage probe had no timeout** (`agent_usage.rs`): a blackholed SSH connection or unresponsive local IDE RPC left `get_antigravity_usage`'s `wait_with_output()` blocking forever, permanently wedging the JS-side `isChecking` guard and freezing that source until an app relaunch — worse than the equivalent Claude Code path, which already had a 30s hard timeout. Generalized the CC timeout/kill/drain funnel (renamed `run_remote_script_timeout` → `run_interpreter_timeout`, parameterized by a new `Interpreter` enum) instead of writing a second copy, and routed AG through it with the same 30s ceiling.
+- **7-Day usage bar could silently vanish mid-session** (`provision-claudecode.sh`): the statusline cache hook (`aki-rlcache v2`) only preserved previously-cached `rate_limits` when a turn omitted the field entirely — a turn that *had* `rate_limits` (the normal case; current Claude Code only reports `five_hour`, no `seven_day`) still overwrote the whole cache file, clobbering a `seven_day` value the separate OAuth-poll recovery layer had just written. Hook bumped to v3: deep-merges `rate_limits` per-key instead of an all-or-nothing swap, and switched to an atomic (temp file + `mv`) write.
+- **`provision_agent_usage`/`force_sync_agent_usage` ran a blocking subprocess wait directly on the async executor** (`agent_usage.rs`): both were `async fn` but never wrapped their (up to 30s) blocking call in `spawn_blocking`, unlike every other command in this file — found while auditing the AG timeout fix. A worst case (several hosts retrying force-sync right after a sleep/wake, SSH still reconnecting) could starve tokio workers and delay unrelated IPC calls. Now wrapped identically to `get_agent_usage`/`logout_antigravity`.
+
+#### Changed
+- **"New Project" moved next to the project count**: the button left the top header row entirely and now sits inline with "PROJECTS (n)" in the table header, kept icon-only with the same cyan `btn-tech-primary` styling plus a small persistent glow so it still reads as the primary create action at a glance.
+
+---
+
 ### [1.11.0] - 2026-07-17
 
 #### Added

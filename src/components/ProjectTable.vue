@@ -3,7 +3,18 @@
     <div class="projects-grid" :class="{ 'dragging-active': dragFromIndex !== null }">
       <!-- Header -->
       <div class="grid-header">
-        <div class="grid-header-cell col-project-info">PROJECTS ({{ projects.length }})</div>
+        <div class="grid-header-cell col-project-info col-project-info-header">
+          <span>PROJECTS ({{ projects.length }})</span>
+          <button
+            class="btn-tech btn-tech-primary btn-icon-only btn-new-project-inline"
+            @click="handleCreateNew"
+            :disabled="anySyncing || isReloading"
+            title="New Project"
+            aria-label="New Project"
+          >
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
         <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
         <div class="grid-header-cell col-git-status" title="LOCAL GIT">
           <span class="th-with-ring">
@@ -267,6 +278,7 @@ import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
+import { useSsh } from '../composables/useSsh';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
 import { Toast, ideAvailability, iconTimestamp } from '../store/projectStore';
@@ -275,8 +287,13 @@ import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
 
-const { projects, projectRuntime, isReloading, startSync, saveProjectsList, openSelectDialog, openConfig, openGitModal } = useProjects();
+const { projects, projectRuntime, anySyncing, isReloading, startSync, saveProjectsList, openSelectDialog, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
+const { sshHosts } = useSsh();
+
+function handleCreateNew() {
+  createNewProject(sshHosts);
+}
 
 const failedIcons = ref({});
 watch([projects, iconTimestamp], () => {
@@ -573,6 +590,29 @@ function formatTimeAgo(timestamp) {
 .grid-row-cell:first-child {
   padding-left: 6px;
   text-align: left;
+}
+
+/* New Project moved here from the app header (next to the project count) — same
+   btn-tech-primary cyan vibe as before, just relocated + a persistent (not hover-only) glow
+   so it still reads as the primary create action at a glance. */
+.col-project-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-right: 6px;
+}
+
+.btn-new-project-inline {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+  box-shadow: 0 0 6px rgba(0, 210, 255, 0.25);
+}
+
+.btn-new-project-inline:hover:not(:disabled) {
+  box-shadow: 0 0 12px rgba(0, 210, 255, 0.5);
 }
 
 .grid-header-cell:last-child,

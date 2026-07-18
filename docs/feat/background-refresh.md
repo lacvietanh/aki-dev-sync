@@ -71,7 +71,7 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 **Trigger:** Local sources start immediately (default ON). `ccRemote` starts once a host is selected AND Remote Mode is on. Polls every 30s. Cleaned up on component unmount.
 
-**Implementation:** `useAgentUsage.js` (composable) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_remote_script_timeout` via `is_local_host(host)`.
+**Implementation:** `useAgentUsage.js` (composable) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_interpreter_timeout` (renamed from `run_remote_script_timeout` in 1.12.0) via `is_local_host(host)`.
 
 **Planned interval:** 30s (current) — acceptable since it's a single lightweight read.
 

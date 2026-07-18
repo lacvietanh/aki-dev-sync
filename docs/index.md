@@ -33,6 +33,7 @@
 ## Plans (Active)
 - [docs/plan/deferred-auto-update.md](plan/deferred-auto-update.md) — Tauri v2 self-update (deferred)
 - [docs/plan/investigate-ag-account-switch-detection.md](plan/investigate-ag-account-switch-detection.md) — AG doesn't pick up an in-app account switch until Antigravity is quit+reopened; hypothesis is Antigravity itself doesn't restart its language_server process on switch (external limitation, not our polling). Light PID-check test protocol for Mac, no rebuild needed.
+- [docs/plan/fix-usage-monitor-freeze.md](plan/fix-usage-monitor-freeze.md) — Reset time CC đứng im/không ổn định: root cause = WKWebView suspend `setInterval` + không có resume handling (P1); kèm AG IPC không timeout → deadlock `isChecking` (P2), statusline hook v2 clobber `seven_day` (P3, runtime-confirmed), CC thiếu boundary-trigger như AG (P4), provision/force_sync thiếu spawn_blocking (P5). **P1–P5 đã implement 1.12.0 (2026-07-18)** — chi tiết `docs/arch/usage-claudecode.md` §3d — còn chờ verify plan trên Mac trước khi đóng.
 
 ## Plans (Completed)
 - [docs/plan/done/claudecode-oauth-usage-p3.md](plan/done/claudecode-oauth-usage-p3.md) — P3 OAuth usage polling (Lỗi C freshness fix): Phase 1 code landed but no-op on Mac (keychain-only credentials) — **deprioritized/closed, not pursued further**. Embedded bug (email header kẹt ở account cũ sau khi đổi account CC) — **✅ FIXED 1.9.7**, verified by user.

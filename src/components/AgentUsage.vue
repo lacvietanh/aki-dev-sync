@@ -449,11 +449,6 @@ function pctColorClass(pct) {
 
 const ccNow = ref(Math.floor(Date.now() / 1000));
 let ccClockTimer = null;
-onMounted(() => {
-  if (props.agentId === 'claudecode') {
-    ccClockTimer = setInterval(() => { ccNow.value = Math.floor(Date.now() / 1000); }, 60000);
-  }
-});
 onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 
 // AG cached-at display — reactive relative time updated every 10s
@@ -510,6 +505,22 @@ const cc5hResetsAt = computed(() => {
 });
 const cc5hColorClass = computed(() => pctColorClass(cc5hPct.value));
 const cc5hResetLine = computed(() => formatResetLine(cc5hResetsAt.value, ccNow.value));
+
+// P4 boundary trigger: CC had no client-side equivalent of AG's UsageCircle @timeout — the
+// 5-hour bar could sit stale at "ready" past its reset with nothing prompting a refetch until
+// the next STALE_RESET poll noticed server-side. Same wasPast/nowPast edge-detect pattern as
+// UsageCircle.vue, wired to the existing @retry → refresh handler (AgentUsageSlot.vue).
+onMounted(() => {
+  if (props.agentId === 'claudecode') {
+    let wasPast = cc5hResetsAt.value > 0 && ccNow.value > cc5hResetsAt.value;
+    ccClockTimer = setInterval(() => {
+      ccNow.value = Math.floor(Date.now() / 1000);
+      const nowPast = cc5hResetsAt.value > 0 && ccNow.value > cc5hResetsAt.value;
+      if (nowPast && !wasPast) emit('retry');
+      wasPast = nowPast;
+    }, 60000);
+  }
+});
 
 const cc7dPct = computed(() => { const v = props.data?.rate_limits?.seven_day?.used_percentage; return v != null ? Math.round(v) : null; });
 const cc7dResetsAt = computed(() => props.data?.rate_limits?.seven_day?.resets_at ?? null);

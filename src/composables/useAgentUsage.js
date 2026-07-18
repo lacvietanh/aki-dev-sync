@@ -182,6 +182,45 @@ function listAgAccounts() {
     .sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
 }
 
+// ─── Wake self-heal (P1) ─────────────────────────────────────────────────────
+// WKWebView suspends/throttles setInterval when the window is fully occluded, minimized, or
+// the machine sleeps — poll ticks stop silently, and every self-recovery layer built on top of
+// them (STALE_RESET forceSync, OAuth poll, statusline hook) goes dormant too, since all of them
+// only run when a poll tick actually fires. Two listeners, installed ONCE at module scope and
+// shared by every useAgentUsage() instance (there are exactly 3: ag/ccLocal/ccRemote — see
+// AgentUsageSection.vue), drive recovery:
+//   1. visibilitychange/focus — immediate refresh the moment the user looks back at the app.
+//   2. watchdog heartbeat — catches suspends that never flip document.visibilityState (pure
+//      occlusion without a Space/window switch) or a resume that doesn't fire either DOM event.
+// See docs/plan/fix-usage-monitor-freeze.md P1 for the investigation this implements.
+const WATCHDOG_INTERVAL_MS = 7000;
+const _wakeSubscribers = new Set(); // Set<{ onWake: (reason) => void, lastTickAt: () => number }>
+let _wakeListenersInstalled = false;
+
+function installWakeListenersOnce() {
+  if (_wakeListenersInstalled) return;
+  _wakeListenersInstalled = true;
+
+  const fireWake = (reason) => {
+    for (const sub of _wakeSubscribers) sub.onWake(reason);
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') fireWake('visibilitychange');
+  });
+  window.addEventListener('focus', () => fireWake('focus'));
+
+  setInterval(() => {
+    const s = refreshSettings.value.usage_interval_s;
+    if (!(s > 0)) return;
+    const gapThresholdMs = 2 * s * 1000;
+    const now = Date.now();
+    for (const sub of _wakeSubscribers) {
+      if (now - sub.lastTickAt() > gapThresholdMs) sub.onWake('watchdog');
+    }
+  }, WATCHDOG_INTERVAL_MS);
+}
+
 export function useAgentUsage(agentName, hostRef) {
   const ulog = makeLogger(agentName);
   logStartupInfo(); // one-time: resolves debug mode, enables console output
@@ -212,6 +251,7 @@ export function useAgentUsage(agentName, hostRef) {
 
   let pollTimer = null;
   let pollCount = 0;
+  let lastTickAt = Date.now();  // ms of the last checkUsage() that actually ran — watchdog gap-detection (P1)
   let lastFetchedAt = null;     // Unix seconds of the last successful live fetch
   let lastNonNullHost = null;   // for distinguishing "toggled off" from "switched to a different host"
   let provisioned = false;
@@ -268,6 +308,7 @@ export function useAgentUsage(agentName, hostRef) {
     }
     isChecking = true;
     pollCount++;
+    lastTickAt = Date.now();
 
     ulog('check start', {
       host: hostRef.value,
@@ -582,6 +623,21 @@ export function useAgentUsage(agentName, hostRef) {
     }
   }
 
+  // P1 wake self-heal: triggered by visibilitychange/focus or the watchdog heartbeat (module
+  // scope, see installWakeListenersOnce above) after a suspected WKWebView suspend. Re-checks
+  // immediately and restarts the interval — a suspended setInterval does not reliably resume
+  // ticking on its own even once the page is visible/focused again.
+  function onWake(reason) {
+    if (!hostRef.value) return; // source disabled — nothing to recover
+    ulog('wake', { reason, gap_ms: Date.now() - lastTickAt }, 'info');
+    lastTickAt = Date.now(); // prevent the watchdog re-firing every heartbeat while this check is in flight
+    checkUsage();
+    restartPollTimer();
+  }
+  installWakeListenersOnce();
+  const _wakeSub = { onWake, lastTickAt: () => lastTickAt };
+  _wakeSubscribers.add(_wakeSub);
+
   watch(() => hostRef.value, (newHost) => {
     // A source can be toggled off/on (host -> null -> same host again) without ever
     // actually changing which machine it points at. Only wipe data on a REAL host
@@ -597,6 +653,7 @@ export function useAgentUsage(agentName, hostRef) {
     isChecking = false;
     forceSyncFailCount = 0;
     pollCount = 0;
+    lastTickAt = Date.now();
     error.value = null;
 
     if (realHostChange) {
@@ -637,6 +694,7 @@ export function useAgentUsage(agentName, hostRef) {
 
   onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer);
+    _wakeSubscribers.delete(_wakeSub);
     ulog('unmounted', {}, 'debug');
   });
 

@@ -64,9 +64,6 @@
         <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
           <i class="fa-solid fa-note-sticky" :style="noteContent ? 'color: #f59e0b;' : ''"></i>
         </button>
-        <button class="btn-tech btn-tech-primary" @click="handleCreateNew" :disabled="anySyncing || isReloading">
-          <i class="fa-solid fa-plus"></i> <span class="btn-text">PROJECT</span>
-        </button>
         <div class="btn-group-refresh">
           <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="isReloading ? 'Refreshing all — git, remote diff, usage…' : 'Refresh all — git, remote diff, usage'" :disabled="anySyncing || isReloading">
             <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i>
@@ -146,7 +143,7 @@ const latestReleaseUrl = ref('');
 
 const { startDragging, minimize, closeWin, isPinned, togglePin, restorePin } = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
-const { createNewProject, loadData, anySyncing, isReloading, Toast } = useProjects();
+const { loadData, anySyncing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
 
 const cleanVer = (v) => v.replace(/^v/, '').trim();
@@ -258,10 +255,6 @@ async function installAkiClaudeDoc() {
 
 function handleRefresh() {
   loadData(sshHosts, true);
-}
-
-function handleCreateNew() {
-  createNewProject(sshHosts);
 }
 </script>
 
