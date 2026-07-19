@@ -2,7 +2,8 @@
 
 > MacOS App (tauri v2) for my workflow: rsync code between local-remote. Antigravity IDE for local with .git source-of-truth, ClaudeCode on remote with shared Claude MAX plan. Live monitor Local AG & remote CC quota limit
 
-<img width="913" height="916" alt="image" src="https://github.com/user-attachments/assets/2dfb14c6-aaaa-4bba-998c-149ebe2cbdf0" />
+<img width="777" height="876" alt="Screenshot 2026-07-19 at 20 15 24" src="https://github.com/user-attachments/assets/66e4fe83-3b4a-4c5e-9a60-075d97719cfa" />
+
 
 
 https://github.com/lacvietanh/aki-dev-sync/releases/latest
