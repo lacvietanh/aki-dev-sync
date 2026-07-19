@@ -49,7 +49,7 @@
           <div class="feature-icon"><i class="fa-solid fa-arrow-up"></i></div>
           <div class="feature-text">
             <strong>PUSH</strong>
-            <span>Đẩy code Local → Remote. Hỗ trợ toggle <code>.git/</code> (mặc định ON) và cấu hình "Force Delete" riêng cho từng dự án.</span>
+            <span>Đẩy code Local → Remote, kèm mọi thứ không nằm trong <code>push_excludes</code>, cùng cấu hình "Force Delete" riêng từng dự án. Thư mục chỉ có trong <code>pull_excludes</code> là <strong>push-only</strong> — đẩy lên nhưng không kéo về và không tính là thay đổi (mặc định <code>.git/</code>: AI có đủ history, badge PUSH không sáng vì git tự dọn nội bộ).</span>
           </div>
         </div>
 

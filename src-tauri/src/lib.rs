@@ -62,7 +62,6 @@ pub fn run() {
             ssh::get_ssh_history_status,
             // git
             git::get_git_info,
-            git::get_project_files,
             git::run_git_command,
             git::get_file_conflict_info,
             // sync

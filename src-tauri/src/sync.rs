@@ -187,9 +187,40 @@ fn legacy_baseline_path(project_id: &str) -> PathBuf {
     legacy_baseline_dir().join(format!("{}.json", project_id))
 }
 
+/// Returns true if `rel` is, or is nested under, one of `dir_excludes` (entries
+/// ending in `/`, e.g. `.git/`). Matches on path-component boundaries so `.wrangler/`
+/// never matches a sibling like `.wrangler-backup`.
+fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
+    dir_excludes.iter().any(|e| {
+        let trimmed = e.trim();
+        // Only dir-entries (`/`-suffixed) carry push-only/exclude semantics here —
+        // glob entries (`*.log`) never appear in the change list to reconcile against.
+        if !trimmed.ends_with('/') {
+            return false;
+        }
+        let name = trimmed.trim_end_matches('/');
+        !name.is_empty() && (rel == name || rel.starts_with(&format!("{}/", name)))
+    })
+}
+
+/// Union of push_excludes and pull_excludes, deduped by trimmed value.
+fn union_excludes(project: &SyncProject) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for e in project.push_excludes.iter().chain(project.pull_excludes.iter()) {
+        let key = e.trim().to_string();
+        if key.is_empty() || !seen.insert(key) {
+            continue;
+        }
+        out.push(e.clone());
+    }
+    out
+}
+
 fn collect_local_files_with_mtime(
     base: &std::path::Path,
     current: &std::path::Path,
+    dir_excludes: &[String],
     out: &mut HashMap<String, u64>,
 ) {
     let entries = match std::fs::read_dir(current) {
@@ -202,12 +233,11 @@ fn collect_local_files_with_mtime(
             Ok(r) => r.to_string_lossy().to_string(),
             Err(_) => continue,
         };
-        // Exclude .git from baseline (tracked by git, not rsync)
-        if rel.starts_with(".git/") || rel == ".git" {
+        if is_under_dir_exclude(&rel, dir_excludes) {
             continue;
         }
         if path.is_dir() {
-            collect_local_files_with_mtime(base, &path, out);
+            collect_local_files_with_mtime(base, &path, dir_excludes, out);
         } else {
             let mtime = path.metadata().ok()
                 .and_then(|m| m.modified().ok())
@@ -219,10 +249,10 @@ fn collect_local_files_with_mtime(
     }
 }
 
-fn write_baseline(local_path: &str, project_id: &str) -> Result<(), String> {
+fn write_baseline(local_path: &str, project_id: &str, dir_excludes: &[String]) -> Result<(), String> {
     let base = std::path::Path::new(local_path);
     let mut files: HashMap<String, u64> = HashMap::new();
-    collect_local_files_with_mtime(base, base, &mut files);
+    collect_local_files_with_mtime(base, base, dir_excludes, &mut files);
 
     let json = serde_json::to_string(&files)
         .map_err(|e| format!("baseline serialize: {}", e))?;
@@ -293,7 +323,6 @@ fn build_rsync_args(
     is_push: bool,
     dry_run: bool,
     specific_paths: &[String],
-    sync_git: bool,
     src: &str,
     dest: &str,
 ) -> Vec<String> {
@@ -318,18 +347,11 @@ fn build_rsync_args(
         args.push(dest.to_string());
     } else {
         let excludes = if is_push { &project.push_excludes } else { &project.pull_excludes };
-        let sync_git_on_push = sync_git && is_push;
 
         for e in excludes {
             if !e.trim().is_empty() {
-                if sync_git_on_push && e.trim() == ".git/" {
-                    continue;
-                }
                 args.push(format!("--exclude={}", e));
             }
-        }
-        if !sync_git_on_push && !excludes.iter().any(|x| x.trim() == ".git/") {
-            args.push("--exclude=.git/".to_string());
         }
         if is_mirror {
             args.push("--delete".to_string());
@@ -351,12 +373,11 @@ pub async fn run_sync(
     direction: String,
     dry_run: bool,
     specific_paths: Vec<String>,
-    sync_git: bool,
 ) -> Result<(), String> {
     validate_project(&project)?;
     validate_specific_paths(&specific_paths)?;
     tauri::async_runtime::spawn_blocking(move || {
-        run_sync_blocking(window, project, direction, dry_run, specific_paths, sync_git)
+        run_sync_blocking(window, project, direction, dry_run, specific_paths)
     })
     .await
     .map_err(|e| format!("Sync task error: {}", e))?
@@ -368,7 +389,6 @@ fn run_sync_blocking(
     direction: String,
     dry_run: bool,
     specific_paths: Vec<String>,
-    sync_git: bool,
 ) -> Result<(), String> {
     let is_push = direction == "push";
     let dry_prefix = if dry_run { "[DRY RUN] " } else { "" };
@@ -406,7 +426,7 @@ fn run_sync_blocking(
             .map_err(|e| format!("Failed to create local directory: {}", e))?;
     }
 
-    let args = build_rsync_args(&project, is_push, dry_run, &specific_paths, sync_git, src, dest);
+    let args = build_rsync_args(&project, is_push, dry_run, &specific_paths, src, dest);
 
     let versions_map = get_rsync_versions();
 
@@ -465,7 +485,8 @@ fn run_sync_blocking(
         ensure_app_data_dir(&window.app_handle());
         let local_path = project.local_path.clone();
         let project_id = project.id.clone();
-        if let Err(e) = write_baseline(&local_path, &project_id) {
+        let dir_excludes = union_excludes(&project);
+        if let Err(e) = write_baseline(&local_path, &project_id, &dir_excludes) {
             emit_log(&window, &project.id, format!("[WARN] Baseline write failed (non-fatal): {}\n", e));
         }
     }
@@ -529,14 +550,17 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
         (remote.as_str(), local.as_str())
     };
 
-    let sync_git = is_push && project.sync_git;
-    let mut args = build_rsync_args(project, is_push, true, &[], sync_git, src, dest);
-
-    // Force status-check semantics regardless of project mirror/merge settings.
-    if let Some(first) = args.first_mut() {
-        *first = "-avzu".to_string();
+    // Status check (R2): union push_excludes ∪ pull_excludes for BOTH directions, so a
+    // push-only dir (in pull_excludes, absent from push_excludes — e.g. `.git/`) never
+    // shows up as "changed" churn. Real push/pull still exclude per-direction (R1).
+    let mut args: Vec<String> = vec!["-avzu".to_string(), "--dry-run".to_string()];
+    for e in union_excludes(project) {
+        if !e.trim().is_empty() {
+            args.push(format!("--exclude={}", e));
+        }
     }
-    args.retain(|a| a != "--delete");
+    args.push(src.to_string());
+    args.push(dest.to_string());
 
     // Tolerate APFS (ns) vs ext4 (1s) mtime precision gap.
     let insert_pos = args.len().saturating_sub(2);
@@ -673,8 +697,7 @@ pub async fn get_sync_delete_preview(
             (remote.as_str(), local.as_str())
         };
 
-        let sync_git = is_push && project.sync_git;
-        let mut args = build_rsync_args(&project, is_push, true, &[], sync_git, src, dest);
+        let mut args = build_rsync_args(&project, is_push, true, &[], src, dest);
         let insert_pos = args.len().saturating_sub(2);
         args.insert(insert_pos, "--modify-window=2".to_string());
 
@@ -692,7 +715,14 @@ pub async fn get_sync_delete_preview(
         let deletes: Vec<String> = stdout
             .lines()
             .filter(|l| l.trim().starts_with("deleting "))
-            .map(|l| l.trim().trim_start_matches("deleting ").to_string())
+            // strip_prefix (not trim_start_matches) removes the "deleting " marker at most
+            // once — trim_start_matches strips it repeatedly, so a real file whose own path
+            // begins with "deleting " (rsync line: "deleting deleting me.txt") would have
+            // BOTH occurrences stripped, corrupting the path fed into the delete-preview list.
+            .map(|l| {
+                let t = l.trim();
+                t.strip_prefix("deleting ").unwrap_or(t).to_string()
+            })
             .collect();
 
         Ok(deletes)
@@ -704,6 +734,136 @@ pub async fn get_sync_delete_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::projects::SyncHooks;
+
+    // Local fixture builder — `projects.rs`'s test-only `make_project` is behind its own
+    // `#[cfg(test)] mod tests` and does not cross the module boundary into sync.rs's tests,
+    // so we build a minimal SyncProject here instead of making that helper public.
+    fn make_test_project(push_excludes: Vec<&str>, pull_excludes: Vec<&str>) -> SyncProject {
+        SyncProject {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            local_path: "/local".to_string(),
+            remote_host: "host".to_string(),
+            remote_path: "/remote".to_string(),
+            production_url: None,
+            pull_excludes: pull_excludes.into_iter().map(String::from).collect(),
+            push_excludes: push_excludes.into_iter().map(String::from).collect(),
+            hooks: SyncHooks {
+                pre_pull_cmd: None,
+                post_pull_cmd: None,
+                pre_push_cmd: None,
+                post_push_cmd: None,
+                run_hooks_on_remote: false,
+                ignore_hook_errors: false,
+            },
+            last_sync_action: None,
+            last_sync_time: None,
+            last_sync_host: None,
+            dry_run: true,
+            sync_git: None,
+            delete_on_pull: false,
+            delete_on_push: false,
+            last_sync_status: None,
+            tasks: vec![],
+            notes: String::new(),
+            dev_cmd_override: None,
+            build_cmd_override: None,
+        }
+    }
+
+    #[test]
+    fn is_under_dir_exclude_matches_exact_dir() {
+        let excludes = vec![".git/".to_string()];
+        assert!(is_under_dir_exclude(".git", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_matches_nested_path() {
+        let excludes = vec![".git/".to_string()];
+        assert!(is_under_dir_exclude(".git/objects/ab/cdef", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_respects_component_boundary() {
+        // ".wrangler-backup" shares a prefix with ".wrangler/" but is a sibling
+        // directory, not a nested path — a naive starts_with would wrongly match.
+        let excludes = vec![".wrangler/".to_string()];
+        assert!(!is_under_dir_exclude(".wrangler-backup/foo", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_does_not_match_sibling_with_shared_prefix() {
+        let excludes = vec![".git/".to_string()];
+        assert!(!is_under_dir_exclude(".gitignore", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_ignores_glob_entries() {
+        let excludes = vec!["*.log".to_string()];
+        assert!(!is_under_dir_exclude("app.log", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_trims_whitespace() {
+        let excludes = vec!["  .git/  ".to_string()];
+        assert!(is_under_dir_exclude(".git", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_degenerate_root_slash_matches_nothing() {
+        let excludes = vec!["/".to_string()];
+        assert!(!is_under_dir_exclude("anything", &excludes));
+        assert!(!is_under_dir_exclude("", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_degenerate_empty_string_matches_nothing() {
+        let excludes = vec!["".to_string()];
+        assert!(!is_under_dir_exclude("anything", &excludes));
+    }
+
+    #[test]
+    fn is_under_dir_exclude_empty_list_is_false() {
+        let excludes: Vec<String> = vec![];
+        assert!(!is_under_dir_exclude(".git", &excludes));
+    }
+
+    #[test]
+    fn union_excludes_includes_entries_unique_to_each_side() {
+        let project = make_test_project(vec!["push_only/"], vec!["pull_only/"]);
+        let result = union_excludes(&project);
+        assert!(result.contains(&"push_only/".to_string()));
+        assert!(result.contains(&"pull_only/".to_string()));
+    }
+
+    #[test]
+    fn union_excludes_dedups_entry_present_in_both_lists() {
+        let project = make_test_project(vec![".git/"], vec![".git/"]);
+        let result = union_excludes(&project);
+        assert_eq!(result.iter().filter(|e| e.as_str() == ".git/").count(), 1);
+    }
+
+    #[test]
+    fn union_excludes_dedups_on_trimmed_value() {
+        let project = make_test_project(vec![".git/"], vec![" .git/ "]);
+        let result = union_excludes(&project);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn union_excludes_drops_empty_and_whitespace_only_entries() {
+        let project = make_test_project(vec!["", "  ", "real/"], vec!["   "]);
+        let result = union_excludes(&project);
+        assert_eq!(result, vec!["real/".to_string()]);
+    }
+
+    #[test]
+    fn union_excludes_push_entries_precede_pull_entries() {
+        let project = make_test_project(vec!["a/", "b/"], vec!["c/", "d/"]);
+        let result = union_excludes(&project);
+        assert_eq!(result, vec!["a/".to_string(), "b/".to_string(), "c/".to_string(), "d/".to_string()]);
+    }
 
     #[test]
     fn expand_tilde_prefix() {

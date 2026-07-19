@@ -1,6 +1,6 @@
 # Deferred: Auto-update
 
-**Status:** Deferred  
+**Status:** DROPPED (won't-do) — 2026-07-19. Auto-update quyết định là không cần thiết, không làm nữa (kể cả bản "notify only").  
 **Tách từ:** `improve-jun24.md`  
 **Ngày:** 2026-06-24
 

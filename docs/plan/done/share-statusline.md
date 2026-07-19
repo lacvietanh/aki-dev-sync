@@ -1,6 +1,6 @@
 # Share: Aki StatusLine cho Claude Code
 
-**Status:** Ready to share
+**Status:** DONE — 2026-07-15 (commit `e461460`). `share/aki-statusLine/` đã publish (statusline.sh + demo.png), README đã có section giới thiệu. Đồng thời statusline customizer đã tích hợp vào app (1.10.0 `f4be8a9`, auto-install 1.10.1 `3e52a99`, hook v3 1.12.0 `f121b27`).
 **Ngày:** 2026-07-15
 
 ---

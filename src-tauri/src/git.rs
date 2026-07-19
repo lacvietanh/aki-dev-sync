@@ -106,44 +106,6 @@ pub async fn get_git_info(local_path: String) -> Result<GitInfo, String> {
     }).await.map_err(|e| format!("Task error: {}", e))?
 }
 
-/// Returns modified/untracked files from `git status --porcelain` for the special push modal.
-#[tauri::command]
-pub async fn get_project_files(local_path: String, sync_git: bool) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = Path::new(&local_path);
-        if !path.exists() || !path.join(".git").exists() {
-            return Ok(vec![]);
-        }
-        let out = create_command("git")
-            .current_dir(path)
-            .args(["-c", "core.quotepath=false", "status", "--porcelain"])
-            .output()
-            .map_err(|e| format!("Failed to execute git status: {}", e))?;
-        if !out.status.success() {
-            return Ok(vec![]);
-        }
-        let mut files: Vec<String> = String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter(|s| !s.trim().is_empty())
-            .filter_map(|s| {
-                if s.len() <= 3 { return None; }
-                let file_path = &s[3..];
-                Some(if file_path.starts_with('"') && file_path.ends_with('"') {
-                    file_path[1..file_path.len() - 1].to_string()
-                } else {
-                    file_path.to_string()
-                })
-            })
-            .collect();
-
-        if sync_git && path.join(".git").exists() {
-            files.insert(0, ".git/".to_string());
-        }
-
-        Ok(files)
-    }).await.map_err(|e| format!("Task error: {}", e))?
-}
-
 #[tauri::command]
 pub async fn run_git_command(local_path: String, args: Vec<String>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {

@@ -57,8 +57,18 @@ pub struct SyncProject {
     pub last_sync_host: Option<String>,
     #[serde(default = "default_true")]
     pub dry_run: bool,
-    #[serde(default = "default_true")]
-    pub sync_git: bool,
+    // DEPRECATED (push-only-paths plan, 1.13.0): superseded by exclude-list semantics —
+    // no longer read by any sync/build_rsync_args logic. Kept ONLY so `load_projects`
+    // still round-trips a legacy value (if present) to the JS one-time migration
+    // (useProjectConfig.js migratePushOnlyPaths), which converts it into
+    // push_excludes/pull_excludes entries and deletes it client-side. `None`/absent-on-disk
+    // means "already migrated" (or created after the migration shipped) — the migration is
+    // idempotent by construction (absence alone makes it a no-op), so this field is never
+    // re-materialized once deleted, regardless of any client-side migration bookkeeping.
+    // `skip_serializing_if` ensures a migrated project never gets this key written back.
+    // Remove this field entirely once the migration has shipped for a full release cycle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_git: Option<bool>,
     // When true, PULL includes --delete (mirror remote). Opt-out to preserve local-only files.
     #[serde(default = "default_true")]
     pub delete_on_pull: bool,
@@ -167,7 +177,7 @@ mod tests {
             last_sync_time: None,
             last_sync_host: None,
             dry_run: true,
-            sync_git: false,
+            sync_git: None,
             delete_on_pull: false,
             delete_on_push: false,
             last_sync_status: None,

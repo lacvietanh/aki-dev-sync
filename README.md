@@ -42,7 +42,7 @@ This tool was built for a specific way of working — you'll feel at home if you
 
 | Feature | What it does |
 |---|---|
-| **PUSH** (`.git` toggle) | Push Local → Remote. Toggle `.git/` on to give the AI full history, off to skip it. |
+| **PUSH** | Push Local → Remote, carrying everything not listed in that project's `push_excludes`. `.git/` ships by default so the AI gets full history — drop it from PULL's list only, and it becomes a **push-only path**: pushed up, never pulled back, and never counted as "changed" (no more badge lighting up from git housekeeping). Add `.git/` to `push_excludes` to skip it entirely. |
 | **SELECT** (Push Special) | Native OS file picker (multi-select, starts in project root). If any selected file already exists on remote, shows a local-vs-remote mtime conflict table before confirming the push. |
 | **PULL** | Pull what the AI just wrote on Remote straight back to Local for a quick review & commit. |
 | **Mirror / Delete** (per project) | Optional `--delete` mode for Push and Pull. Off by default for Push (it never deletes on the remote); when on, pushing over pending AI changes triggers a confirm dialog first. |

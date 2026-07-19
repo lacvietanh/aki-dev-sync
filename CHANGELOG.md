@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.13.0] - 2026-07-19
+
+#### Fixed
+- **Migration off `sync_git` could reverse itself and start pushing `.git` on every project** (`projects.rs`, `useProjectConfig.js`): caught by self-audit before release. The migration deleted the `sync_git` key client-side, but `save_projects` deserializes into the typed `SyncProject`, so `#[serde(default = "default_true")]` wrote `"sync_git": true` straight back to `projects.json` — while the "already migrated" guard lived in **localStorage**, volatile state guarding durable data. Losing that flag re-ran the migration against a re-materialized `true` and stripped `.git/` out of `push_excludes` for every project at once. The field is now `Option<bool>` + `skip_serializing_if` (never written back once deleted), the flag is gone, and the migration is idempotent by construction. **What's preserved**: an already-migrated project is left completely untouched on later loads, so a user who deliberately removed `.git/` from their own `pull_excludes` does not get it forced back every launch.
+- **Delete-preview could show a truncated path** (`sync.rs`): `get_sync_delete_preview` stripped rsync's `deleting ` marker with `trim_start_matches`, which strips *repeatedly* — a file whose own path starts with `deleting ` lost both copies, putting a wrong path into the list the user reads before approving a destructive mirror sync. Now `strip_prefix`.
+
+#### Removed
+- **Dead `get_project_files` command** (`git.rs`, `lib.rs`): zero frontend callers. It survived earlier review because the refactor below renamed its `sync_git` parameter to `include_git_entry`, which made it look maintained rather than unused.
+
+#### Changed
+- **Push-only paths now derive from exclude lists — the `.git` toggle is gone** (`sync.rs`, `useSync.js`, `useProjectConfig.js`, `ProjectTable.vue`): a "push-only path" is now simply a dir-entry (`.git/`, `.wrangler/`, …) present in `pull_excludes` but absent from `push_excludes` — no separate `sync_git` field, no hardcoded `.git` special-casing in `build_rsync_args`. This root-causes the long-standing "badge PUSH lights up with no local changes" complaint: `.git/index`/`FETCH_HEAD` churn from the app's own background `git status` calls was being counted as push-worthy. The status check (`rsync_change_files`) now excludes the **union** of `push_excludes ∪ pull_excludes` for both directions, so push-only dirs never register as changed — still carried on a real push, just not counted ("carried, not counted"). Mirror-push deletions confined entirely to a push-only dir auto-approve with a log line instead of popping the type-the-project-name dialog; deletions outside those dirs still confirm as before. A migration (`useProjectConfig.js`) converts each project's old `sync_git` boolean into the equivalent `.git/` entry in `push_excludes`/`pull_excludes`, touching only that one entry per project — the rest of each project's exclude lists is preserved byte-for-byte. Full design writeup: `docs/plan/push-only-paths.md`.
+- **The push-only rule is general — `.git/` is just its default instance.** Worth knowing before you edit an exclude list by hand: moving *any* directory into the push-only state (present in `pull_excludes`, absent from `push_excludes`) silently grants it two properties beyond "not pulled" — its churn stops counting toward the PUSH badge (R2), and deletions confined to it are auto-approved on a mirror push without the type-the-project-name dialog (R3). Both follow from the exclude pair alone; neither is spelled out in the config UI. `.git/` merely happens to be the directory every project already has in that state.
+- **What's preserved**: every project's exclude-list customizations outside the single migrated `.git/` entry; a project that had `sync_git` ON keeps pushing `.git` (now via `push_excludes` lacking `.git/`), one that had it OFF keeps not pushing it (now via `push_excludes` containing `.git/`). Verified two ways before release: the migration was replayed offline against the real 17-project `projects.json` (15 ON / 2 OFF — the ≥2-entities Regression Guard case, satisfied by real data), predicting a diff of exactly *17 × `sync_git` key removed, 2 × `.git/` added to `push_excludes`, nothing else*; then the app's first real launch was diffed against a pre-migration backup to confirm that prediction exactly.
+
+---
+
 ### [1.12.0] - 2026-07-18
 
 #### Added

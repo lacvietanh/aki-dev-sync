@@ -11,6 +11,54 @@ export const editingProject = ref(null)
 
 const { appendGlobalLog, projectLogs, activeLogProjectId, setupGlobalListener } = useLogs()
 
+/**
+ * Migration off the `sync_git` toggle onto exclude-list semantics (push-only paths plan,
+ * 2026-07-19): a push-only dir = present in pull_excludes, absent from push_excludes.
+ *
+ * Idempotent by construction — no localStorage flag needed (and none should be added: a
+ * flag is volatile state guarding durable data, which was itself the root cause of the bug
+ * this migration used to have — see push-only-paths plan for the incident). The backing
+ * Rust struct also enforces this: `sync_git` is now `Option<bool>` with
+ * `skip_serializing_if = "Option::is_none"`, so once this migration deletes the key, it is
+ * never re-materialized on disk. A project with no `sync_git` property is therefore, by
+ * definition, either already migrated or created after the migration shipped — nothing to
+ * do for it, so that branch is a total no-op (no field on that project is touched).
+ *
+ * For a project that still HAS `sync_git`, preserves its prior effective behavior exactly:
+ *   sync_git === true  → drop `.git/` from push_excludes if present (was pushed)
+ *   sync_git === false → add `.git/` to push_excludes if missing (was not pushed)
+ *   always → ensure `.git/` is in pull_excludes (matches the old hardcoded pull behavior)
+ * Only ever adds/removes that one entry — never rewrites the rest of the list
+ * (Regression Guard: multi-entity stores must not get a wider blast radius than the bug).
+ */
+function migratePushOnlyPaths(loadedProjects) {
+  let changed = false
+  for (const p of loadedProjects) {
+    if (!Object.prototype.hasOwnProperty.call(p, 'sync_git')) {
+      continue
+    }
+    if (p.sync_git === true) {
+      p.push_excludes = removeEntry(p.push_excludes, '.git/')
+    } else {
+      p.push_excludes = ensureEntry(p.push_excludes, '.git/')
+    }
+    p.pull_excludes = ensureEntry(p.pull_excludes, '.git/')
+    delete p.sync_git
+    changed = true
+  }
+  return changed
+}
+
+function ensureEntry(list, entry) {
+  const arr = list || []
+  return arr.includes(entry) ? arr : [...arr, entry]
+}
+
+function removeEntry(list, entry) {
+  const arr = list || []
+  return arr.includes(entry) ? arr.filter(e => e !== entry) : arr
+}
+
 export async function loadData(sshHosts, showToast = false) {
   if (isReloading.value) return
   isReloading.value = true
@@ -20,6 +68,7 @@ export async function loadData(sshHosts, showToast = false) {
     sshHosts.value = await invoke("get_ssh_hosts")
     appendGlobalLog("LOAD", `Found ${sshHosts.value.length} SSH hosts.`)
     const loaded = await invoke("load_projects")
+    const migrated = migratePushOnlyPaths(loaded)
 
     for (const p of loaded) {
       const stack = await invoke("check_project_stack", { localPath: p.local_path }).catch(() => null)
@@ -37,6 +86,10 @@ export async function loadData(sshHosts, showToast = false) {
     }
     projects.value = loaded
     setupGlobalListener()
+    if (migrated) {
+      await saveProjectsList()
+      appendGlobalLog("MIGRATE", "Migrated sync_git toggle to push-only exclude-list semantics.")
+    }
 
     // Prefetch IDE availability status once
     try {
@@ -166,7 +219,6 @@ export async function createNewProject(sshHosts) {
       last_sync_time: null,
       last_sync_host: null,
       last_sync_status: null,
-      sync_git: true,
       dry_run: true,
       delete_on_pull: true,
       delete_on_push: false,

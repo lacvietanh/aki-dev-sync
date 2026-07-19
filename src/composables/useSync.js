@@ -9,6 +9,24 @@ import { fetchGitStatus } from './useGit'
 
 const { appendGlobalLog, appendLog, projectLogs, activeLogProjectId, isLogExpanded } = useLogs()
 
+/**
+ * Push-only dirs = dir-entries (`/`-suffixed) present in pull_excludes but absent
+ * from push_excludes — e.g. `.git/` by default. Push carries them, pull ignores them.
+ */
+function pushOnlyDirs(project) {
+  const pushSet = new Set((project.push_excludes || []).map(e => e.trim()))
+  return (project.pull_excludes || [])
+    .map(e => e.trim())
+    .filter(e => e.endsWith('/') && !pushSet.has(e))
+}
+
+function matchesDirExclude(relPath, dirExcludes) {
+  return dirExcludes.some(e => {
+    const name = e.replace(/\/$/, '')
+    return name && (relPath === name || relPath.startsWith(`${name}/`))
+  })
+}
+
 export async function startSync(project, direction, specificPaths = []) {
   if (!remoteModeEnabled.value) {
     Toast.fire({ icon: 'warning', title: 'Remote Mode is off' })
@@ -69,6 +87,18 @@ export async function startSync(project, direction, specificPaths = []) {
       }
     }
 
+    if (deleteList.length > 0 && direction === 'push') {
+      // R3: deletions confined to a push-only dir (e.g. `.git/`) auto-approve —
+      // the caller already opted out of pulling that dir, so its churn isn't "at risk" data.
+      const pushOnly = pushOnlyDirs(project)
+      const autoApproved = deleteList.filter(f => matchesDirExclude(f, pushOnly))
+      const needsConfirm = deleteList.filter(f => !matchesDirExclude(f, pushOnly))
+      if (autoApproved.length > 0) {
+        appendLog(project.id, `>>> Auto-approved ${autoApproved.length} deletion(s) in push-only paths (${pushOnly.join(', ')})`)
+      }
+      deleteList = needsConfirm
+    }
+
     if (deleteList.length > 0) {
       const dest = direction === 'push' ? 'Remote' : 'Local'
       const sample = deleteList.slice(0, 8).map(f => `  ${f}`).join('\n')
@@ -123,7 +153,6 @@ export async function startSync(project, direction, specificPaths = []) {
       direction,
       dryRun: isDryRun,
       specificPaths,
-      syncGit: project.sync_git,
     })
     project.last_sync_action = actionName + (isDryRun ? " (Dry)" : "")
     project.last_sync_time = Math.floor(Date.now() / 1000)

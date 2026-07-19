@@ -212,10 +212,6 @@
 
                 <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                   <div class="dry-group-left">
-                    <label class="btn-tech-git-inline" :class="{ 'active': p.sync_git }" title="Include .git in Push">
-                      <input type="checkbox" v-model="p.sync_git" @change="saveProjectsList()" />
-                      <span class="btn-text">.git</span>
-                    </label>
                     <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
                       <button
                               class="btn-tech btn-tech-push"
@@ -741,7 +737,6 @@ function formatTimeAgo(timestamp) {
   padding: 0;
 }
 
-fieldset:disabled .btn-tech-git-inline,
 fieldset:disabled .switch {
   opacity: 0.4;
   cursor: not-allowed;
@@ -755,10 +750,6 @@ fieldset:disabled .switch {
 .actions-wrapper .btn-tech-push,
 .actions-wrapper .btn-tech-pull {
   padding: 0 6px !important;
-}
-
-.actions-wrapper .btn-tech-git-inline {
-  padding: 0 8px !important;
 }
 
 .actions-wrapper .btn-action-open {
@@ -929,10 +920,6 @@ fieldset:disabled .switch {
   }
 
   .dry-toggle-center {
-    padding: 0 4px !important;
-  }
-
-  .actions-wrapper .btn-tech-git-inline {
     padding: 0 4px !important;
   }
 }
