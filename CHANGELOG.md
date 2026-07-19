@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.13.1] - 2026-07-20
+
+#### Fixed
+- **PUSH badge stopped counting push-only directories (e.g. `.git/`), so a local commit could sit unpushed with no signal** (`sync.rs`): 1.13.0's status check (`rsync_change_files`) excluded the *union* of `push_excludes ∪ pull_excludes` for both directions, so a dir that only lives in `pull_excludes` (push-only, like `.git/`) never registered as "changed" on the push side even though a real push genuinely carries it. Reported after real use: committing locally and pushing to origin left the PUSH badge at 0 while hitting PUSH still shipped a full batch of `.git` files. This was an unintended regression, not the intended behavior — the status check now reads the exclude list for its own direction only (push reads `push_excludes`, pull reads `pull_excludes`), matching real push/pull exactly. A badge for a direction now counts exactly what that direction would transfer. R3 (mirror-push auto-approves deletions confined to a push-only dir, no confirm dialog) is unchanged — it never depended on the union and is unaffected by this revert. `write_baseline`'s exclude list is deliberately left on the union: the baseline exists to detect "remote deleted this since last sync, don't push it back," which does not apply to a push-only dir (local is always authoritative there, so remote-side loss should always re-push) — tracking those files in the baseline would risk wrongly suppressing them. Full analysis: `docs/plan/done/push-only-paths.md` §9.
+
+---
+
 ### [1.13.0] - 2026-07-19
 
 > **Đính chính 2026-07-20 (sau release, đo thật trên Mac).** Mục "Changed" dưới đây nói thay đổi này
@@ -16,8 +23,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 > ngữ nghĩa** (đếm thay đổi `.git` vào badge mà người dùng đọc là "code cần deploy"). Cái được sửa ở
 > đây là **ngữ nghĩa**, không phải nhiễu. Hệ quả kèm theo: sau khi commit + push origin, không còn
 > tín hiệu nào cho biết `.git` phía remote đã cũ (câu biện minh cũ dựa vào badge GIT là sai —
-> `changed_count` chỉ đếm thay đổi *chưa* commit). Đã cân và **quyết định giữ nguyên**, không thêm
-> trạng thái mới. Phân tích đầy đủ: `docs/plan/done/push-only-paths.md` §1.2, §2, §9.
+> `changed_count` chỉ đếm thay đổi *chưa* commit).
+>
+> **Chốt 2026-07-20 (thay cho câu "giữ nguyên" ở trên):** đã **bỏ R2 ở 1.13.1** — status check quay về
+> đọc exclude theo chiều, badge PUSH đếm lại `.git`. Không thêm trạng thái nào, chỉ gỡ một cơ chế.
+> Lý do: badge của một chiều phải đếm đúng những gì chiều đó sẽ transfer; `.git` được push thật nên
+> đếm nó là đúng. R3 (không hỏi hộp thoại xoá trong push-only dir) giữ nguyên — nó độc lập với R2.
+> Phân tích đầy đủ: `docs/plan/done/push-only-paths.md` §1.2, §2, §9.
 
 #### Fixed
 - **Migration off `sync_git` could reverse itself and start pushing `.git` on every project** (`projects.rs`, `useProjectConfig.js`): caught by self-audit before release. The migration deleted the `sync_git` key client-side, but `save_projects` deserializes into the typed `SyncProject`, so `#[serde(default = "default_true")]` wrote `"sync_git": true` straight back to `projects.json` — while the "already migrated" guard lived in **localStorage**, volatile state guarding durable data. Losing that flag re-ran the migration against a re-materialized `true` and stripped `.git/` out of `push_excludes` for every project at once. The field is now `Option<bool>` + `skip_serializing_if` (never written back once deleted), the flag is gone, and the migration is idempotent by construction. **What's preserved**: an already-migrated project is left completely untouched on later loads, so a user who deliberately removed `.git/` from their own `pull_excludes` does not get it forced back every launch.

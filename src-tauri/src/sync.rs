@@ -203,7 +203,22 @@ fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
     })
 }
 
+/// Selects the exclude list for a given transfer direction — push reads
+/// `push_excludes`, pull reads `pull_excludes` (R1). Shared by `build_rsync_args`
+/// (real push/pull) and `rsync_change_files` (status check) so both agree on what
+/// "this direction will transfer" means. See CHANGELOG 1.13.1 (R2 revert).
+fn direction_excludes(project: &SyncProject, is_push: bool) -> &Vec<String> {
+    if is_push {
+        &project.push_excludes
+    } else {
+        &project.pull_excludes
+    }
+}
+
 /// Union of push_excludes and pull_excludes, deduped by trimmed value.
+/// Still used by `write_baseline` (baseline must NOT track push-only-dir files —
+/// see CHANGELOG 1.13.1 for why the baseline call site keeps the union while the
+/// status-check call site was reverted to per-direction excludes).
 fn union_excludes(project: &SyncProject) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -346,7 +361,7 @@ fn build_rsync_args(
         }
         args.push(dest.to_string());
     } else {
-        let excludes = if is_push { &project.push_excludes } else { &project.pull_excludes };
+        let excludes = direction_excludes(project, is_push);
 
         for e in excludes {
             if !e.trim().is_empty() {
@@ -550,11 +565,14 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
         (remote.as_str(), local.as_str())
     };
 
-    // Status check (R2): union push_excludes ∪ pull_excludes for BOTH directions, so a
-    // push-only dir (in pull_excludes, absent from push_excludes — e.g. `.git/`) never
-    // shows up as "changed" churn. Real push/pull still exclude per-direction (R1).
+    // Status check: per-direction excludes, same as real push/pull (R1). Badge for a
+    // direction counts exactly what that direction would transfer — a push-only dir
+    // (in pull_excludes, absent from push_excludes — e.g. `.git/`) IS counted on the
+    // push side because push really does carry it. R2 (union excludes for both
+    // directions, so push-only dirs never counted at all) shipped in 1.13.0 and was
+    // reverted in 1.13.1 — see CHANGELOG and docs/plan/done/push-only-paths.md §9.
     let mut args: Vec<String> = vec!["-avzu".to_string(), "--dry-run".to_string()];
-    for e in union_excludes(project) {
+    for e in direction_excludes(project, is_push) {
         if !e.trim().is_empty() {
             args.push(format!("--exclude={}", e));
         }
@@ -827,6 +845,39 @@ mod tests {
     fn is_under_dir_exclude_empty_list_is_false() {
         let excludes: Vec<String> = vec![];
         assert!(!is_under_dir_exclude(".git", &excludes));
+    }
+
+    #[test]
+    fn direction_excludes_pull_only_dir_absent_from_push_direction() {
+        // R2 revert (1.13.1): a dir present only in pull_excludes (e.g. `.git/`) must
+        // NOT be excluded from the push-direction status check — push really transfers
+        // it, so the badge must count it.
+        let project = make_test_project(vec![], vec![".git/"]);
+        let push_excludes = direction_excludes(&project, true);
+        assert!(!push_excludes.contains(&".git/".to_string()));
+    }
+
+    #[test]
+    fn direction_excludes_pull_only_dir_present_in_pull_direction() {
+        // Same dir must still be excluded from the pull-direction status check —
+        // pull never brings it back, so it must never count as a pull change.
+        let project = make_test_project(vec![], vec![".git/"]);
+        let pull_excludes = direction_excludes(&project, false);
+        assert!(pull_excludes.contains(&".git/".to_string()));
+    }
+
+    #[test]
+    fn direction_excludes_push_only_dir_absent_from_pull_direction() {
+        let project = make_test_project(vec!["push_only/"], vec![]);
+        let pull_excludes = direction_excludes(&project, false);
+        assert!(!pull_excludes.contains(&"push_only/".to_string()));
+    }
+
+    #[test]
+    fn direction_excludes_push_only_dir_present_in_push_direction() {
+        let project = make_test_project(vec!["push_only/"], vec![]);
+        let push_excludes = direction_excludes(&project, true);
+        assert!(push_excludes.contains(&"push_only/".to_string()));
     }
 
     #[test]
