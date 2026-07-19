@@ -7,6 +7,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [1.13.0] - 2026-07-19
 
+> **Đính chính 2026-07-20 (sau release, đo thật trên Mac).** Mục "Changed" dưới đây nói thay đổi này
+> *root-cause* được phàn nàn "badge PUSH sáng dù không sửa gì", quy nguyên nhân cho `.git/index`
+> churn từ chính `git status` nền của app. **Điều đó không đứng vững**: đo trực tiếp cho thấy
+> `.git/index` KHÔNG bị ghi lại khi chạy `git status` trên working tree sạch, và máy test dùng rsync
+> thật 3.4.1 với output sạch (nghi can parser openrsync cũng không áp dụng). Thực tế `.git` chỉ đổi
+> khi người dùng thao tác git thật — nên badge cũ **không phải nhiễu, mà là tín hiệu đúng bị gắn sai
+> ngữ nghĩa** (đếm thay đổi `.git` vào badge mà người dùng đọc là "code cần deploy"). Cái được sửa ở
+> đây là **ngữ nghĩa**, không phải nhiễu. Hệ quả kèm theo: sau khi commit + push origin, không còn
+> tín hiệu nào cho biết `.git` phía remote đã cũ (câu biện minh cũ dựa vào badge GIT là sai —
+> `changed_count` chỉ đếm thay đổi *chưa* commit). Đã cân và **quyết định giữ nguyên**, không thêm
+> trạng thái mới. Phân tích đầy đủ: `docs/plan/done/push-only-paths.md` §1.2, §2, §9.
+
 #### Fixed
 - **Migration off `sync_git` could reverse itself and start pushing `.git` on every project** (`projects.rs`, `useProjectConfig.js`): caught by self-audit before release. The migration deleted the `sync_git` key client-side, but `save_projects` deserializes into the typed `SyncProject`, so `#[serde(default = "default_true")]` wrote `"sync_git": true` straight back to `projects.json` — while the "already migrated" guard lived in **localStorage**, volatile state guarding durable data. Losing that flag re-ran the migration against a re-materialized `true` and stripped `.git/` out of `push_excludes` for every project at once. The field is now `Option<bool>` + `skip_serializing_if` (never written back once deleted), the flag is gone, and the migration is idempotent by construction. **What's preserved**: an already-migrated project is left completely untouched on later loads, so a user who deliberately removed `.git/` from their own `pull_excludes` does not get it forced back every launch.
 - **Delete-preview could show a truncated path** (`sync.rs`): `get_sync_delete_preview` stripped rsync's `deleting ` marker with `trim_start_matches`, which strips *repeatedly* — a file whose own path starts with `deleting ` lost both copies, putting a wrong path into the list the user reads before approving a destructive mirror sync. Now `strip_prefix`.
