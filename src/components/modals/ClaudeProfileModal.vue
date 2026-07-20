@@ -1,21 +1,13 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="show" class="modal-backdrop" @mousedown.self="$emit('close')">
-        <div class="modal-box" @mousedown.stop>
-          <div class="modal-header">
-            <span class="modal-title">
-              <i class="fa-solid fa-sliders"></i> Claude Code Profile
-              <span class="scope-tag" title="This always edits ~/.claude/settings.json on this machine — there is no remote-host target">
-                <i class="fa-solid fa-laptop-code"></i> Local
-              </span>
-            </span>
-            <button class="modal-close" @click="$emit('close')" title="Close">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
+  <BaseModal :show="show" @close="$emit('close')" container-style="width: 360px; max-width: calc(100vw - 32px);">
+    <template #title>
+      <i class="fa-solid fa-sliders"></i> Claude Code Profile
+      <span class="scope-tag" title="This always edits ~/.claude/settings.json on this machine — there is no remote-host target">
+        <i class="fa-solid fa-laptop-code"></i> Local
+      </span>
+    </template>
 
-          <div class="modal-body">
+    <div class="modal-body">
             <div class="proxy-fields">
               <input v-model="cfg.endpoint" class="field-input" type="url" placeholder="Endpoint URL" title="env.ANTHROPIC_BASE_URL — proxy API base URL" spellcheck="false" />
               <div class="key-row">
@@ -54,17 +46,15 @@
               <i class="fa-solid" :class="busy ? 'fa-circle-notch fa-spin' : 'fa-house-signal'"></i>
               {{ busy ? 'Restoring…' : 'Back to Native' }}
             </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </BaseModal>
 </template>
 
 <script setup>
 import { ref, reactive, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { claudeMode as currentMode, refreshClaudeMode } from '../../store/claudeModeStore';
+import BaseModal from './BaseModal.vue';
 
 const props = defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
@@ -131,40 +121,6 @@ async function applyMode(mode) {
   justify-content: center;
 }
 
-.modal-box {
-  background: #1a1d23;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  width: 360px;
-  max-width: calc(100vw - 32px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.modal-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #e2e8f0;
-  letter-spacing: 0.3px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.modal-title i {
-  color: #d97757;
-}
-
 .scope-tag {
   display: inline-flex;
   align-items: center;
@@ -183,22 +139,6 @@ async function applyMode(mode) {
 .scope-tag i {
   color: #94a3b8;
   font-size: 9px;
-}
-
-.modal-close {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
-}
-
-.modal-close:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .modal-body {
@@ -338,15 +278,5 @@ async function applyMode(mode) {
 .btn-proxy:hover:not(:disabled) {
   background: rgba(217, 119, 87, 0.25);
   color: #fba97a;
-}
-
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
 }
 </style>

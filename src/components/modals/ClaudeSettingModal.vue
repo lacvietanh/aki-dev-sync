@@ -1,18 +1,10 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="show" class="modal-backdrop" @mousedown.self="$emit('close')">
-        <div class="modal-box" @mousedown.stop>
-          <div class="modal-header">
-            <span class="modal-title">
-              <i class="fa-solid fa-terminal"></i> Statusline Customizer
-            </span>
-            <button class="modal-close" @click="$emit('close')" title="Close">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
+  <BaseModal :show="show" @close="$emit('close')" container-style="width: 90vw; max-width: 1100px;">
+    <template #title>
+      <i class="fa-solid fa-terminal"></i> Statusline Customizer
+    </template>
 
-          <div class="modal-body">
+    <div class="modal-body">
             <div class="preview-box">
               <pre class="preview-line" v-html="previewHtml"></pre>
             </div>
@@ -87,17 +79,15 @@
               <i class="fa-solid" :class="busy ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
               {{ busy ? 'Applying…' : `Apply to ${selectedHosts.length} host${selectedHosts.length === 1 ? '' : 's'}` }}
             </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </BaseModal>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { projects } from '../../store/projectStore';
+import BaseModal from './BaseModal.vue';
 
 const props = defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
@@ -302,63 +292,6 @@ const previewHtml = computed(() => {
 </script>
 
 <style scoped>
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-box {
-  background: #1a1d23;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  width: 90vw;
-  max-width: 1100px;
-  max-height: calc(100vh - 64px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  flex-shrink: 0;
-}
-
-.modal-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #e2e8f0;
-  letter-spacing: 0.3px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.modal-title i { color: #d97757; }
-
-.modal-close {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
-}
-
-.modal-close:hover { color: #e2e8f0; background: rgba(255, 255, 255, 0.08); }
-
 .modal-body {
   padding: 14px 16px 10px;
   display: flex;
@@ -597,7 +530,4 @@ const previewHtml = computed(() => {
 }
 
 .btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
-
-.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.15s ease; }
-.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 </style>
