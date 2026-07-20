@@ -72,20 +72,8 @@
             :class="[{ 'is-done': task.done, 'has-detail': !!task.detail }]"
             :data-task-id="task.id"
           >
-            <!-- Left side controls: Checkmark (Done), Pin, Wish -->
+            <!-- Left side controls: Pin, Wish -->
             <div class="task-states-left">
-              <!-- Mark Done Checklist Checkbox -->
-              <button
-                class="task-check-btn"
-                :class="{ 'is-completed': task.done }"
-                @click="toggleTaskProp(task, 'done')"
-                aria-label="Toggle Done"
-                :title="task.done ? 'Mark Active' : 'Mark Done'"
-              >
-                <i class="fa-solid fa-circle-check" v-if="task.done"></i>
-                <i class="fa-regular fa-circle" v-else></i>
-              </button>
-
               <!-- Pin Toggle -->
               <button
                 class="task-state-icon-btn pin-btn"
@@ -132,6 +120,18 @@
             </div>
 
             <span class="task-time" :title="'Updated ' + timeAgo(task.updated_at) + ' ago'">{{ timeAgo(task.updated_at) }}</span>
+
+            <!-- Mark Done Checklist Checkbox -->
+            <button
+              class="task-check-btn"
+              :class="{ 'is-completed': task.done }"
+              @click="toggleTaskProp(task, 'done')"
+              aria-label="Toggle Done"
+              :title="task.done ? 'Mark Active' : 'Mark Done'"
+            >
+              <i class="fa-solid fa-circle-check" v-if="task.done"></i>
+              <i class="fa-regular fa-circle" v-else></i>
+            </button>
 
             <button class="task-copy-btn" @click="copyTaskText(task)" aria-label="Copy task text" title="Copy title & detail">
               <i class="fa-solid fa-circle-check text-green" v-if="copiedTaskId === task.id"></i>
@@ -402,34 +402,6 @@ function timeAgo(ts) {
   flex: none;
 }
 
-.task-check-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-darker);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 4px;
-  transition: color 0.12s, transform 0.12s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-}
-
-.task-check-btn:hover {
-  color: var(--accent-cyan);
-  transform: scale(1.1);
-}
-
-.task-check-btn.is-completed {
-  color: var(--accent-green);
-}
-
-.task-check-btn.is-completed:hover {
-  color: var(--accent-red);
-}
-
 .task-state-icon-btn {
   background: transparent;
   border: none;
@@ -527,6 +499,34 @@ function timeAgo(ts) {
   font-size: 10px;
   color: var(--text-darker);
   white-space: nowrap;
+}
+
+.task-check-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-darker);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.12s, transform 0.12s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.task-check-btn:hover {
+  color: var(--accent-cyan);
+  transform: scale(1.1);
+}
+
+.task-check-btn.is-completed {
+  color: var(--accent-green);
+}
+
+.task-check-btn.is-completed:hover {
+  color: var(--accent-red);
 }
 
 .task-copy-btn {

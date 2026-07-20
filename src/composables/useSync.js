@@ -9,6 +9,10 @@ import { fetchGitStatus } from './useGit'
 
 const { appendGlobalLog, appendLog, projectLogs, activeLogProjectId, isLogExpanded } = useLogs()
 
+// Artifacts this app itself produces/manages — routine sync churn on them is expected and must
+// not raise a confirm dialog. See docs/plan/done/narrow-mode-and-ux-1.14.0.md §A1.
+const FLOW_APP_ARTIFACTS = ['REPORT.html']
+
 /**
  * Push-only dirs = dir-entries (`/`-suffixed) present in pull_excludes but absent
  * from push_excludes — e.g. `.git/` by default. Push carries them, pull ignores them.
@@ -25,6 +29,11 @@ function matchesDirExclude(relPath, dirExcludes) {
     const name = e.replace(/\/$/, '')
     return name && (relPath === name || relPath.startsWith(`${name}/`))
   })
+}
+
+function basename(relPath) {
+  const parts = String(relPath).split('/')
+  return parts[parts.length - 1]
 }
 
 export async function startSync(project, direction, specificPaths = []) {
@@ -84,6 +93,43 @@ export async function startSync(project, direction, specificPaths = []) {
       if (!proceedAnyway) {
         abortSync()
         return
+      }
+    }
+
+    if (deleteList.length > 0) {
+      // Flow-app artifacts (e.g. REPORT.html) are routine churn, so ordinary --delete sync (which
+      // has no newer/older awareness at all, in either direction — it deletes anything missing
+      // from the source side, full stop) gets an exception carved out just for them: only
+      // auto-approve when the copy about to be deleted has NOT been touched since this project's
+      // last completed sync. If it was modified more recently than that, someone likely
+      // regenerated it deliberately on the other side since — ask instead of silently wiping it.
+      // Applies to both push and pull.
+      const artifactEntries = deleteList.filter(f => FLOW_APP_ARTIFACTS.includes(basename(f)))
+      if (artifactEntries.length > 0) {
+        let staleArtifacts = []
+        try {
+          const info = await invoke('get_file_conflict_info', {
+            localPath: project.local_path,
+            remoteHost: project.remote_host,
+            remotePath: project.remote_path,
+            relPaths: artifactEntries,
+          })
+          const destMtime = (rel) => {
+            const entry = info.find(f => f.rel_path === rel)
+            if (!entry) return Infinity // couldn't verify — treat as fresh, ask
+            return direction === 'push' ? entry.remote_mtime : entry.local_mtime
+          }
+          const lastSync = project.last_sync_time || 0
+          staleArtifacts = artifactEntries.filter(f => destMtime(f) <= lastSync)
+        } catch (err) {
+          console.error('Flow-app artifact mtime check failed, asking to be safe:', err)
+        }
+        if (staleArtifacts.length > 0) {
+          appendLog(project.id, `>>> Auto-approved ${staleArtifacts.length} deletion(s) of flow-app artifact(s) unchanged since last sync (${FLOW_APP_ARTIFACTS.join(', ')})`)
+        }
+        // Fresh artifacts (modified since last sync) are left in deleteList — they fall through
+        // to the normal confirm dialog below like any other at-risk file.
+        deleteList = deleteList.filter(f => !staleArtifacts.includes(f))
       }
     }
 
@@ -249,7 +295,15 @@ export async function openSelectDialog(project) {
         remotePath: project.remote_path,
         relPaths,
       })
-      conflicts = info.filter(f => f.remote_exists)
+      conflicts = info.filter(f => {
+        if (!f.remote_exists) return false
+        // Flow-app artifacts only deserve a prompt when the destination copy is newer than the
+        // source — i.e. pushing would clobber a report regenerated on the remote in the meantime.
+        if (FLOW_APP_ARTIFACTS.includes(basename(f.rel_path)) && f.remote_mtime <= f.local_mtime) {
+          return false
+        }
+        return true
+      })
     } catch (err) {
       console.error('Conflict check failed:', err)
       Toast.fire({ icon: 'error', title: 'Không thể kiểm tra conflict với remote — hủy push' })
