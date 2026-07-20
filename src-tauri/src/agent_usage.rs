@@ -32,6 +32,60 @@ fn is_local_host(host: &str) -> bool {
     host == "local" || host == "localhost"
 }
 
+/// Hard ceiling for the best-effort orphan-cleanup SSH fired after a timeout. Must be well
+/// under [`REMOTE_SCRIPT_TIMEOUT_SECS`]: cleanup runs precisely when the remote is already
+/// struggling, so an unbounded cleanup call is the worst possible thing to add there.
+const CLEANUP_TIMEOUT_SECS: u64 = 8;
+
+/// Every `ssh` this module spawns on a timer goes through here. Without these options an SSH
+/// to a saturated host can burn the entire 30s script budget on the TCP/auth handshake alone
+/// (nothing has run remotely yet, yet we time out, kill, and re-spawn on the next tick), and a
+/// blackholed connection never returns at all because the kernel's default TCP timeout is
+/// minutes long. `BatchMode` additionally guarantees we never block on a password prompt.
+///
+/// See docs/research/ssh-process-leak-remote-ram-overflow.md §7 P3.
+fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
+    let mut c = Command::new("ssh");
+    c.args([
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=10",
+        "-o", "ServerAliveInterval=5",
+        "-o", "ServerAliveCountMax=3",
+        host,
+        remote_cmd,
+    ]);
+    c
+}
+
+/// Runs `cmd` and kills it if it overruns `timeout_secs`. Used only by the cleanup path, which
+/// needs a bound but not the stdin/drain machinery of [`run_interpreter_timeout`].
+fn wait_with_timeout(mut cmd: Command, timeout_secs: u64) {
+    let mut child = match cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => {
+                if start.elapsed() >= Duration::from_secs(timeout_secs) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => return,
+        }
+    }
+}
+
+/// Command patterns this app itself causes to run remotely. Cleanup targets exactly these and
+/// nothing else — a broad `pkill python3`/`pkill node` would kill unrelated user work on a
+/// shared dev box, which is strictly worse than leaking a few orphans.
+const ORPHAN_PATTERNS: &[&str] = &["claude -p", "claude auth status", "claude --model haiku"];
+
 /// Which interpreter to invoke for a given probe, and how — each script family needs a
 /// different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid
 /// JS, so it must never be sent ahead of a `node` script).
@@ -48,21 +102,13 @@ impl Interpreter {
     fn spawn(self, host: &str, local: bool) -> std::io::Result<std::process::Child> {
         let mut cmd = match (self, local) {
             (Interpreter::Sh, true) => Command::new("sh"),
-            (Interpreter::Sh, false) => {
-                let mut c = Command::new("ssh");
-                c.args([host, "sh"]);
-                c
-            }
+            (Interpreter::Sh, false) => polling_ssh(host, "sh"),
             (Interpreter::Node, true) => {
                 let mut c = Command::new("zsh");
                 c.args(["-lc", "node"]);
                 c
             }
-            (Interpreter::Node, false) => {
-                let mut c = Command::new("ssh");
-                c.args([host, "node"]);
-                c
-            }
+            (Interpreter::Node, false) => polling_ssh(host, "node"),
         };
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -87,13 +133,23 @@ impl Interpreter {
         }
         let host_cleanup = host.to_string();
         std::thread::spawn(move || {
-            let _ = if local {
-                Command::new("pkill").args(["-f", "claude -p"]).output()
+            if local {
+                for pat in ORPHAN_PATTERNS {
+                    let mut c = Command::new("pkill");
+                    c.args(["-f", pat]);
+                    wait_with_timeout(c, CLEANUP_TIMEOUT_SECS);
+                }
             } else {
-                Command::new("ssh")
-                    .args([host_cleanup.as_str(), "pkill", "-f", "claude -p"])
-                    .output()
-            };
+                // One SSH round-trip for all patterns, not one per pattern — cleanup fires
+                // exactly when the remote is least able to absorb extra connections.
+                let script = ORPHAN_PATTERNS
+                    .iter()
+                    .map(|p| format!("pkill -f {:?}", p))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let cmd = polling_ssh(&host_cleanup, &format!("{}; true", script));
+                wait_with_timeout(cmd, CLEANUP_TIMEOUT_SECS);
+            }
         });
     }
 }
