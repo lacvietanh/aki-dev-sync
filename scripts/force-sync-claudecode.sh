@@ -49,9 +49,9 @@ run_usage() {
     # intermittent empty-output bug it is the ONLY clue why claude printed nothing.
     _RU_ERR="/tmp/aki-usage-stderr-$NOW_TS"
     if [ "$ZSH_PATH" != "none" ]; then
-        _RU_OUT=$(zsh -lc "cd '$BLANK_DIR' && '$CLAUDE_BIN' --model haiku -p /usage < /dev/null" 2>"$_RU_ERR")
+        _RU_OUT=$(zsh -lc "cd '$BLANK_DIR' && $AKI_CLAUDE_TMO'$CLAUDE_BIN' --model haiku -p /usage < /dev/null" 2>"$_RU_ERR")
     else
-        _RU_OUT=$(bash -lc "cd '$BLANK_DIR' && '$CLAUDE_BIN' --model haiku -p /usage < /dev/null" 2>"$_RU_ERR")
+        _RU_OUT=$(bash -lc "cd '$BLANK_DIR' && $AKI_CLAUDE_TMO'$CLAUDE_BIN' --model haiku -p /usage < /dev/null" 2>"$_RU_ERR")
     fi
     _log "run_usage: exit=$?"
     [ -z "$_RU_OUT" ] && _log "run_usage: EMPTY stdout — claude stderr=$(head -c 600 "$_RU_ERR" 2>/dev/null | tr '\n' ' ')"
@@ -143,10 +143,10 @@ if [ "$HAS_RESETS" = "0" ] || [ "$RESETS_IS_FUTURE" != "1" ]; then
     PROBE_ERR="/tmp/aki-probe-stderr-$NOW_TS"
     if [ "$ZSH_PATH" != "none" ]; then
         _log "probe: cmd=zsh -lc 'mkdir -p $PROBE_DIR && cd $PROBE_DIR && $CLAUDE_BIN --model haiku -p respond_with_ok --output-format json < /dev/null'"
-        PROBE_OUT=$(zsh -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && '$CLAUDE_BIN' --model haiku -p \"respond with ok\" --output-format json < /dev/null" 2>"$PROBE_ERR")
+        PROBE_OUT=$(zsh -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && $AKI_CLAUDE_TMO'$CLAUDE_BIN' --model haiku -p \"respond with ok\" --output-format json < /dev/null" 2>"$PROBE_ERR")
     else
         _log "probe: cmd=bash -lc 'mkdir -p $PROBE_DIR && cd $PROBE_DIR && $CLAUDE_BIN --model haiku -p respond_with_ok --output-format json < /dev/null'"
-        PROBE_OUT=$(bash -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && '$CLAUDE_BIN' --model haiku -p \"respond with ok\" --output-format json < /dev/null" 2>"$PROBE_ERR")
+        PROBE_OUT=$(bash -lc "mkdir -p '$PROBE_DIR' && cd '$PROBE_DIR' && $AKI_CLAUDE_TMO'$CLAUDE_BIN' --model haiku -p \"respond with ok\" --output-format json < /dev/null" 2>"$PROBE_ERR")
     fi
     PROBE_EXIT=$?
 

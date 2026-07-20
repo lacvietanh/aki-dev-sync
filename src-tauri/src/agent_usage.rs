@@ -15,9 +15,30 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 /// resilience design (see docs/arch/usage-claudecode.md §3c).
 const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 
+/// Force-sync's own, much larger budget. It is NOT a poll — it runs three sequential
+/// `claude -p` round-trips (usage, probe, usage again), each a real API call. Under the 30s
+/// poll budget it was structurally impossible to finish, so it was killed mid-flight almost
+/// every run, stranding whichever `claude` session was live at that moment on the remote.
+/// That, not the poll loop, is what accumulated multi-GB of orphaned sessions over days —
+/// see docs/research/ssh-process-leak-remote-ram-overflow.md §11.
+///
+/// Must stay comfortably above `3 × CLAUDE_CALL_TIMEOUT_SECS` so the remote's own per-call
+/// bounds are what actually fire; this is only the outer backstop.
+const FORCE_SYNC_TIMEOUT_SECS: u64 = 180;
+
+/// Per-`claude` bound enforced ON THE REMOTE (see [`CLAUDE_BIN_RESOLVER_PREAMBLE`]). A process
+/// that ends itself needs no cleanup — this is the actual fix for the orphan leak; the `pkill`
+/// sweep below is only a safety net for hosts with no `timeout` binary.
+const CLAUDE_CALL_TIMEOUT_SECS: u64 = 45;
+
 /// Sends `script` to `ssh host sh` via stdin and returns the combined output.
 pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(host, Interpreter::Sh, script, REMOTE_SCRIPT_TIMEOUT_SECS)
+}
+
+/// [`run_remote_script`] with [`FORCE_SYNC_TIMEOUT_SECS`] instead of the poll budget.
+pub(crate) fn run_remote_script_long(host: &str, script: &str) -> Result<Output, String> {
+    run_interpreter_timeout(host, Interpreter::Sh, script, FORCE_SYNC_TIMEOUT_SECS)
 }
 
 /// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script
@@ -84,7 +105,18 @@ fn wait_with_timeout(mut cmd: Command, timeout_secs: u64) {
 /// Command patterns this app itself causes to run remotely. Cleanup targets exactly these and
 /// nothing else — a broad `pkill python3`/`pkill node` would kill unrelated user work on a
 /// shared dev box, which is strictly worse than leaking a few orphans.
-const ORPHAN_PATTERNS: &[&str] = &["claude -p", "claude auth status", "claude --model haiku"];
+///
+/// The old single pattern was `claude -p`, which NEVER MATCHED ANYTHING: the command actually
+/// run is `claude --model haiku -p /usage`, and the literal substring "claude -p" does not occur
+/// in it. Cleanup silently did nothing from the day it was written while still opening an extra
+/// SSH connection each time — which is how orphans reached 19 sessions / 6GB before anyone
+/// noticed. Patterns must be matched against the REAL command line, not the shorthand we use to
+/// describe it. Kept deliberately narrow (`-p` present ⇒ a non-interactive session this app
+/// started); a blanket `pkill claude` could kill a session the user is working in.
+const ORPHAN_PATTERNS: &[&str] = &[
+    "claude --model haiku -p",
+    "claude auth status",
+];
 
 /// Which interpreter to invoke for a given probe, and how — each script family needs a
 /// different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid
@@ -116,10 +148,11 @@ impl Interpreter {
             .spawn()
     }
 
-    fn preamble(self) -> &'static str {
+    fn preamble(self) -> String {
         match self {
-            Interpreter::Sh => CLAUDE_BIN_RESOLVER_PREAMBLE,
-            Interpreter::Node => "",
+            Interpreter::Sh => CLAUDE_BIN_RESOLVER_PREAMBLE
+                .replace("__CLAUDE_CALL_TIMEOUT__", &CLAUDE_CALL_TIMEOUT_SECS.to_string()),
+            Interpreter::Node => String::new(),
         }
     }
 
@@ -183,6 +216,35 @@ _resolve_claude_bin() {
 CLAUDE_BIN=$(_resolve_claude_bin)
 [ -z "$CLAUDE_BIN" ] && CLAUDE_BIN=claude
 export CLAUDE_BIN
+
+# Prefix that bounds a single `claude` call ON THE REMOTE. Scripts must expand it directly into
+# the command string (AKI_CLAUDE_TMO'$CLAUDE_BIN' ...) rather than wrap it in a shell function —
+# these calls run inside `zsh -lc "..."`, a child shell that does not inherit functions.
+#
+# WHY this matters more than any cleanup: when the local side kills the SSH, the remote `claude`
+# does NOT reliably die with it (SIGHUP does not dependably reach a grandchild through a login
+# shell). A `claude` blocked on a stalled API call then runs forever, holding hundreds of MB.
+# Bounding it here means it ends itself and there is nothing left to clean up.
+#
+# gtimeout is the Homebrew coreutils name on macOS, where `timeout` is not present by default.
+# If neither exists we fall back to unbounded — same as before this fix, with the pkill sweep in
+# agent_usage.rs as the only net. That gap is logged so it is visible rather than silent.
+if command -v timeout >/dev/null 2>&1; then
+    AKI_CLAUDE_TMO="timeout -k 5 __CLAUDE_CALL_TIMEOUT__ "
+elif command -v gtimeout >/dev/null 2>&1; then
+    AKI_CLAUDE_TMO="gtimeout -k 5 __CLAUDE_CALL_TIMEOUT__ "
+elif command -v perl >/dev/null 2>&1; then
+    # Stock macOS has neither timeout nor gtimeout (verified), so without this branch the
+    # single most important host type for this app would silently keep the unbounded behavior
+    # that caused the leak. perl ships with every macOS and virtually every Linux. `alarm` then
+    # `exec` replaces the perl process with claude itself, so SIGALRM lands on claude directly —
+    # no wrapper left holding a child, which is exactly the failure mode being fixed.
+    AKI_CLAUDE_TMO="perl -e 'alarm shift; exec @ARGV or exit 127' __CLAUDE_CALL_TIMEOUT__ "
+else
+    AKI_CLAUDE_TMO=""
+    printf '[SHELL:preamble] WARNING no timeout/gtimeout/perl on this host — claude calls run unbounded\n' >&2
+fi
+export AKI_CLAUDE_TMO
 "#;
 
 /// Kills the remote/local process if it overruns `timeout_secs`, returning an explicit timeout
@@ -367,7 +429,8 @@ fn force_sync_agent_usage_sync(agent_name: &str, host: &str) -> Result<String, S
     );
 
     logger::debug("FORCE_SYNC", "launching");
-    let output = run_remote_script(host, &script)?;
+    // Force-sync gets its own budget — three sequential claude round-trips never fit in 30s.
+    let output = run_remote_script_long(host, &script)?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();

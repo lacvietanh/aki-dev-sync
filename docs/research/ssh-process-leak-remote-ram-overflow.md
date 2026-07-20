@@ -398,3 +398,62 @@ Bản chất là thiếu **circuit breaker** + **remote-side process lifecycle m
 - Code SSH spawn: `src-tauri/src/agent_usage.rs` (L48-98, L140-204)
 - Code polling frontend: `src/composables/useAgentUsage.js` (L613-636)
 - Remote scripts: `scripts/get-claudecode-usage.sh`, `scripts/force-sync-claudecode.sh`, `scripts/provision-claudecode.sh`
+
+---
+
+## 11. Đính chính (2026-07-20, sau khi điều tra lại theo flow)
+
+Phần 1–10 ở trên **quy sai thủ phạm**. Giữ lại nguyên văn để thấy suy luận sai ở đâu.
+
+### Bằng chứng phản bác
+
+**Force-sync KHÔNG hề cascade.** Cả ngày 20/07 chỉ có 5 dòng `fs err`, và nó tự dừng đúng thiết kế:
+`fs finally outcome="giveup" n=3`. Cap `MAX_FORCESYNC_RETRIES` đã hoạt động. "Hở 3" trong §4c
+là hư cấu.
+
+**Poll 30s không hề chồng lấn.** 12 lần timeout cuối cách nhau **đúng 30.0s**, đều tăm tắp —
+nếu có chồng lấn thì nhịp phải loạn và ngắn hơn 30s. Guard `isChecking` bên JS vốn đã tuần tự
+hoá probe. §4b vẽ cảnh SSH chồng SSH là sai.
+
+**Quan sát quyết định (không có trong log, do user cung cấp):** trên remote có **19 phiên
+`claude` từ NHIỀU NGÀY TRƯỚC**, chiếm 6GB RAM + 4GB swap. Sự cố poll 24 phút không thể sinh ra
+process nhiều ngày tuổi. Đây mới là dữ kiện phá vỡ toàn bộ giả thuyết §6.
+
+### Nguyên nhân thật
+
+1. **`force-sync-claudecode.sh` chạy 3 lệnh `claude -p` nối tiếp** (run_usage → probe →
+   run_usage) nhưng đi qua `run_remote_script` = **cùng ngân sách 30s với một lần poll đơn**.
+   Mỗi lệnh là một round-trip API thật. Force-sync **về mặt cấu trúc không thể xong trong 30s**
+   → gần như lần nào cũng bị cắt giữa chừng.
+2. **Không lệnh `claude` nào bị giới hạn thời gian phía remote** (`grep timeout` trong
+   force-sync: 0 kết quả). Local cắt SSH, nhưng SIGHUP không xuyên qua `zsh -lc` tới `claude`.
+   Một `claude` đang treo ở API → sống mãi mãi, giữ vài trăm MB.
+3. **`pkill -f "claude -p"` CHƯA TỪNG MATCH GÌ.** Cmdline thật là
+   `claude --model haiku -p /usage`; chuỗi con `"claude -p"` không tồn tại trong đó. Kiểm chứng:
+   pattern match `claude -p foo` nhưng KHÔNG match `claude --model haiku -p /usage`. Cleanup
+   im lặng không làm gì suốt từ ngày viết, mà vẫn mở thêm 1 SSH mỗi lần.
+4. **Tích luỹ theo số lần khởi động app**, không theo thời gian. Force-sync chạy mỗi lần app
+   start (`initialSyncDone = false`). Riêng 20/07 app restart 15 lần → khớp với 19 phiên.
+
+Poll 30s ồn ào trong log nên trông giống thủ phạm. Nó có góp phần (mỗi lần cắt để lại
+`claude auth status`, nhẹ) nhưng **không phải cái ăn 6GB**.
+
+### Đã sửa (1.14.0)
+
+| Sửa | Chỗ |
+|-----|-----|
+| Force-sync có ngân sách riêng 180s | `FORCE_SYNC_TIMEOUT_SECS`, `run_remote_script_long` |
+| Mọi lệnh `claude` tự giới hạn 45s **trên remote** | `AKI_CLAUDE_TMO` trong preamble → 6 call site |
+| Fallback `perl -e 'alarm shift; exec @ARGV'` | macOS không có `timeout`/`gtimeout` (đã verify) |
+| Sửa pattern `pkill` sai | `ORPHAN_PATTERNS` |
+| Cleanup có bound 8s, gộp 1 SSH | `wait_with_timeout` |
+| Dừng hẳn poll sau 5 lần hỏng liên tiếp | `haltPolling()` trong `useAgentUsage.js` |
+| `ConnectTimeout`/`ServerAlive`/`BatchMode` | `polling_ssh()` |
+
+Điểm mấu chốt: **process tự kết thúc thì không cần dọn**. `pkill` giờ chỉ là lưới an toàn cho
+host không có cả `timeout` lẫn `perl`, không còn là tuyến phòng thủ chính.
+
+### Chưa kiểm chứng
+
+Con số "2–8 orphan mỗi session" và "96–768 process" ở §4c/§9 là **suy diễn, chưa ai `ps` trên
+`bien` để đo**. Con số đo thật duy nhất là 19 phiên / 6GB do user báo.

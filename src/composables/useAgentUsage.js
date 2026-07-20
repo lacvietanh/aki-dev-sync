@@ -272,9 +272,8 @@ export function useAgentUsage(agentName, hostRef) {
   const MAX_FORCESYNC_RETRIES = 3;
   // Circuit breaker for the poll loop itself — see restartPollTimer below.
   let consecutiveFailCount = 0;
-  let pollGeneration = 0;
-  const BACKOFF_AFTER_FAILS = 3;
-  const MAX_BACKOFF_MS = 10 * 60 * 1000;
+  let pollHalted = false;
+  const MAX_CONSECUTIVE_FAILS = 5;
 
   const provision = async () => {
     if (!hostRef.value || provisioned) return;
@@ -336,7 +335,7 @@ export function useAgentUsage(agentName, hostRef) {
       ulog('invoke get', { host: hostRef.value }, 'debug');
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
       ulog('get ok', { hasResult: res !== null }, 'debug');
-      consecutiveFailCount = 0; // host answered — drop any backoff
+      consecutiveFailCount = 0; // host answered — reset the breaker
 
       if (res) {
         try {
@@ -487,6 +486,7 @@ export function useAgentUsage(agentName, hostRef) {
       consecutiveFailCount++;
       ulog('IPC error', { err: String(e), fails: consecutiveFailCount }, 'error');
       error.value = e.toString();
+      if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) haltPolling();
     } finally {
       loading.value = false;
       isChecking = false;
@@ -620,49 +620,48 @@ export function useAgentUsage(agentName, hostRef) {
     checkUsage(); // just an immediate poll to pick up a new login sooner — no state is cleared
   };
 
-  // Circuit breaker (P0). A fixed `setInterval` kept firing a fresh SSH every 30s at a host that
-  // had already stopped answering — and since the script timeout is also 30s, each tick landed
-  // exactly as the previous one was killed, so the remote never got an idle moment to recover.
-  // Every failed probe can strand child processes remotely, so the old loop fed the very
-  // overload it was failing on. Two structural changes, together:
-  //   1. chained setTimeout instead of setInterval — the next probe is scheduled only after the
-  //      previous one has finished, so probes can never overlap however slow the host is;
-  //   2. exponential backoff after BACKOFF_AFTER_FAILS consecutive failures, capped at
-  //      MAX_BACKOFF_MS, cleared the instant the host answers again.
-  // See docs/research/ssh-process-leak-remote-ram-overflow.md §7 P0/P4.
-  function nextPollDelayMs() {
-    const base = refreshSettings.value.usage_interval_s * 1000;
-    if (consecutiveFailCount < BACKOFF_AFTER_FAILS) return base;
-    const steps = Math.min(consecutiveFailCount - BACKOFF_AFTER_FAILS + 1, 6);
-    return Math.min(base * 2 ** steps, MAX_BACKOFF_MS);
-  }
-
+  // Circuit breaker. The log from the 2026-07-20 incident shows 12 consecutive failures spaced at
+  // exactly 30.0s — the poll kept probing at full rate for 24 minutes after the host had stopped
+  // accepting TCP entirely. A host that has failed this many times in a row is down, not slow, and
+  // no amount of further probing will change that; only a human fixing it will.
+  //
+  // Deliberately a hard stop, not exponential backoff: backoff is for a host expected to recover
+  // on its own, which is not this case, and the evenly-spaced log proves probes were already
+  // serialized by `isChecking` (they never piled up), so there is nothing for a graduated delay to
+  // relieve. Stopping outright is both simpler and the honest signal to the user.
+  //
+  // Only an explicit user action resumes: manual refresh or a host change. Notably NOT the wake
+  // listeners — visibilitychange/focus fire constantly as the user moves between windows, and
+  // resuming on those would rebuild the same relentless loop through the back door.
   function restartPollTimer() {
-    if (pollTimer) clearTimeout(pollTimer);
+    if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
-    // A restart landing while a probe is mid-flight must retire that probe's chain, otherwise
-    // the old chain reschedules itself on completion and we end up with two loops polling.
-    const gen = ++pollGeneration;
     const s = refreshSettings.value.usage_interval_s;
     ulog('poll timer restart', { interval_s: s }, 'debug');
-    if (!hostRef.value || s <= 0) return;
+    if (!hostRef.value || !(s > 0)) return;
+    if (pollHalted) {
+      ulog('poll halted — not restarting', { fails: consecutiveFailCount }, 'info');
+      return;
+    }
+    pollTimer = setInterval(() => {
+      ulog('poll tick', { poll: pollCount + 1 }, 'debug');
+      checkUsage();
+    }, s * 1000);
+  }
 
-    const schedule = () => {
-      if (gen !== pollGeneration) return;
-      const delay = nextPollDelayMs();
-      if (delay !== s * 1000) {
-        ulog('poll backoff', { delay_ms: delay, fails: consecutiveFailCount }, 'info');
-      }
-      pollTimer = setTimeout(async () => {
-        ulog('poll tick', { poll: pollCount + 1 }, 'debug');
-        try {
-          await checkUsage();
-        } finally {
-          schedule();
-        }
-      }, delay);
-    };
-    schedule();
+  /** Trips the breaker: stops the timer and tells the user why, in the one place that shows errors. */
+  function haltPolling() {
+    pollHalted = true;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    error.value = `Host unreachable ${consecutiveFailCount}× in a row — polling stopped. Fix the host, then hit Reload.`;
+    ulog('poll halted', { fails: consecutiveFailCount }, 'error');
+  }
+
+  /** Clears the breaker after an explicit user action (refresh / host change). */
+  function resumePolling() {
+    consecutiveFailCount = 0;
+    pollHalted = false;
   }
 
   // P1 wake self-heal: triggered by visibilitychange/focus or the watchdog heartbeat (module
@@ -680,7 +679,7 @@ export function useAgentUsage(agentName, hostRef) {
   const _wakeSub = {
     onWake,
     lastTickAt: () => lastTickAt,
-    gapThresholdMs: () => 2 * nextPollDelayMs(),
+    gapThresholdMs: () => 2 * refreshSettings.value.usage_interval_s * 1000,
   };
   _wakeSubscribers.add(_wakeSub);
 
@@ -698,7 +697,7 @@ export function useAgentUsage(agentName, hostRef) {
     isSyncing = false;
     isChecking = false;
     forceSyncFailCount = 0;
-    consecutiveFailCount = 0;
+    resumePolling(); // a different host deserves a clean slate
     pollCount = 0;
     lastTickAt = Date.now();
     error.value = null;
@@ -727,9 +726,8 @@ export function useAgentUsage(agentName, hostRef) {
   watch(() => manualRefreshCount.value, (count) => {
     if (!hostRef.value) return;
     ulog('refresh', { count, a }, 'info');
-    // An explicit user action always overrides the circuit breaker — they may well have just
-    // fixed the host, and making them wait out a 10-minute backoff would be absurd.
-    consecutiveFailCount = 0;
+    // An explicit user action always clears the breaker — they may well have just fixed the host.
+    resumePolling();
     restartPollTimer();
     // Manual refresh (Reload / Refresh buttons) = normal fresh load for all agents.
     // forceSync is NOT called here — it auto-triggers inside checkUsage() only when
@@ -744,8 +742,7 @@ export function useAgentUsage(agentName, hostRef) {
   });
 
   onUnmounted(() => {
-    pollGeneration++; // retire any in-flight probe's chain so it can't reschedule after unmount
-    if (pollTimer) clearTimeout(pollTimer);
+    if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     _wakeSubscribers.delete(_wakeSub);
     ulog('unmounted', {}, 'debug');

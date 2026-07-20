@@ -55,7 +55,7 @@ fi
 # so an empty auth ('{}') returned exit 1 → the JS caller flipped `provisioned=false` and retried
 # every 30s forever (retry storm). We now always `exit 0` and surface an empty-auth as a diagnostic.
 AUTH_CACHE="$HOME/.claude/auth-cache.json"
-AUTH_JSON=$(bash -lc "'$CLAUDE_BIN' auth status 2>/dev/null" 2>/dev/null || echo '{}')
+AUTH_JSON=$(bash -lc "$AKI_CLAUDE_TMO'$CLAUDE_BIN' auth status 2>/dev/null" 2>/dev/null || echo '{}')
 if [ "$AUTH_JSON" != '{}' ]; then
     printf '%s' "$AUTH_JSON" > "$AUTH_CACHE"
 else
