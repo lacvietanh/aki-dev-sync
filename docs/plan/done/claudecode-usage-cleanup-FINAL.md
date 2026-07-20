@@ -1,6 +1,6 @@
 # Plan FINAL — dọn dẹp Claude Code usage flow
 
-> **Trạng thái:** phần docs (D1–D4) **đã xong**. Phần code (B1–B5) **chờ thực thi ở session sau**.
+> **Trạng thái:** HOÀN TẤT. Docs (D1–D5) và code (B1–B5) đã xong, đã kiểm chứng V1–V5.
 > Soạn 2026-07-20.
 > Nền tảng nghiên cứu: `docs/research/claudecode-usage-FINAL.md` (đọc §5 nhật ký trước).
 > Kiến trúc đích: `docs/arch/usage-claudecode.md`.
@@ -161,10 +161,10 @@ D3  arch doc viết lại (388 → 137 dòng)  ✅ xong
 D4  xoá 8 file + sửa 9 tham chiếu       ✅ xong
 D5  CHANGELOG: ghi việc gộp docs        ✅ xong
 ────────────────────────────────────────────────
-B1..B5  code                            ⬜ session sau
-V1..V5  tự kiểm
-V6..V7  user kiểm
-D6  CHANGELOG: ghi đánh đổi B4          ⬜ sau khi code xong
-D7  sửa bài đối ngoại (xem §2)          ⬜ sau khi code xong
-D8  plan này → docs/plan/done/          ⬜ cuối cùng
+B1..B5  code                            ✅ xong
+V1..V5  tự kiểm                         ✅ xong (cargo check, vite build, sh -n, grep)
+V6..V7  user kiểm                       ⬜ user quan sát sau lần reset kế tiếp / SSH thật
+D6  CHANGELOG: ghi đánh đổi B4          ✅ xong
+D7  sửa bài đối ngoại (xem §2)          ✅ xong
+D8  plan này → docs/plan/done/          ✅ xong (file này)
 ```

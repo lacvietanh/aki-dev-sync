@@ -4,40 +4,7 @@
 // @docs docs/arch/logger.md
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import Swal from 'sweetalert2';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
-
-// The actual command run on the remote by force-sync-claudecode.sh — shown verbatim in the
-// give-up debug alert so a dev can immediately try it by hand over SSH.
-const FORCE_SYNC_PROMPT = 'claude --model haiku -p /usage';
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-// Fires once, only when force-sync gives up after MAX_FORCESYNC_RETRIES attempts. Every user of
-// this app is a dev — the small inline red text doesn't say what was actually run or what came
-// back, so this surfaces the prompt + raw output/parse diagnostics for immediate debugging.
-function showForceSyncDebugAlert({ host, error, diag }) {
-  const rows = [
-    ['Host', host],
-    ['Prompt run', FORCE_SYNC_PROMPT],
-    ['Error', error],
-  ];
-  if (diag) {
-    rows.push(['parse_error', diag.parse_error ?? '(none)']);
-    rows.push(['raw output (preview)', diag.raw_preview || '(empty)']);
-    rows.push(['raw_len', diag.raw_len]);
-  }
-  const html = rows.map(([k, v]) => `<div style="text-align:left;margin-bottom:6px"><b>${escapeHtml(k)}:</b> <code style="white-space:pre-wrap">${escapeHtml(v)}</code></div>`).join('');
-  Swal.fire({
-    icon: 'error',
-    title: 'Force sync gave up',
-    html,
-    confirmButtonText: 'OK',
-    width: 560,
-  });
-}
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 // Three levels matching logger.rs contract:
@@ -185,7 +152,7 @@ function listAgAccounts() {
 // ─── Wake self-heal (P1) ─────────────────────────────────────────────────────
 // WKWebView suspends/throttles setInterval when the window is fully occluded, minimized, or
 // the machine sleeps — poll ticks stop silently, and every self-recovery layer built on top of
-// them (STALE_RESET forceSync, OAuth poll, statusline hook) goes dormant too, since all of them
+// them (the statusline hook writing fresh data) goes dormant too, since all of them
 // only run when a poll tick actually fires. Two listeners, installed ONCE at module scope and
 // shared by every useAgentUsage() instance (there are exactly 3: ag/ccLocal/ccRemote — see
 // AgentUsageSection.vue), drive recovery:
@@ -260,16 +227,8 @@ export function useAgentUsage(agentName, hostRef) {
   let provisioned = false;
   let provisionFailCount = 0;       // bound provision retries (a down host must not retry forever)
   const MAX_PROVISION_RETRIES = 3;
-  let initialSyncDone = false;
-  let staleResetSyncDone = false;
-  let isSyncing = false;
   let isChecking = false;
   let pendingRecheck = false; // a poll/manual-reload arrived while a check was already in flight
-  // Layer 4 (retry/backoff): if a force-sync fails, allow the next poll tick to retry by
-  // clearing the one-shot guards — but cap consecutive auto-retries so a genuinely broken
-  // remote (claude missing, network down) doesn't spawn probe sessions forever.
-  let forceSyncFailCount = 0;
-  const MAX_FORCESYNC_RETRIES = 3;
   // Circuit breaker for the poll loop itself — see restartPollTimer below.
   let consecutiveFailCount = 0;
   let pollHalted = false;
@@ -321,9 +280,6 @@ export function useAgentUsage(agentName, hostRef) {
       host: hostRef.value,
       poll: pollCount,
       hadData: data.value !== null,
-      initialSyncDone,
-      staleResetSyncDone,
-      isSyncing,
     }, 'debug');
 
     loading.value = true;
@@ -340,7 +296,6 @@ export function useAgentUsage(agentName, hostRef) {
       if (res) {
         try {
           const parsed = JSON.parse(res.content);
-          staleResetSyncDone = false;
 
           const fetchedAt = parseInt(res.fetched_at, 10);
           lastFetchedAt = fetchedAt;
@@ -411,14 +366,6 @@ export function useAgentUsage(agentName, hostRef) {
                                     ? Math.round(fiveHour.resets_at - nowSec) : null,
           }, 'info');
 
-          // Data was read successfully — normal path, no forceSync needed.
-          // resets_at=0 means no active session in the 5h window, but the cache file
-          // IS readable. forceSync purpose is strictly "cannot read from cache because
-          // no session has written to it" — that is the null-result path below.
-          if (agentName === 'claudecode' && !initialSyncDone) {
-            initialSyncDone = true;
-            ulog('cc first ok', { 'resets_at': fiveHour?.resets_at ?? null }, 'info');
-          }
           // Re-provision existing hosts once per session (fire-and-forget). Hosts that already
           // have a cache always land here (never the null path that used to call provision), so
           // without this the upgraded statusline hook (aki-rlcache v2) would never reach them.
@@ -431,14 +378,7 @@ export function useAgentUsage(agentName, hostRef) {
         }
       } else {
         // null from server: either no cache file (first load) or STALE_RESET (had data → null)
-        ulog('got null', {
-          hadData,
-          initialSyncDone,
-          staleResetSyncDone,
-          why: !hadData
-            ? (initialSyncDone ? 'repeat' : 'no_cache')
-            : 'STALE_RESET',
-        }, 'info');
+        ulog('got null', { hadData, why: hadData ? 'STALE_RESET' : 'no_cache' }, 'info');
 
         // AG offline: the live fetch failed (IDE mid-restart — common right after an account
         // switch). Show the LAST-ACTIVE account's cache deterministically (never an ambiguous
@@ -463,24 +403,18 @@ export function useAgentUsage(agentName, hostRef) {
             cachedAt.value = null;
             ulog('ag offline no cache', {}, 'info');
           }
+        } else if (hadData) {
+          // STALE_RESET: past the reset boundary with no new CC turn yet. Keep the old
+          // reading on screen instead of blanking it — same cached-badge mechanism AG
+          // already uses. See docs/arch/usage-claudecode.md §4.
+          isCached.value = true;
+          cachedAt.value = lastFetchedAt;
+          ulog('cc STALE_RESET: keep cached', { cachedAt: lastFetchedAt }, 'info');
         } else {
           data.value = null;
         }
 
-        if (agentName === 'claudecode' && !initialSyncDone) {
-          initialSyncDone = true;
-          ulog('cc null: provision+fs', {}, 'info');
-          await provision();
-          forceSync();
-        } else if (agentName === 'claudecode' && hadData && !staleResetSyncDone) {
-          staleResetSyncDone = true;
-          ulog('cc STALE_RESET: fs', {}, 'info');
-          forceSync();
-        } else {
-          ulog('null: skip fs', {
-            reason: !hadData ? 'prev null' : 'stale done',
-          }, 'debug');
-        }
+        if (agentName === 'claudecode') provision();
       }
     } catch (e) {
       consecutiveFailCount++;
@@ -494,73 +428,6 @@ export function useAgentUsage(agentName, hostRef) {
       if (pendingRecheck) {
         pendingRecheck = false;
         checkUsage();
-      }
-    }
-  };
-
-  const forceSync = async () => {
-    if (!hostRef.value || isSyncing) {
-      ulog('fs skip', { reason: !hostRef.value ? 'no host' : 'syncing' }, 'debug');
-      return;
-    }
-    isSyncing = true;
-    loading.value = true;
-    ulog('loading=true (fs)', {}, 'debug');
-    error.value = null;
-    ulog('fs start', { host: hostRef.value, failCount: forceSyncFailCount }, 'info');
-
-    let succeeded = false;
-    let diag = null;
-    try {
-      ulog('invoke fs', { host: hostRef.value }, 'debug');
-      // Rust now returns Err (rejects) when the remote script produced no output —
-      // e.g. the shell died early. That lands in catch below and is treated as failure.
-      const raw = await invoke('force_sync_agent_usage', { agentName, host: hostRef.value });
-      ulog('fs invoke ok', { raw_len: String(raw).length }, 'debug');
-      try {
-        diag = JSON.parse(raw);
-        ulog('fs diag', diag, 'debug');
-      } catch (_) {
-        ulog('fs raw (not JSON)', { raw_preview: String(raw).slice(0, 200) }, 'debug');
-      }
-      // claude ran but its output couldn't be parsed into usable data → soft failure.
-      if (diag && diag.parsed === false) {
-        throw new Error(`parser did not parse (parse_error=${diag.parse_error || 'unknown'})`);
-      }
-      ulog('fs done: checkUsage', {}, 'info');
-      await checkUsage();
-      succeeded = data.value !== null;
-      ulog('fs complete', { data_loaded: succeeded }, 'info');
-    } catch (e) {
-      ulog('fs err', { err: String(e) }, 'error');
-      error.value = e.toString();
-    } finally {
-      loading.value = false;
-      isSyncing = false;
-      if (succeeded) {
-        forceSyncFailCount = 0;
-        ulog('fs finally', { outcome: 'ok' }, 'info');
-      } else {
-        forceSyncFailCount++;
-        if (forceSyncFailCount < MAX_FORCESYNC_RETRIES) {
-          // Clear the one-shot guards so the next poll tick auto-retries (poll interval = backoff).
-          initialSyncDone = false;
-          staleResetSyncDone = false;
-          ulog('fs finally', { outcome: 'retry', n: forceSyncFailCount }, 'info');
-        } else {
-          // Give up auto-retrying; keep guards set. Manual refresh still forces a fresh attempt.
-          if (!error.value) {
-            error.value = `Force sync failed ${forceSyncFailCount}× — auto-retry stopped. Try manual refresh.`;
-          }
-          ulog('fs finally', { outcome: 'giveup', n: forceSyncFailCount }, 'error');
-          // The raw prompt + stderr dump is a DEV diagnostic, not a user-facing error. A normal
-          // user must never see it (a first-run/reset-boundary give-up reads as a crash) — the
-          // inline red text above already conveys the failure. Surface the modal only under
-          // --debug, where the operator explicitly asked for diagnostics.
-          if (_isDebugMode) {
-            showForceSyncDebugAlert({ host: hostRef.value, error: error.value, diag });
-          }
-        }
       }
     }
   };
@@ -692,11 +559,7 @@ export function useAgentUsage(agentName, hostRef) {
     ulog('host change', { newHost, lastNonNullHost, realHostChange }, 'info');
     provisioned = false;
     provisionFailCount = 0;
-    initialSyncDone = false;
-    staleResetSyncDone = false;
-    isSyncing = false;
     isChecking = false;
-    forceSyncFailCount = 0;
     resumePolling(); // a different host deserves a clean slate
     pollCount = 0;
     lastTickAt = Date.now();
@@ -730,14 +593,6 @@ export function useAgentUsage(agentName, hostRef) {
     resumePolling();
     restartPollTimer();
     // Manual refresh (Reload / Refresh buttons) = normal fresh load for all agents.
-    // forceSync is NOT called here — it auto-triggers inside checkUsage() only when
-    // the result is genuinely null (no cache / STALE_RESET). Resetting the one-shot
-    // guards lets checkUsage re-evaluate from scratch for this refresh cycle.
-    if (agentName === 'claudecode') {
-      initialSyncDone = false;
-      staleResetSyncDone = false;
-      forceSyncFailCount = 0;
-    }
     checkUsage();
   });
 
@@ -756,7 +611,6 @@ export function useAgentUsage(agentName, hostRef) {
     isCached,
     cachedAt,
     refresh: checkUsage,
-    forceSync,
     // AG-only multi-account view (harmless/unused for Claude Code)
     accounts,
     viewingEmail,

@@ -23,7 +23,6 @@ const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 // Keep in sync with `include_str!(... .sh)` calls in src-tauri/src/agent_usage.rs.
 const REMOTE_SCRIPTS = [
   'get-claudecode-usage.sh',
-  'force-sync-claudecode.sh',
   'provision-claudecode.sh',
 ];
 

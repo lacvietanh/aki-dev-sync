@@ -81,20 +81,15 @@ Thay vì sử dụng cách can thiệp proxy thô bạo (MITM) của các công 
 
 ---
 
-### 2. Đối Với Claude Code (Cơ Chế P1 Thụ Động + P3 Smart Fallback)
+### 2. Đối Với Claude Code (Cơ Chế P1 Thụ Động Thuần Túy)
 
-Giám sát quota của một công cụ CLI trên máy Remote là bài toán khó hơn. Aki-Dev-Sync giải quyết bằng hai lớp phòng ngự:
+Giám sát quota của một công cụ CLI trên máy Remote là bài toán khó hơn. Aki-Dev-Sync giải quyết bằng đúng một lớp — không có lớp fallback chủ động nào chạy `claude` để "ép" dữ liệu:
 
-#### Lớp 1: Đọc Thụ Động Không Hao Phí Token (P1 - Zero-Token Cache)
+#### Đọc Thụ Động Không Hao Phí Token (P1 - Zero-Token Cache)
 * Ứng dụng thực hiện vá (patch) tệp tin hook dòng trạng thái của Claude Code (`~/.claude/statusline-command.sh`) thông qua script [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh).
 * Mỗi khi người dùng gõ lệnh tương tác với Claude, Claude Code sẽ đẩy dữ liệu trạng thái sử dụng vào `stdin`. Hook đã vá sẽ trích xuất cụm `.rate_limits` này và ghi đè vào tệp cache cục bộ `~/.claude/rate-limits-cache.json`.
 * Giao diện GUI chỉ cần đọc tệp cache này. Cơ chế này đạt độ ổn định tuyệt đối và hoàn toàn không tốn tài nguyên mạng.
-
-#### Lớp 2: Ép Đồng Bộ Bằng Kỹ Thuật "0-Token Context" (P3 Fallback)
-* Nếu cache bị đóng băng hoặc qua chu kỳ reset, người dùng có thể kích hoạt Force Sync.
-* Lệnh sẽ chạy `claude --model haiku -p /usage` trên Remote. 
-* **Điểm cốt lõi:** Sử dụng mô hình `--model haiku` cực nhẹ trên một thư mục trống. Kỹ thuật này ép máy chủ Anthropic phản hồi Rate-Limit Headers chính xác nhất về trạng thái tài khoản mà **không tiêu tốn bất kỳ Token nào** cho việc nạp ngữ cảnh dự án hiện tại.
-* Dữ liệu từ luồng ra (stdout) được trích xuất bằng Python regex và đồng bộ ngược lại vào tệp cache JSON để GUI hiển thị.
+* **Đã từng có, đã bị gỡ bỏ:** một phiên bản trước từng chạy `claude --model haiku -p /usage` như một "Force Sync" (họ P3) khi cache đóng băng qua chu kỳ reset, cộng với một luồng gọi endpoint bán-công khai `api.anthropic.com/api/oauth/usage`. Cả hai bị xoá hẳn — không phải rút gọn — sau khi đo thật cho thấy một lượt gọi headless như vậy **chỉ trả về mốc reset, không trả phần trăm đã dùng**, và luồng đó từng gây rò rỉ tiến trình `claude` mồ côi trên một máy remote (19 phiên, 6GB RAM). Khi qua mốc reset mà chưa có lượt tương tác mới, GUI giờ giữ nguyên số liệu cũ, đánh dấu "cached" và hiện dòng chờ, thay vì cố ép một nguồn dữ liệu không tồn tại.
 
 ---
 
@@ -116,6 +111,6 @@ Một trong những phát hiện thú vị nhất của đợt Deep-Research là
 Giải pháp giám sát quota trong **Aki-Dev-Sync** là minh chứng rõ nét cho triết lý **Native Flow** của **Lạc Việt Anh Workflow**:
 1. **Tìm kiếm nguồn dữ liệu gốc đáng tin cậy nhất** (Local Connect-RPC và CLI Statusline stdin).
 2. **Loại bỏ trung gian độc hại** (Không dùng Proxy MITM, không cài chứng chỉ không an toàn).
-3. **Tối ưu hóa chi phí vận hành** (Sử dụng cache thụ động và truy vấn bằng model trống haiku để triệt tiêu chi phí token).
+3. **Tối ưu hóa chi phí vận hành** (Chỉ đọc cache thụ động — không có lượt gọi `claude` hay HTTP nào để lấy số liệu, nên chi phí token và rủi ro vận hành đều bằng 0).
 
 Sự kết hợp hoàn hảo này mang lại một công cụ Command Center mượt mà, ổn định và thực sự phục vụ tốt cho quy trình phát triển phần mềm thế hệ mới kết hợp cùng các AI Agent.

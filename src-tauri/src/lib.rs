@@ -71,7 +71,6 @@ pub fn run() {
             sync::cleanup_legacy_baselines,
             // agent usage
             agent_usage::provision_agent_usage,
-            agent_usage::force_sync_agent_usage,
             agent_usage::get_agent_usage,
             agent_usage::logout_antigravity,
             system::macos_open,

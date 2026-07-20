@@ -2,7 +2,7 @@
 
 > **Trạng thái:** đây là tài liệu nghiên cứu **duy nhất** về theo dõi quota Claude Code.
 > Thay thế 6 file research + 4 file plan (~2.400 dòng) viết rải rác 2026-06-23 → 2026-07-20.
-> Kiến trúc đang chạy: `docs/arch/usage-claudecode.md`. Kế hoạch dọn: `docs/plan/claudecode-usage-cleanup-FINAL.md`.
+> Kiến trúc đang chạy: `docs/arch/usage-claudecode.md`. Kế hoạch dọn (đã hoàn tất): `docs/plan/done/claudecode-usage-cleanup-FINAL.md`.
 >
 > Cập nhật cuối: 2026-07-20.
 

@@ -10,35 +10,18 @@ use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Hard ceiling for any `ssh host sh` call. A hung `claude -p` probe (network/API stall)
-/// must never wedge the UI in a permanent "loading" state — Layer 4 of the SSH-script
-/// resilience design (see docs/arch/usage-claudecode.md §3c).
+/// Hard ceiling for any `ssh host sh` call. A hung `claude auth status` (network/API stall)
+/// must never wedge the UI in a permanent "loading" state (see docs/arch/usage-claudecode.md §2).
 const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 
-/// Force-sync's own, much larger budget. It is NOT a poll — it runs three sequential
-/// `claude -p` round-trips (usage, probe, usage again), each a real API call. Under the 30s
-/// poll budget it was structurally impossible to finish, so it was killed mid-flight almost
-/// every run, stranding whichever `claude` session was live at that moment on the remote.
-/// That, not the poll loop, is what accumulated multi-GB of orphaned sessions over days —
-/// see docs/research/claudecode-usage-FINAL.md §4.
-///
-/// Must stay comfortably above `3 × CLAUDE_CALL_TIMEOUT_SECS` so the remote's own per-call
-/// bounds are what actually fire; this is only the outer backstop.
-const FORCE_SYNC_TIMEOUT_SECS: u64 = 180;
-
-/// Per-`claude` bound enforced ON THE REMOTE (see [`CLAUDE_BIN_RESOLVER_PREAMBLE`]). A process
-/// that ends itself needs no cleanup — this is the actual fix for the orphan leak; the `pkill`
-/// sweep below is only a safety net for hosts with no `timeout` binary.
+/// Per-`claude` bound enforced ON THE REMOTE (see [`CLAUDE_BIN_RESOLVER_PREAMBLE`]). Only
+/// `claude auth status` still runs through this preamble — the usage-fetch flow no longer
+/// spawns `claude` at all (see docs/arch/usage-claudecode.md §5).
 const CLAUDE_CALL_TIMEOUT_SECS: u64 = 45;
 
 /// Sends `script` to `ssh host sh` via stdin and returns the combined output.
 pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(host, Interpreter::Sh, script, REMOTE_SCRIPT_TIMEOUT_SECS)
-}
-
-/// [`run_remote_script`] with [`FORCE_SYNC_TIMEOUT_SECS`] instead of the poll budget.
-pub(crate) fn run_remote_script_long(host: &str, script: &str) -> Result<Output, String> {
-    run_interpreter_timeout(host, Interpreter::Sh, script, FORCE_SYNC_TIMEOUT_SECS)
 }
 
 /// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script
@@ -52,11 +35,6 @@ pub(crate) fn run_remote_node_timeout(host: &str, script: &str) -> Result<Output
 fn is_local_host(host: &str) -> bool {
     host == "local" || host == "localhost"
 }
-
-/// Hard ceiling for the best-effort orphan-cleanup SSH fired after a timeout. Must be well
-/// under [`REMOTE_SCRIPT_TIMEOUT_SECS`]: cleanup runs precisely when the remote is already
-/// struggling, so an unbounded cleanup call is the worst possible thing to add there.
-const CLEANUP_TIMEOUT_SECS: u64 = 8;
 
 /// Every `ssh` this module spawns on a timer goes through here. Without these options an SSH
 /// to a saturated host can burn the entire 30s script budget on the TCP/auth handshake alone
@@ -77,46 +55,6 @@ fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
     ]);
     c
 }
-
-/// Runs `cmd` and kills it if it overruns `timeout_secs`. Used only by the cleanup path, which
-/// needs a bound but not the stdin/drain machinery of [`run_interpreter_timeout`].
-fn wait_with_timeout(mut cmd: Command, timeout_secs: u64) {
-    let mut child = match cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return,
-            Ok(None) => {
-                if start.elapsed() >= Duration::from_secs(timeout_secs) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(_) => return,
-        }
-    }
-}
-
-/// Command patterns this app itself causes to run remotely. Cleanup targets exactly these and
-/// nothing else — a broad `pkill python3`/`pkill node` would kill unrelated user work on a
-/// shared dev box, which is strictly worse than leaking a few orphans.
-///
-/// The old single pattern was `claude -p`, which NEVER MATCHED ANYTHING: the command actually
-/// run is `claude --model haiku -p /usage`, and the literal substring "claude -p" does not occur
-/// in it. Cleanup silently did nothing from the day it was written while still opening an extra
-/// SSH connection each time — which is how orphans reached 19 sessions / 6GB before anyone
-/// noticed. Patterns must be matched against the REAL command line, not the shorthand we use to
-/// describe it. Kept deliberately narrow (`-p` present ⇒ a non-interactive session this app
-/// started); a blanket `pkill claude` could kill a session the user is working in.
-const ORPHAN_PATTERNS: &[&str] = &[
-    "claude --model haiku -p",
-    "claude auth status",
-];
 
 /// Which interpreter to invoke for a given probe, and how — each script family needs a
 /// different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid
@@ -155,43 +93,13 @@ impl Interpreter {
             Interpreter::Node => String::new(),
         }
     }
-
-    /// Best-effort orphan cleanup after a kill — only meaningful for the CC `claude -p` probe
-    /// (a real quota-costing session that can be left running remotely). AG's `node` probe is a
-    /// short local IDE RPC with no equivalent named process pattern safe to `pkill -f`, so this
-    /// is a no-op for [`Interpreter::Node`].
-    fn cleanup_orphan(self, host: &str, local: bool) {
-        if !matches!(self, Interpreter::Sh) {
-            return;
-        }
-        let host_cleanup = host.to_string();
-        std::thread::spawn(move || {
-            if local {
-                for pat in ORPHAN_PATTERNS {
-                    let mut c = Command::new("pkill");
-                    c.args(["-f", pat]);
-                    wait_with_timeout(c, CLEANUP_TIMEOUT_SECS);
-                }
-            } else {
-                // One SSH round-trip for all patterns, not one per pattern — cleanup fires
-                // exactly when the remote is least able to absorb extra connections.
-                let script = ORPHAN_PATTERNS
-                    .iter()
-                    .map(|p| format!("pkill -f {:?}", p))
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                let cmd = polling_ssh(&host_cleanup, &format!("{}; true", script));
-                wait_with_timeout(cmd, CLEANUP_TIMEOUT_SECS);
-            }
-        });
-    }
 }
 
 /// Prepended to every `sh` script sent through [`run_interpreter_timeout`], local or remote.
 /// Resolves a `claude` binary path into `$CLAUDE_BIN` via static, deterministic file checks
 /// BEFORE falling back to PATH/login-shell lookup.
 ///
-/// WHY: force-sync/provision were seen failing with `exit=127 command not found: claude`
+/// WHY: provision was seen failing with `exit=127 command not found: claude`
 /// inside `zsh -lc`/`bash -lc`, seconds after this app's own cold start, then succeeding
 /// again minutes later with the identical command — a PATH race against the user's shell
 /// rc/profile (nvm, path_helper, etc.) not having finished sourcing yet at that exact
@@ -303,10 +211,8 @@ fn run_interpreter_timeout(
                 if start.elapsed() >= Duration::from_secs(timeout_secs) {
                     let _ = child.kill();
                     let _ = child.wait();
-                    // Fire-and-forget: the cleanup result does not affect this error path.
-                    interpreter.cleanup_orphan(host, local);
                     return Err(format!(
-                        "script timed out after {}s (local killed, cleanup fired) host={}",
+                        "script timed out after {}s (killed) host={}",
                         timeout_secs, host
                     ));
                 }
@@ -402,134 +308,6 @@ fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub async fn force_sync_agent_usage(agent_name: String, host: String) -> Result<String, String> {
-    // Same spawn_blocking rationale as provision_agent_usage_sync above (P5).
-    tauri::async_runtime::spawn_blocking(move || force_sync_agent_usage_sync(&agent_name, &host))
-        .await
-        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
-}
-
-fn force_sync_agent_usage_sync(agent_name: &str, host: &str) -> Result<String, String> {
-    logger::info("FORCE_SYNC", &format!("{} host={}", ab(agent_name), host));
-
-    if agent_name != "claudecode" {
-        logger::debug("FORCE_SYNC", &format!("skip {}", ab(agent_name)));
-        return Err("Force sync not supported for this agent".into());
-    }
-
-    const SHELL_PART: &str = include_str!("../../scripts/force-sync-claudecode.sh");
-    const PYTHON_PARSER: &str = include_str!("../../scripts/force-sync-parse.py");
-
-    // Combine: run shell part (exports CLAUDE_SYNC_OUT), then run Python parser inline.
-    // exit code is NOT checked — `claude -p /usage` may exit non-zero when rate-limited
-    // but still writes to the cache file; stderr contains expected rate-limit messages.
-    let script = format!(
-        "{}\ncat << 'PYEOF' > /tmp/.claude_sync_parse.py\n{}PYEOF\npython3 /tmp/.claude_sync_parse.py\nrm -f /tmp/.claude_sync_parse.py\n",
-        SHELL_PART, PYTHON_PARSER
-    );
-
-    logger::debug("FORCE_SYNC", "launching");
-    // Force-sync gets its own budget — three sequential claude round-trips never fit in 30s.
-    let output = run_remote_script_long(host, &script)?;
-
-    let exit_code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    logger::debug("FORCE_SYNC", &format!(
-        "exit={} stdout_b={} stderr_b={}",
-        exit_code, stdout.len(), stderr.len()
-    ));
-
-    // Relay all shell stderr lines — they carry [SHELL:force-sync] diagnostic entries.
-    log_shell_stderr("FORCE_SYNC", &stderr);
-
-    // stdout is the JSON diagnostic from force-sync-parse.py. Empty stdout means the
-    // parser never even ran (the remote shell died early — e.g. a bashism on a dash
-    // remote, claude unavailable, or an SSH failure). This is a HARD failure: surface
-    // it to the UI so it shows an error and the JS retry logic kicks in, instead of the
-    // old behaviour of returning a silent `parsed:false` that masked the dash/pipefail
-    // regression for many versions (see docs/research/claudecode-usage-FINAL.md).
-    if stdout.is_empty() {
-        logger::error("FORCE_SYNC", &format!(
-            "empty stdout exit={} stderr_b={}",
-            exit_code, stderr.len()
-        ));
-        logger::error("FORCE_SYNC", "status=FAILED empty stdout");
-        log_shell_stderr_error("FORCE_SYNC", &stderr);
-        return Err(format!(
-            "force-sync produced no output (exit={}). The remote script may have died early — \
-             check the [FORCE_SYNC] shell lines in usage.log.",
-            exit_code
-        ));
-    }
-
-    logger::debug("FORCE_SYNC", &format!("diag_raw: {}", preview(&stdout, 500)));
-
-    // Parse and log each field of the diagnostic JSON individually.
-    match serde_json::from_str::<serde_json::Value>(&stdout) {
-        Ok(diag) => {
-            let parsed     = diag.get("parsed").and_then(|v| v.as_bool()).unwrap_or(false);
-            let written    = diag.get("written").and_then(|v| v.as_bool()).unwrap_or(false);
-            let pct        = diag.get("pct").and_then(|v| v.as_i64());
-            let resets_at  = diag.get("resets_at").and_then(|v| v.as_i64()).unwrap_or(0);
-            let raw_len    = diag.get("raw_len").and_then(|v| v.as_u64()).unwrap_or(0);
-            let year_fix   = diag.get("year_fix_applied").and_then(|v| v.as_bool()).unwrap_or(false);
-            let overdue    = diag.get("resets_at_overdue_s").and_then(|v| v.as_i64());
-            let parse_err  = diag.get("parse_error").and_then(|v| v.as_str()).unwrap_or("");
-            let raw_prev   = diag.get("raw_preview").and_then(|v| v.as_str()).unwrap_or("");
-
-            logger::info("FORCE_SYNC", &format!(
-                "diag parsed={} written={} pct={:?} resets_at={} raw_len={} year_fix={} overdue_s={:?}",
-                parsed, written, pct, resets_at, raw_len, year_fix, overdue
-            ));
-
-            if !parse_err.is_empty() {
-                logger::error("FORCE_SYNC", &format!("parse_error={}", parse_err));
-            }
-            if !raw_prev.is_empty() {
-                logger::debug("FORCE_SYNC", &format!("raw_preview={}", preview(raw_prev, 300)));
-            }
-
-            if year_fix {
-                let from = diag.get("year_fix_from").and_then(|v| v.as_i64()).unwrap_or(0);
-                let to   = diag.get("year_fix_to").and_then(|v| v.as_i64()).unwrap_or(0);
-                logger::info("FORCE_SYNC", &format!("year_fix from={} to={}", from, to));
-            }
-
-            if !parsed {
-                logger::error("FORCE_SYNC", "parse failed: cache not updated");
-                // raw_preview is often empty here (that IS the bug — `/usage` returned nothing),
-                // so the shell stderr is the only clue to WHY. Surface both at error level.
-                if !raw_prev.is_empty() {
-                    logger::error("FORCE_SYNC", &format!("raw_preview={}", preview(raw_prev, 300)));
-                }
-                log_shell_stderr_error("FORCE_SYNC", &stderr);
-            } else if !written {
-                logger::error("FORCE_SYNC", "write failed");
-                if let Some(we) = diag.get("write_error").and_then(|v| v.as_str()) {
-                    logger::error("FORCE_SYNC", &format!("write_error={}", we));
-                }
-            } else {
-                let now = now_secs();
-                let until_reset = resets_at - now;
-                logger::info("FORCE_SYNC", &format!(
-                    "done: ok pct={:?} resets_at={} until_s={}",
-                    pct, resets_at, until_reset
-                ));
-            }
-        }
-        Err(e) => {
-            logger::error("FORCE_SYNC", &format!("json_parse err={} raw={}", e, preview(&stdout, 200)));
-            log_shell_stderr_error("FORCE_SYNC", &stderr);
-        }
-    }
-
-    logger::debug("FORCE_SYNC", "done: returning diag");
-    Ok(stdout)
-}
-
-#[tauri::command]
 pub async fn get_agent_usage(
     agent_name: String,
     host: String,
@@ -560,22 +338,6 @@ fn log_shell_stderr(tag: &str, stderr: &str) {
     logger::debug(tag, &format!("stderr: {} lines", lines.len()));
     for line in lines {
         logger::debug(tag, &format!("  | {}", line));
-    }
-}
-
-/// Emit shell stderr at ERROR level — used only on FORCE_SYNC failure paths so the diagnostic
-/// (e.g. `run_usage: EMPTY stdout — claude stderr=…`, the one clue to WHY `/usage` was empty)
-/// lands in usage.log even in production, where info/debug are suppressed. Do not call on the
-/// happy path — that would spam the file on every successful sync.
-fn log_shell_stderr_error(tag: &str, stderr: &str) {
-    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.is_empty() {
-        logger::error(tag, "shell stderr on failure: (empty — the remote wrote nothing to stderr)");
-        return;
-    }
-    logger::error(tag, &format!("shell stderr on failure: {} lines", lines.len()));
-    for line in lines {
-        logger::error(tag, &format!("  | {}", line));
     }
 }
 

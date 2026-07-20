@@ -138,10 +138,6 @@
       <div v-else-if="uiStatus.kind === 'empty'" class="usage-empty">
         <i class="fa-solid" :class="uiStatus.icon"></i><br>
         <span>{{ uiStatus.text }}</span>
-        <button v-if="agentId === 'claudecode'" @click="$emit('force-sync')" class="btn-ui-action btn-sync-now" style="margin-top: 8px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px;" title="Force Sync Quota">
-          <i class="fa-solid fa-arrows-rotate"></i>
-          <span>Force Sync</span>
-        </button>
       </div>
 
       <div v-else-if="uiStatus.kind === 'data'" class="usage-bars-container">
@@ -180,6 +176,7 @@
                 <span v-else class="time-label">{{ cc7dResetLine.label }}</span>
               </div>
             </div>
+            <div v-if="isCached" class="cc-waiting-line">Waiting for next Claude Code session</div>
           </div>
         </template>
 
@@ -281,7 +278,7 @@ const uiStatus = computed(() => {
   return { kind: 'data' };
 });
 
-const emit = defineEmits(['retry', 'force-sync', 'select-account', 'toggle-email', 'logout-success']);
+const emit = defineEmits(['retry', 'select-account', 'toggle-email', 'logout-success']);
 
 // AG account-switch dropdown
 const accountMenuOpen = ref(false);
@@ -995,18 +992,6 @@ async function handleIconClick() {
   width: 100%;
 }
 
-.btn-sync-now {
-  border-radius: 4px;
-  color: var(--text-light);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.btn-sync-now:hover {
-  background-color: var(--bg-tertiary);
-  border-color: var(--accent-amber) !important;
-  color: var(--accent-amber) !important;
-}
-
 /* CC horizontal bars */
 .cc-bars-block {
   display: flex;
@@ -1093,6 +1078,13 @@ async function handleIconClick() {
 
 .cc-reset-line.is-na {
   color: var(--text-darker);
+}
+
+.cc-waiting-line {
+  font-size: 9px;
+  font-weight: 500;
+  color: rgba(251, 146, 60, 0.75);
+  text-align: center;
 }
 
 /* CC skeleton */

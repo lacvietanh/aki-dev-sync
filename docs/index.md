@@ -15,7 +15,7 @@
 ## Architecture
 - [docs/arch/usage-claudecode.md](arch/usage-claudecode.md) — Claude Code quota monitoring: statusLine hook là nguồn duy nhất, không có luồng active, ràng buộc bất biến
 - [docs/research/claudecode-usage-FINAL.md](research/claudecode-usage-FINAL.md) — **Nghiên cứu FINAL, thay 8 file đã xoá**: sự thật đã kiểm chứng, nhật ký đã-thử-đã-bỏ (§5), bản đồ 8 file cũ (§7)
-- [docs/plan/claudecode-usage-cleanup-FINAL.md](plan/claudecode-usage-cleanup-FINAL.md) — Kế hoạch dọn: xoá force-sync, gỡ oauth, xoá cleanup_orphan
+- [docs/plan/done/claudecode-usage-cleanup-FINAL.md](plan/done/claudecode-usage-cleanup-FINAL.md) — Kế hoạch dọn (đã hoàn tất): xoá force-sync, gỡ oauth, xoá cleanup_orphan
 - [docs/arch/usage-antigravity.md](arch/usage-antigravity.md) — Antigravity quota monitoring: local Language Server Connect RPC flow
 - [docs/arch/logger.md](arch/logger.md) — Logger module: 3 levels (error/info/debug), production-silent default, auto-truncate 1MB
 
