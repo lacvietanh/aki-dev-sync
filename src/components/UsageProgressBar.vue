@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-// @docs docs/research/claude-usage-1.2.x-analyze.md
+// @docs docs/research/claudecode-usage-FINAL.md
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 
 const props = defineProps({

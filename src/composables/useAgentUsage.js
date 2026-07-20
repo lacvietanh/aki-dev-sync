@@ -1,6 +1,6 @@
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
-// @docs docs/research/claude-usage-1.2.x-analyze.md
+// @docs docs/research/claudecode-usage-FINAL.md
 // @docs docs/arch/logger.md
 import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
@@ -192,7 +192,7 @@ function listAgAccounts() {
 //   1. visibilitychange/focus — immediate refresh the moment the user looks back at the app.
 //   2. watchdog heartbeat — catches suspends that never flip document.visibilityState (pure
 //      occlusion without a Space/window switch) or a resume that doesn't fire either DOM event.
-// See docs/plan/fix-usage-monitor-freeze.md P1 for the investigation this implements.
+// See docs/arch/usage-claudecode.md §4 (WKWebView suspend self-heal).
 const WATCHDOG_INTERVAL_MS = 7000;
 const _wakeSubscribers = new Set(); // Set<{ onWake: (reason) => void, lastTickAt: () => number }>
 let _wakeListenersInstalled = false;

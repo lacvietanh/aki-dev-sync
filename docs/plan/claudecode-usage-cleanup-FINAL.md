@@ -1,6 +1,7 @@
 # Plan FINAL — dọn dẹp Claude Code usage flow
 
-> **Trạng thái:** chờ thực thi. Soạn 2026-07-20.
+> **Trạng thái:** phần docs (D1–D4) **đã xong**. Phần code (B1–B5) **chờ thực thi ở session sau**.
+> Soạn 2026-07-20.
 > Nền tảng nghiên cứu: `docs/research/claudecode-usage-FINAL.md` (đọc §5 nhật ký trước).
 > Kiến trúc đích: `docs/arch/usage-claudecode.md`.
 >
@@ -147,17 +148,23 @@ Ràng buộc môi trường: **không tự build, không tự chụp hình** —
 
 ## 5. Thứ tự
 
-Docs là SSOT: viết/sửa docs trước, code sau, code phản ánh docs.
+Docs là SSOT: docs mô tả trạng thái đích, code chạy theo sau để khớp.
+
+⚠️ **Từ 2026-07-20 docs đã mô tả trạng thái SAU khi dọn, còn code thì CHƯA.** Đây là lệch có
+chủ đích trong khoảng thời gian giữa hai session, không phải docs sai. Session làm code phải
+đưa code về khớp đúng `docs/arch/usage-claudecode.md`.
 
 ```
-D1  research FINAL          ✅ xong
-D2  plan FINAL (file này)   ✅ xong
-D3  arch doc viết lại       → mô tả trạng thái sau khi dọn
-D4  xoá 8 file + sửa tham chiếu
-────────────────────────────────
-B1..B5  code                → khớp đúng D3
+D1  research FINAL                    ✅ xong
+D2  plan FINAL (file này)               ✅ xong
+D3  arch doc viết lại (388 → 137 dòng)  ✅ xong
+D4  xoá 8 file + sửa 9 tham chiếu       ✅ xong
+D5  CHANGELOG: ghi việc gộp docs        ✅ xong
+────────────────────────────────────────────────
+B1..B5  code                            ⬜ session sau
 V1..V5  tự kiểm
 V6..V7  user kiểm
-────────────────────────────────
-CHANGELOG (ghi rõ đánh đổi B5) → plan này chuyển sang docs/plan/done/
+D6  CHANGELOG: ghi đánh đổi B4          ⬜ sau khi code xong
+D7  sửa bài đối ngoại (xem §2)          ⬜ sau khi code xong
+D8  plan này → docs/plan/done/          ⬜ cuối cùng
 ```

@@ -8,7 +8,7 @@
 # only the subshell dies on dash; enable pipefail only where it is actually supported.
 ( set -o pipefail ) 2>/dev/null && set -o pipefail
 # @docs docs/arch/usage-claudecode.md
-# @docs docs/research/claude-usage-1.2.x-analyze.md
+# @docs docs/research/claudecode-usage-FINAL.md
 # Runs `claude -p /usage` on the remote and exports the output for the parser.
 # Auto-probes with a dummy Haiku session if /usage has no resets_at or shows a past reset time.
 # Writes a log to stderr so the Rust caller can record it via its own stderr capture.

@@ -50,7 +50,7 @@ HOME_DIR = os.path.expanduser('~')
 CREDS = os.path.join(HOME_DIR, '.claude', '.credentials.json')
 CACHE = os.path.join(HOME_DIR, '.claude', 'rate-limits-cache.json')
 MARKER = os.path.join(HOME_DIR, '.claude', 'aki-oauth-last-attempt')
-# Verified against docs/plan/claudecode-oauth-usage-p3.md Bước 0 recon command.
+# Verified against docs/research/claudecode-usage-FINAL.md Bước 0 recon command.
 # Bump here if a live host reports 429 (missing/stale UA is the known cause).
 UA = 'claude-code/2.1.0'
 HTTP_TIMEOUT_S = 8
@@ -260,7 +260,7 @@ except Exception as e:
         # the very first run. Previously this branch only fired when the file didn't exist at
         # all, so once written, auth-cache.json echoed the SAME email forever even after the
         # user logged into a different CC account on this host (bug reported in
-        # docs/plan/claudecode-oauth-usage-p3.md: "email hiển thị sai khi đổi tài khoản" — usage
+        # docs/research/claudecode-usage-FINAL.md: "email hiển thị sai khi đổi tài khoản" — usage
         # % updated correctly but the header email stayed stuck on the old account). Bounded to
         # once per AUTH_REFRESH_AGE_S so a normal 30s poll interval doesn't spawn `claude auth
         # status` every tick.

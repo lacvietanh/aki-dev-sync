@@ -20,7 +20,7 @@ const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 /// poll budget it was structurally impossible to finish, so it was killed mid-flight almost
 /// every run, stranding whichever `claude` session was live at that moment on the remote.
 /// That, not the poll loop, is what accumulated multi-GB of orphaned sessions over days —
-/// see docs/research/ssh-process-leak-remote-ram-overflow.md §11.
+/// see docs/research/claudecode-usage-FINAL.md §4.
 ///
 /// Must stay comfortably above `3 × CLAUDE_CALL_TIMEOUT_SECS` so the remote's own per-call
 /// bounds are what actually fire; this is only the outer backstop.
@@ -43,7 +43,7 @@ pub(crate) fn run_remote_script_long(host: &str, script: &str) -> Result<Output,
 
 /// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script
 /// (not POSIX `sh`) piped over the same funnel. Generalizes the timeout/kill/drain machinery
-/// instead of duplicating it — see docs/plan/fix-usage-monitor-freeze.md P2: AG's IPC previously
+/// instead of duplicating it — AG's IPC previously
 /// had no timeout at all, so a blackholed SSH/local probe wedged `isChecking` permanently.
 pub(crate) fn run_remote_node_timeout(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(host, Interpreter::Node, script, REMOTE_SCRIPT_TIMEOUT_SECS)
@@ -64,7 +64,7 @@ const CLEANUP_TIMEOUT_SECS: u64 = 8;
 /// blackholed connection never returns at all because the kernel's default TCP timeout is
 /// minutes long. `BatchMode` additionally guarantees we never block on a password prompt.
 ///
-/// See docs/research/ssh-process-leak-remote-ram-overflow.md §7 P3.
+/// See docs/research/claudecode-usage-FINAL.md §4.
 fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
     let mut c = Command::new("ssh");
     c.args([
@@ -367,7 +367,7 @@ pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<b
     // run_remote_script (below) is fully synchronous (wait/poll loop, up to
     // REMOTE_SCRIPT_TIMEOUT_SECS). Running it directly on the async executor starves a tokio
     // worker for the same duration — spawn_blocking offloads to the blocking thread-pool, same
-    // pattern as get_agent_usage/logout_antigravity (P5, docs/plan/fix-usage-monitor-freeze.md;
+    // pattern as get_agent_usage/logout_antigravity (P5, docs/research/claudecode-usage-FINAL.md;
     // this pair was the one gap the stack-tauri never-block-the-UI audit had missed).
     tauri::async_runtime::spawn_blocking(move || provision_agent_usage_sync(&agent_name, &host))
         .await
@@ -449,7 +449,7 @@ fn force_sync_agent_usage_sync(agent_name: &str, host: &str) -> Result<String, S
     // remote, claude unavailable, or an SSH failure). This is a HARD failure: surface
     // it to the UI so it shows an error and the JS retry logic kicks in, instead of the
     // old behaviour of returning a silent `parsed:false` that masked the dash/pipefail
-    // regression for many versions (see docs/research/claude-usage-dash-pipefail-regression.md).
+    // regression for many versions (see docs/research/claudecode-usage-FINAL.md).
     if stdout.is_empty() {
         logger::error("FORCE_SYNC", &format!(
             "empty stdout exit={} stderr_b={}",
@@ -745,7 +745,7 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
 
     let script = include_str!("../../scripts/get-antigravity-usage.js");
 
-    // P2 (docs/plan/fix-usage-monitor-freeze.md): this used to spawn+wait_with_output() with
+    // P2 (docs/research/claudecode-usage-FINAL.md): this used to spawn+wait_with_output() with
     // NO timeout — a blackholed SSH/local probe wedged `isChecking` permanently on the JS side,
     // freezing every subsequent poll tick for this source. Routed through the same bounded
     // funnel as CC (run_interpreter_timeout / Interpreter::Node) so it always resolves within

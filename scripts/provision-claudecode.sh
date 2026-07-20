@@ -14,7 +14,7 @@ if [ ! -f "$FILE" ]; then exit 0; fi
 # previously-cached seven_day untouched. Also switches the write to atomic (temp file + mv) —
 # the OAuth poll's os.replace() comment already assumed this hook wrote non-atomically; matching
 # that closes the last read-half-written-file race between the two writers.
-# See docs/plan/fix-usage-monitor-freeze.md P3.
+# See docs/arch/usage-claudecode.md §3 (provision).
 if grep -q "aki-rlcache v3" "$FILE"; then
     :  # already up to date — nothing to do
 else

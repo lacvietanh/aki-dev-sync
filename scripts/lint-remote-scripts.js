@@ -1,5 +1,5 @@
 // Layer 2 of the "shell-via-SSH must never die silently" defense.
-// (See docs/arch/usage-claudecode.md §3c and docs/research/claude-usage-dash-pipefail-regression.md)
+// (See docs/arch/usage-claudecode.md §3c and docs/research/claudecode-usage-FINAL.md)
 //
 // Every script delivered through `ssh host sh` runs under POSIX sh (dash on most
 // Linux remotes), NOT the login shell. A single bashism (e.g. `set -o pipefail`)
@@ -108,7 +108,7 @@ for (const name of REMOTE_SCRIPTS) {
 
 if (failed) {
   console.log('\x1b[31m%s\x1b[0m', '✗ Remote-script lint FAILED — a dash-incompatible script would silently die over `ssh host sh`.');
-  console.log('\x1b[31m%s\x1b[0m', '  See docs/research/claude-usage-dash-pipefail-regression.md');
+  console.log('\x1b[31m%s\x1b[0m', '  See docs/research/claudecode-usage-FINAL.md');
   process.exit(1);
 }
 console.log('\x1b[32m%s\x1b[0m', '✓ All remote scripts are POSIX-sh safe.');
