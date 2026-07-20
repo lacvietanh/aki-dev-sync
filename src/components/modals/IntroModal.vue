@@ -209,6 +209,7 @@
           <li><strong>Force Sync với Auto-Probe:</strong> Tự động kích hoạt Probe Session (Haiku ~100 tokens) trong hai trường hợp: chưa có session local trong chu kỳ 5h, hoặc mốc reset đã qua nhưng cache chưa được làm mới — UI luôn tự phục hồi sau quota reset.</li>
           <li><strong>Khắc phục lỗi mtime của `.git/`:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
           <li><strong>Phân tách EC-3 hai chiều (Baseline Manifest):</strong> rsync không phân biệt được "remote tạo file X" vs "Local xóa file X", hay "Mac tạo file Y" vs "remote xóa file Y". Sau mỗi lần sync đầy đủ, app ghi snapshot danh sách file local vào <code>appDataDir/baselines/</code>. Lần check tiếp theo: file trong pull_list + có trong baseline + không còn ở Local → Local đã xóa → cộng vào push_count; file trong push_list + có trong baseline → remote đã xóa → loại khỏi push_count. Giải quyết hoàn toàn badge PUSH sáng nhầm khi code chủ yếu trên remote.</li>
+          <li><strong>Narrow Mode (v1.14.0):</strong> Cửa sổ dùng được xuống tới 400px (<code>minWidth</code> trong <code>tauri.conf.json</code>), một breakpoint dùng chung duy nhất (700px) và hai utility class toàn cục (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) — không component nào tự định nghĩa breakpoint riêng. Nhãn chữ ẩn đi vẫn giữ nguyên trong tooltip <code>title</code>, không nút nào bị mất cả icon lẫn nhãn.</li>
         </ul>
       </div>
 

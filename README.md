@@ -66,6 +66,7 @@ This tool was built for a specific way of working — you'll feel at home if you
 | **App Update Check** | Automatically checks for app updates silently on launch or manually from the dropdown menu, displaying version badges. |
 | **Project Config** | Per-direction rsync excludes with one-click presets (**Nuxt 4 / Tauri v2 / Aki Default**) in a side-by-side PUSH/PULL layout. Per-project DEV/BUILD command overrides. Production URL quick-open, run-hooks-local-or-remote, and ignore-hook-errors toggles. |
 | **Background Refresh** | Polls git status, remote sync diff, and agent usage in the background; per-type intervals are configurable. Visual countdown rings on the GIT and ACTIONS column headers show live refresh progress. |
+| **Narrow Mode** | The window stays usable resized down to 400px wide. One shared 700px breakpoint drives every component; labels hide first (icons + tooltips stay), never the reverse. |
 
 ## 🔬 Under the Hood
 
