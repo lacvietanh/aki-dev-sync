@@ -7,7 +7,7 @@
           <img src="/claude-icon.png" class="agent-img-icon icon-glow" alt="Claude Code" />
         </div>
         <div class="agent-name-row">
-          <span class="agent-name">{{ agentName }}</span>
+          <span class="agent-name u-narrow-hide">{{ agentName }}</span>
           <span v-if="data && claudeTierDisplay" class="agent-plan-badge claude">
             {{ claudeTierDisplay }}
           </span>
@@ -35,7 +35,7 @@
         </div>
         <div class="agent-info">
           <div class="agent-name">
-            {{ agentName }}
+            <span class="u-narrow-hide">{{ agentName }}</span>
             <span v-if="data && data.userTier?.name" class="agent-plan-badge ag">
               {{ data.userTier.name.replace('Google', 'GG') }}
             </span>
@@ -322,20 +322,26 @@ async function logoutAntigravity() {
     loggingOut.value = false;
   }
 }
-// Design lock: the header shows a max-10-char truncated email to keep width stable when the
-// active/cached account changes; the full email is shown in the dropdown rows untouched.
+// Design lock: the header shows a truncated email (10 chars wide, 6 at the narrow breakpoint) to
+// keep width stable when the active/cached account changes; the full email is shown in the
+// dropdown rows untouched.
+const isNarrow = ref(typeof window !== 'undefined' && window.innerWidth <= 700);
+function updateIsNarrow() { isNarrow.value = window.innerWidth <= 700; }
 function truncEmail(email) {
-  return email.length > 10 ? email.slice(0, 10) + '…' : email;
+  const max = isNarrow.value ? 4 : 10;
+  return email.length > max ? email.slice(0, max) + '…' : email;
 }
 function onDocClick() { accountMenuOpen.value = false; }
 function onDocKey(e) { if (e.key === 'Escape') accountMenuOpen.value = false; }
 onMounted(() => {
   document.addEventListener('click', onDocClick);
   document.addEventListener('keydown', onDocKey);
+  window.addEventListener('resize', updateIsNarrow);
 });
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick);
   document.removeEventListener('keydown', onDocKey);
+  window.removeEventListener('resize', updateIsNarrow);
 });
 
 // Antigravity 2.1.1+ Groups & Buckets detection
@@ -1148,5 +1154,14 @@ async function handleIconClick() {
 .cc-reset-line .time-abs {
   color: var(--text-muted);
   font-weight: 400;
+}
+
+/* Narrow mode (<=700px): the LOCAL/REMOTE columns stay side-by-side (not stacked) — the fix is
+   letting each card's content, including the progress bars and reset-line text, actually shrink
+   to fit its half instead of the fixed 200px forcing horizontal overflow past the window edge. */
+@media (max-width: 700px) {
+  .agent-usage-card {
+    min-width: 0;
+  }
 }
 </style>

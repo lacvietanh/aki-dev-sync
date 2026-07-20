@@ -2,11 +2,20 @@
   <div class="dashboard-top-header">
     <header class="top-header" data-tauri-drag-region @mousedown.prevent="startDragging">
       <div class="logo-section" data-tauri-drag-region>
-        <h1 data-tauri-drag-region>
-          <span class="app-icon-menu" @mousedown.stop title="Menu — links, updates & utilities">
+        <span class="app-icon-menu" @mousedown.stop title="Menu — links, updates & utilities">
             <img src="/titlebar-icon.png" class="app-icon icon-glow" />
             <span class="menu-affordance"><i class="fa-solid fa-bars"></i></span>
             <div class="icon-dropdown">
+              <a
+                 href="#"
+                 @click.prevent="showChangelogModal = true"
+                 class="icon-dropdown-item icon-dropdown-version"
+                 title="Click to view Changelog">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span class="version-text-default">{{ appVersion }} {{ buildTime }}</span>
+                <span class="version-text-hover">Read Changelog</span>
+              </a>
+              <div class="icon-dropdown-separator"></div>
               <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
                 <i class="fa-brands fa-github"></i> GitHub Repository
               </a>
@@ -18,12 +27,11 @@
               </a>
               <div class="icon-dropdown-separator"></div>
               <a
-                href="#"
-                @click.prevent="!(anySyncing || isReloading) && openSshConfig()"
-                class="icon-dropdown-item"
-                :class="{ 'item-disabled': anySyncing || isReloading }"
-                title="Edit SSH Config (Local) — edits this machine's ~/.ssh/config"
-              >
+                 href="#"
+                 @click.prevent="!(anySyncing || isReloading) && openSshConfig()"
+                 class="icon-dropdown-item"
+                 :class="{ 'item-disabled': anySyncing || isReloading }"
+                 title="Edit SSH Config (Local) — edits this machine's ~/.ssh/config">
                 <i class="fa-solid fa-edit"></i> Edit SSH Config (Local)
               </a>
               <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local">
@@ -42,11 +50,45 @@
               <a href="#" @click.prevent="installAkiClaudeDoc" class="icon-dropdown-item">
                 <i class="fa-solid fa-download"></i> Install AkiClaudeDoc
               </a>
+              <div class="icon-dropdown-separator"></div>
+              <div class="icon-dropdown-preset-row">
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  @click="setNarrowWidthSafe"
+                  title="Resize window width to 420px (narrow mode), keeping height and position">
+                  <i class="fa-solid fa-compress"></i> Narrow
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  @click="setWideWidthSafe"
+                  title="Resize window width to 768px (wide mode), keeping height and position">
+                  <i class="fa-solid fa-expand"></i> Wide
+                </button>
+              </div>
+              <div class="icon-dropdown-preset-row">
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  @click="stickTopLeftSafe"
+                  title="Snap window to the top-left-most connected monitor and resize height to fit the whole project list">
+                  <i class="fa-solid fa-border-top-left"></i> Stick Top-Left
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  @click="centerPrimarySafe"
+                  title="Center window on the primary monitor (position only, no resize)">
+                  <i class="fa-solid fa-crosshairs"></i> Center Primary
+                </button>
+              </div>
             </div>
-          </span>
-          Aki Dev Sync
-        </h1>
-        <span v-if="isDev" class="dev-tag">DEV</span>
+        </span>
+        <div class="title-block" data-tauri-drag-region>
+          <h1 data-tauri-drag-region>Aki Dev Sync</h1>
+          <span v-if="isDev" class="dev-tag">DEV</span>
+        </div>
       </div>
       <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">
         <span v-if="newVersionAvailable" class="version-row">
@@ -54,11 +96,11 @@
             <i class="fa-solid fa-circle-arrow-up"></i> Update
           </span>
         </span>
-        <span class="build-time">{{ appVersion }} {{ buildTime }}</span>
+        <span class="build-time u-narrow-hide">{{ appVersion }} {{ buildTime }}</span>
       </span>
       <div class="header-actions">
         <button class="btn-tech btn-tech-secondary btn-intro" @click="openIntroModal" title="Introduction">
-          <i class="fa-solid fa-book-open"></i> <span class="btn-text">INTRO</span>
+          <i class="fa-solid fa-book-open"></i> <span class="btn-text u-narrow-hide">INTRO</span>
           <span class="badge-dot"></span>
         </button>
         <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
@@ -76,24 +118,22 @@
         <RefreshSettingsModal :show="showRefreshSettings" @close="showRefreshSettings = false" />
         <ChangelogModal :show="showChangelogModal" @close="showChangelogModal = false" />
         <UpdateModal
-          :show="showUpdateModal"
-          :version="newVersionAvailable"
-          :notes="latestReleaseNotes"
-          :download-url="latestDownloadUrl"
-          :release-url="latestReleaseUrl"
-          @close="dismissUpdateModal"
-        />
+                     :show="showUpdateModal"
+                     :version="newVersionAvailable"
+                     :notes="latestReleaseNotes"
+                     :download-url="latestDownloadUrl"
+                     :release-url="latestReleaseUrl"
+                     @close="dismissUpdateModal" />
         <GlobalNoteModal />
         <ClaudeSettingModal :show="showStatuslineModal" @close="showStatuslineModal = false" />
         <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
 
         <!-- Custom Traffic Lights -->
         <div
-          class="titlebar-button pin-btn"
-          :class="{ active: isPinned }"
-          @click="togglePin"
-          :title="isPinned ? 'Unpin from all Spaces' : 'Pin window on top across all Spaces'"
-        >
+             class="titlebar-button pin-btn"
+             :class="{ active: isPinned }"
+             @click="togglePin"
+             :title="isPinned ? 'Unpin from all Spaces' : 'Pin window on top across all Spaces'">
           <i class="fa-solid fa-thumbtack"></i>
         </div>
         <div class="titlebar-button minimize-btn" @click="minimize" title="Minimize">
@@ -141,7 +181,18 @@ const latestReleaseNotes = ref('');
 const latestDownloadUrl = ref('');
 const latestReleaseUrl = ref('');
 
-const { startDragging, minimize, closeWin, isPinned, togglePin, restorePin } = useAppWindow();
+const {
+  startDragging,
+  minimize,
+  closeWin,
+  isPinned,
+  togglePin,
+  restorePin,
+  setNarrowWidth,
+  setWideWidth,
+  stickTopLeft,
+  centerPrimary,
+} = useAppWindow();
 const { sshHosts, openSshConfig } = useSsh();
 const { loadData, anySyncing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
@@ -256,6 +307,22 @@ async function installAkiClaudeDoc() {
 function handleRefresh() {
   loadData(sshHosts, true);
 }
+
+function setNarrowWidthSafe() {
+  setNarrowWidth().catch((e) => console.error('Failed to set narrow width:', e));
+}
+
+function setWideWidthSafe() {
+  setWideWidth().catch((e) => console.error('Failed to set wide width:', e));
+}
+
+function stickTopLeftSafe() {
+  stickTopLeft().catch((e) => console.error('Failed to stick window top-left:', e));
+}
+
+function centerPrimarySafe() {
+  centerPrimary().catch((e) => console.error('Failed to center window:', e));
+}
 </script>
 
 <style scoped>
@@ -369,6 +436,50 @@ function handleRefresh() {
   margin: 4px 6px;
 }
 
+.icon-dropdown-preset-row {
+  display: flex;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.icon-dropdown-preset-row + .icon-dropdown-preset-row {
+  margin-top: 4px;
+}
+
+.icon-dropdown-preset-btn {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.icon-dropdown-preset-btn:hover {
+  background: rgba(0, 210, 255, 0.1);
+  color: #e2e8f0;
+  border-color: rgba(0, 210, 255, 0.3);
+}
+
+.icon-dropdown-preset-btn i {
+  width: 12px;
+  text-align: center;
+  color: #64748b;
+}
+
+.icon-dropdown-preset-btn:hover i {
+  color: #a5f3fc;
+}
+
 .btn-intro {
   position: relative;
   margin-right: 4px;
@@ -466,6 +577,11 @@ function handleRefresh() {
   color: #3b82f6;
 }
 
+.title-block {
+  display: flex;
+  align-items: center;
+}
+
 .dev-tag {
   background-color: rgba(239, 68, 68, 0.15);
   color: #f87171;
@@ -478,20 +594,6 @@ function handleRefresh() {
   vertical-align: middle;
   letter-spacing: 0.5px;
   display: inline-block;
-}
-
-@media (max-width: 850px) {
-  .header-actions .btn-tech {
-    padding: 0 10px !important;
-  }
-
-  .header-actions .btn-tech .btn-text {
-    display: none !important;
-  }
-
-  .header-actions .btn-tech i {
-    display: inline-block !important;
-  }
 }
 
 .version-row {
@@ -529,5 +631,55 @@ function handleRefresh() {
 
 .pin-btn.active i {
   transform: rotate(45deg);
+}
+
+/* Hover swaps version/build for "Read Changelog". No width jump: the dropdown's width is set by
+   its longest item ("Claude Code Profile (Local)"), which is wider than either of these labels. */
+.icon-dropdown-version .version-text-hover {
+  display: none;
+}
+
+.icon-dropdown-version:hover .version-text-default {
+  display: none;
+}
+
+.icon-dropdown-version:hover .version-text-hover {
+  display: inline;
+}
+
+@media (max-width: 700px) {
+  .logo-section h1 {
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  /* DEV badge now stacks under the title text only (not the whole logo-section, which also
+     contains the menu icon) — .title-block wraps just the h1 + dev-tag, so the icon stays on
+     the same row while the title/DEV pair goes vertical to save horizontal space. A small gap
+     (instead of 0) keeps the badge from visually running into the title text right below it. */
+  .title-block {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+
+  .dev-tag {
+    font-size: 6px;
+    padding: 0 3px;
+    margin-left: 0;
+    line-height: 1.3;
+  }
+
+  /* Gap between the INTRO button and the Global Note button, halved (10px -> 5px). */
+  .btn-note {
+    margin-left: 5px;
+  }
+
+  /* Folded in from the old 850px breakpoint (removed — 700px is the single narrow breakpoint;
+     INTRO's label now hides via u-narrow-hide like everything else). */
+  .header-actions .btn-tech {
+    padding: 0 8px !important;
+  }
 }
 </style>

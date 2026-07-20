@@ -90,6 +90,27 @@ const ccRemote = reactive({ enabled: remoteModeEnabled, ...useAgentUsage('claude
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Fixed viewport (docs/plan/done/narrow-mode-and-ux-1.14.0.md §B1): the usage area used to
+     grow/shrink with content, jumping the whole UI on load/error/account switch. 161px
+     measured from the bottom edge of the 42px titlebar covers the tallest normal (non-error)
+     state — two CC bars or the AG 4-circle layout — with a small buffer; content beyond that
+     scrolls instead of pushing layout below it. */
+  height: 161px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* Narrower, low-contrast scrollbar than the app-wide 6px rule (main.css) — this element only. */
+.agent-usage-section::-webkit-scrollbar {
+  width: 4px;
+}
+.agent-usage-section::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+.agent-usage-section::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .usage-split-layout {
@@ -102,5 +123,21 @@ const ccRemote = reactive({ enabled: remoteModeEnabled, ...useAgentUsage('claude
   width: 1px;
   background: rgba(255, 255, 255, 0.05);
   margin: 0 4px;
+}
+
+/* Horizontal padding/gaps here were sized for the wide layout — tighten them at narrow so the
+   LOCAL/REMOTE columns get more of the scarce width instead of losing it to whitespace. */
+@media (max-width: 700px) {
+  .agent-usage-section {
+    padding: 6px 2px;
+  }
+
+  .usage-split-layout {
+    gap: 2px;
+  }
+
+  .column-divider {
+    margin: 0;
+  }
 }
 </style>

@@ -15,16 +15,18 @@
             <span class="status-dot"></span> SYNCING...
           </span>
         </div>
-        <div class="terminal-actions" style="display: flex; gap: 6px;">
-          <button class="btn-tech btn-tech-secondary" @click="isLogExpanded = !isLogExpanded" style="padding: 4px 8px; font-size: 9px;">
+        <div class="terminal-actions">
+          <button class="btn-tech btn-tech-secondary btn-terminal-action" @click="isLogExpanded = !isLogExpanded" title="Collapse / Expand log panel">
             <i class="fa-solid" :class="isLogExpanded ? 'fa-chevron-down' : 'fa-chevron-up'"></i>
-            {{ isLogExpanded ? 'COLLAPSE' : 'EXPAND' }}
+            <span class="u-narrow-hide">{{ isLogExpanded ? 'COLLAPSE' : 'EXPAND' }}</span>
           </button>
-          <button class="btn-tech btn-tech-secondary" @click="copyLogs" :disabled="displayedLogs.length === 0" style="padding: 4px 8px; font-size: 9px;">
-            <i class="fa-solid fa-copy"></i> {{ copied ? 'COPIED' : 'COPY' }}
+          <button class="btn-tech btn-tech-secondary btn-terminal-action" @click="copyLogs" :disabled="displayedLogs.length === 0" title="Copy logs">
+            <i class="fa-solid" :class="copied ? 'fa-check log-copied-icon' : 'fa-copy'"></i>
+            <span class="u-narrow-hide">{{ copied ? 'COPIED' : 'COPY' }}</span>
           </button>
-          <button class="btn-tech btn-tech-secondary" @click="clearLog" :disabled="displayedLogs.length === 0" style="padding: 4px 8px; font-size: 9px;">
-            <i class="fa-solid fa-trash"></i> CLEAR
+          <button class="btn-tech btn-tech-secondary btn-terminal-action" @click="clearLog" :disabled="displayedLogs.length === 0" title="Clear log">
+            <i class="fa-solid fa-trash"></i>
+            <span class="u-narrow-hide">CLEAR</span>
           </button>
         </div>
       </div>
@@ -65,3 +67,19 @@ function getLogClass(line) {
   return "log-normal";
 }
 </script>
+
+<style scoped>
+.terminal-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-terminal-action {
+  padding: 4px 8px;
+  font-size: 9px;
+}
+
+.log-copied-icon {
+  color: var(--accent-green);
+}
+</style>

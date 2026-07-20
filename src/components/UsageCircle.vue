@@ -3,17 +3,19 @@
     <!-- Premium Tooltip Container -->
     <div class="usage-circle-container" @mouseenter="updateTime">
       <div class="circle-main-row">
+        <!-- Wide layout: label sits beside the ring. At the narrow breakpoint (<=700px) this
+             same span gets absolutely repositioned over the ring's top interior instead —
+             see the @media block below — so this markup covers both without branching. -->
         <span class="circle-sub-label">{{ subLabel }}</span>
         <div class="circle-svg-wrapper">
           <svg class="radial-progress" viewBox="0 0 36 36">
             <!-- Background Track -->
             <circle
-              class="circle-bg"
-              cx="18"
-              cy="18"
-              r="15"
-              stroke-width="3"
-            />
+                    class="circle-bg"
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    stroke-width="3" />
             <!-- Active Progress Circle — wrapped in Vue's native <Transition> so appearing/
                  disappearing (N/A <-> real data, e.g. right after an account switch momentarily
                  clears percentage) fades via Vue's own enter/leave lifecycle instead of an
@@ -21,16 +23,15 @@
                  below still handles same-element percentage changes while mounted. -->
             <Transition name="circle-fill">
               <circle
-                v-if="hasPercentage && percentage > 0"
-                class="circle-fill"
-                :class="colorClass"
-                cx="18"
-                cy="18"
-                r="15"
-                stroke-width="3"
-                :stroke-dasharray="94.25"
-                :stroke-dashoffset="strokeDashOffset"
-              />
+                      v-if="hasPercentage && percentage > 0"
+                      class="circle-fill"
+                      :class="colorClass"
+                      cx="18"
+                      cy="18"
+                      r="15"
+                      stroke-width="3"
+                      :stroke-dasharray="94.25"
+                      :stroke-dashoffset="strokeDashOffset" />
             </Transition>
           </svg>
           <div class="percentage-inner" :class="[colorClass, { 'is-na': !hasPercentage }]">
@@ -40,7 +41,7 @@
       </div>
       <div class="circle-time-line" :class="{ 'is-na': !resetsAt }">
         <template v-if="resetTimeVal">
-          <span class="time-label">Reset </span><span class="time-val">{{ resetTimeVal }}</span>
+          <span class="time-label">Rs </span><span class="time-val">{{ resetTimeVal }}</span>
         </template>
         <span v-else class="time-label">{{ resetsAt ? 'ready' : 'N/A' }}</span>
       </div>
@@ -147,7 +148,7 @@ const colorClass = computed(() => {
 
 const formattedResetTime = computed(() => {
   if (!props.resetsAt) return { relativeTime: '', absoluteTime: '', isPast: false };
-  
+
   const d = new Date(props.resetsAt * 1000);
   const absoluteTime = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
@@ -160,12 +161,12 @@ const formattedResetTime = computed(() => {
   const diffSeconds = props.resetsAt - currentTime.value;
   const isPast = diffSeconds <= 0;
   const absDiff = Math.abs(diffSeconds);
-  
+
   let relativeTime = '';
   const days = Math.floor(absDiff / 86400);
   const hours = Math.floor((absDiff % 86400) / 3600);
   const minutes = Math.floor((absDiff % 3600) / 60);
-  
+
   if (days > 0) {
     relativeTime = `${days}d ${hours}h`;
   } else if (hours > 0) {
@@ -234,7 +235,8 @@ export default {
 .radial-progress {
   width: 100%;
   height: 100%;
-  transform: rotate(-90deg); /* Start progress from the top (12 o'clock) */
+  transform: rotate(-90deg);
+  /* Start progress from the top (12 o'clock) */
 }
 
 .circle-bg {
@@ -302,6 +304,7 @@ export default {
   color: var(--text-muted);
   font-weight: 500;
 }
+
 .circle-time-line .time-val {
   color: rgba(255, 255, 255, 0.88);
   font-weight: 700;
@@ -312,51 +315,58 @@ export default {
   stroke: var(--accent-green);
   color: var(--accent-green);
 }
+
 .color-warning {
   stroke: var(--accent-amber);
   color: var(--accent-amber);
 }
+
 .color-danger {
   stroke: var(--accent-red);
   color: var(--accent-red);
 }
+
 .color-na {
   stroke: rgba(255, 255, 255, 0.15);
   color: var(--text-darker);
 }
 
-/* Tooltip implementation — positioned below-right to avoid titlebar and left-edge crop */
+/* Tooltip implementation — opens upward (not below-right) and sized down. The usage panel
+   that hosts these circles (AgentUsageSection.vue) is a fixed-height box with overflow-y:auto,
+   and a tooltip opening downward from a circle near the bottom of that box got clipped by the
+   scroll container before it ever became visible. Opening upward + shrinking the footprint is
+   a global fix (not narrow-breakpoint-only) since the clipping isn't width-dependent. */
 .premium-tooltip {
   visibility: hidden;
   opacity: 0;
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 6px);
   left: 0;
-  transform: translateY(4px);
+  transform: translateY(-4px);
   background: rgba(18, 18, 22, 0.95);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
-  padding: 8px 10px;
-  width: 170px;
+  padding: 6px 8px;
+  width: 130px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   z-index: 50;
   pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
-/* Upward triangle pointing toward the circle above */
+/* Downward triangle pointing toward the circle below */
 .premium-tooltip::after {
   content: "";
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 24px;
   border-width: 5px;
   border-style: solid;
-  border-color: transparent transparent rgba(18, 18, 22, 0.95) transparent;
+  border-color: rgba(18, 18, 22, 0.95) transparent transparent transparent;
 }
 
 .usage-circle-container:hover .premium-tooltip {
@@ -366,26 +376,26 @@ export default {
 }
 
 .tooltip-header {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   color: var(--text-light);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 4px;
+  padding-bottom: 3px;
 }
 
 .tooltip-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .tooltip-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .tooltip-label {
@@ -397,7 +407,8 @@ export default {
 }
 
 .tooltip-val.highlight {
-  color: #a5f3fc; /* Bright cyan accent for emphasis */
+  color: #a5f3fc;
+  /* Bright cyan accent for emphasis */
   font-weight: 600;
 }
 
@@ -409,5 +420,30 @@ export default {
 
 .tooltip-row.time-abs {
   margin-top: 1px;
+}
+
+/* Narrow mode only (<=700px) — the ring is the only thing with spare room at this width, so the
+   label moves off to the side and onto the ring itself instead: absolutely positioned over the
+   ring's top interior, tiny but still legible, with the percentage nudged down a touch to make
+   room. Outside this breakpoint the wide "label beside ring" layout above is untouched. */
+@media (max-width: 700px) {
+  .circle-main-row {
+    position: relative;
+  }
+
+  .circle-sub-label {
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 7px;
+    letter-spacing: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .percentage-inner {
+    transform: translateY(3px);
+  }
 }
 </style>

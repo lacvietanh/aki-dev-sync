@@ -83,6 +83,30 @@ body {
   color: var(--accent-red);
 }
 
+/* Narrow-mode utilities (SSoT: 700px is the single narrow breakpoint for the whole app —
+   see docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so they work
+   from inside any component's <style scoped>. */
+@media (max-width: 700px) {
+  .u-narrow-hide {
+    display: none !important;
+  }
+
+  /* Pin/minimize/close were overflowing the titlebar at narrow widths — shrink a little, not
+     to icon-only, just enough to fit. */
+  .titlebar-button {
+    width: 19px;
+    height: 19px;
+    margin-left: 0;
+    font-size: 11px;
+  }
+}
+
+@media (min-width: 701px) {
+  .u-wide-hide {
+    display: none !important;
+  }
+}
+
 .dashboard-layout {
   display: flex;
   flex-direction: column;
@@ -110,8 +134,10 @@ body {
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
 
+/* Collapsed height — 55px (the ~40%-tighter pass) turned out too cramped once tested live;
+   restored to roughly double that per follow-up feedback. */
 .dashboard-bottom.is-collapsed {
-  height: 120px;
+  height: 110px;
 }
 
 .top-header {
@@ -464,6 +490,7 @@ input:checked+.slider:before {
 .actions-wrapper {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -536,7 +563,7 @@ input:checked+.slider:before {
   bottom: 2px;
 }
 
-input:checked+.switch-sm .slider:before {
+.switch-sm input:checked+.slider:before {
   transform: translateX(12px);
 }
 

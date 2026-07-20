@@ -4,28 +4,28 @@
       <!-- Header -->
       <div class="grid-header">
         <div class="grid-header-cell col-project-info col-project-info-header">
-          <span>PROJECTS ({{ projects.length }})</span>
+          <span><span class="u-narrow-hide">PROJECTS</span><span class="u-wide-hide">PJ</span> ({{ projects.length }})</span>
           <button
-            class="btn-tech btn-tech-primary btn-new-project-inline"
-            @click="handleCreateNew"
-            :disabled="anySyncing || isReloading"
-            title="New Project"
-            aria-label="New Project"
-          >
-            <i class="fa-solid fa-plus"></i> NEW
+                  class="btn-tech btn-tech-primary btn-new-project-inline"
+                  @click="handleCreateNew"
+                  :disabled="anySyncing || isReloading"
+                  title="New Project"
+                  aria-label="New Project">
+            <i class="fa-solid fa-plus"></i><span class="u-narrow-hide"> NEW</span>
           </button>
         </div>
         <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
         <div class="grid-header-cell col-git-status" title="LOCAL GIT">
           <span class="th-with-ring">
-            GIT
+            <span class="u-narrow-hide">GIT</span>
             <RefreshRing :interval-s="refreshSettings.git_interval_s" :refresh-key="gitRefreshKey" stroke-color="rgba(16, 185, 129, 0.6)" />
           </span>
         </div>
         <div class="grid-header-cell col-last-sync" title="LAST ACTION">LAST</div>
-        <div class="grid-header-cell col-actions">
+        <div class="grid-header-cell col-action" title="OPEN / SELECT-PUSH">ACTION</div>
+        <div class="grid-header-cell col-sync">
           <span class="th-with-ring">
-            ACTIONS
+            SYNC
             <RefreshRing :interval-s="remoteModeEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
           </span>
         </div>
@@ -69,7 +69,7 @@
              @mousedown="onRowMouseDown">
           <!-- Cell 1: Project Info -->
           <div class="grid-row-cell col-project-info">
-            <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="project-info-row">
               <!-- Project Icon (drag handle) -->
               <div
                    class="project-drag-handle icon-glow"
@@ -79,7 +79,7 @@
                 <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
               </div>
 
-              <div style="flex: 1; min-width: 0; padding-right: 6px;">
+              <div class="project-text-col">
                 <div class="project-name" style="display: flex; justify-content: space-between; align-items: center;">
                   <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
                   <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" style="color: var(--accent-cyan); font-size: 11px; text-decoration: none; display: flex; align-items: center; gap: 4px;">
@@ -127,13 +127,13 @@
             <div v-if="p.last_sync_action && p.last_sync_host" class="sync-host" :title="`Last action host: ${p.last_sync_host}`">{{ p.last_sync_host }}</div>
           </div>
 
-          <!-- Cell 5: Actions -->
-          <div class="grid-row-cell col-actions">
+          <!-- Cell 5: Action (OPEN + SELECT-push only) -->
+          <div class="grid-row-cell col-action">
             <div class="actions-wrapper">
               <!-- Open Popup Trigger (OPEN Button) -->
               <div class="open-popup-wrapper" @mouseenter="onOpenEnter(p, $event)">
                 <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup">
-                  <span class="btn-text">OPEN</span> <i class="fa-solid fa-caret-up"></i>
+                  <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
                 <!-- Open Popup (Native CSS Hover with fixed positioning) -->
@@ -171,7 +171,7 @@
                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
                       </div>
                       <div v-if="getDevCmd(p) || getBuildCmd(p)" class="popup-run-row">
-                        <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getDevCmd(p))" :title="getDevCmd(p)">
+                        <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" @click="runProjectDev(p.local_path, getDevCmd(p))" :title="getDevCmd(p)">
                           <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
                         </div>
                         <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getBuildCmd(p))" :title="getBuildCmd(p)">
@@ -205,11 +205,16 @@
                 </div>
               </div>
 
-              <fieldset :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" class="remote-actions-fieldset" :title="!remoteModeEnabled ? 'Remote Mode is off' : ''">
-                <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :title="!remoteModeEnabled ? 'Remote Mode is off' : 'Pick specific files/folders (native file picker) and push only those to Remote — bypasses this project\'s exclude list, unaffected by the DRY toggle'">
-                  <i class="fa-solid fa-upload"></i>
-                </button>
+              <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" :title="!remoteModeEnabled ? 'Remote Mode is off' : 'Pick specific files/folders (native file picker) and push only those to Remote — bypasses this project\'s exclude list, unaffected by the DRY toggle'">
+                <i class="fa-solid fa-upload"></i>
+              </button>
+            </div>
+          </div>
 
+          <!-- Cell 6: Sync (PUSH/DRY/PULL, LOG, config) -->
+          <div class="grid-row-cell col-sync">
+            <div class="actions-wrapper">
+              <fieldset :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" class="remote-actions-fieldset" :title="!remoteModeEnabled ? 'Remote Mode is off' : ''">
                 <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                   <div class="dry-group-left">
                     <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
@@ -222,7 +227,7 @@
                               }"
                               @click="startSync(p, 'push')"
                               :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
-                        <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text">PUSH</span>
+                        <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text u-narrow-hide">PUSH</span>
                       </button>
                     </CountBadgeWrap>
                   </div>
@@ -246,7 +251,7 @@
                               }"
                               @click="startSync(p, 'pull')"
                               :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text">PULL</span>
+                        <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text u-narrow-hide">PULL</span>
                       </button>
                     </CountBadgeWrap>
                   </div>
@@ -255,7 +260,7 @@
 
               <button class="btn-tech btn-tech-secondary" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
                 <i class="fa-solid fa-file-lines btn-log-icon-only"></i>
-                <span class="btn-text">LOG</span>
+                <span class="btn-text u-narrow-hide">LOG</span>
               </button>
 
               <button class="btn-tech btn-tech-secondary btn-icon-only" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
@@ -296,17 +301,31 @@ watch([projects, iconTimestamp], () => {
   failedIcons.value = {};
 });
 
+// Popup is `position: fixed`, so viewport coordinates are the right frame of reference. It is
+// horizontally centered on the window (clamped to a small viewport margin so it never crops
+// against an edge) rather than pinned to the trigger's left edge, which used to let a wide popup
+// run off the right side of the window. The popup element is already in the DOM at
+// `visibility: hidden` (not `display: none`) when this fires, so its real rendered width can be
+// measured before it becomes visible.
 function onOpenEnter(project, event) {
   if (event) {
     const rect = event.currentTarget.getBoundingClientRect();
     if (!projectRuntime.value[project.id]) {
       projectRuntime.value[project.id] = {};
     }
+    const popupEl = event.currentTarget.querySelector('.open-popup');
+    const margin = 8;
+    let left = rect.left;
+    if (popupEl) {
+      const popupWidth = popupEl.getBoundingClientRect().width || popupEl.offsetWidth || 0;
+      left = window.innerWidth / 2 - popupWidth / 2;
+      left = Math.min(Math.max(left, margin), window.innerWidth - popupWidth - margin);
+    }
     projectRuntime.value[project.id].popupStyle = {
       position: 'fixed',
       bottom: `${window.innerHeight - rect.top}px`,
-      left: `${rect.left}px`,
-      transformOrigin: 'bottom left'
+      left: `${left}px`,
+      transformOrigin: 'bottom center'
     };
   }
 }
@@ -390,14 +409,25 @@ async function openIdeLocal(ideName, path) {
   }
 }
 
-async function runProjectCommand(path, cmd) {
+// Shared invoke/Toast wrapper for the popup's run-commands row — BUILD and DEV differ only by
+// which Tauri command they call and the success wording (DEV also opens a browser once the dev
+// server is up; that decision lives entirely in Rust, see run_project_dev).
+async function invokeProjectRun(command, path, cmd, successTitle) {
   try {
-    await invoke('run_project_command', { localPath: path, cmd });
-    Toast.fire({ icon: 'success', title: 'Command started in Terminal!' });
+    await invoke(command, { localPath: path, cmd });
+    Toast.fire({ icon: 'success', title: successTitle });
   } catch (e) {
-    console.error('Failed to run project command:', e);
+    console.error(`Failed to run project command (${command}):`, e);
     Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
   }
+}
+
+async function runProjectCommand(path, cmd) {
+  return invokeProjectRun('run_project_command', path, cmd, 'Command started in Terminal!');
+}
+
+async function runProjectDev(path, cmd) {
+  return invokeProjectRun('run_project_dev', path, cmd, 'Dev server starting in Terminal — browser will open when ready.');
 }
 
 // (host, path) -> absolute path. The remote $HOME never changes within a session, so a
@@ -514,7 +544,8 @@ function formatTimeAgo(timestamp) {
 <style scoped>
 .projects-table-container {
   width: 100%;
-  --grid-cols: 12rem 2.5rem 2.5rem 2.5rem 1fr;
+  /* project-info | tasks | git | last-sync | action (OPEN + select-push) | sync (PUSH/DRY/PULL + LOG + gear) */
+  --grid-cols: 12rem 2.5rem 2.5rem 2.5rem 7rem 1fr;
   --grid-gap: 0.5rem;
 }
 
@@ -547,7 +578,19 @@ function formatTimeAgo(timestamp) {
   letter-spacing: 1px;
   text-transform: uppercase;
   white-space: nowrap;
-  text-align: left;
+  text-align: center;
+}
+
+/* text-align:center only centers inline content — several cells hold block-level children
+   (badges, stacked divs) that ignore it. Flex-centering every non-project column is the only
+   way that's actually reliable for both the label row and the row content below it. The
+   project-info column is deliberately excluded: it's left-aligned by design and already has
+   its own internal flex layout (project-info-row) plus a space-between header
+   (.col-project-info-header) that a blanket rule here would fight with. */
+.grid-header-cell:not(:first-child) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .grid-body {
@@ -580,6 +623,19 @@ function formatTimeAgo(timestamp) {
   padding: 6px 0;
   white-space: nowrap;
   align-self: center;
+  text-align: center;
+}
+
+.grid-row-cell:not(:first-child) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* LAST holds two stacked divs (the pull/push badge+time, then the host line below it) — they
+   need to stay stacked, not sit side by side as flex-row items. */
+.col-last-sync {
+  flex-direction: column;
 }
 
 .grid-header-cell:first-child,
@@ -624,7 +680,8 @@ function formatTimeAgo(timestamp) {
 .col-tasks,
 .col-git-status,
 .col-last-sync,
-.col-actions {
+.col-action,
+.col-sync {
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
@@ -634,7 +691,8 @@ function formatTimeAgo(timestamp) {
 .col-tasks,
 .col-git-status,
 .col-last-sync,
-.col-actions {
+.col-action,
+.col-sync {
   width: auto !important;
   max-width: none !important;
 }
@@ -643,7 +701,20 @@ function formatTimeAgo(timestamp) {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding-right: 8px;
+}
+
+/* Icon + name/path block row (moved out of an inline style so the narrow media query below can
+   reach the gap — RULE-ui-pattern: no styling logic stranded in inline attributes). */
+.project-info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.project-text-col {
+  flex: 1;
+  min-width: 0;
+  padding-right: 6px;
 }
 
 
@@ -725,6 +796,7 @@ function formatTimeAgo(timestamp) {
 .git-cell {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 }
 
@@ -913,14 +985,115 @@ fieldset:disabled .switch {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
 }
 
-@media (max-width: 800px) {
-  .actions-wrapper .btn-action-open .btn-text,
-  .actions-wrapper .btn-tech-secondary .btn-text {
-    display: none !important;
+/* Narrow mode (<=700px) — single shared breakpoint for the whole app (see
+   docs/plan/done/narrow-mode-and-ux-1.14.0.md, "Shared contract"). Label hiding uses the global
+   .u-narrow-hide / .u-wide-hide utilities from main.css; this block only covers layout that a
+   utility class can't express — column widths, gaps. */
+@media (max-width: 700px) {
+  .projects-table-container {
+    /* Project name column: 12rem -> 6.5rem (widened back up from an initial 4.8rem/40% guess —
+       that was too tight to show any of the remote path, this leaves a few characters visible).
+       GIT column: 2.5rem -> 1.7rem read as too tight against LAST, opened back up to 2.1rem.
+       TASKS column trimmed a touch (2.5rem -> 2.1rem) — it's just an icon+badge, was carrying
+       more blank space than it needed. Action column (OPEN + select-push) also narrows since
+       OPEN's label now hides at the same 700px breakpoint via u-narrow-hide. */
+    --grid-cols: 6.5rem 2.1rem 1.9rem 2.5rem 4.2rem 1fr;
+    --grid-gap: 0.4rem;
   }
 
+  .project-info-row {
+    gap: 6px;
+  }
+
+  /* The project name/path block had unused padding trailing short names — tighten it so
+     ellipsis-truncated paths get a couple more characters of room instead of dead space. */
+  .project-text-col {
+    padding-right: 0;
+  }
+
+  /* PUSH/PULL lose their text label at this width — match them to the OPEN button's icon-only
+     footprint (10px) rather than the wider guess that was breaking the layout. Must win over the
+     `.actions-wrapper .btn-tech-push/-pull { padding: 0 6px !important }` rule above, which
+     otherwise silently wins on specificity + !important regardless of this media query. */
+  .actions-wrapper .btn-tech-push,
+  .actions-wrapper .btn-tech-pull {
+    padding: 0 10px !important;
+  }
+
+  /* Reduce OPEN button padding slightly so it fits in the action column */
+  .actions-wrapper .btn-action-open {
+    padding: 0 6px !important;
+  }
+
+  /* Every attempt to hang DRY off the bottom edge (position: absolute, overlapping the row's
+     border) ended up colliding with the row below it — nothing anchored to a row's own box can
+     overlap outside it without fighting that next row's own positioned content for paint order.
+     Kept in normal flow instead: small, but a real flex item between PUSH and PULL, so it can
+     never visually merge with anything else. */
+  .dry-group {
+    margin: 0 2px;
+    gap: 3px;
+    padding: 2px 4px;
+    overflow: visible;
+  }
+
+  .dry-group-left,
+  .dry-group-right {
+    padding: 0;
+  }
+
+  /* PUSH's count badge (CountBadgeWrap) overhangs 5px past the button's top-right corner.
+     To prevent it from overlapping the "DRY" text in the tight narrow layout, we add extra margin.
+     PULL's badge (in the right group) overhangs to the right, which causes it to poke outside
+     the border of the .dry-group box, so we add a little margin there too. */
+
   .dry-toggle-center {
-    padding: 0 4px !important;
+    padding: 0 2px !important;
+  }
+
+  .dry-toggle-center .dry-label {
+    font-size: 6px;
+    margin-bottom: 1px;
+  }
+
+  .dry-toggle-center .switch-sm {
+    width: 16px;
+    height: 8px;
+  }
+
+  /* Ball must be vertically centered in the 8px track: (8 - 6) / 2 = 1px on each side.
+     The base .switch-sm rule (main.css) uses bottom: 2px, sized for the 12px track — left
+     uncorrected here, the ball sat flush against the top edge instead of centered. */
+  .dry-toggle-center .switch-sm .slider:before {
+    height: 6px;
+    width: 6px;
+    bottom: 1px;
+    left: 1px;
+  }
+
+  .dry-toggle-center .switch-sm input:checked+.slider:before {
+    transform: translateX(8px);
+  }
+
+  /* GIT sits noticeably closer to LAST than the gap elsewhere reads as needing — pull LAST left
+     a touch rather than shrinking --grid-gap globally (that would also tighten LAST↔ACTION and
+     ACTION↔SYNC, which need the opposite). */
+  .col-last-sync {
+    margin-left: -6px;
+  }
+
+  /* Shrink the LAST column's own text (PUSH/PULL badge, relative time, host line) to help it
+     fit in the now-tighter gap. */
+  .last-sync-badge {
+    font-size: 9px;
+  }
+
+  .sync-time {
+    font-size: 8px;
+  }
+
+  .sync-host {
+    font-size: 8px;
   }
 }
 </style>

@@ -3,17 +3,17 @@
     <div class="column-header">
       <!-- Left: which category — LOCAL or REMOTE. -->
       <div class="tab-group">
-        <button class="tab" :class="{ 'is-active': topTab === 'local' }" @click="topTab = 'local'">
-          <i class="fa-solid fa-laptop-code"></i> LOCAL
+        <button class="tab" :class="{ 'is-active': topTab === 'local' }" title="Local" @click="topTab = 'local'">
+          <i class="fa-solid fa-laptop-code"></i> <span class="u-narrow-hide">LOCAL</span>
         </button>
         <button
           class="tab"
           :class="{ 'is-active': topTab === 'remote' }"
           :disabled="remoteLockedByPeer"
-          :title="remoteLockedByPeer ? 'Already shown in the other panel' : ''"
+          :title="remoteLockedByPeer ? 'Already shown in the other panel' : 'Remote'"
           @click="topTab = 'remote'"
         >
-          <i class="fa-solid fa-cloud"></i> REMOTE
+          <i class="fa-solid fa-cloud"></i> <span class="u-narrow-hide">REMOTE</span>
         </button>
       </div>
 
@@ -36,7 +36,7 @@
             <i class="fa-solid fa-power-off src-power" :class="[src.source.enabled ? 'is-on' : 'is-off', { 'is-locked': src.source.locked }]"
                @click.stop="!src.source.locked && src.source.toggle()"></i>
             <img :src="src.icon" class="src-icon" alt="" />
-            <span>{{ src.label }}</span>
+            <span class="u-narrow-hide">{{ src.label }}</span>
           </button>
         </template>
         <template v-else>
@@ -268,5 +268,15 @@ const activeSource = computed(() => {
 .host-select-mini:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Narrow mode (docs/plan/done/narrow-mode-and-ux-1.14.0.md §B2): labels are hidden via the global
+   .u-narrow-hide utility (applied in the template); this block only tightens the layout that
+   utility can't express — icon-only tabs no longer need the old label-sized horizontal padding. */
+@media (max-width: 700px) {
+  .tab {
+    padding: 3px 5px;
+    gap: 2px;
+  }
 }
 </style>

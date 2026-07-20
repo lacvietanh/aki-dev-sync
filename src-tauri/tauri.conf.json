@@ -15,7 +15,7 @@
         "title": "Aki Dev Sync",
         "width": 720,
         "height": 768,
-        "minWidth": 600,
+        "minWidth": 420,
         "minHeight": 500,
         "transparent": true,
         "decorations": false,
