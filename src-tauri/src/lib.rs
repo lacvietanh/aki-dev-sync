@@ -86,6 +86,7 @@ pub fn run() {
             system::find_in_downloads,
             system::check_project_stack,
             system::run_project_command,
+            system::run_project_dev,
             system::read_project_changelog,
             // global note
             global_note::read_global_note,
