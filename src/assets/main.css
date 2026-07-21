@@ -99,6 +99,12 @@ body {
     margin-left: 0;
     font-size: 11px;
   }
+
+  /* Modal chrome eats a large share of a narrow window — trim the padding, keep the structure. */
+  .modal-overlay { padding: 8px; }
+  .modal-header  { padding: 8px 10px; }
+  .modal-body    { padding: 10px; }
+  .modal-footer  { padding: 8px 10px; }
 }
 
 @media (min-width: 701px) {
@@ -874,6 +880,33 @@ input:checked+.slider:before {
   justify-content: space-between;
   background: rgba(10, 15, 22, 0.95);
   border-radius: 0 0 8px 8px;
+}
+
+/* Power-toggle icon shared by every toggleable usage/sync source (AgentUsageSlot's per-agent
+   tabs, ccRemote's REMOTE-tab toggle, ProjectTable's SYNC column switch) — global so it works
+   the same wherever a source needs its own on/off control. */
+.src-power {
+  font-size: 12px;
+  padding: 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.src-power:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.src-power.is-on {
+  color: #22c55e;
+}
+.src-power.is-off {
+  color: #6b7280;
+}
+.src-power.is-locked {
+  color: #4b5563;
+  cursor: not-allowed;
+}
+.src-power.is-locked:hover {
+  background: transparent;
 }
 
 .empty-state {

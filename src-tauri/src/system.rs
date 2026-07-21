@@ -573,162 +573,23 @@ pub fn run_project_command(local_path: String, cmd: String) -> Result<(), String
     Ok(())
 }
 
-/// Extracts an explicit `--port <n>` / `-p <n>` / `--port=<n>` / `-p=<n>` flag from an npm script
-/// string (e.g. `scripts.dev` in package.json). Real-world scripts chain other commands first
-/// (`"npm run killport && nuxt dev --port 3001"`), so this scans every token rather than only the
-/// tail of the string.
-fn extract_port_flag(script: &str) -> Option<u16> {
-    let tokens: Vec<&str> = script.split_whitespace().collect();
-    for (i, tok) in tokens.iter().enumerate() {
-        if *tok == "--port" || *tok == "-p" {
-            if let Some(next) = tokens.get(i + 1) {
-                let digits: String = next.chars().take_while(|c| c.is_ascii_digit()).collect();
-                if let Ok(port) = digits.parse::<u16>() {
-                    return Some(port);
-                }
-            }
-        } else if let Some(val) = tok.strip_prefix("--port=").or_else(|| tok.strip_prefix("-p=")) {
-            if let Ok(port) = val.parse::<u16>() {
-                return Some(port);
-            }
-        }
-    }
-    None
-}
-
-/// Tolerant scan for a `port: <n>` field in a JS/TS config file's raw text (`nuxt.config.ts`'s
-/// `devServer: { port: 3005 }`, `vite.config.ts`'s `server: { port: 5174 }`). Deliberately not a
-/// real JS/TS parser — this app only ever needs one number out of these files.
-fn extract_port_field(text: &str) -> Option<u16> {
-    let bytes = text.as_bytes();
-    let mut search_from = 0usize;
-    while let Some(rel) = text[search_from..].find("port") {
-        let mut i = search_from + rel + "port".len();
-        while i < bytes.len() && (bytes[i] as char).is_whitespace() {
-            i += 1;
-        }
-        if i < bytes.len() && bytes[i] == b':' {
-            i += 1;
-            while i < bytes.len() && (bytes[i] as char).is_whitespace() {
-                i += 1;
-            }
-            let start = i;
-            while i < bytes.len() && (bytes[i] as char).is_ascii_digit() {
-                i += 1;
-            }
-            if i > start {
-                if let Ok(port) = text[start..i].parse::<u16>() {
-                    return Some(port);
-                }
-            }
-        }
-        search_from = search_from + rel + "port".len();
-        if search_from >= text.len() {
-            break;
-        }
-    }
-    None
-}
-
-/// Resolves the dev-server port for a Nuxt/Vite project. First hit wins, in the order the plan
-/// specifies: explicit `--port`/`-p` flag on `scripts.dev` in package.json, then `nuxt.config.*`'s
-/// `devServer.port`, then `vite.config.*`'s `server.port`, then the framework default (Nuxt 3000,
-/// Vite 5173) if a config file exists but names no explicit port.
-fn resolve_dev_port(path: &std::path::Path) -> Option<u16> {
-    if let Ok(pkg) = std::fs::read_to_string(path.join("package.json")) {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&pkg) {
-            if let Some(dev_script) = json.get("scripts").and_then(|s| s.get("dev")).and_then(|d| d.as_str()) {
-                if let Some(port) = extract_port_flag(dev_script) {
-                    return Some(port);
-                }
-            }
-        }
-    }
-
-    for name in ["nuxt.config.ts", "nuxt.config.js"] {
-        let p = path.join(name);
-        if p.exists() {
-            if let Ok(text) = std::fs::read_to_string(&p) {
-                if let Some(port) = extract_port_field(&text) {
-                    return Some(port);
-                }
-            }
-            return Some(3000);
-        }
-    }
-
-    for name in ["vite.config.ts", "vite.config.js", "vite.config.mjs"] {
-        let p = path.join(name);
-        if p.exists() {
-            if let Ok(text) = std::fs::read_to_string(&p) {
-                if let Some(port) = extract_port_field(&text) {
-                    return Some(port);
-                }
-            }
-            return Some(5173);
-        }
-    }
-
-    None
-}
-
-/// DEV button command: opens the dev command in Terminal exactly as `run_project_command` does
-/// today, then — for web projects only (Nuxt or Vite, never Tauri) — polls for the dev server to
-/// come up and opens it in the background browser once it does.
-///
-/// ABSOLUTE (RULE-stack-tauri A1): this waits on a subprocess *and* runs a poll-and-sleep loop
-/// (currently up to 3s). The entire blocking body must run inside `spawn_blocking`, never directly
-/// on the IPC dispatch thread — a poll loop on that thread would freeze the window for its full
-/// duration, which is the exact bug class that has already shipped twice in this app (statusline
-/// auto-install, check_for_updates).
+/// DEV button command: opens the dev command in Terminal, exactly like `run_project_command`
+/// (BUILD). An earlier version also polled for the dev server's port to come up and auto-opened
+/// it in a browser; removed — it never reliably worked across the range of real project configs
+/// (custom dev scripts, non-standard ports, monorepo boot times) and the fixed-cost complexity
+/// (port resolution, TCP poll, detached background task) wasn't worth the unreliable payoff. The
+/// user opens the browser themselves once the Terminal shows the server is up.
 #[tauri::command]
-pub async fn run_project_dev(local_path: String, cmd: String) -> Result<(), String> {
-    // Explicit closure return type: on non-macOS builds the body contains no `?`, so the error
-    // type would otherwise be uninferable (cfg(target_os) scoping — RULE-stack-tauri B4).
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        #[cfg(target_os = "macos")]
-        {
-            run_in_project_terminal(&local_path, &cmd)?;
-
-            let path = std::path::Path::new(&local_path);
-            let is_tauri = path.join("src-tauri").exists() || path.join("src-tauri/tauri.conf.json").exists();
-            let is_web = !is_tauri && (is_nuxt_project(path) || is_vite_project(path));
-
-            if is_web {
-                if let Some(port) = resolve_dev_port(path) {
-                    use std::net::{SocketAddr, TcpStream};
-                    use std::time::{Duration, Instant};
-
-                    if let Ok(addr) = format!("127.0.0.1:{}", port).parse::<SocketAddr>() {
-                        let deadline = Instant::now() + Duration::from_secs(3);
-                        let mut connected = false;
-                        while Instant::now() < deadline {
-                            if TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok() {
-                                connected = true;
-                                break;
-                            }
-                            std::thread::sleep(Duration::from_millis(500));
-                        }
-                        if connected {
-                            // -g opens in the background without activating the browser, so macOS
-                            // does not switch Spaces/workspaces on the user.
-                            let url = format!("http://localhost:{}", port);
-                            let _ = Command::new("open").args(["-g", &url]).spawn();
-                        }
-                        // Timeout with no connection is not an error — the dev server may simply
-                        // not have come up yet or the project may not expose one; stay silent.
-                    }
-                }
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = (&local_path, &cmd);
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+pub fn run_project_dev(local_path: String, cmd: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        run_in_project_terminal(&local_path, &cmd)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&local_path, &cmd);
+    }
+    Ok(())
 }
 
 #[tauri::command]

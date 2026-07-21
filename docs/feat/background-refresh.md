@@ -2,6 +2,10 @@
 
 Automatic background polling that keeps three independent data types fresh without user interaction. Each type has a different cost profile and refresh interval.
 
+> **Scope**: this doc covers *what* each refresh type fetches and what it costs. For *who triggers a
+> refresh, where the busy indicator comes from, and how an in-flight check is cancelled*, see
+> [docs/arch/refresh-controller.md](../arch/refresh-controller.md) (with flowcharts).
+
 ## The three refresh types
 
 ### 1. Git Status (`git_interval_s`)
@@ -10,11 +14,11 @@ Automatic background polling that keeps three independent data types fresh witho
 
 **Cost:** Negligible. No SSH, no network. Completes in ~50ms.
 
-**Trigger:** Currently on-demand only — called during `loadData` and after a sync completes. No interval polling yet.
+**Trigger:** `git_interval_s` timer in `useBackgroundRefresh.js`, plus every `refreshProject()` call (per-project button, global button, `saveConfig`, app mount) and after a sync completes.
 
 **Implementation:** `useGit.js` → `fetchGitStatus(projectId)` → Tauri command `get_git_info`.
 
-**Planned interval:** 60s.
+**Interval:** 60s.
 
 ---
 
@@ -24,11 +28,11 @@ Automatic background polling that keeps three independent data types fresh witho
 
 **Cost:** Medium-high. Each check spawns two SSH+rsync processes. For N projects, `checkAllSyncStatus()` runs N×2 rsync processes sequentially.
 
-**Trigger:** Called during `loadData` (background, non-blocking), then on a 60s interval via `startSyncStatusPolling()`. Also triggered 3s after a real sync completes.
+**Trigger:** the `remote_diff_interval_s` timer in `useBackgroundRefresh.js` (60s), plus every `refreshProject()` call. Also triggered 3s after a real sync completes.
 
 **Implementation:** `useSyncStatus.js` → `checkProjectSyncStatus(project)` → Tauri command `check_sync_status` → `count_rsync_changes()` in `sync.rs`.
 
-**Gated by Remote Mode:** `checkProjectSyncStatus()` early-returns if the global `remoteModeEnabled` switch (see [remote-mode.md](remote-mode.md)) is off — covers this interval poll and the manual Refresh path in one place, since both call the same function.
+**Gated by sync check:** `checkProjectSyncStatus()` early-returns if `syncCheckEnabled` (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)) is off — covers this interval poll and the manual Refresh path in one place, since both call the same function.
 
 **Result:** `hasPendingPush` and `hasPendingPull` written into `projectRuntime`. On startup both are initialized to `null` (not `undefined`) — buttons render in a faint "checking" state (`.btn-sync-checking`) until the first check resolves. After that: `true` → fully lit, `false` → dim (`.btn-sync-clean`).
 
@@ -65,7 +69,7 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 **What it fetches:** Claude Code and Antigravity quota/usage data — locally on this machine and/or from a selected remote host.
 
-**Sources (v1.9.0):** three independent, toggleable `useAgentUsage()` instances live in `AgentUsageSection.vue` — `ag` (Antigravity, always `host = 'local'`), `ccLocal` (Claude Code, always `host = 'local'`), `ccRemote` (Claude Code, `host` = selected SSH host). Each polls only while its own `enabled` flag is true; polling is entirely decoupled from which of the two `AgentUsageSlot` display panels (if any) currently shows it. `ag`/`ccLocal` have their own per-source power switch (persisted in `localStorage`); `ccRemote.enabled` is not independent — it mirrors the global `remoteModeEnabled` switch (see [remote-mode.md](remote-mode.md)), so remote usage polling stops the instant Remote Mode is turned off.
+**Sources:** three independent, toggleable `useAgentUsage()` instances live in `AgentUsageSection.vue` — `ag` (Antigravity, always `host = 'local'`), `ccLocal` (Claude Code, always `host = 'local'`), `ccRemote` (Claude Code, `host` = selected SSH host). Each polls only while its own `enabled` flag is true; polling is entirely decoupled from which of the two `AgentUsageSlot` display panels (if any) currently shows it. All three now use the same `useToggleableSource()` pattern with their own independent, persisted power switch — `ccRemote`'s (`aki-src-ccremote-enabled`) is no longer tied to the sync-check switch (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)).
 
 **Cost:** Local reads (`ag`, `ccLocal`) run a local shell/`zsh -lc node`, no network. Remote (`ccRemote`) is one SSH `cat`/probe per interval, only while Remote Mode is on and a host is selected.
 
@@ -85,8 +89,9 @@ This gives accurate signal: Push button lights up for real commits and file chan
 | Agent usage polling (30s) | ✅ Implemented |
 | `.git/` directory filter fix | ✅ Implemented |
 | `null` init → no false-active on startup | ✅ Implemented |
-| Git status polling | ⬜ Not yet — on-demand only |
-| Unified `useBackgroundRefresh` singleton | ⬜ Not yet |
+| Git status polling (60s) | ✅ Implemented |
+| Unified `useBackgroundRefresh` singleton | ✅ Implemented — see [refresh-controller.md](../arch/refresh-controller.md) |
+| Per-project busy indicator + check cancellation | ✅ Implemented — see [refresh-controller.md](../arch/refresh-controller.md) |
 | Per-type configurable intervals | ⬜ Not yet |
 | Settings modal in titlebar | ⬜ Not yet |
 | Auto-refresh silent log mode | ✅ Implemented |
@@ -105,7 +110,10 @@ refreshSettings = {
 }
 ```
 
-A single `useBackgroundRefresh` module-singleton manages all three timers. When a setting changes, only the affected timer is cleared and restarted. Setting an interval to `0` disables that type.
+The `useBackgroundRefresh` module-singleton already manages the git and diff timers this way — a
+`watch` per interval clears and restarts only the affected timer, and `0` disables that type. What
+is still missing is a UI to edit these values (they currently come from `refreshStore` defaults)
+and bringing the usage poll under the same roof.
 
 A settings icon (gear) next to the Reload button in `AppHeader.vue` opens a `RefreshSettingsModal` with three numeric inputs and descriptions of what each type checks and how expensive it is.
 

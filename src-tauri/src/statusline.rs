@@ -43,7 +43,7 @@ pub struct HostApplyResult {
 /// Fields whose label color the user may override. Everything else keeps its locked-in,
 /// semantically-meaningful color (identity user/@/host, %, +/-).
 fn field_color_editable(key: &str) -> bool {
-    matches!(key, "cwd" | "model" | "session" | "git_branch")
+    matches!(key, "cwd" | "model" | "session" | "git_branch" | "cache_tokens")
 }
 
 fn ansi_for(name: &str) -> &'static str {
@@ -76,6 +76,9 @@ pub fn default_config() -> StatuslineConfig {
             f("model", true, "cyan"),
             f("context", true, "white"),
             f("rate_limits", true, "white"),
+            f("rate_reset", false, "grey"),
+            f("cache_pct", false, "white"),
+            f("cache_tokens", false, "cyan"),
             f("session", true, "grey"),
             f("git_branch", false, "magenta"),
         ],
@@ -112,12 +115,29 @@ round_pct() {
   awk -v p="$1" 'BEGIN{printf "%.0f", p}'
 }
 
+fmt_eta() {
+  epoch="$1"
+  [ -z "$epoch" ] || [ "$epoch" = "0" ] && return
+  now=$(date +%s)
+  diff=$(( epoch - now ))
+  [ "$diff" -le 0 ] && return
+  d=$(( diff / 86400 ))
+  h=$(( (diff % 86400) / 3600 ))
+  m=$(( (diff % 3600) / 60 ))
+  if [ "$d" -gt 0 ]; then printf '%dd%dh' "$d" "$h"; else printf '%dh%dm' "$h" "$m"; fi
+}
+
 rate_block() {
-  label="$1" used="$2"
+  label="$1" used="$2" reset="$3"
   [ "$used" = "-1" ] && return
   used_int=$(round_pct "$used")
   pct_color=$(color_for_pct "$used_int")
-  printf '%s%s%s' "$(colored "$COLOR_rate_limits" "$label")" "$(colored "$GREY" ":")" "$(colored "$pct_color" "${used_int}%")"
+  block="$(colored "$COLOR_rate_limits" "$label")$(colored "$GREY" ":")$(colored "$pct_color" "${used_int}%")"
+  if [ -n "$reset" ]; then
+    eta=$(fmt_eta "$reset")
+    [ -n "$eta" ] && block="${block}$(colored "$GREY" " ⟳")$(colored "$GREY" "$eta")"
+  fi
+  printf '%s' "$block"
 }
 "#;
 
@@ -150,7 +170,8 @@ printf '%s' "$input" > "$HOME/.claude/rate-limits-cache.json"
 
     s.push_str(
         r#"IFS=$'\x1f' read -r cwd model_name cost_usd duration_ms lines_added lines_removed \
-  ctx_input ctx_output ctx_size ctx_used_pct effort_level five_used seven_used git_branch <<< "$(echo "$input" | jq -r '[
+  ctx_input ctx_output ctx_size ctx_used_pct effort_level five_used seven_used git_branch five_reset seven_reset \
+  cache_read cache_creation cache_input <<< "$(echo "$input" | jq -r '[
     (.cwd // .workspace.current_dir // ""),
     (.model.display_name // ""),
     (.cost.total_cost_usd // 0),
@@ -164,7 +185,12 @@ printf '%s' "$input" > "$HOME/.claude/rate-limits-cache.json"
     (.effort.level // ""),
     (.rate_limits.five_hour.used_percentage // -1),
     (.rate_limits.seven_day.used_percentage // -1),
-    (.workspace.git_branch // .git.branch // "")
+    (.workspace.git_branch // .git.branch // ""),
+    (.rate_limits.five_hour.resets_at // 0),
+    (.rate_limits.seven_day.resets_at // 0),
+    (.context_window.current_usage.cache_read_input_tokens // 0),
+    (.context_window.current_usage.cache_creation_input_tokens // 0),
+    (.context_window.current_usage.input_tokens // 0)
   ] | join("")')"
 
 "#,
@@ -210,6 +236,14 @@ color_for_pct() {{
   else printf '%s' "$BOLD_GREEN"; fi
 }}
 
+# Inverse of color_for_pct: for metrics where HIGH is good (cache hit rate), not bad — reuses the
+# same threshold ladder against (100 - p) instead of duplicating the tier logic.
+color_for_pct_inv() {{
+  p="$1"
+  inv=$(awk -v p="$p" 'BEGIN{{printf "%.0f", 100 - p}}')
+  color_for_pct "$inv"
+}}
+
 "#,
         yellow = yellow,
         orange = orange,
@@ -217,6 +251,14 @@ color_for_pct() {{
     ));
 
     s.push_str("SEP=\"$(colored \"$GREY\" \" | \")\"\n\n");
+
+    // cache_pct and cache_tokens both need the same total — computed once here (SSoT) so either
+    // field can be toggled independently without depending on the other's match arm having run.
+    s.push_str(
+        r#"_cache_total=$(( ${cache_read%.*} + ${cache_creation%.*} + ${cache_input%.*} ))
+
+"#,
+    );
 
     // ---- group builders (only for enabled fields; each var is empty string if unused) ----
     for field in &config.fields {
@@ -256,8 +298,23 @@ fi
 
 "#,
             ),
-            "rate_limits" => s.push_str(
-                r#"five_block=$(rate_block "5h" "$five_used")
+            "rate_limits" => {
+                let reset_enabled = config.fields.iter().any(|f| f.key == "rate_reset" && f.enabled);
+                if reset_enabled {
+                    s.push_str(
+                        r#"five_block=$(rate_block "5h" "$five_used" "$five_reset")
+seven_block=$(rate_block "7d" "$seven_used" "$seven_reset")
+if [ -n "$five_block" ] && [ -n "$seven_block" ]; then
+  g_rate_limits="${five_block}  ${seven_block}"
+else
+  g_rate_limits="${five_block}${seven_block}"
+fi
+
+"#,
+                    );
+                } else {
+                    s.push_str(
+                        r#"five_block=$(rate_block "5h" "$five_used")
 seven_block=$(rate_block "7d" "$seven_used")
 if [ -n "$five_block" ] && [ -n "$seven_block" ]; then
   g_rate_limits="${five_block}  ${seven_block}"
@@ -266,7 +323,9 @@ else
 fi
 
 "#,
-            ),
+                    );
+                }
+            }
             "session" => s.push_str(
                 r#"g_session="$(colored "$COLOR_session" "$(fmt_dur "$duration_ms")")"
 if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
@@ -281,6 +340,21 @@ g_session="$g_session $(colored "$CYAN" "$cost_fmt")"
             "git_branch" => s.push_str(
                 r#"g_git_branch=""
 [ -n "$git_branch" ] && g_git_branch="$(colored "$COLOR_git_branch" "$git_branch")"
+
+"#,
+            ),
+            "cache_pct" => s.push_str(
+                r#"g_cache_pct=""
+if [ "$_cache_total" -gt 0 ]; then
+  _cache_pct=$(awk -v r="$cache_read" -v t="$_cache_total" 'BEGIN{printf "%.0f", r/t*100}')
+  g_cache_pct="$(colored "$WHITE" "cache") $(colored "$(color_for_pct_inv "$_cache_pct")" "${_cache_pct}%")"
+fi
+
+"#,
+            ),
+            "cache_tokens" => s.push_str(
+                r#"g_cache_tokens=""
+[ "$_cache_total" -gt 0 ] && g_cache_tokens="$(colored "$COLOR_cache_tokens" "$(fmt_k "$cache_read")")$(colored "$GREY" "/")$(colored "$COLOR_cache_tokens" "$(fmt_k "$_cache_total")")"
 
 "#,
             ),

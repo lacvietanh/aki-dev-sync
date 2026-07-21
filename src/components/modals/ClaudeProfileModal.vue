@@ -279,4 +279,11 @@ async function applyMode(mode) {
   background: rgba(217, 119, 87, 0.25);
   color: #fba97a;
 }
+
+/* Narrow mode (SSoT 700px, main.css) — this file's scoped padding outranks the global
+   narrow rule, so the trim has to be repeated here. */
+@media (max-width: 700px) {
+  .modal-body   { padding: 10px 10px 8px; }
+  .modal-footer { padding: 8px 10px 10px; }
+}
 </style>

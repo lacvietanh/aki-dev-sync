@@ -107,8 +107,8 @@
           <i class="fa-solid fa-note-sticky" :style="noteContent ? 'color: #f59e0b;' : ''"></i>
         </button>
         <div class="btn-group-refresh">
-          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="isReloading ? 'Refreshing all — git, remote diff, usage…' : 'Refresh all — git, remote diff, usage'" :disabled="anySyncing || isReloading">
-            <i class="fa-solid" :class="isReloading ? 'fa-rotate-right fa-spin' : 'fa-rotate-right'"></i>
+          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="(anyRefreshing || isReloading) ? 'Refreshing all — git, remote diff, usage…' : 'Refresh all — git, remote diff, usage'" :disabled="anySyncing || anyRefreshing || isReloading">
+            <i class="fa-solid fa-rotate-right" :class="{ 'fa-spin': anyRefreshing || isReloading }"></i>
           </button>
           <button class="btn-tech btn-tech-secondary btn-refresh-settings" @click="showRefreshSettings = true" title="Background Refresh Settings" :disabled="isReloading">
             <i class="fa-solid fa-sliders"></i>
@@ -193,8 +193,8 @@ const {
   stickTopLeft,
   centerPrimary,
 } = useAppWindow();
-const { sshHosts, openSshConfig } = useSsh();
-const { loadData, anySyncing, isReloading, Toast } = useProjects();
+const { openSshConfig } = useSsh();
+const { refreshAllProjects, anySyncing, anyRefreshing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
 
 const cleanVer = (v) => v.replace(/^v/, '').trim();
@@ -304,8 +304,15 @@ async function installAkiClaudeDoc() {
   }
 }
 
+// Refreshes every project's derived status (git, remote diff, stack) plus the usage monitors —
+// exactly what the tooltip promises, and exactly the same unit of work a single project's own
+// Refresh button runs. It deliberately does NOT call loadData(): that re-reads projects.json, SSH
+// hosts and IDE availability from disk, which is an app-load concern, not a refresh. Routing this
+// button through loadData was why "everything dims" came from loadData's global isReloading flag
+// instead of from the projects themselves — making the global and per-project buttons two
+// unrelated mechanisms that only looked like one feature.
 function handleRefresh() {
-  loadData(sshHosts, true);
+  refreshAllProjects();
 }
 
 function setNarrowWidthSafe() {

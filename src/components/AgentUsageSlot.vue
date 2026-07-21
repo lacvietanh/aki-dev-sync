@@ -41,10 +41,10 @@
         </template>
         <template v-else>
           <i
-            class="fa-solid fa-power-off src-power remote-power"
-            :class="remoteModeEnabled ? 'is-on' : 'is-off'"
-            @click.stop="toggleRemoteMode"
-            :title="remoteModeEnabled ? 'Remote Mode ON — click to disable all SSH/remote operations' : 'Remote Mode OFF — click to enable'"
+            class="fa-solid fa-power-off src-power"
+            :class="ccRemote.enabled ? 'is-on' : 'is-off'"
+            @click.stop="ccRemote.toggle()"
+            :title="ccRemote.enabled ? 'Claude Code remote monitoring ON — click to turn off' : 'Claude Code remote monitoring OFF — click to turn on'"
           ></i>
           <select v-model="selectedSshHost" class="host-select-mini" :disabled="!ccRemote.enabled" title="Remote host to monitor">
             <option value="" disabled>Select Host</option>
@@ -81,7 +81,6 @@
 import { ref, computed, watch } from 'vue';
 import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
-import { remoteModeEnabled, toggleRemoteMode } from '../store/remoteModeStore';
 import { slotViews } from '../store/usageViewStore';
 
 // Each slot owns its own display selection (which source it shows) and email-visibility
@@ -203,34 +202,6 @@ const activeSource = computed(() => {
   background: rgba(96, 165, 250, 0.16);
   color: #e5e7eb;
   border-color: rgba(96, 165, 250, 0.35);
-}
-
-.src-power {
-  font-size: 9px;
-  padding: 1px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-.src-power:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.src-power.is-on {
-  color: #22c55e;
-}
-.src-power.is-off {
-  color: #6b7280;
-}
-.src-power.is-locked {
-  color: #4b5563;
-  cursor: not-allowed;
-}
-.src-power.is-locked:hover {
-  background: transparent;
-}
-.remote-power {
-  font-size: 10px;
-  margin-right: 2px;
 }
 
 .tab:disabled,

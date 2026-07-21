@@ -71,7 +71,8 @@ nên con số này đã bao gồm mọi hoạt động, không riêng CC.
 Cùng một script POSIX chạy được cả hai đường vì nó chỉ đụng `$HOME`.
 
 Ở tầng UI, "Claude Code (local)" và "Claude Code (remote)" là hai instance độc lập của
-`useAgentUsage()`. Nguồn remote bị gate bởi công tắc Remote Mode — xem `docs/feat/remote-mode.md`.
+`useAgentUsage()`. Nguồn remote có công tắc riêng (`aki-src-ccremote-enabled`, độc lập với sync
+check) — xem `docs/feat/sync-check-and-usage-switches.md`.
 
 ### Mọi SSH theo timer đi qua `polling_ssh()`
 

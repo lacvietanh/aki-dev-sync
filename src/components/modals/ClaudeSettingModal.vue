@@ -11,31 +11,33 @@
 
             <div class="section-label">Fields <span class="hint">(toggle, reorder, recolor)</span></div>
             <div class="field-list">
-              <div v-for="(field, idx) in cfg.fields" :key="field.key" class="field-row" :class="{ disabled: !field.enabled }">
+              <div v-for="(field, idx) in cfg.fields" :key="field.key" class="field-row" :class="{ disabled: !field.enabled, 'field-row-sub': isSubField(field.key) }">
                 <label class="field-toggle" :title="CATALOG[field.key]?.desc">
                   <input type="checkbox" v-model="field.enabled" />
                   <span class="field-name">{{ CATALOG[field.key]?.label || field.key }}</span>
                 </label>
-                <select v-if="isColorEditable(field.key)" v-model="field.color" class="color-select" title="Label color">
-                  <option v-for="c in COLORS" :key="c.key" :value="c.key">{{ c.label }}</option>
-                </select>
-                <span v-else class="color-locked" title="This field's color carries meaning (identity / % / +/-) and isn't user-editable">locked</span>
-                <div class="reorder-btns">
-                  <button class="btn-reorder" :disabled="idx === 0" @click="move(idx, -1)" title="Move up">
-                    <i class="fa-solid fa-chevron-up"></i>
-                  </button>
-                  <button class="btn-reorder" :disabled="idx === cfg.fields.length - 1" @click="move(idx, 1)" title="Move down">
-                    <i class="fa-solid fa-chevron-down"></i>
-                  </button>
-                </div>
+                <template v-if="!isSubField(field.key)">
+                  <select v-if="isColorEditable(field.key)" v-model="field.color" class="color-select" title="Label color">
+                    <option v-for="c in COLORS" :key="c.key" :value="c.key">{{ c.label }}</option>
+                  </select>
+                  <span v-else class="color-locked" title="This field's color carries meaning (identity / % / +/-) and isn't user-editable">locked</span>
+                  <div class="reorder-btns">
+                    <button class="btn-reorder" :disabled="idx === 0" @click="move(idx, -1)" title="Move up">
+                      <i class="fa-solid fa-chevron-up"></i>
+                    </button>
+                    <button class="btn-reorder" :disabled="idx === cfg.fields.length - 1" @click="move(idx, 1)" title="Move down">
+                      <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                  </div>
+                </template>
               </div>
             </div>
 
             <div class="section-label">Color thresholds <span class="hint">(% at which each tier kicks in)</span></div>
             <div class="threshold-row">
-              <label class="threshold-field"><span class="dot dot-yellow"></span>Yellow ≥ <input type="number" min="0" max="100" v-model.number="cfg.thresholds.yellow" /></label>
-              <label class="threshold-field"><span class="dot dot-orange"></span>Orange ≥ <input type="number" min="0" max="100" v-model.number="cfg.thresholds.orange" /></label>
-              <label class="threshold-field"><span class="dot dot-red"></span>Red ≥ <input type="number" min="0" max="100" v-model.number="cfg.thresholds.red" /></label>
+              <label class="threshold-field" title="Yellow tier starts at this %"><span class="dot dot-yellow"></span>≥ <input type="number" min="0" max="100" v-model.number="cfg.thresholds.yellow" /></label>
+              <label class="threshold-field" title="Orange tier starts at this %"><span class="dot dot-orange"></span>≥ <input type="number" min="0" max="100" v-model.number="cfg.thresholds.orange" /></label>
+              <label class="threshold-field" title="Red tier starts at this %"><span class="dot dot-red"></span>≥ <input type="number" min="0" max="100" v-model.number="cfg.thresholds.red" /></label>
             </div>
 
             <div class="section-label">Apply to <span class="hint">(local + configured remote hosts)</span></div>
@@ -102,6 +104,9 @@ const CATALOG = {
   model:       { label: 'Model + effort',       desc: 'Model name (e.g. "sonnet 5") plus effort level' },
   context:     { label: 'Context window',       desc: 'ctx NN% used/max, auto-colored by threshold' },
   rate_limits: { label: 'Rate limits (5h/7d)',  desc: 'Pro/Max usage windows, auto-colored by threshold' },
+  rate_reset:  { label: 'Reset ETA',            desc: 'Appends time-until-reset to the rate limits field (e.g. ⟳1h12m) — not a standalone field' },
+  cache_pct:   { label: 'Cache hit %',          desc: 'Percent of the most recent request served from cache (green = high hit rate)' },
+  cache_tokens:{ label: 'Cache tokens (read/total)', desc: 'Tokens read from cache vs. total input for the most recent request' },
   session:     { label: 'Session (dur/lines/$)',desc: 'Duration, lines +/-, and cost for this session' },
   git_branch:  { label: 'Git branch',           desc: 'Experimental — depends on Claude Code version exposing it' },
 };
@@ -117,8 +122,14 @@ const COLORS = [
   { key: 'magenta', label: 'Magenta', hex: '#e879f9' },
 ];
 const HEX = Object.fromEntries(COLORS.map(c => [c.key, c.hex]));
-const COLOR_EDITABLE = new Set(['cwd', 'model', 'session', 'git_branch']);
+const COLOR_EDITABLE = new Set(['cwd', 'model', 'session', 'git_branch', 'cache_tokens']);
 function isColorEditable(key) { return COLOR_EDITABLE.has(key); }
+
+// Fields that don't render on their own — they append onto another field's group instead
+// (e.g. rate_reset attaches its ETA onto rate_limits). Rendered as an indented sub-row with
+// no reorder/color controls of their own.
+const SUB_FIELDS = new Set(['rate_reset']);
+function isSubField(key) { return SUB_FIELDS.has(key); }
 
 function defaultLocalConfig() {
   return {
@@ -128,6 +139,9 @@ function defaultLocalConfig() {
       { key: 'model',       enabled: true,  color: 'cyan' },
       { key: 'context',     enabled: true,  color: 'white' },
       { key: 'rate_limits', enabled: true,  color: 'white' },
+      { key: 'rate_reset',  enabled: false, color: 'grey' },
+      { key: 'cache_pct',   enabled: false, color: 'white' },
+      { key: 'cache_tokens',enabled: false, color: 'cyan' },
       { key: 'session',     enabled: true,  color: 'grey' },
       { key: 'git_branch',  enabled: false, color: 'magenta' },
     ],
@@ -136,11 +150,19 @@ function defaultLocalConfig() {
 }
 
 function loadCfg() {
+  let saved = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && Array.isArray(saved.fields) && saved.thresholds) return saved;
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (raw && Array.isArray(raw.fields) && raw.thresholds) saved = raw;
   } catch { /* fall through to default */ }
-  return defaultLocalConfig();
+  const def = defaultLocalConfig();
+  if (!saved) return def;
+  // Field keys added in a later version aren't in an already-saved config — append them with
+  // their default state instead of leaving the user stuck on the old catalog. Order and
+  // enabled/color of fields the user already has are left untouched.
+  const known = new Set(saved.fields.map(f => f.key));
+  saved.fields.push(...def.fields.filter(f => !known.has(f.key)));
+  return saved;
 }
 
 const cfg = reactive(loadCfg());
@@ -239,9 +261,10 @@ async function apply() {
 const SAMPLE = {
   user: 'guest', host: 'roscy', cwd: 'Aki-Dev-Sync', model: 'sonnet 5', effort: 'med',
   ctxPct: 72, ctxUsed: '134.4k', ctxMax: '1M',
-  rate5h: 42, rate7d: 92,
+  rate5h: 42, rate7d: 92, rate5hEta: '1h12m', rate7dEta: '2d3h',
   duration: '12m', linesAdded: 122, linesRemoved: 52, cost: '$1.23',
   gitBranch: 'master',
+  cachePct: 78, cacheRead: '12.4k', cacheTotal: '45.2k',
 };
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -267,9 +290,18 @@ function renderField(key) {
     case 'context':
       return span('ctx', '#e2e8f0') + ' ' + span(`${SAMPLE.ctxPct}%`, tierHex(SAMPLE.ctxPct)) + ' ' +
         span(SAMPLE.ctxUsed, '#22d3ee') + span('/', GREY_HEX) + span(SAMPLE.ctxMax, '#22d3ee');
-    case 'rate_limits':
-      return span('5h', '#e2e8f0') + span(':', GREY_HEX) + span(`${SAMPLE.rate5h}%`, tierHex(SAMPLE.rate5h)) +
-        '  ' + span('7d', '#e2e8f0') + span(':', GREY_HEX) + span(`${SAMPLE.rate7d}%`, tierHex(SAMPLE.rate7d));
+    case 'rate_limits': {
+      const resetOn = cfg.fields.find(f => f.key === 'rate_reset')?.enabled;
+      const etaSpan = eta => resetOn ? span(' ⟳', GREY_HEX) + span(eta, GREY_HEX) : '';
+      return span('5h', '#e2e8f0') + span(':', GREY_HEX) + span(`${SAMPLE.rate5h}%`, tierHex(SAMPLE.rate5h)) + etaSpan(SAMPLE.rate5hEta) +
+        '  ' + span('7d', '#e2e8f0') + span(':', GREY_HEX) + span(`${SAMPLE.rate7d}%`, tierHex(SAMPLE.rate7d)) + etaSpan(SAMPLE.rate7dEta);
+    }
+    case 'rate_reset':
+      return '';
+    case 'cache_pct':
+      return span('cache', '#e2e8f0') + ' ' + span(`${SAMPLE.cachePct}%`, tierHex(100 - SAMPLE.cachePct));
+    case 'cache_tokens':
+      return span(SAMPLE.cacheRead, color('cache_tokens', '#22d3ee')) + span('/', GREY_HEX) + span(SAMPLE.cacheTotal, color('cache_tokens', '#22d3ee'));
     case 'session': {
       let out = span(SAMPLE.duration, color('session', GREY_HEX));
       if (SAMPLE.linesAdded || SAMPLE.linesRemoved) {
@@ -348,6 +380,14 @@ const previewHtml = computed(() => {
 }
 
 .field-row.disabled { opacity: 0.5; }
+
+.field-row-sub {
+  margin-left: 18px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  background: transparent;
+  border-style: dashed;
+}
 
 .field-toggle {
   display: flex;
@@ -530,4 +570,11 @@ const previewHtml = computed(() => {
 }
 
 .btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
+
+/* Narrow mode (SSoT 700px, main.css) — this file's scoped padding outranks the global
+   narrow rule, so the trim has to be repeated here. */
+@media (max-width: 700px) {
+  .modal-body   { padding: 10px 10px 8px; }
+  .modal-footer { padding: 8px 10px 10px; }
+}
 </style>

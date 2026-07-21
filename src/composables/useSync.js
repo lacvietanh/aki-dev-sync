@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import Swal from 'sweetalert2'
 import { projectRuntime, Toast } from '../store/projectStore'
-import { remoteModeEnabled } from '../store/remoteModeStore'
+import { syncCheckEnabled } from '../store/syncCheckStore'
 import { useLogs } from './useLogs'
 import { saveProjectsList } from './useProjectConfig'
 import { fetchGitStatus } from './useGit'
@@ -37,8 +37,8 @@ function basename(relPath) {
 }
 
 export async function startSync(project, direction, specificPaths = []) {
-  if (!remoteModeEnabled.value) {
-    Toast.fire({ icon: 'warning', title: 'Remote Mode is off' })
+  if (!syncCheckEnabled.value) {
+    Toast.fire({ icon: 'warning', title: 'Sync check is off' })
     return
   }
   if (projectRuntime.value[project.id]?.syncing) {

@@ -1,10 +1,9 @@
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import Swal from 'sweetalert2'
-import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp } from '../store/projectStore'
+import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp, bumpEpoch } from '../store/projectStore'
 import { useLogs } from './useLogs'
-import { fetchGitStatus } from './useGit'
-import { refreshAll, startBackgroundRefresh } from './useBackgroundRefresh'
+import { refreshAllProjects, refreshProject, startBackgroundRefresh } from './useBackgroundRefresh'
 
 export const showConfigModal = ref(false)
 export const editingProject = ref(null)
@@ -71,16 +70,22 @@ export async function loadData(sshHosts, showToast = false) {
     const migrated = migratePushOnlyPaths(loaded)
 
     for (const p of loaded) {
-      const stack = await invoke("check_project_stack", { localPath: p.local_path }).catch(() => null)
-      // Preserve syncing flag if a sync is in progress during reload
+      const prev = projectRuntime.value[p.id]
       projectRuntime.value[p.id] = {
         git_status: "...",
         git_log: "",
         remote_url: "",
-        syncing: projectRuntime.value[p.id]?.syncing ?? false,
+        // Preserve syncing flag if a sync is in progress during reload
+        syncing: prev?.syncing ?? false,
         hasPendingPush: null,
         hasPendingPull: null,
-        stack_info: stack,
+        // The project list was just re-read from disk, so any status check still in flight
+        // describes a project definition we no longer hold — advance the generation so those
+        // results are discarded instead of landing on top of the fresh state, and start this
+        // generation idle. (Advancing, not resetting to 0: epoch must stay monotonic per project
+        // or an in-flight check could coincidentally match again. See bumpEpoch in projectStore.)
+        epoch: (prev?.epoch ?? 0) + 1,
+        refreshCount: 0,
       }
       if (!projectLogs.value[p.id]) projectLogs.value[p.id] = []
     }
@@ -104,9 +109,11 @@ export async function loadData(sshHosts, showToast = false) {
 
     appendGlobalLog("LOAD", `Loaded ${loaded.length} projects successfully.`)
 
-    // Trigger all 3 refresh types immediately, then start background timers
-    refreshAll()
+    // Start the background cycles, then run one full pass immediately — this is also what
+    // populates stack_info (DEV/BUILD commands), which used to be fetched here in a sequential
+    // per-project await loop before it became one of the checks refreshProject runs in parallel.
     startBackgroundRefresh()
+    refreshAllProjects()
 
     if (showToast) Toast.fire({ icon: 'success', title: 'Data Reloaded!' })
   } catch (err) {
@@ -158,12 +165,29 @@ export async function saveConfig() {
 
   const index = projects.value.findIndex(p => p.id === editingProject.value.id)
   const isNew = index === -1
+  const prevProject = !isNew ? projects.value[index] : null
+  const identityChanged = prevProject && (
+    prevProject.remote_host !== editingProject.value.remote_host ||
+    prevProject.local_path !== editingProject.value.local_path
+  )
 
   try {
-    const stack = await invoke("check_project_stack", { localPath: editingProject.value.local_path }).catch(() => null)
     if (!isNew) {
       projects.value[index] = { ...editingProject.value }
-      projectRuntime.value[editingProject.value.id].stack_info = stack
+      if (identityChanged) {
+        // Host or local path changed — any status check still in flight describes the OLD
+        // identity and must not land here (see bumpEpoch in projectStore.js). This is the
+        // "cancel the check, not a real rsync" boundary: bumping the epoch discards stale
+        // results and clears the busy indicator immediately; it never touches a push/pull in
+        // progress. The push/pull state is blanked to unknown for the same reason — it was
+        // measured against the old host.
+        bumpEpoch(editingProject.value.id)
+        projectRuntime.value[editingProject.value.id] = {
+          ...projectRuntime.value[editingProject.value.id],
+          hasPendingPush: null,
+          hasPendingPull: null,
+        }
+      }
       appendGlobalLog("CONFIG", `User updated config for project "${editingProject.value.name}".`)
     } else {
       projectRuntime.value[editingProject.value.id] = {
@@ -171,15 +195,18 @@ export async function saveConfig() {
         git_log: "",
         remote_url: "",
         syncing: false,
-        stack_info: stack,
+        epoch: 0,
+        refreshCount: 0,
       }
       projects.value.push({ ...editingProject.value })
       appendGlobalLog("CONFIG", `User created new project "${editingProject.value.name}".`)
     }
 
     await saveProjectsList()
+    // One refresh covers git status, remote diff and stack_info (DEV/BUILD commands) — the last
+    // of which used to be fetched inline here with its own `check_project_stack` call.
     const savedProject = projects.value.find(p => p.id === editingProject.value.id)
-    if (savedProject) fetchGitStatus(savedProject.id)
+    if (savedProject) refreshProject(savedProject)
     Toast.fire({ icon: 'success', title: isNew ? 'Project created' : 'Config saved' })
     closeConfig()
   } catch (err) {
@@ -247,6 +274,10 @@ export function confirmRemove() {
       const id = editingProject.value.id
       const projectName = editingProject.value.name
       projects.value = projects.value.filter(p => p.id !== id)
+      // Dropping the runtime entry is also what cancels any status check still in flight for this
+      // project: currentEpoch() then reports 0, which can never equal the >= 1 epoch that check
+      // captured, so its result is discarded instead of resurrecting an entry for a project that
+      // no longer exists. Do not "optimize" this into keeping the entry around.
       delete projectRuntime.value[id]
       if (activeLogProjectId.value === id) activeLogProjectId.value = null
       saveProjectsList()

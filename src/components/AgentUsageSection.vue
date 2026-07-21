@@ -29,10 +29,19 @@ import { ref, computed, reactive, watch } from 'vue';
 import AgentUsageSlot from './AgentUsageSlot.vue';
 import { useSsh } from '../composables/useSsh';
 import { useAgentUsage } from '../composables/useAgentUsage';
-import { remoteModeEnabled } from '../store/remoteModeStore';
 import { claudeMode } from '../store/claudeModeStore';
 
 const { selectedSshHost } = useSsh();
+
+// One-time seed: the ccRemote monitor used to piggyback on the single `aki-remote-mode-enabled`
+// flag. Now it has its own key — copy the old value across on first run after the split so a user
+// who had remote mode OFF doesn't get the monitor silently re-enabled.
+for (const [newKey, legacy] of [['aki-src-ccremote-enabled', 'aki-remote-mode-enabled']]) {
+  if (localStorage.getItem(newKey) === null) {
+    const old = localStorage.getItem(legacy)
+    if (old !== null) localStorage.setItem(newKey, old)
+  }
+}
 
 // Three independent, toggleable usage sources shared by both display slots. Polling is
 // driven purely by each source's own `enabled` flag (persisted), not by which slot (if
@@ -73,13 +82,14 @@ watch(claudeMode, (mode) => {
   if (mode === 'proxy') ccLocal.enabled = false;
 });
 
-// Remote has no switch of its own — it is entirely governed by the single global Remote
-// Mode switch in AppHeader (`remoteModeStore`), same as project pull/push/select/open and
-// the background remote-diff checks. `enabled` here just mirrors that global flag so
-// AgentUsage/AgentUsageSlot can read it the same way they read the other two sources'
-// `enabled` (cached-badge / "Monitoring off" behavior, disabling the host picker, etc.).
-const ccRemoteHostRef = computed(() => (remoteModeEnabled.value ? selectedSshHost.value : null));
-const ccRemote = reactive({ enabled: remoteModeEnabled, ...useAgentUsage('claudecode', ccRemoteHostRef) });
+// Remote costs an SSH round trip, so it gets its own switch like the two local sources
+// (the power icon in the REMOTE tab) — independent of whether project sync/diff is on.
+const ccRemote = useToggleableSource(
+  'claudecode',
+  () => selectedSshHost.value,
+  'aki-src-ccremote-enabled',
+  true
+);
 </script>
 
 <style scoped>

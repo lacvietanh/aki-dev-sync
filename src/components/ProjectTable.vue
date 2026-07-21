@@ -26,7 +26,9 @@
         <div class="grid-header-cell col-sync">
           <span class="th-with-ring">
             SYNC
-            <RefreshRing :interval-s="remoteModeEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
+            <RefreshRing :interval-s="syncCheckEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
+            <i class="fa-solid fa-power-off src-power" :class="syncCheckEnabled ? 'is-on' : 'is-off'" @click="toggleSyncCheck"
+               :title="syncCheckEnabled ? 'Sync check ON — click to stop all remote diff/push/pull' : 'Sync check OFF — click to enable'"></i>
           </span>
         </div>
       </div>
@@ -181,7 +183,7 @@
                     </div>
 
                     <!-- REMOTE -->
-                    <div v-if="p.remote_host && p.remote_path && remoteModeEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
+                    <div v-if="p.remote_host && p.remote_path && syncCheckEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
                       <div class="popup-section-label">
                         <span>☁️ REMOTE (SSH)</span>
                         <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
@@ -200,13 +202,22 @@
                       <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
                       </div>
+                      <div class="popup-item"
+                           :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing }"
+                           @click="!projectRuntime[p.id]?.syncing && openSelectDialog(p)"
+                           title="Pick specific files/folders (native file picker) and push only those to Remote — bypasses this project's exclude list, unaffected by the DRY toggle">
+                        <i class="fa-solid fa-upload" style="width:14px; color: #38bdf8;"></i> Upload (select files)
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <button class="btn-tech btn-tech-push-special" @click="openSelectDialog(p)" :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" :title="!remoteModeEnabled ? 'Remote Mode is off' : 'Pick specific files/folders (native file picker) and push only those to Remote — bypasses this project\'s exclude list, unaffected by the DRY toggle'">
-                <i class="fa-solid fa-upload"></i>
+              <button class="btn-tech btn-tech-secondary"
+                      @click="refreshProject(p)"
+                      :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
+                      :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only — git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
+                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isRefreshing(p.id) }"></i>
               </button>
             </div>
           </div>
@@ -214,7 +225,7 @@
           <!-- Cell 6: Sync (PUSH/DRY/PULL, LOG, config) -->
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
-              <fieldset :disabled="projectRuntime[p.id]?.syncing || !remoteModeEnabled" class="remote-actions-fieldset" :title="!remoteModeEnabled ? 'Remote Mode is off' : ''">
+              <fieldset :disabled="projectRuntime[p.id]?.syncing || !syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
                 <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                   <div class="dry-group-left">
                     <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
@@ -226,7 +237,7 @@
                                 'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
                               }"
                               @click="startSync(p, 'push')"
-                              :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
+                              :title="!syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
                         <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text u-narrow-hide">PUSH</span>
                       </button>
                     </CountBadgeWrap>
@@ -250,7 +261,7 @@
                                 'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
                               }"
                               @click="startSync(p, 'pull')"
-                              :title="!remoteModeEnabled ? 'Remote Mode is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
+                              :title="!syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
                         <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text u-narrow-hide">PULL</span>
                       </button>
                     </CountBadgeWrap>
@@ -280,10 +291,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
-import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
+import { gitRefreshKey, diffRefreshKey, refreshProject } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
-import { Toast, ideAvailability, iconTimestamp } from '../store/projectStore';
-import { remoteModeEnabled } from '../store/remoteModeStore';
+import { Toast, ideAvailability, iconTimestamp, isRefreshing } from '../store/projectStore';
+import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
@@ -410,8 +421,7 @@ async function openIdeLocal(ideName, path) {
 }
 
 // Shared invoke/Toast wrapper for the popup's run-commands row — BUILD and DEV differ only by
-// which Tauri command they call and the success wording (DEV also opens a browser once the dev
-// server is up; that decision lives entirely in Rust, see run_project_dev).
+// which Tauri command they call and the success wording.
 async function invokeProjectRun(command, path, cmd, successTitle) {
   try {
     await invoke(command, { localPath: path, cmd });
@@ -427,7 +437,7 @@ async function runProjectCommand(path, cmd) {
 }
 
 async function runProjectDev(path, cmd) {
-  return invokeProjectRun('run_project_dev', path, cmd, 'Dev server starting in Terminal — browser will open when ready.');
+  return invokeProjectRun('run_project_dev', path, cmd, 'Command started in Terminal!');
 }
 
 // (host, path) -> absolute path. The remote $HOME never changes within a session, so a
