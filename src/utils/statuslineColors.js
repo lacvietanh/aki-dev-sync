@@ -2,7 +2,7 @@
 // Consumed by ClaudeSettingModal.vue (the color picker for each statusline field) and by
 // AppHeader.vue (the dropdown menu, which paints its own "Statusline Customizer" label with
 // this exact palette so the row demonstrates the feature instead of describing it in words).
-// Keep this the only place these hex values are written — anything else should import from here.
+// Keep this the only place these hex values are written - anything else should import from here.
 export const STATUSLINE_COLORS = [
   { key: 'white',   label: 'White',   hex: '#e2e8f0' },
   { key: 'cyan',    label: 'Cyan',    hex: '#22d3ee' },

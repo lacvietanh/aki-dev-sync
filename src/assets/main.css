@@ -47,7 +47,7 @@ body {
   user-select: text;
 }
 
-/* Prevent text-selection on interactive elements — buttons everywhere in the app. The body
+/* Prevent text-selection on interactive elements - buttons everywhere in the app. The body
    default stays user-select: text so form inputs and console output remain selectable. */
 button { user-select: none; -webkit-user-select: none; }
 
@@ -87,7 +87,7 @@ button { user-select: none; -webkit-user-select: none; }
   color: var(--accent-red);
 }
 
-/* Narrow-mode utilities (SSoT: 700px is the single narrow breakpoint for the whole app —
+/* Narrow-mode utilities (SSoT: 700px is the single narrow breakpoint for the whole app  - 
    see docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so they work
    from inside any component's <style scoped>. */
 @media (max-width: 700px) {
@@ -95,7 +95,7 @@ button { user-select: none; -webkit-user-select: none; }
     display: none !important;
   }
 
-  /* Pin/minimize/close were overflowing the titlebar at narrow widths — shrink a little, not
+  /* Pin/minimize/close were overflowing the titlebar at narrow widths - shrink a little, not
      to icon-only, just enough to fit. */
   .titlebar-button {
     width: 19px;
@@ -104,7 +104,7 @@ button { user-select: none; -webkit-user-select: none; }
     font-size: 11px;
   }
 
-  /* Modal chrome eats a large share of a narrow window — trim the padding, keep the structure. */
+  /* Modal chrome eats a large share of a narrow window - trim the padding, keep the structure. */
   .modal-overlay { padding: 8px; }
   .modal-header  { padding: 8px 10px; }
   .modal-body    { padding: 10px; }
@@ -144,7 +144,7 @@ button { user-select: none; -webkit-user-select: none; }
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
 
-/* Collapsed height — 55px (the ~40%-tighter pass) turned out too cramped once tested live;
+/* Collapsed height - 55px (the ~40%-tighter pass) turned out too cramped once tested live;
    restored to roughly double that per follow-up feedback. */
 .dashboard-bottom.is-collapsed {
   height: 110px;
@@ -887,7 +887,7 @@ input:checked+.slider:before {
 }
 
 /* Power-toggle icon shared by every toggleable usage/sync source (AgentUsageSlot's per-agent
-   tabs, ccRemote's REMOTE-tab toggle, ProjectTable's SYNC column switch) — global so it works
+   tabs, ccRemote's REMOTE-tab toggle, ProjectTable's SYNC column switch) - global so it works
    the same wherever a source needs its own on/off control. */
 .src-power {
   font-size: 12px;

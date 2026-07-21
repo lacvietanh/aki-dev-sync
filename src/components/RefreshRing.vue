@@ -44,7 +44,7 @@ defineProps({
   height: calc(100% + 8px);
 }
 /* Paused (interval 0 / source off): stay in the flex flow at the same size so layout never
-   jumps — just dim the static track instead of unmounting the element. */
+   jumps - just dim the static track instead of unmounting the element. */
 .refresh-ring--off {
   opacity: 0.35;
 }

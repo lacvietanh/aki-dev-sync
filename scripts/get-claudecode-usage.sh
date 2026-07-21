@@ -35,7 +35,7 @@ except Exception as e:
     print('0 pct=-1 err={}'.format(e))
 " 2>/dev/null)
 
-    # RESETS_AT now has format "TIMESTAMP pct=N" — split it
+    # RESETS_AT now has format "TIMESTAMP pct=N" - split it
     RESETS_AT_VAL=$(printf '%s' "$RESETS_AT" | awk '{print $1}')
     RESETS_AT_PCT=$(printf '%s' "$RESETS_AT" | awk '{print $2}')
     _log "cache: five_hour.resets_at=$RESETS_AT_VAL $RESETS_AT_PCT now=$NOW"
@@ -58,7 +58,7 @@ except Exception as e:
 
     # ── 5. Auth info ──────────────────────────────────────────────────────
     # Fetched before subscription-metadata below because newer Claude Code versions no
-    # longer keep `.credentials.json` on disk (moved to OS keychain) — `claude auth status`
+    # longer keep `.credentials.json` on disk (moved to OS keychain) - `claude auth status`
     # is the one source that still works either way, and it also carries subscriptionType.
     AUTH_CACHE="$HOME/.claude/auth-cache.json"
     AUTH_REFRESH_AGE_S=300
@@ -73,18 +73,18 @@ except Exception as e:
     # AKI_FORCE_AUTH_REFRESH=1 is set by the Rust caller exactly once per host per app launch
     # (see cc_auth_force_needed in agent_usage.rs). Without this, a CC account switch made
     # while the cache is still <5min old would keep showing the old email even right after
-    # reopening the app — the TTL alone can't tell "still valid" apart from "just went stale
+    # reopening the app - the TTL alone can't tell "still valid" apart from "just went stale
     # because the user switched accounts". Forcing one real check on app open closes that gap
     # without adding any extra polling for the (rare) mid-session switch case.
     if [ "$AUTH_CACHE_EXISTS" = "yes" ] && [ "$AUTH_CACHE_AGE" -lt "$AUTH_REFRESH_AGE_S" ] && [ "${AKI_FORCE_AUTH_REFRESH:-0}" != "1" ]; then
         AUTH_INFO=$(python3 -c "import json,sys; d=json.load(open('$AUTH_CACHE')); print(json.dumps(d))" 2>/dev/null || echo '{}')
         _log "auth: source=cache (fresh, age=${AUTH_CACHE_AGE}s)"
     else
-        # Re-run whenever the cache is missing OR older than AUTH_REFRESH_AGE_S — NOT only on
+        # Re-run whenever the cache is missing OR older than AUTH_REFRESH_AGE_S - NOT only on
         # the very first run. Previously this branch only fired when the file didn't exist at
         # all, so once written, auth-cache.json echoed the SAME email forever even after the
         # user logged into a different CC account on this host (bug reported in
-        # docs/research/claudecode-usage-FINAL.md: "email hiển thị sai khi đổi tài khoản" — usage
+        # docs/research/claudecode-usage-FINAL.md: "email hiển thị sai khi đổi tài khoản" - usage
         # % updated correctly but the header email stayed stuck on the old account). Bounded to
         # once per AUTH_REFRESH_AGE_S so a normal 30s poll interval doesn't spawn `claude auth
         # status` every tick.
@@ -95,12 +95,12 @@ except Exception as e:
             printf '%s' "$AUTH_INFO" > "$AUTH_CACHE"
             _log "auth: cached to $AUTH_CACHE"
         elif [ "$AUTH_CACHE_EXISTS" = "yes" ]; then
-            # claude auth status failed/empty this cycle — fall back to the last-known cache
+            # claude auth status failed/empty this cycle - fall back to the last-known cache
             # instead of blanking the email display; next cycle (in AUTH_REFRESH_AGE_S) retries.
-            _log "auth: WARNING claude_auth_status empty this cycle — falling back to stale cache"
+            _log "auth: WARNING claude_auth_status empty this cycle - falling back to stale cache"
             AUTH_INFO=$(python3 -c "import json,sys; d=json.load(open('$AUTH_CACHE')); print(json.dumps(d))" 2>/dev/null || echo '{}')
         else
-            _log "auth: WARNING output was empty or {} — not caching"
+            _log "auth: WARNING output was empty or {} - not caching"
         fi
     fi
 
@@ -114,7 +114,7 @@ except Exception as e:
         [ -n "$FOUND_TIER" ] && TIER="$FOUND_TIER"
         _log "meta: creds_found=yes subtype=$SUB_TYPE tier=$TIER"
     else
-        _log "meta: creds_found=no — falling back to auth status"
+        _log "meta: creds_found=no - falling back to auth status"
     fi
     if [ "$SUB_TYPE" = "Unknown" ]; then
         FOUND=$(printf '%s' "$AUTH_INFO" | grep -o '"subscriptionType"\s*:\s*"[^"]*"' | head -n 1 | awk -F'"' '{print $4}')
@@ -129,7 +129,7 @@ except Exception as e:
     echo "|||SUBTYPE|||$SUB_TYPE"
     echo "|||TIER|||$TIER"
     echo "|||AUTHINFO|||$AUTH_INFO"
-    _log "stdout_write: done — all delimiters emitted"
+    _log "stdout_write: done - all delimiters emitted"
 else
     _log "cache file missing: $FILE → no stdout output → Rust returns null → JS shows empty state"
 fi

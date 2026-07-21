@@ -51,11 +51,12 @@ const BINARY_NAMES = [
   'language_server_windows_x64.exe'
 ];
 
-async function detectAntigravityProcess() {
+async function detectAntigravityProcesses() {
   const platform = process.platform;
-  debug(`Detecting Antigravity process on platform: ${platform}`);
+  debug(`Detecting Antigravity processes on platform: ${platform}`);
   if (platform === 'win32') {
-    return detectOnWindows();
+    const single = await detectOnWindows();
+    return single ? [single] : [];
   } else {
     return detectOnUnix();
   }
@@ -67,24 +68,47 @@ async function detectOnUnix() {
   const { stdout } = await execAsync(cmd);
   const lines = stdout.split('\n');
 
+  const processes = [];
+  const seenPids = new Set();
+
   for (const line of lines) {
     const isTargetBinary = BINARY_NAMES.some(binName => line.includes(binName));
-    if (!isTargetBinary) {
+    if (isTargetBinary) {
+      if (line.includes('--csrf_token') || line.includes('--extension_server_port')) {
+        const processInfo = parseUnixProcessLine(line);
+        if (processInfo && !seenPids.has(processInfo.pid)) {
+          seenPids.add(processInfo.pid);
+          processInfo.type = 'ide';
+          debug(`Matched Antigravity IDE process line (PID ${processInfo.pid}): ${line.trim()}`);
+          processes.push(processInfo);
+        }
+      }
       continue;
     }
 
-    // Double check process arguments for required server signals
-    if (!line.includes('--csrf_token') && !line.includes('--extension_server_port')) {
-      continue;
-    }
-
-    debug(`Matched Antigravity process line: ${line.trim()}`);
-    const processInfo = parseUnixProcessLine(line);
-    if (processInfo) {
-      return processInfo;
+    // Match agy CLI binary processes
+    if (line.includes('agy') && !line.includes('get-antigravity-usage') && !line.includes('grep')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 11) {
+        const pid = parseInt(parts[1], 10);
+        const commandLine = parts.slice(10).join(' ');
+        const isAgyBinary = commandLine === 'agy' || commandLine.startsWith('agy ') || commandLine.includes('/bin/agy') || commandLine.includes('/agy ');
+        if (isAgyBinary && !isNaN(pid) && !seenPids.has(pid)) {
+          seenPids.add(pid);
+          debug(`Matched agy CLI process line (PID ${pid}): ${line.trim()}`);
+          processes.push({
+            pid,
+            type: 'cli',
+            csrfToken: undefined,
+            extensionServerPort: undefined,
+            commandLine
+          });
+        }
+      }
     }
   }
-  return null;
+
+  return processes;
 }
 
 function parseUnixProcessLine(line) {
@@ -506,71 +530,88 @@ function extractQuota(data) {
 
 async function main() {
   try {
-    const processInfo = await detectAntigravityProcess();
-    if (!processInfo) {
-      console.error(JSON.stringify({ error: 'Antigravity IDE process is not running.' }));
+    const processes = await detectAntigravityProcesses();
+    if (!processes || processes.length === 0) {
+      console.error(JSON.stringify({ error: 'Antigravity IDE or CLI process is not running.' }));
       process.exit(1);
     }
 
-    debug(`Detected Antigravity process: PID ${processInfo.pid}`);
-    const ports = await discoverPorts(processInfo.pid, processInfo.extensionServerPort);
-    if (ports.length === 0) {
-      console.error(JSON.stringify({ error: 'Could not detect Antigravity server port.' }));
-      process.exit(1);
-    }
+    const snapshots = [];
+    const seenEmails = new Set();
 
-    const probeResult = await probeForConnectAPI(ports, processInfo.csrfToken);
-    if (!probeResult) {
-      console.error(JSON.stringify({ error: 'Could not find Antigravity Connect API on any listening port.' }));
-      process.exit(1);
-    }
-
-    debug(`Connected to Connect API at ${probeResult.baseUrl}`);
-    
-    // Call userStatus and retrieveUserQuotaSummary in parallel. allSettled (not all+catch->null)
-    // so a 401 from getUserStatus can still be distinguished from other failures below — that's
-    // the "signed out" case, not a generic connection error, and the two need different handling
-    // upstream (Rust treats "Not authenticated" like "IDE not running": a soft empty state, not
-    // a repeating error the UI has to surface every poll).
-    const [statusResult, summaryResult] = await Promise.allSettled([
-      getUserStatus(probeResult.baseUrl, processInfo.csrfToken),
-      retrieveUserQuotaSummary(probeResult.baseUrl, processInfo.csrfToken)
-    ]);
-
-    const rawStatus = statusResult.status === 'fulfilled' ? statusResult.value : null;
-    const rawSummary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
-
-    if (!rawStatus) {
-      const reason = statusResult.status === 'rejected' ? String(statusResult.reason?.message || '') : '';
-      debug('getUserStatus failed:', reason);
-      // Signed-out signatures observed on real IDE builds:
-      //   • classic:  HTTP 401 / "unauthorized"
-      //   • current:  HTTP 500 "GetCascadeModelConfigData() is nil" — the language server is up
-      //     and answering, but has no session, so the model-config it derives from the account is
-      //     nil. Both mean "signed out", which the Rust layer treats as a soft empty state (cache),
-      //     never a repeating error banner.
-      const signedOut = /\b401\b/.test(reason) || /unauthorized/i.test(reason)
-        || (/\b500\b/.test(reason) && /is nil|GetCascadeModelConfigData/i.test(reason));
-      if (signedOut) {
-        console.error(JSON.stringify({ error: 'Not authenticated — signed out of Antigravity.' }));
-      } else {
-        console.error(JSON.stringify({ error: 'Could not fetch user status from Antigravity Connect API.' }));
+    for (const processInfo of processes) {
+      debug(`Probing Antigravity process (PID ${processInfo.pid}, type: ${processInfo.type || 'unknown'})...`);
+      const ports = await discoverPorts(processInfo.pid, processInfo.extensionServerPort);
+      if (ports.length === 0) {
+        debug(`No listening ports found for PID ${processInfo.pid}`);
+        continue;
       }
+
+      const probeResult = await probeForConnectAPI(ports, processInfo.csrfToken);
+      if (!probeResult) {
+        debug(`Could not connect to Connect API on PID ${processInfo.pid}`);
+        continue;
+      }
+
+      debug(`Connected to Connect API at ${probeResult.baseUrl} for PID ${processInfo.pid}`);
+
+      const [statusResult, summaryResult] = await Promise.allSettled([
+        getUserStatus(probeResult.baseUrl, processInfo.csrfToken),
+        retrieveUserQuotaSummary(probeResult.baseUrl, processInfo.csrfToken)
+      ]);
+
+      const rawStatus = statusResult.status === 'fulfilled' ? statusResult.value : null;
+      const rawSummary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
+
+      if (!rawStatus) {
+        const reason = statusResult.status === 'rejected' ? String(statusResult.reason?.message || '') : '';
+        debug(`getUserStatus failed for PID ${processInfo.pid}:`, reason);
+        continue;
+      }
+
+      const userStatus = rawStatus.userStatus || rawStatus;
+      if (!userStatus || !userStatus.email) {
+        debug(`No email found in userStatus for PID ${processInfo.pid}`);
+        continue;
+      }
+
+      const finalQuota = extractQuota(userStatus);
+      const unifiedStatus = {
+        email: userStatus.email,
+        userTier: userStatus.userTier || null,
+        quota: finalQuota
+      };
+
+      const quotaSummary = rawSummary?.response || rawSummary || null;
+      const snapshot = parseLocalQuotaSnapshot(unifiedStatus, quotaSummary);
+      snapshot.sourceType = processInfo.type || 'ide';
+
+      const instanceKey = `${userStatus.email}:${processInfo.type || 'ide'}`;
+      if (!seenEmails.has(instanceKey)) {
+        seenEmails.add(instanceKey);
+        snapshots.push(snapshot);
+      }
+    }
+
+    if (snapshots.length === 0) {
+      console.error(JSON.stringify({ error: 'Could not fetch user status from any running Antigravity process.' }));
       process.exit(1);
     }
 
-    // Map userStatus like ConnectClient does
-    const userStatus = rawStatus.userStatus || rawStatus;
-    const finalQuota = extractQuota(userStatus);
-    const unifiedStatus = {
-      email: userStatus.email,
-      userTier: userStatus.userTier || null,
-      quota: finalQuota
-    };
-
-    const quotaSummary = rawSummary?.response || rawSummary || null;
-    const snapshot = parseLocalQuotaSnapshot(unifiedStatus, quotaSummary);
-    console.log(JSON.stringify(snapshot, null, 2));
+    // Return primary snapshot with allAccounts attached for multi-account support
+    const primary = snapshots[0];
+    if (snapshots.length > 1) {
+      primary.allAccounts = snapshots.map(s => ({
+        email: s.email,
+        method: s.method,
+        sourceType: s.sourceType,
+        userTier: s.userTier,
+        quotaSummary: s.quotaSummary,
+        models: s.models,
+        timestamp: s.timestamp
+      }));
+    }
+    console.log(JSON.stringify(primary, null, 2));
   } catch (err) {
     console.error(JSON.stringify({ error: err.message }));
     process.exit(1);

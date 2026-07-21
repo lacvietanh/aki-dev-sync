@@ -17,7 +17,7 @@ import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
 // all events appear in the same usage.log and terminal stderr, interleaved in
 // real chronological order with Rust log entries.
 //
-// Timestamp format: YYYYMMDD.HHMMSS.mmm — compact, matches Rust now_human().
+// Timestamp format: YYYYMMDD.HHMMSS.mmm - compact, matches Rust now_human().
 
 let _isDebugMode = false;
 let _debugFetched = false;
@@ -49,7 +49,7 @@ function makeLogger(agentName) {
       else                  console.log(line);
     }
 
-    // 2) Forward to Rust backend (file + stderr) — fire-and-forget
+    // 2) Forward to Rust backend (file + stderr) - fire-and-forget
     invoke('log_frontend', { level, tag, msg }).catch(() => {});
   };
 }
@@ -82,7 +82,7 @@ async function logStartupInfo() {
 //
 // Store shape (v2): { accounts: { "<email>": { data, fetchedAt }, ... }, lastActiveEmail }
 //
-// NOTE: Claude Code deliberately has NO equivalent — exactly one account per remote host
+// NOTE: Claude Code deliberately has NO equivalent - exactly one account per remote host
 // by design (see docs/arch/usage-claudecode.md). Only Antigravity uses this store; the
 // switch to last-active-account on a null fetch also removes the old single-blob bug where
 // the display randomly flipped between accounts during an IDE restart.
@@ -119,45 +119,92 @@ function loadAgStore() {
 }
 
 function persistAgAccount(dataObj, fetchedAt) {
-  const email = dataObj?.email;
-  if (!email) return; // malformed/partial RPC response mid-transition — never write an undefined-keyed entry
+  if (!dataObj) return;
   const store = loadAgStore();
-  const existing = store.accounts[email];
-  // A live payload can succeed (GetUserStatus ok, exit 0) while quotaSummary is still null —
-  // e.g. RetrieveUserQuotaSummary rejected independently (Promise.allSettled) right after an
-  // account switch, while the language server is still re-establishing session state. Don't
-  // let that partial snapshot overwrite a previously-good cached quotaSummary for this email;
-  // otherwise the offline-fallback path can resurface a permanent N/A long after the real data
-  // was available. Still track lastActiveEmail so the header/fallback follow the right account.
-  if (dataObj.quotaSummary || !existing?.data?.quotaSummary) {
-    store.accounts[email] = { data: dataObj, fetchedAt };
+  const accountsToPersist = Array.isArray(dataObj.allAccounts) && dataObj.allAccounts.length > 0
+    ? dataObj.allAccounts
+    : [dataObj];
+
+  for (const accObj of accountsToPersist) {
+    const email = accObj?.email;
+    if (!email) continue;
+    const st = accObj.sourceType || 'ide';
+    const key = `${email}:${st}`;
+    // Delete legacy un-suffixed key if present
+    if (store.accounts[email]) {
+      delete store.accounts[email];
+    }
+    const existing = store.accounts[key];
+    if (accObj.quotaSummary || !existing?.data?.quotaSummary) {
+      store.accounts[key] = { data: accObj, fetchedAt };
+    }
   }
-  store.lastActiveEmail = email;
+
+  if (dataObj.email) {
+    store.lastActiveEmail = dataObj.email;
+  }
   saveAgStore(store);
 }
 
-function loadAgAccount(email) {
-  if (!email) return null;
+function loadAgAccount(keyOrEmail) {
+  if (!keyOrEmail) return null;
   const store = loadAgStore();
-  return store.accounts[email] || null;
+  if (store.accounts[keyOrEmail]) return store.accounts[keyOrEmail];
+  const emailPart = keyOrEmail.split(':')[0];
+  for (const [k, v] of Object.entries(store.accounts)) {
+    if (k.startsWith(emailPart)) return v;
+  }
+  return null;
 }
 
 function listAgAccounts() {
   const store = loadAgStore();
-  return Object.entries(store.accounts)
-    .map(([email, v]) => ({ email, fetchedAt: v.fetchedAt }))
-    .sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
+  let changed = false;
+
+  // Cleanup & migrate legacy un-suffixed keys
+  for (const [key, v] of Object.entries(store.accounts)) {
+    if (!key.includes(':')) {
+      const email = v.data?.email || key;
+      const st = v.data?.sourceType || 'ide';
+      const canonicalKey = `${email}:${st}`;
+      if (!store.accounts[canonicalKey]) {
+        store.accounts[canonicalKey] = v;
+      }
+      delete store.accounts[key];
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveAgStore(store);
+  }
+
+  const itemsMap = new Map();
+  for (const [key, v] of Object.entries(store.accounts)) {
+    const email = v.data?.email || key.split(':')[0];
+    const sourceType = v.data?.sourceType || (key.endsWith(':cli') ? 'cli' : 'ide');
+    const canonicalKey = `${email}:${sourceType}`;
+    if (!itemsMap.has(canonicalKey) || (v.fetchedAt || 0) > (itemsMap.get(canonicalKey).fetchedAt || 0)) {
+      itemsMap.set(canonicalKey, {
+        accountKey: canonicalKey,
+        email,
+        sourceType,
+        fetchedAt: v.fetchedAt
+      });
+    }
+  }
+
+  return Array.from(itemsMap.values()).sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
 }
 
 // ─── Wake self-heal (P1) ─────────────────────────────────────────────────────
 // WKWebView suspends/throttles setInterval when the window is fully occluded, minimized, or
-// the machine sleeps — poll ticks stop silently, and every self-recovery layer built on top of
+// the machine sleeps - poll ticks stop silently, and every self-recovery layer built on top of
 // them (the statusline hook writing fresh data) goes dormant too, since all of them
 // only run when a poll tick actually fires. Two listeners, installed ONCE at module scope and
-// shared by every useAgentUsage() instance (there are exactly 3: ag/ccLocal/ccRemote — see
+// shared by every useAgentUsage() instance (there are exactly 3: ag/ccLocal/ccRemote - see
 // AgentUsageSection.vue), drive recovery:
-//   1. visibilitychange/focus — immediate refresh the moment the user looks back at the app.
-//   2. watchdog heartbeat — catches suspends that never flip document.visibilityState (pure
+//   1. visibilitychange/focus - immediate refresh the moment the user looks back at the app.
+//   2. watchdog heartbeat - catches suspends that never flip document.visibilityState (pure
 //      occlusion without a Space/window switch) or a resume that doesn't fire either DOM event.
 // See docs/arch/usage-claudecode.md §4 (WKWebView suspend self-heal).
 const WATCHDOG_INTERVAL_MS = 7000;
@@ -184,7 +231,7 @@ function installWakeListenersOnce() {
     for (const sub of _wakeSubscribers) {
       // Threshold is per-subscriber, not a flat 2×interval: a subscriber that has backed off
       // (unreachable host) legitimately has a much larger gap between ticks, and treating that
-      // as a suspend would have the watchdog re-firing probes every 7s — defeating the very
+      // as a suspend would have the watchdog re-firing probes every 7s - defeating the very
       // backoff meant to stop hammering that host.
       if (now - sub.lastTickAt() > sub.gapThresholdMs()) sub.onWake('watchdog');
     }
@@ -204,12 +251,13 @@ export function useAgentUsage(agentName, hostRef) {
   const isCached = ref(false);
   const cachedAt = ref(null); // Unix seconds
 
-  // AG-only: multi-account view state (unused for Claude Code — one account per remote).
-  // Design lock: viewingEmail is intentionally NOT persisted — pinning to a previous account is a
+  // AG-only: multi-account view state (unused for Claude Code - one account per remote).
+  // Design lock: viewingEmail is intentionally NOT persisted - pinning to a previous account is a
   // transient inspection; every reload returns to the follow-live view of the active account.
   const accounts = ref([]);       // dropdown list [{ email, fetchedAt }] sorted newest-first
   const viewingEmail = ref(null); // null = follow live/active account; else a pinned email
-  const activeEmail = ref(null);  // email of the last successful live fetch
+  const activeEmail = ref(null);  // email of the primary successful live fetch
+  const activeEmails = ref(new Set()); // Set of emails of all currently live accounts
   let latestLive = null;          // last successful live parse (for returning to live view)
   let latestLiveStale = false;
   const refreshAccounts = () => { accounts.value = listAgAccounts(); };
@@ -221,7 +269,7 @@ export function useAgentUsage(agentName, hostRef) {
 
   let pollTimer = null;
   let pollCount = 0;
-  let lastTickAt = Date.now();  // ms of the last checkUsage() that actually ran — watchdog gap-detection (P1)
+  let lastTickAt = Date.now();  // ms of the last checkUsage() that actually ran - watchdog gap-detection (P1)
   let lastFetchedAt = null;     // Unix seconds of the last successful live fetch
   let lastNonNullHost = null;   // for distinguishing "toggled off" from "switched to a different host"
   let provisioned = false;
@@ -229,7 +277,7 @@ export function useAgentUsage(agentName, hostRef) {
   const MAX_PROVISION_RETRIES = 3;
   let isChecking = false;
   let pendingRecheck = false; // a poll/manual-reload arrived while a check was already in flight
-  // Circuit breaker for the poll loop itself — see restartPollTimer below.
+  // Circuit breaker for the poll loop itself - see restartPollTimer below.
   let consecutiveFailCount = 0;
   let pollHalted = false;
   const MAX_CONSECUTIVE_FAILS = 5;
@@ -244,7 +292,7 @@ export function useAgentUsage(agentName, hostRef) {
       provisionFailCount = 0;
     } catch (e) {
       // Genuine failure (transport/host down). Allow a bounded number of retries on later ticks so
-      // a host coming back online gets provisioned — but never retry forever (that was the 30s
+      // a host coming back online gets provisioned - but never retry forever (that was the 30s
       // retry storm when the script wrongly exited 1 on empty auth; the script now exits 0, so the
       // only failures reaching here are real transport errors, which still deserve a cap).
       provisionFailCount += 1;
@@ -259,14 +307,14 @@ export function useAgentUsage(agentName, hostRef) {
 
   const checkUsage = async () => {
     if (!hostRef.value) {
-      // Source disabled — leave any last-known data in place (the host watcher below
+      // Source disabled - leave any last-known data in place (the host watcher below
       // already marked it isCached when the toggle flipped off) instead of wiping it.
       loading.value = false;
       return;
     }
     if (isChecking) {
       // Don't silently drop this request (e.g. a manual "Reload" click landing mid-poll,
-      // common right after relaunching AG/switching accounts) — run once more immediately
+      // common right after relaunching AG/switching accounts) - run once more immediately
       // after the in-flight check finishes instead of waiting up to a full poll interval.
       pendingRecheck = true;
       ulog('queued', {}, 'debug');
@@ -291,7 +339,7 @@ export function useAgentUsage(agentName, hostRef) {
       ulog('invoke get', { host: hostRef.value }, 'debug');
       const res = await invoke('get_agent_usage', { agentName, host: hostRef.value });
       ulog('get ok', { hasResult: res !== null }, 'debug');
-      consecutiveFailCount = 0; // host answered — reset the breaker
+      consecutiveFailCount = 0; // host answered - reset the breaker
 
       if (res) {
         try {
@@ -305,9 +353,9 @@ export function useAgentUsage(agentName, hostRef) {
           // ── Stale detection ──────────────────────────────────────────────
           // file_modified_at (cache mtime), not fetched_at: for AG the two are
           // identical (the script writes fresh data on every live poll), but for
-          // Claude Code fetched_at is always ≈0 right after Rust reads the file —
+          // Claude Code fetched_at is always ≈0 right after Rust reads the file  - 
           // that blinded this badge to a cache frozen mid-window (statusLine/oauth
-          // both silent, resets_at still in the future) — the exact freshness
+          // both silent, resets_at still in the future) - the exact freshness
           // blind spot behind Lỗi C. mtime is the data's true age either way.
           const dataAge = mtimeSec > 0 ? (nowSec - mtimeSec) : Infinity;
           let resetIsPast = false;
@@ -325,22 +373,45 @@ export function useAgentUsage(agentName, hostRef) {
             latestLiveStale = liveStale;
             const prevActive = activeEmail.value;
             activeEmail.value = parsed?.email || activeEmail.value;
+
+            const liveList = [];
+            if (Array.isArray(parsed?.allAccounts) && parsed.allAccounts.length > 0) {
+              for (const a of parsed.allAccounts) {
+                if (a.email) {
+                  liveList.push(a.email);
+                  if (a.sourceType) {
+                    liveList.push(`${a.email}:${a.sourceType}`);
+                  }
+                }
+              }
+            } else if (parsed?.email) {
+              liveList.push(parsed.email);
+              if (parsed.sourceType) {
+                liveList.push(`${parsed.email}:${parsed.sourceType}`);
+              }
+            }
+            activeEmails.value = new Set(liveList);
+
             persistAgAccount(parsed, fetchedAt);
             refreshAccounts();
             // Auto-reset pin when the live account changes: if the user had pinned account X
             // but the live account is now Z (different email), holding the pin traps the UI
-            // on X's stale cache forever — the gate below blocks every new live fetch of Z.
+            // on X's stale cache forever - the gate below blocks every new live fetch of Z.
             // Clear viewingEmail so we follow the new live account automatically.
-            if (viewingEmail.value !== null && activeEmail.value !== prevActive && viewingEmail.value !== activeEmail.value) {
+            if (viewingEmail.value !== null && activeEmail.value !== prevActive && !activeEmails.value.has(viewingEmail.value)) {
               viewingEmail.value = null;
             }
-            if (viewingEmail.value === null || viewingEmail.value === activeEmail.value) {
-              data.value = parsed;
+            const currentView = viewingEmail.value || activeEmail.value;
+            const activeData = Array.isArray(parsed?.allAccounts)
+              ? (parsed.allAccounts.find(a => a.email === currentView) || parsed)
+              : parsed;
+            if (viewingEmail.value === null || activeEmails.value.has(viewingEmail.value)) {
+              data.value = activeData;
               isCached.value = false;
               cachedAt.value = null;
               stale.value = liveStale;
             }
-            ulog('ag live fetched', { email: activeEmail.value, viewing: viewingEmail.value, fetchedAt }, 'debug');
+            ulog('ag live fetched', { email: activeEmail.value, liveCount: activeEmails.value.size, viewing: viewingEmail.value, fetchedAt }, 'debug');
           } else {
             data.value = parsed;
             isCached.value = false;
@@ -380,7 +451,7 @@ export function useAgentUsage(agentName, hostRef) {
         // null from server: either no cache file (first load) or STALE_RESET (had data → null)
         ulog('got null', { hadData, why: hadData ? 'STALE_RESET' : 'no_cache' }, 'info');
 
-        // AG offline: the live fetch failed (IDE mid-restart — common right after an account
+        // AG offline: the live fetch failed (IDE mid-restart - common right after an account
         // switch). Show the LAST-ACTIVE account's cache deterministically (never an ambiguous
         // global blob), so the display can't randomly flip old/new. If the user pinned the view
         // to a specific account, keep showing that one.
@@ -405,7 +476,7 @@ export function useAgentUsage(agentName, hostRef) {
           }
         } else if (hadData) {
           // STALE_RESET: past the reset boundary with no new CC turn yet. Keep the old
-          // reading on screen instead of blanking it — same cached-badge mechanism AG
+          // reading on screen instead of blanking it - same cached-badge mechanism AG
           // already uses. See docs/arch/usage-claudecode.md §4.
           isCached.value = true;
           cachedAt.value = lastFetchedAt;
@@ -438,15 +509,18 @@ export function useAgentUsage(agentName, hostRef) {
   const selectAccount = (email) => {
     viewingEmail.value = email;
     if (agentName !== 'antigravity') return;
-    if (email === null || email === activeEmail.value) {
-      if (latestLive) {
-        data.value = latestLive;
+    if (email === null || email === activeEmail.value || activeEmails.value.has(email)) {
+      const targetLive = Array.isArray(latestLive?.allAccounts)
+        ? (latestLive.allAccounts.find(a => a.email === email) || latestLive)
+        : latestLive;
+      if (targetLive) {
+        data.value = targetLive;
         isCached.value = false;
         cachedAt.value = null;
         stale.value = latestLiveStale;
       } else {
         // No live data yet → fall back to the last-active account's cache.
-        const cached = loadAgAccount(loadAgStore().lastActiveEmail);
+        const cached = loadAgAccount(email || loadAgStore().lastActiveEmail);
         if (cached) {
           data.value = cached.data;
           isCached.value = true;
@@ -472,23 +546,23 @@ export function useAgentUsage(agentName, hostRef) {
 
   // AG-only: called right after a successful logout. logout_antigravity wipes AG's own auth state
   // (SQLite rows, keychain item, session cookies) but this composable's own cache/view-state is
-  // deliberately left untouched — see "Log Out behavior & cache retention" in
+  // deliberately left untouched - see "Log Out behavior & cache retention" in
   // docs/arch/usage-antigravity.md (PO decision, 2026-07-07): the header showing the just-logged-out
   // account's last-known data until a new account goes live is the INTENDED behavior (the whole
   // point of the per-account cache is to keep showing each account's last-known state), not a bug.
   //
   // Regression note: 1.9.3 (`a26b8f5`/`b082d0d`) treated that as a bug and cleared the account on
-  // logout — `clearAgStore()` ended up wiping the ENTIRE per-account history, not just the
+  // logout - `clearAgStore()` ended up wiping the ENTIRE per-account history, not just the
   // just-logged-out account, silently erasing every other cached account too. Fixed 2026-07-07 by
   // removing the clearing behavior entirely, per the corrected product decision above.
   const resetAccount = () => {
     if (agentName !== 'antigravity') return;
     ulog('ag logout: recheck', {}, 'info');
-    checkUsage(); // just an immediate poll to pick up a new login sooner — no state is cleared
+    checkUsage(); // just an immediate poll to pick up a new login sooner - no state is cleared
   };
 
   // Circuit breaker. The log from the 2026-07-20 incident shows 12 consecutive failures spaced at
-  // exactly 30.0s — the poll kept probing at full rate for 24 minutes after the host had stopped
+  // exactly 30.0s - the poll kept probing at full rate for 24 minutes after the host had stopped
   // accepting TCP entirely. A host that has failed this many times in a row is down, not slow, and
   // no amount of further probing will change that; only a human fixing it will.
   //
@@ -498,7 +572,7 @@ export function useAgentUsage(agentName, hostRef) {
   // relieve. Stopping outright is both simpler and the honest signal to the user.
   //
   // Only an explicit user action resumes: manual refresh or a host change. Notably NOT the wake
-  // listeners — visibilitychange/focus fire constantly as the user moves between windows, and
+  // listeners - visibilitychange/focus fire constantly as the user moves between windows, and
   // resuming on those would rebuild the same relentless loop through the back door.
   function restartPollTimer() {
     if (pollTimer) clearInterval(pollTimer);
@@ -507,7 +581,7 @@ export function useAgentUsage(agentName, hostRef) {
     ulog('poll timer restart', { interval_s: s }, 'debug');
     if (!hostRef.value || !(s > 0)) return;
     if (pollHalted) {
-      ulog('poll halted — not restarting', { fails: consecutiveFailCount }, 'info');
+      ulog('poll halted - not restarting', { fails: consecutiveFailCount }, 'info');
       return;
     }
     pollTimer = setInterval(() => {
@@ -521,7 +595,7 @@ export function useAgentUsage(agentName, hostRef) {
     pollHalted = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
-    error.value = `Host unreachable ${consecutiveFailCount}× in a row — polling stopped. Fix the host, then hit Reload.`;
+    error.value = `Host unreachable ${consecutiveFailCount}× in a row - polling stopped. Fix the host, then hit Reload.`;
     ulog('poll halted', { fails: consecutiveFailCount }, 'error');
   }
 
@@ -533,10 +607,10 @@ export function useAgentUsage(agentName, hostRef) {
 
   // P1 wake self-heal: triggered by visibilitychange/focus or the watchdog heartbeat (module
   // scope, see installWakeListenersOnce above) after a suspected WKWebView suspend. Re-checks
-  // immediately and restarts the interval — a suspended setInterval does not reliably resume
+  // immediately and restarts the interval - a suspended setInterval does not reliably resume
   // ticking on its own even once the page is visible/focused again.
   function onWake(reason) {
-    if (!hostRef.value) return; // source disabled — nothing to recover
+    if (!hostRef.value) return; // source disabled - nothing to recover
     ulog('wake', { reason, gap_ms: Date.now() - lastTickAt }, 'info');
     lastTickAt = Date.now(); // prevent the watchdog re-firing every heartbeat while this check is in flight
     checkUsage();
@@ -553,7 +627,7 @@ export function useAgentUsage(agentName, hostRef) {
   watch(() => hostRef.value, (newHost) => {
     // A source can be toggled off/on (host -> null -> same host again) without ever
     // actually changing which machine it points at. Only wipe data on a REAL host
-    // change (e.g. switching the selected SSH remote) — toggling off should keep the
+    // change (e.g. switching the selected SSH remote) - toggling off should keep the
     // last-known reading on screen, marked as cached, not blank the card.
     const realHostChange = !!newHost && !!lastNonNullHost && newHost !== lastNonNullHost;
     ulog('host change', { newHost, lastNonNullHost, realHostChange }, 'info');
@@ -589,7 +663,7 @@ export function useAgentUsage(agentName, hostRef) {
   watch(() => manualRefreshCount.value, (count) => {
     if (!hostRef.value) return;
     ulog('refresh', { count, a }, 'info');
-    // An explicit user action always clears the breaker — they may well have just fixed the host.
+    // An explicit user action always clears the breaker - they may well have just fixed the host.
     resumePolling();
     restartPollTimer();
     // Manual refresh (Reload / Refresh buttons) = normal fresh load for all agents.
@@ -615,6 +689,7 @@ export function useAgentUsage(agentName, hostRef) {
     accounts,
     viewingEmail,
     activeEmail,
+    activeEmails,
     selectAccount,
     resetAccount
   };

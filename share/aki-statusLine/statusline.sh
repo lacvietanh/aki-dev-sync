@@ -1,7 +1,7 @@
 #!/bin/bash
 input=$(cat)
 
-# aki-rlcache v2 — persist rate_limits across calls that omit it
+# aki-rlcache v2 - persist rate_limits across calls that omit it
 rl_input=$(echo "$input" | jq -c '.rate_limits // empty')
 if [ -z "$rl_input" ] && [ -f "$HOME/.claude/rate-limits-cache.json" ]; then
     input=$(echo "$input" | jq --argjson old "$(cat "$HOME/.claude/rate-limits-cache.json")" '
@@ -85,7 +85,7 @@ round_pct() {
   awk -v p="$1" 'BEGIN{printf "%.0f", p}'
 }
 
-# "5h"/"7d" white label, ":" grey, "N%" threshold-colored — no reset time
+# "5h"/"7d" white label, ":" grey, "N%" threshold-colored - no reset time
 rate_block() {
   label="$1" used="$2"
   [ "$used" = "-1" ] && return
@@ -98,18 +98,18 @@ SEP="$(colored "$GREY" " | ")"
 
 # ---- build each group, then join with " | " ----
 
-# user (cyan) @ (white) host (green) — user/host capped at 5 chars
+# user (cyan) @ (white) host (green) - user/host capped at 5 chars
 _user="$(whoami)"; _user="${_user:0:5}"
 _host="$(hostname -s)"; _host="${_host:0:5}"
 g_id="$(colored "$CYAN" "$_user")$(colored "$WHITE" "@")$(colored "$BOLD_GREEN" "$_host")"
 
-# cwd (blue) — its own group
+# cwd (blue) - its own group
 _cwd_dir="${cwd:-$(pwd)}"
 [ "$_cwd_dir" = "$HOME" ] && _cwd_dir="~" || _cwd_dir="$(basename "$_cwd_dir")"
 g_cwd="$(colored "$BOLD_BLUE" "$_cwd_dir")"
 
 # model (cyan) + effort (grey), abbreviated: medium->med, rest unchanged (low/high/xhigh/max)
-# strip trailing parenthetical (e.g. "Opus 4.8 (1M context)" -> "Opus 4.8") — context size is already shown in the ctx group
+# strip trailing parenthetical (e.g. "Opus 4.8 (1M context)" -> "Opus 4.8") - context size is already shown in the ctx group
 model_name="$(printf '%s' "$model_name" | sed -E 's/ *\([^)]*\)$//')"
 model_lower=$(printf '%s' "$model_name" | tr 'A-Z' 'a-z')
 g_model="$(colored "$CYAN" "$model_lower")"
@@ -117,7 +117,7 @@ effort_abbr="$effort_level"
 [ "$effort_abbr" = "medium" ] && effort_abbr="med"
 [ -n "$effort_abbr" ] && g_model="$g_model $(colored "$GREY" "$effort_abbr")"
 
-# context window usage — "ctx" white, % threshold-colored, cyan numbers (no brackets — color alone
+# context window usage - "ctx" white, % threshold-colored, cyan numbers (no brackets - color alone
 # already distinguishes the breakdown from surrounding groups)
 # total = input+output combined (matches what used_percentage represents), not shown separately
 g_ctx=""
@@ -128,7 +128,7 @@ if [ "$ctx_size" != "0" ]; then
   g_ctx="$(colored "$WHITE" "ctx") $(colored "$(color_for_pct "$ctx_pct_int")" "${ctx_pct_int}%") $ctx_breakdown"
 fi
 
-# rate limits (Pro/Max only) — 5h/7d separated by 2 plain spaces, no " | "
+# rate limits (Pro/Max only) - 5h/7d separated by 2 plain spaces, no " | "
 g_rate=""
 five_block=$(rate_block "5h" "$five_used")
 seven_block=$(rate_block "7d" "$seven_used")
@@ -138,7 +138,7 @@ else
   g_rate="${five_block}${seven_block}"
 fi
 
-# session group — duration (grey), lines +/-, cost (cyan), all together, placed last
+# session group - duration (grey), lines +/-, cost (cyan), all together, placed last
 g_session="$(colored "$GREY" "$(fmt_dur "$duration_ms")")"
 if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
   g_lines="$(colored "$GREEN" "+${lines_added}")$(colored "$GREY" "/")$(colored "$RED" "-${lines_removed}")"

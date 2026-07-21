@@ -28,7 +28,7 @@
             SYNC
             <RefreshRing :interval-s="syncCheckEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
             <i class="fa-solid fa-power-off src-power" :class="syncCheckEnabled ? 'is-on' : 'is-off'" @click="toggleSyncCheck"
-               :title="syncCheckEnabled ? 'Sync check ON — click to stop all remote diff/push/pull' : 'Sync check OFF — click to enable'"></i>
+               :title="syncCheckEnabled ? 'Sync check ON - click to stop all remote diff/push/pull' : 'Sync check OFF - click to enable'"></i>
           </span>
         </div>
       </div>
@@ -112,7 +112,7 @@
                           'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
                         }"
                         @click="openGitModal(p)"
-                        :title="projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error — click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote — click to push' : 'Git Actions (Commit & Push to Remote Git)'"
+                        :title="projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
                         aria-label="Git Actions">
                   <i class="fa-brands fa-git-alt"></i>
                 </button>
@@ -205,7 +205,7 @@
                       <div class="popup-item"
                            :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing }"
                            @click="!projectRuntime[p.id]?.syncing && openSelectDialog(p)"
-                           title="Pick specific files/folders (native file picker) and push only those to Remote — bypasses this project's exclude list, unaffected by the DRY toggle">
+                           title="Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project's exclude list, unaffected by the DRY toggle">
                         <i class="fa-solid fa-upload" style="width:14px; color: #38bdf8;"></i> Upload (select files)
                       </div>
                     </div>
@@ -216,7 +216,7 @@
               <button class="btn-tech btn-tech-secondary"
                       @click="refreshProject(p)"
                       :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
-                      :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only — git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
+                      :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only - git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
                 <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isRefreshing(p.id) }"></i>
               </button>
             </div>
@@ -420,7 +420,7 @@ async function openIdeLocal(ideName, path) {
   }
 }
 
-// Shared invoke/Toast wrapper for the popup's run-commands row — BUILD and DEV differ only by
+// Shared invoke/Toast wrapper for the popup's run-commands row - BUILD and DEV differ only by
 // which Tauri command they call and the success wording.
 async function invokeProjectRun(command, path, cmd, successTitle) {
   try {
@@ -441,7 +441,7 @@ async function runProjectDev(path, cmd) {
 }
 
 // (host, path) -> absolute path. The remote $HOME never changes within a session, so a
-// resolved path is stable — cache it and pay the SSH round-trip at most once per host+path.
+// resolved path is stable - cache it and pay the SSH round-trip at most once per host+path.
 // Only IDE-open needs this now (copy uses the raw path); the cache keeps repeated opens instant.
 const resolvedPathCache = new Map();
 
@@ -484,11 +484,11 @@ async function copyLocalPath(project) {
 
 async function copyRemotePath(project) {
   try {
-    // Copy the stored remote path verbatim — mirror copyLocalPath. `~` is a valid,
+    // Copy the stored remote path verbatim - mirror copyLocalPath. `~` is a valid,
     // portable path on the remote (shells/scp/rsync expand it there), so copying it
     // needs zero network work. The old code awaited resolveRemoteFullPath here, which
     // fired a blocking SSH `echo $HOME` per click (system.rs) and froze the UI for
-    // seconds — for an operation that is just "copy an existing field".
+    // seconds - for an operation that is just "copy an existing field".
     await navigator.clipboard.writeText(project.remote_path);
     flashCopied(`remote-${project.id}`);
   } catch (e) {
@@ -497,7 +497,7 @@ async function copyRemotePath(project) {
 }
 
 // Pulls REPORT.html from the remote first if it's newer than the local copy (or local has none),
-// then opens the local file in the OS default browser — REPORT.html is a self-contained HTML/JS/CSS
+// then opens the local file in the OS default browser - REPORT.html is a self-contained HTML/JS/CSS
 // page (akihtmlreport skill output) that the app's own strict CSP would otherwise break.
 async function openReportHtml(project) {
   try {
@@ -591,7 +591,7 @@ function formatTimeAgo(timestamp) {
   text-align: center;
 }
 
-/* text-align:center only centers inline content — several cells hold block-level children
+/* text-align:center only centers inline content - several cells hold block-level children
    (badges, stacked divs) that ignore it. Flex-centering every non-project column is the only
    way that's actually reliable for both the label row and the row content below it. The
    project-info column is deliberately excluded: it's left-aligned by design and already has
@@ -642,7 +642,7 @@ function formatTimeAgo(timestamp) {
   justify-content: center;
 }
 
-/* LAST holds two stacked divs (the pull/push badge+time, then the host line below it) — they
+/* LAST holds two stacked divs (the pull/push badge+time, then the host line below it) - they
    need to stay stacked, not sit side by side as flex-row items. */
 .col-last-sync {
   flex-direction: column;
@@ -654,7 +654,7 @@ function formatTimeAgo(timestamp) {
   text-align: left;
 }
 
-/* New Project moved here from the app header (next to the project count) — same
+/* New Project moved here from the app header (next to the project count) - same
    btn-tech-primary cyan vibe as before, just relocated + a persistent (not hover-only) glow
    so it still reads as the primary create action at a glance. */
 .col-project-info-header {
@@ -714,7 +714,7 @@ function formatTimeAgo(timestamp) {
 }
 
 /* Icon + name/path block row (moved out of an inline style so the narrow media query below can
-   reach the gap — RULE-ui-pattern: no styling logic stranded in inline attributes). */
+   reach the gap - RULE-ui-pattern: no styling logic stranded in inline attributes). */
 .project-info-row {
   display: flex;
   align-items: center;
@@ -792,7 +792,7 @@ function formatTimeAgo(timestamp) {
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-/* Tiny host line under the LAST ACT badge — which remote the action ran against */
+/* Tiny host line under the LAST ACT badge - which remote the action ran against */
 .sync-host {
   font-size: 9px;
   line-height: 1.2;
@@ -985,7 +985,7 @@ fieldset:disabled .switch {
   vertical-align: middle;
 }
 
-/* DIVERGED state — orange outline only, zero extra space */
+/* DIVERGED state - orange outline only, zero extra space */
 .dry-group.is-diverged {
   outline: 1px solid rgba(251, 146, 60, 0.5);
   border-radius: 6px;
@@ -995,16 +995,16 @@ fieldset:disabled .switch {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
 }
 
-/* Narrow mode (<=700px) — single shared breakpoint for the whole app (see
+/* Narrow mode (<=700px) - single shared breakpoint for the whole app (see
    docs/plan/done/narrow-mode-and-ux-1.14.0.md, "Shared contract"). Label hiding uses the global
    .u-narrow-hide / .u-wide-hide utilities from main.css; this block only covers layout that a
-   utility class can't express — column widths, gaps. */
+   utility class can't express - column widths, gaps. */
 @media (max-width: 700px) {
   .projects-table-container {
-    /* Project name column: 12rem -> 6.5rem (widened back up from an initial 4.8rem/40% guess —
+    /* Project name column: 12rem -> 6.5rem (widened back up from an initial 4.8rem/40% guess  - 
        that was too tight to show any of the remote path, this leaves a few characters visible).
        GIT column: 2.5rem -> 1.7rem read as too tight against LAST, opened back up to 2.1rem.
-       TASKS column trimmed a touch (2.5rem -> 2.1rem) — it's just an icon+badge, was carrying
+       TASKS column trimmed a touch (2.5rem -> 2.1rem) - it's just an icon+badge, was carrying
        more blank space than it needed. Action column (OPEN + select-push) also narrows since
        OPEN's label now hides at the same 700px breakpoint via u-narrow-hide. */
     --grid-cols: 6.5rem 2.1rem 1.9rem 2.5rem 4.2rem 1fr;
@@ -1015,13 +1015,13 @@ fieldset:disabled .switch {
     gap: 6px;
   }
 
-  /* The project name/path block had unused padding trailing short names — tighten it so
+  /* The project name/path block had unused padding trailing short names - tighten it so
      ellipsis-truncated paths get a couple more characters of room instead of dead space. */
   .project-text-col {
     padding-right: 0;
   }
 
-  /* PUSH/PULL lose their text label at this width — match them to the OPEN button's icon-only
+  /* PUSH/PULL lose their text label at this width - match them to the OPEN button's icon-only
      footprint (10px) rather than the wider guess that was breaking the layout. Must win over the
      `.actions-wrapper .btn-tech-push/-pull { padding: 0 6px !important }` rule above, which
      otherwise silently wins on specificity + !important regardless of this media query. */
@@ -1036,7 +1036,7 @@ fieldset:disabled .switch {
   }
 
   /* Every attempt to hang DRY off the bottom edge (position: absolute, overlapping the row's
-     border) ended up colliding with the row below it — nothing anchored to a row's own box can
+     border) ended up colliding with the row below it - nothing anchored to a row's own box can
      overlap outside it without fighting that next row's own positioned content for paint order.
      Kept in normal flow instead: small, but a real flex item between PUSH and PULL, so it can
      never visually merge with anything else. */
@@ -1072,7 +1072,7 @@ fieldset:disabled .switch {
   }
 
   /* Ball must be vertically centered in the 8px track: (8 - 6) / 2 = 1px on each side.
-     The base .switch-sm rule (main.css) uses bottom: 2px, sized for the 12px track — left
+     The base .switch-sm rule (main.css) uses bottom: 2px, sized for the 12px track - left
      uncorrected here, the ball sat flush against the top edge instead of centered. */
   .dry-toggle-center .switch-sm .slider:before {
     height: 6px;
@@ -1085,7 +1085,7 @@ fieldset:disabled .switch {
     transform: translateX(8px);
   }
 
-  /* GIT sits noticeably closer to LAST than the gap elsewhere reads as needing — pull LAST left
+  /* GIT sits noticeably closer to LAST than the gap elsewhere reads as needing - pull LAST left
      a touch rather than shrinking --grid-gap globally (that would also tighten LAST↔ACTION and
      ACTION↔SYNC, which need the opposite). */
   .col-last-sync {

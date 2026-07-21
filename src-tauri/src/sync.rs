@@ -22,7 +22,7 @@ fn get_rsync_versions() -> &'static Mutex<HashMap<String, String>> {
 }
 
 // Caches Tauri's appDataDir once per process so baseline_dir() (and anything else keyed off
-// it) resolves correctly. Safe to call from any command that has an AppHandle — OnceLock::set
+// it) resolves correctly. Safe to call from any command that has an AppHandle - OnceLock::set
 // is a no-op once the value is already populated.
 fn ensure_app_data_dir(app: &tauri::AppHandle) {
     if APP_DATA_DIR.get().is_none() {
@@ -71,7 +71,7 @@ fn spawn_and_stream(
     label: &str,
 ) -> Result<(), String> {
     // Null stdin so ssh/rsync can never block on an interactive prompt
-    // (hostkey/password) — in a GUI app that would hang the sync silently.
+    // (hostkey/password) - in a GUI app that would hang the sync silently.
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -161,7 +161,7 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 // command call). If APP_DATA_DIR is not yet set, the legacy ~/.aki path is used
 // as a fallback so read_baseline can also find baselines written by old builds.
 
-// Pre-appDataDir (<1.7.1) baseline location — sole source of truth for that path,
+// Pre-appDataDir (<1.7.1) baseline location - sole source of truth for that path,
 // used by baseline_dir()'s fallback, legacy_baseline_path(), and cleanup_legacy_baselines().
 fn legacy_baseline_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
@@ -182,7 +182,7 @@ fn baseline_path(project_id: &str) -> PathBuf {
     baseline_dir().join(format!("{}.json", project_id))
 }
 
-// Legacy path from pre-appDataDir builds — read_baseline checks this as fallback.
+// Legacy path from pre-appDataDir builds - read_baseline checks this as fallback.
 fn legacy_baseline_path(project_id: &str) -> PathBuf {
     legacy_baseline_dir().join(format!("{}.json", project_id))
 }
@@ -193,7 +193,7 @@ fn legacy_baseline_path(project_id: &str) -> PathBuf {
 fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
     dir_excludes.iter().any(|e| {
         let trimmed = e.trim();
-        // Only dir-entries (`/`-suffixed) carry push-only/exclude semantics here —
+        // Only dir-entries (`/`-suffixed) carry push-only/exclude semantics here  - 
         // glob entries (`*.log`) never appear in the change list to reconcile against.
         if !trimmed.ends_with('/') {
             return false;
@@ -203,7 +203,7 @@ fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
     })
 }
 
-/// Selects the exclude list for a given transfer direction — push reads
+/// Selects the exclude list for a given transfer direction - push reads
 /// `push_excludes`, pull reads `pull_excludes` (R1). Shared by `build_rsync_args`
 /// (real push/pull) and `rsync_change_files` (status check) so both agree on what
 /// "this direction will transfer" means. See CHANGELOG 1.13.1 (R2 revert).
@@ -216,7 +216,7 @@ fn direction_excludes(project: &SyncProject, is_push: bool) -> &Vec<String> {
 }
 
 /// Union of push_excludes and pull_excludes, deduped by trimmed value.
-/// Still used by `write_baseline` (baseline must NOT track push-only-dir files —
+/// Still used by `write_baseline` (baseline must NOT track push-only-dir files  - 
 /// see CHANGELOG 1.13.1 for why the baseline call site keeps the union while the
 /// status-check call site was reverted to per-direction excludes).
 fn union_excludes(project: &SyncProject) -> Vec<String> {
@@ -285,7 +285,7 @@ fn write_baseline(local_path: &str, project_id: &str, dir_excludes: &[String]) -
 /// One-shot migration off the pre-1.7.1 `~/.aki/devsync-baselines` path: copies any
 /// baseline files not already present in appDataDir, then removes the legacy dir.
 /// Frontend gates this behind a localStorage flag so it only runs once per install.
-/// Losing an unmigrated baseline is non-destructive — the next full sync just rewrites it.
+/// Losing an unmigrated baseline is non-destructive - the next full sync just rewrites it.
 #[tauri::command]
 pub fn cleanup_legacy_baselines(app: tauri::AppHandle) -> Result<bool, String> {
     ensure_app_data_dir(&app);
@@ -321,11 +321,11 @@ fn read_baseline(project_id: &str) -> Option<HashMap<String, u64>> {
     let content = std::fs::read_to_string(baseline_path(project_id))
         .or_else(|_| std::fs::read_to_string(legacy_baseline_path(project_id)))
         .ok()?;
-    // New format (≥1.7.1): HashMap<String, u64> — filename → mtime_secs
+    // New format (≥1.7.1): HashMap<String, u64> - filename → mtime_secs
     if let Ok(map) = serde_json::from_str::<HashMap<String, u64>>(&content) {
         return Some(map);
     }
-    // Old format (<1.7.1): Vec<String> — migrate with mtime=0 so suppression is disabled
+    // Old format (<1.7.1): Vec<String> - migrate with mtime=0 so suppression is disabled
     // for all entries until the next successful sync writes a new-format baseline.
     if let Ok(files) = serde_json::from_str::<Vec<String>>(&content) {
         return Some(files.into_iter().map(|f| (f, 0u64)).collect());
@@ -345,7 +345,7 @@ fn build_rsync_args(
     // can overwrite receiver-newer files. Keeping -u with --delete is incoherent: -u
     // protects receiver-newer files (e.g. dotfiles that survived rm -fR ./*) while
     // --delete intends an exact mirror, leaving a perpetual PULL/PUSH loop.
-    // Merge mode (--delete OFF): -u is safe — keep receiver-newer files, add only what
+    // Merge mode (--delete OFF): -u is safe - keep receiver-newer files, add only what
     // the sender has that the receiver lacks.
     let is_mirror = (is_push && project.delete_on_push) || (!is_push && project.delete_on_pull);
     let base_flags = if is_mirror { "-avz" } else { "-avzu" };
@@ -408,7 +408,7 @@ fn run_sync_blocking(
     let is_push = direction == "push";
     let dry_prefix = if dry_run { "[DRY RUN] " } else { "" };
 
-    // First log line arrives before any SSH work — closes the gap between
+    // First log line arrives before any SSH work - closes the gap between
     // "START SYNC" (JS) and the first rsync output (which can take 1-3s).
     emit_log(&window, &project.id, format!(">>> {}Connecting to {}...\n", dry_prefix, project.remote_host));
 
@@ -516,7 +516,7 @@ fn run_sync_blocking(
 /// Pulls one named file from `host:remote_dir/filename` into `local_dir/filename` via rsync.
 /// For one-off single-file syncs (e.g. REPORT.html) that don't need the full project
 /// push/pull pipeline in `build_rsync_args`/`run_sync` (which only honors `specific_paths` on
-/// push) — reuse this instead of hand-rolling another `create_command("rsync")` call site.
+/// push) - reuse this instead of hand-rolling another `create_command("rsync")` call site.
 pub fn rsync_pull_file(host: &str, remote_dir: &str, filename: &str, local_dir: &str) -> Result<(), String> {
     let remote_src = format!("{}:{}/{}", host, remote_dir.trim_end_matches('/'), filename);
     let local_dest = format!("{}/{}", local_dir.trim_end_matches('/'), filename);
@@ -551,7 +551,7 @@ pub struct SyncStatusResult {
 
 /// Returns the list of file paths that would be additively transferred in the given direction.
 /// Status check always uses -avzu (no --delete) regardless of project settings:
-///   • -u: only lists files where the SOURCE is newer — matches the button semantic
+///   • -u: only lists files where the SOURCE is newer - matches the button semantic
 ///         ("this side has something new to offer"). Without it, rsync lists receiver-newer
 ///         files too, causing both buttons to light when only one side was modified (EC-7).
 ///   • no --delete: additive content only. "deleting …" lines are the opposite direction's
@@ -566,11 +566,11 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
     };
 
     // Status check: per-direction excludes, same as real push/pull (R1). Badge for a
-    // direction counts exactly what that direction would transfer — a push-only dir
-    // (in pull_excludes, absent from push_excludes — e.g. `.git/`) IS counted on the
+    // direction counts exactly what that direction would transfer - a push-only dir
+    // (in pull_excludes, absent from push_excludes - e.g. `.git/`) IS counted on the
     // push side because push really does carry it. R2 (union excludes for both
     // directions, so push-only dirs never counted at all) shipped in 1.13.0 and was
-    // reverted in 1.13.1 — see CHANGELOG and docs/plan/done/push-only-paths.md §9.
+    // reverted in 1.13.1 - see CHANGELOG and docs/plan/done/push-only-paths.md §9.
     let mut args: Vec<String> = vec!["-avzu".to_string(), "--dry-run".to_string()];
     for e in direction_excludes(project, is_push) {
         if !e.trim().is_empty() {
@@ -656,7 +656,7 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
         if let Some(ref bl) = baseline {
             if let Some(&baseline_mtime) = bl.get(f) {
                 if baseline_mtime == 0 {
-                    return false; // Old-format entry — conservative: don't suppress
+                    return false; // Old-format entry - conservative: don't suppress
                 }
                 let local_full = std::path::Path::new(&project.local_path).join(f);
                 let current_mtime = local_full.metadata().ok()
@@ -734,7 +734,7 @@ pub async fn get_sync_delete_preview(
             .lines()
             .filter(|l| l.trim().starts_with("deleting "))
             // strip_prefix (not trim_start_matches) removes the "deleting " marker at most
-            // once — trim_start_matches strips it repeatedly, so a real file whose own path
+            // once - trim_start_matches strips it repeatedly, so a real file whose own path
             // begins with "deleting " (rsync line: "deleting deleting me.txt") would have
             // BOTH occurrences stripped, corrupting the path fed into the delete-preview list.
             .map(|l| {
@@ -754,7 +754,7 @@ mod tests {
     use super::*;
     use crate::projects::SyncHooks;
 
-    // Local fixture builder — `projects.rs`'s test-only `make_project` is behind its own
+    // Local fixture builder - `projects.rs`'s test-only `make_project` is behind its own
     // `#[cfg(test)] mod tests` and does not cross the module boundary into sync.rs's tests,
     // so we build a minimal SyncProject here instead of making that helper public.
     fn make_test_project(push_excludes: Vec<&str>, pull_excludes: Vec<&str>) -> SyncProject {
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn is_under_dir_exclude_respects_component_boundary() {
         // ".wrangler-backup" shares a prefix with ".wrangler/" but is a sibling
-        // directory, not a nested path — a naive starts_with would wrongly match.
+        // directory, not a nested path - a naive starts_with would wrongly match.
         let excludes = vec![".wrangler/".to_string()];
         assert!(!is_under_dir_exclude(".wrangler-backup/foo", &excludes));
     }
@@ -850,7 +850,7 @@ mod tests {
     #[test]
     fn direction_excludes_pull_only_dir_absent_from_push_direction() {
         // R2 revert (1.13.1): a dir present only in pull_excludes (e.g. `.git/`) must
-        // NOT be excluded from the push-direction status check — push really transfers
+        // NOT be excluded from the push-direction status check - push really transfers
         // it, so the badge must count it.
         let project = make_test_project(vec![], vec![".git/"]);
         let push_excludes = direction_excludes(&project, true);
@@ -859,7 +859,7 @@ mod tests {
 
     #[test]
     fn direction_excludes_pull_only_dir_present_in_pull_direction() {
-        // Same dir must still be excluded from the pull-direction status check —
+        // Same dir must still be excluded from the pull-direction status check  - 
         // pull never brings it back, so it must never count as a pull change.
         let project = make_test_project(vec![], vec![".git/"]);
         let pull_excludes = direction_excludes(&project, false);

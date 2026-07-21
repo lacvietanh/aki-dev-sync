@@ -38,7 +38,7 @@ const summary = computed(() => {
   display: inline-flex;
 }
 
-/* Trigger — matches the row's btn-tech-secondary language */
+/* Trigger - matches the row's btn-tech-secondary language */
 .btn-task-trigger {
   position: relative;
   display: inline-flex;
@@ -86,14 +86,14 @@ const summary = computed(() => {
   box-shadow: 0 0 0 2px var(--bg-primary);
 }
 
-/* Pinned open tasks — amber, top-right (matches the pin colour) */
+/* Pinned open tasks - amber, top-right (matches the pin colour) */
 .task-badge-pin {
   top: -6px;
   background: var(--accent-amber);
   color: #1a1000;
 }
 
-/* Normal open tasks — white, bottom-right */
+/* Normal open tasks - white, bottom-right */
 .task-badge-normal {
   bottom: -6px;
   background: #fff;

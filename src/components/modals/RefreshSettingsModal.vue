@@ -27,7 +27,7 @@
           <i class="fa-solid fa-arrows-rotate" style="color: #f59e0b;"></i>
           <div>
             <div class="refresh-title">Push / Pull Check</div>
-            <div class="refresh-desc">Detects file changes between local and remote — lights up Push or Pull when out of sync</div>
+            <div class="refresh-desc">Detects file changes between local and remote - lights up Push or Pull when out of sync</div>
           </div>
         </div>
         <div class="refresh-input-group">

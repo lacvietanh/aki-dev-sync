@@ -4,19 +4,19 @@ import { syncCheckEnabled } from '../store/syncCheckStore'
 import { useLogs } from './useLogs'
 
 // One of the three per-project status checks. Like fetchGitStatus, it reports its own busy state
-// through the shared beginRefresh/endRefresh counter (projectStore.js), so every trigger — the
-// background diff timer, the per-project Refresh button, the global Refresh — drives the same
+// through the shared beginRefresh/endRefresh counter (projectStore.js), so every trigger - the
+// background diff timer, the per-project Refresh button, the global Refresh - drives the same
 // visible indicator. The epoch check discards a result for a project whose host/path changed, or
-// whose sync check was turned off, mid-flight — see bumpEpoch in projectStore.js.
+// whose sync check was turned off, mid-flight - see bumpEpoch in projectStore.js.
 export async function checkProjectSyncStatus(project) {
   if (!syncCheckEnabled.value) return
   if (projectRuntime.value[project.id]?.syncing) return
-  // beginRefresh first — see fetchGitStatus.
+  // beginRefresh first - see fetchGitStatus.
   beginRefresh(project.id)
   const epoch = currentEpoch(project.id)
   try {
     const result = await invoke('check_sync_status', { project })
-    if (currentEpoch(project.id) !== epoch) return // stale — superseded mid-flight, discard silently
+    if (currentEpoch(project.id) !== epoch) return // stale - superseded mid-flight, discard silently
     const current = projectRuntime.value[project.id]
 
     if (current) {
@@ -35,7 +35,7 @@ export async function checkProjectSyncStatus(project) {
       } else {
         // 2. Change detected log (False -> True)
         if (pushChanged && pullChanged) {
-          appendLog(project.id, `[${time}] [Background] ⚠ DIVERGED — Local (${result.push_count}) & Remote (${result.pull_count}) both have changes. Resolve before syncing.`)
+          appendLog(project.id, `[${time}] [Background] ⚠ DIVERGED - Local (${result.push_count}) & Remote (${result.pull_count}) both have changes. Resolve before syncing.`)
         } else if (pushChanged) {
           appendLog(project.id, `[${time}] [Background] Local changes detected (${result.push_count} file(s)). Ready to PUSH.`)
         } else if (pullChanged) {
@@ -52,9 +52,9 @@ export async function checkProjectSyncStatus(project) {
       pullCount: result.pull_count ?? 0,
     }
   } catch (_) {
-    // SSH/network error — leave hasPendingPush/Pull unchanged so buttons don't flicker.
+    // SSH/network error - leave hasPendingPush/Pull unchanged so buttons don't flicker.
   } finally {
-    // Only the generation that started this counts its own completion — see fetchGitStatus.
+    // Only the generation that started this counts its own completion - see fetchGitStatus.
     if (currentEpoch(project.id) === epoch) endRefresh(project.id)
   }
 }

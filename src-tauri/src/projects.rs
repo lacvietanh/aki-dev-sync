@@ -57,12 +57,12 @@ pub struct SyncProject {
     pub last_sync_host: Option<String>,
     #[serde(default = "default_true")]
     pub dry_run: bool,
-    // DEPRECATED (push-only-paths plan, 1.13.0): superseded by exclude-list semantics —
+    // DEPRECATED (push-only-paths plan, 1.13.0): superseded by exclude-list semantics  - 
     // no longer read by any sync/build_rsync_args logic. Kept ONLY so `load_projects`
     // still round-trips a legacy value (if present) to the JS one-time migration
     // (useProjectConfig.js migratePushOnlyPaths), which converts it into
     // push_excludes/pull_excludes entries and deletes it client-side. `None`/absent-on-disk
-    // means "already migrated" (or created after the migration shipped) — the migration is
+    // means "already migrated" (or created after the migration shipped) - the migration is
     // idempotent by construction (absence alone makes it a no-op), so this field is never
     // re-materialized once deleted, regardless of any client-side migration bookkeeping.
     // `skip_serializing_if` ensures a migrated project never gets this key written back.
@@ -119,7 +119,7 @@ pub fn get_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_dir.join("projects.json"))
 }
 
-/// Returns the app data directory — avoids repeated `parent().unwrap()` at call sites.
+/// Returns the app data directory - avoids repeated `parent().unwrap()` at call sites.
 pub fn get_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     get_projects_path(app).and_then(|p| {
         p.parent()

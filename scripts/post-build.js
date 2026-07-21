@@ -12,7 +12,7 @@ const buildNum = process.env.BUILD_NUM || (String(now.getHours()).padStart(2, '0
 
 // Scan default-target, explicit arm-triple, and universal output dirs.
 // `tauri build --target aarch64-apple-darwin` emits to the triple dir, not
-// target/release — without it the rename silently no-ops.
+// target/release - without it the rename silently no-ops.
 const dmgDirs = [
   path.join(root, 'src-tauri/target/release/bundle/dmg'),
   path.join(root, 'src-tauri/target/aarch64-apple-darwin/release/bundle/dmg'),

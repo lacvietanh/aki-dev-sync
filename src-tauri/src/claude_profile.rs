@@ -21,7 +21,7 @@ fn write_settings(value: &Value) -> Result<(), String> {
 
 /// Returns "proxy" if ANTHROPIC_BASE_URL is set under settings.json's `env` block, otherwise
 /// "native". Claude Code only picks up API routing overrides via `env` (real environment
-/// variables it reads at startup) — a top-level JSON key like the old `customApiUrl` is not
+/// variables it reads at startup) - a top-level JSON key like the old `customApiUrl` is not
 /// read by the CLI at all, so proxy mode silently no-op'd until this was fixed.
 #[tauri::command]
 pub fn get_claude_mode() -> &'static str {

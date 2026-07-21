@@ -31,7 +31,7 @@ fn git_capture(path: &Path, args: &[&str]) -> Option<String> {
 }
 
 fn fmt_epoch(secs: i64) -> String {
-    if secs <= 0 { return "—".to_string() }
+    if secs <= 0 { return " - ".to_string() }
     // Simple UTC formatting: seconds since epoch → "YYYY-MM-DD HH:MM"
     let secs = secs as u64;
     let s_in_day = secs % 86400;
@@ -154,7 +154,7 @@ pub async fn get_file_conflict_info(
                         .unwrap_or(0);
                     (secs, fmt_epoch(secs))
                 }
-                Err(_) => (0, "—".to_string()),
+                Err(_) => (0, " - ".to_string()),
             };
             FileConflictInfo {
                 rel_path: rel.clone(),
@@ -162,7 +162,7 @@ pub async fn get_file_conflict_info(
                 local_mtime_fmt,
                 remote_exists: false,
                 remote_mtime: 0,
-                remote_mtime_fmt: "—".to_string(),
+                remote_mtime_fmt: " - ".to_string(),
             }
         }).collect();
 

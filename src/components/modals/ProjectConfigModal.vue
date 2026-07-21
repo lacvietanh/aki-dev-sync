@@ -29,7 +29,7 @@
         </div>
       </div>
 
-      <!-- RUN COMMANDS — LOCAL MACHINE ONLY -->
+      <!-- RUN COMMANDS - LOCAL MACHINE ONLY -->
       <div class="full-width config-group commands-group mb-1 mt-1">
         <h4 class="group-title commands-title">
           <i class="fa-solid fa-terminal mr-1"></i> RUN COMMANDS
@@ -133,20 +133,20 @@
         </div>
         <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="ignore-hook-errors-modal" v-model="editingProject.hooks.ignore_hook_errors" />
-          <label for="ignore-hook-errors-modal">Ignore hook errors — sync continues even if a hook exits non-zero</label>
+          <label for="ignore-hook-errors-modal">Ignore hook errors - sync continues even if a hook exits non-zero</label>
         </div>
         <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="delete-on-pull-modal" v-model="editingProject.delete_on_pull" />
           <label for="delete-on-pull-modal" style="color: #60a5fa;">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-            PULL with <code>--delete</code> — removes local files not present on remote
+            PULL with <code>--delete</code> - removes local files not present on remote
           </label>
         </div>
         <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="delete-on-push-modal" v-model="editingProject.delete_on_push" />
           <label for="delete-on-push-modal" style="color: #fbbf24;">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-            PUSH with <code>--delete</code> — removes remote files not present on local
+            PUSH with <code>--delete</code> - removes remote files not present on local
           </label>
         </div>
       </div>

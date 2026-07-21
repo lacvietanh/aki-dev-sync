@@ -12,7 +12,7 @@ defineProps({
 </script>
 
 <style scoped>
-/* Count badge — absolute overlay above the button, zero impact on layout */
+/* Count badge - absolute overlay above the button, zero impact on layout */
 .sync-btn-wrap {
   position: relative;
   display: inline-flex;

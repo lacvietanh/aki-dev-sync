@@ -16,10 +16,10 @@ const { appendGlobalLog } = useLogs()
 //
 // One of the three per-project status checks. It reports its own busy state through the shared
 // beginRefresh/endRefresh counter (projectStore.js) rather than through anything owned by its
-// caller — that is what makes a background timer tick, a per-project button click and a global
+// caller - that is what makes a background timer tick, a per-project button click and a global
 // refresh all light up the same indicator with no per-caller bookkeeping. The epoch check
 // discards a result whose project was superseded mid-flight (host/path edited, projects
-// reloaded) — see bumpEpoch in projectStore.js.
+// reloaded) - see bumpEpoch in projectStore.js.
 export async function fetchGitStatus(projectId, silent = false, updateModalLog = true) {
   const project = projects.value.find(p => p.id === projectId)
   if (!project) return
@@ -30,7 +30,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
   try {
     if (!silent) appendGlobalLog("GIT", `Checking status for "${project.name}"...`)
     const info = await invoke("get_git_info", { localPath: project.local_path })
-    if (currentEpoch(projectId) !== epoch) return // stale — superseded mid-flight, discard silently
+    if (currentEpoch(projectId) !== epoch) return // stale - superseded mid-flight, discard silently
     projectRuntime.value[projectId] = {
       ...projectRuntime.value[projectId],
       git_status: info.status,
@@ -43,7 +43,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       gitStatusText.value = info.log || 'No Git history available.'
     }
   } catch (err) {
-    if (currentEpoch(projectId) !== epoch) return // stale — superseded mid-flight, discard silently
+    if (currentEpoch(projectId) !== epoch) return // stale - superseded mid-flight, discard silently
     const errorLog = `Failed to load Git status:\n${err}`
     projectRuntime.value[projectId] = {
       ...projectRuntime.value[projectId],
@@ -56,7 +56,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       gitStatusText.value = errorLog
     }
   } finally {
-    // Only the generation that started this counts its own completion — a stale run's epoch was
+    // Only the generation that started this counts its own completion - a stale run's epoch was
     // already force-reset to 0 by bumpEpoch, so decrementing here would underflow the new one.
     if (currentEpoch(projectId) === epoch) endRefresh(projectId)
   }

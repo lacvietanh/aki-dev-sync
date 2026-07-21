@@ -15,7 +15,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 
 /// Per-`claude` bound enforced ON THE REMOTE (see [`CLAUDE_BIN_RESOLVER_PREAMBLE`]). Only
-/// `claude auth status` still runs through this preamble — the usage-fetch flow no longer
+/// `claude auth status` still runs through this preamble - the usage-fetch flow no longer
 /// spawns `claude` at all (see docs/arch/usage-claudecode.md §5).
 const CLAUDE_CALL_TIMEOUT_SECS: u64 = 45;
 
@@ -26,7 +26,7 @@ pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, Stri
 
 /// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script
 /// (not POSIX `sh`) piped over the same funnel. Generalizes the timeout/kill/drain machinery
-/// instead of duplicating it — AG's IPC previously
+/// instead of duplicating it - AG's IPC previously
 /// had no timeout at all, so a blackholed SSH/local probe wedged `isChecking` permanently.
 pub(crate) fn run_remote_node_timeout(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(host, Interpreter::Node, script, REMOTE_SCRIPT_TIMEOUT_SECS)
@@ -56,14 +56,14 @@ fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
     c
 }
 
-/// Which interpreter to invoke for a given probe, and how — each script family needs a
+/// Which interpreter to invoke for a given probe, and how - each script family needs a
 /// different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid
 /// JS, so it must never be sent ahead of a `node` script).
 #[derive(Clone, Copy)]
 enum Interpreter {
     /// CC: local `sh`, remote `ssh host sh`. Gets [`CLAUDE_BIN_RESOLVER_PREAMBLE`] prepended.
     Sh,
-    /// AG: local `zsh -lc node` (login shell — resolves `node` via nvm/PATH, same rc-sourcing
+    /// AG: local `zsh -lc node` (login shell - resolves `node` via nvm/PATH, same rc-sourcing
     /// race as CLAUDE_BIN, see stack-tauri rule), remote `ssh host node`. No preamble.
     Node,
 }
@@ -101,13 +101,13 @@ impl Interpreter {
 ///
 /// WHY: provision was seen failing with `exit=127 command not found: claude`
 /// inside `zsh -lc`/`bash -lc`, seconds after this app's own cold start, then succeeding
-/// again minutes later with the identical command — a PATH race against the user's shell
+/// again minutes later with the identical command - a PATH race against the user's shell
 /// rc/profile (nvm, path_helper, etc.) not having finished sourcing yet at that exact
 /// moment. A `[ -x "$path" ]` file-existence test has no dependency on rc-sourcing timing,
 /// so trying known install locations first structurally removes the race instead of
 /// patching each call site that happens to invoke `claude` today.
 ///
-/// NOTE: mac-only path list for now — this app currently ships for macOS only (see
+/// NOTE: mac-only path list for now - this app currently ships for macOS only (see
 /// CLAUDE.md). If a Linux/Windows build ships later, extend the list below.
 const CLAUDE_BIN_RESOLVER_PREAMBLE: &str = r#"
 _resolve_claude_bin() {
@@ -126,7 +126,7 @@ CLAUDE_BIN=$(_resolve_claude_bin)
 export CLAUDE_BIN
 
 # Prefix that bounds a single `claude` call ON THE REMOTE. Scripts must expand it directly into
-# the command string (AKI_CLAUDE_TMO'$CLAUDE_BIN' ...) rather than wrap it in a shell function —
+# the command string (AKI_CLAUDE_TMO'$CLAUDE_BIN' ...) rather than wrap it in a shell function  - 
 # these calls run inside `zsh -lc "..."`, a child shell that does not inherit functions.
 #
 # WHY this matters more than any cleanup: when the local side kills the SSH, the remote `claude`
@@ -135,7 +135,7 @@ export CLAUDE_BIN
 # Bounding it here means it ends itself and there is nothing left to clean up.
 #
 # gtimeout is the Homebrew coreutils name on macOS, where `timeout` is not present by default.
-# If neither exists we fall back to unbounded — same as before this fix, with the pkill sweep in
+# If neither exists we fall back to unbounded - same as before this fix, with the pkill sweep in
 # agent_usage.rs as the only net. That gap is logged so it is visible rather than silent.
 if command -v timeout >/dev/null 2>&1; then
     AKI_CLAUDE_TMO="timeout -k 5 __CLAUDE_CALL_TIMEOUT__ "
@@ -145,23 +145,23 @@ elif command -v perl >/dev/null 2>&1; then
     # Stock macOS has neither timeout nor gtimeout (verified), so without this branch the
     # single most important host type for this app would silently keep the unbounded behavior
     # that caused the leak. perl ships with every macOS and virtually every Linux. `alarm` then
-    # `exec` replaces the perl process with claude itself, so SIGALRM lands on claude directly —
+    # `exec` replaces the perl process with claude itself, so SIGALRM lands on claude directly  - 
     # no wrapper left holding a child, which is exactly the failure mode being fixed.
     AKI_CLAUDE_TMO="perl -e 'alarm shift; exec @ARGV or exit 127' __CLAUDE_CALL_TIMEOUT__ "
 else
     AKI_CLAUDE_TMO=""
-    printf '[SHELL:preamble] WARNING no timeout/gtimeout/perl on this host — claude calls run unbounded\n' >&2
+    printf '[SHELL:preamble] WARNING no timeout/gtimeout/perl on this host - claude calls run unbounded\n' >&2
 fi
 export AKI_CLAUDE_TMO
 "#;
 
 /// Kills the remote/local process if it overruns `timeout_secs`, returning an explicit timeout
 /// error instead of blocking forever. One funnel for every interpreter this app spawns a script
-/// through (SSoT — see stack-tauri rule's PATH-race preamble note: one funnel, not per-call-site
-/// patches) — [`Interpreter`] selects the local/remote invocation and preamble.
+/// through (SSoT - see stack-tauri rule's PATH-race preamble note: one funnel, not per-call-site
+/// patches) - [`Interpreter`] selects the local/remote invocation and preamble.
 ///
 /// `host == "local"`/`"localhost"` runs `script` through the interpreter's local invocation
-/// instead of SSH — this is how usage is monitored when the agent runs on the same machine as
+/// instead of SSH - this is how usage is monitored when the agent runs on the same machine as
 /// this app, no remote involved.
 fn run_interpreter_timeout(
     host: &str,
@@ -272,7 +272,7 @@ fn ab(agent: &str) -> &str {
 pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
     // run_remote_script (below) is fully synchronous (wait/poll loop, up to
     // REMOTE_SCRIPT_TIMEOUT_SECS). Running it directly on the async executor starves a tokio
-    // worker for the same duration — spawn_blocking offloads to the blocking thread-pool, same
+    // worker for the same duration - spawn_blocking offloads to the blocking thread-pool, same
     // pattern as get_agent_usage/logout_antigravity (P5, docs/research/claudecode-usage-FINAL.md;
     // this pair was the one gap the stack-tauri never-block-the-UI audit had missed).
     tauri::async_runtime::spawn_blocking(move || provision_agent_usage_sync(&agent_name, &host))
@@ -299,7 +299,7 @@ fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result<bool, Stri
         return Err(format!("Provision failed: {}", err));
     }
     // The script now always exits 0 (auth caching is best-effort), but a non-empty stderr still
-    // carries the [SHELL:provision] empty-auth diagnostic — a real signal correlated with Bug B
+    // carries the [SHELL:provision] empty-auth diagnostic - a real signal correlated with Bug B
     // (empty /usage). Log it at ERROR so it lands in usage.log even in production (no --debug).
     if !err.trim().is_empty() {
         logger::error("PROVISION", &format!("stderr (non-fatal)={}", preview(&err, 200)));
@@ -341,7 +341,7 @@ fn log_shell_stderr(tag: &str, stderr: &str) {
     }
 }
 
-/// True the first time it's called for a given host in this app process, false after —
+/// True the first time it's called for a given host in this app process, false after  - 
 /// used to force one bypass of the auth-cache TTL right after app launch (see
 /// `AKI_FORCE_AUTH_REFRESH` in get-claudecode-usage.sh). A CC account switch is rare and
 /// happens outside the app, so there's no reliable in-app event to hook; "app was just
@@ -360,7 +360,7 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
     let force_auth = cc_auth_force_needed(host);
     let script_owned;
     let script: &str = if force_auth {
-        logger::info("GET_USAGE", "first check this session — forcing auth refresh (bypass cache TTL)");
+        logger::info("GET_USAGE", "first check this session - forcing auth refresh (bypass cache TTL)");
         script_owned = format!("AKI_FORCE_AUTH_REFRESH=1\n{}", SCRIPT);
         &script_owned
     } else {
@@ -508,10 +508,10 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
     let script = include_str!("../../scripts/get-antigravity-usage.js");
 
     // P2 (docs/research/claudecode-usage-FINAL.md): this used to spawn+wait_with_output() with
-    // NO timeout — a blackholed SSH/local probe wedged `isChecking` permanently on the JS side,
+    // NO timeout - a blackholed SSH/local probe wedged `isChecking` permanently on the JS side,
     // freezing every subsequent poll tick for this source. Routed through the same bounded
     // funnel as CC (run_interpreter_timeout / Interpreter::Node) so it always resolves within
-    // REMOTE_SCRIPT_TIMEOUT_SECS. A timeout is swallowed to Ok(None) — same "transient monitor
+    // REMOTE_SCRIPT_TIMEOUT_SECS. A timeout is swallowed to Ok(None) - same "transient monitor
     // condition" policy as the non-zero-exit branch below, so it reads as one more silent
     // poll-miss instead of a new flickering error state that didn't exist before this fix.
     let output = match run_remote_node_timeout(host, script) {
@@ -532,7 +532,7 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         // Every non-zero exit here is a *transient monitor* condition, never a user-facing
         // fault: the IDE isn't running, is mid-restart, hasn't opened its Connect port yet,
         // was just signed out, or a single localhost RPC probe timed out. To the UI they all
-        // mean the same thing — "no live reading this poll" — and the frontend already handles
+        // mean the same thing - "no live reading this poll" - and the frontend already handles
         // that (composable null path shows the last cached account). Surfacing any of them as
         // an IPC Err only produced a flickering error banner every poll: that WAS the usage
         // instability. So swallow all AG script failures to Ok(None); just log the reason.
@@ -556,12 +556,12 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
     }))
 }
 
-/// Must match the actual /Applications/*.app bundle name — used for `osascript quit app`,
+/// Must match the actual /Applications/*.app bundle name - used for `osascript quit app`,
 /// `pkill`, the Application Support folder name, and the "<name> Safe Storage" Keychain item.
 const ANTIGRAVITY_APP_NAME: &str = "Antigravity IDE";
 
 /// Electron userData files that hold only the logged-in web session (cookies, chromium
-/// local/session storage, network identity state) — deleting these is equivalent to a
+/// local/session storage, network identity state) - deleting these is equivalent to a
 /// browser "sign out", while leaving User/ (settings, keybindings, snippets, extensions,
 /// workspaceStorage) and globalStorage/ (extension state incl. rules/permissions) untouched.
 const ANTIGRAVITY_ACCOUNT_ONLY_PATHS: &[&str] = &[
@@ -671,7 +671,7 @@ pub async fn logout_antigravity() -> Result<(), String> {
         // globalState SQLite store (User/globalStorage/state.vscdb) under the keys
         // `antigravityUnifiedStateSync.oauthToken` / `.userStatus`. These are NOT Electron
         // safeStorage ciphertext (they carry no v10/v11 prefix), so wiping cookies and the
-        // Keychain "Safe Storage" key above does NOT invalidate them — the IDE re-reads the
+        // Keychain "Safe Storage" key above does NOT invalidate them - the IDE re-reads the
         // token verbatim on next launch and silently signs back in. That was the "logout does
         // nothing" bug. We must delete these two rows from state.vscdb (and its .backup, which
         // Antigravity restores from if the primary is missing). The app is already quit above,
@@ -682,8 +682,8 @@ pub async fn logout_antigravity() -> Result<(), String> {
         // The actual OAuth session survives a plain file wipe: Electron's `safeStorage`
         // encrypts it and stores only the ciphertext in app files (state.vscdb etc.), while
         // the AES key itself lives in exactly one macOS Keychain item named
-        // "<AppName> Safe Storage". Deleting that single, precisely-named item — not a
-        // keychain scan/dump — makes the stored ciphertext permanently undecryptable, which
+        // "<AppName> Safe Storage". Deleting that single, precisely-named item - not a
+        // keychain scan/dump - makes the stored ciphertext permanently undecryptable, which
         // is what actually forces re-login, without touching User/ or globalStorage/ (so
         // extensions, settings, rules, and permissions all survive untouched).
         #[cfg(target_os = "macos")]
@@ -692,6 +692,35 @@ pub async fn logout_antigravity() -> Result<(), String> {
             let _ = Command::new("security")
                 .args(["delete-generic-password", "-s", &service])
                 .output();
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+#[tauri::command]
+pub async fn logout_antigravity_cli() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("pkill").args(["-f", "agy"]).output();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = Command::new("pkill").args(["-f", "agy"]).output();
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            let gemini_dir = std::path::Path::new(&home).join(".gemini");
+            let target_files = ["oauth_creds.json", "google_accounts.json", "state.json"];
+            for file_name in target_files {
+                let file_path = gemini_dir.join(file_name);
+                if file_path.is_file() {
+                    let _ = std::fs::remove_file(&file_path);
+                }
+            }
         }
 
         Ok(())

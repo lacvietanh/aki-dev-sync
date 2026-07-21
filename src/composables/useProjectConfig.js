@@ -14,20 +14,20 @@ const { appendGlobalLog, projectLogs, activeLogProjectId, setupGlobalListener } 
  * Migration off the `sync_git` toggle onto exclude-list semantics (push-only paths plan,
  * 2026-07-19): a push-only dir = present in pull_excludes, absent from push_excludes.
  *
- * Idempotent by construction — no localStorage flag needed (and none should be added: a
+ * Idempotent by construction - no localStorage flag needed (and none should be added: a
  * flag is volatile state guarding durable data, which was itself the root cause of the bug
- * this migration used to have — see push-only-paths plan for the incident). The backing
+ * this migration used to have - see push-only-paths plan for the incident). The backing
  * Rust struct also enforces this: `sync_git` is now `Option<bool>` with
  * `skip_serializing_if = "Option::is_none"`, so once this migration deletes the key, it is
  * never re-materialized on disk. A project with no `sync_git` property is therefore, by
- * definition, either already migrated or created after the migration shipped — nothing to
+ * definition, either already migrated or created after the migration shipped - nothing to
  * do for it, so that branch is a total no-op (no field on that project is touched).
  *
  * For a project that still HAS `sync_git`, preserves its prior effective behavior exactly:
  *   sync_git === true  → drop `.git/` from push_excludes if present (was pushed)
  *   sync_git === false → add `.git/` to push_excludes if missing (was not pushed)
  *   always → ensure `.git/` is in pull_excludes (matches the old hardcoded pull behavior)
- * Only ever adds/removes that one entry — never rewrites the rest of the list
+ * Only ever adds/removes that one entry - never rewrites the rest of the list
  * (Regression Guard: multi-entity stores must not get a wider blast radius than the bug).
  */
 function migratePushOnlyPaths(loadedProjects) {
@@ -80,7 +80,7 @@ export async function loadData(sshHosts, showToast = false) {
         hasPendingPush: null,
         hasPendingPull: null,
         // The project list was just re-read from disk, so any status check still in flight
-        // describes a project definition we no longer hold — advance the generation so those
+        // describes a project definition we no longer hold - advance the generation so those
         // results are discarded instead of landing on top of the fresh state, and start this
         // generation idle. (Advancing, not resetting to 0: epoch must stay monotonic per project
         // or an in-flight check could coincidentally match again. See bumpEpoch in projectStore.)
@@ -109,7 +109,7 @@ export async function loadData(sshHosts, showToast = false) {
 
     appendGlobalLog("LOAD", `Loaded ${loaded.length} projects successfully.`)
 
-    // Start the background cycles, then run one full pass immediately — this is also what
+    // Start the background cycles, then run one full pass immediately - this is also what
     // populates stack_info (DEV/BUILD commands), which used to be fetched here in a sequential
     // per-project await loop before it became one of the checks refreshProject runs in parallel.
     startBackgroundRefresh()
@@ -175,11 +175,11 @@ export async function saveConfig() {
     if (!isNew) {
       projects.value[index] = { ...editingProject.value }
       if (identityChanged) {
-        // Host or local path changed — any status check still in flight describes the OLD
+        // Host or local path changed - any status check still in flight describes the OLD
         // identity and must not land here (see bumpEpoch in projectStore.js). This is the
         // "cancel the check, not a real rsync" boundary: bumping the epoch discards stale
         // results and clears the busy indicator immediately; it never touches a push/pull in
-        // progress. The push/pull state is blanked to unknown for the same reason — it was
+        // progress. The push/pull state is blanked to unknown for the same reason - it was
         // measured against the old host.
         bumpEpoch(editingProject.value.id)
         projectRuntime.value[editingProject.value.id] = {
@@ -203,7 +203,7 @@ export async function saveConfig() {
     }
 
     await saveProjectsList()
-    // One refresh covers git status, remote diff and stack_info (DEV/BUILD commands) — the last
+    // One refresh covers git status, remote diff and stack_info (DEV/BUILD commands) - the last
     // of which used to be fetched inline here with its own `check_project_stack` call.
     const savedProject = projects.value.find(p => p.id === editingProject.value.id)
     if (savedProject) refreshProject(savedProject)

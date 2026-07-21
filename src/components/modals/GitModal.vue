@@ -133,7 +133,7 @@ const formattedGitLog = computed(() => {
     .replace(/\u001b\[1m/g, '<span style="font-weight: bold;">')
     .replace(/\u001b\[(?:0)?m/g, '</span>')
     // Any other/unrecognized SGR or cursor-control sequence (e.g. \x1b[K clear-line during
-    // fetch/push progress) — drop silently rather than leaving raw escape bytes on screen.
+    // fetch/push progress) - drop silently rather than leaving raw escape bytes on screen.
     .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '')
 
   return html

@@ -3,7 +3,7 @@
     <template #title>
       <div style="display: flex; align-items: center; gap: 8px;">
         <i class="fa-solid fa-circle-arrow-up" style="font-size: 16px; color: var(--accent-cyan);"></i>
-        <span>Update Available — {{ displayVersion }}</span>
+        <span>Update Available - {{ displayVersion }}</span>
       </div>
     </template>
     <div class="modal-body update-body">
@@ -50,7 +50,7 @@ async function download() {
     const filename = decodeURIComponent(props.downloadUrl.split('/').pop().split('?')[0]);
     const existing = await invoke('find_in_downloads', { filename });
     if (existing) {
-      // Already downloaded — open the local file directly (mounts the DMG) instead
+      // Already downloaded - open the local file directly (mounts the DMG) instead
       // of re-triggering a browser download.
       invoke('macos_open', { args: [existing] }).catch(console.error);
       return;

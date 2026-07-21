@@ -11,18 +11,18 @@ import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from
 export async function fetchProjectStack(projectId) {
   const project = projects.value.find(p => p.id === projectId)
   if (!project) return
-  // beginRefresh first — see fetchGitStatus.
+  // beginRefresh first - see fetchGitStatus.
   beginRefresh(projectId)
   const epoch = currentEpoch(projectId)
   try {
     const stack = await invoke('check_project_stack', { localPath: project.local_path })
-    if (currentEpoch(projectId) !== epoch) return // stale — superseded mid-flight, discard silently
+    if (currentEpoch(projectId) !== epoch) return // stale - superseded mid-flight, discard silently
     projectRuntime.value[projectId] = { ...projectRuntime.value[projectId], stack_info: stack }
   } catch (_) {
-    // Not a recognized stack (or unreadable) — leave the previous value rather than blanking the
+    // Not a recognized stack (or unreadable) - leave the previous value rather than blanking the
     // DEV/BUILD commands on a transient read failure.
   } finally {
-    // Only the generation that started this counts its own completion — see fetchGitStatus.
+    // Only the generation that started this counts its own completion - see fetchGitStatus.
     if (currentEpoch(projectId) === epoch) endRefresh(projectId)
   }
 }

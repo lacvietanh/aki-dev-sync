@@ -2,39 +2,42 @@
   <div class="dashboard-top-header">
     <header class="top-header" data-tauri-drag-region @mousedown.prevent="startDragging">
       <div class="logo-section" data-tauri-drag-region>
-        <span class="app-icon-menu" @mousedown.stop title="Menu — links, updates & utilities">
+        <span class="app-icon-menu" @mousedown.stop title="Menu - links, updates & utilities">
           <img src="/titlebar-icon.png" class="app-icon icon-glow" />
           <span class="menu-affordance"><i class="fa-solid fa-bars"></i></span>
           <div class="icon-dropdown">
-            <a
-               href="#"
-               @click.prevent="showChangelogModal = true"
-               class="icon-dropdown-item icon-dropdown-version"
-               title="Click to view Changelog">
-              <i class="fa-solid fa-clock-rotate-left"></i>
-              <span class="version-text-default">{{ appVersion }} {{ buildTime }}</span>
-              <span class="version-text-hover">Read Changelog</span>
-            </a>
+            <div class="icon-dropdown-header-info">
+              <span class="version-info-tag"><i class="fa-solid fa-code"></i> {{ appVersion }} {{ buildTime }}</span>
+              <a href="#" @click.prevent="triggerManualUpdateCheck" class="header-update-link" title="Check for Updates">
+                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Update
+              </a>
+            </div>
+            <div class="icon-dropdown-preset-row">
+              <button
+                type="button"
+                class="icon-dropdown-preset-btn"
+                @click="showChangelogModal = true"
+                title="View Changelog">
+                <i class="fa-solid fa-clock-rotate-left"></i> Changelog
+              </button>
+              <button
+                type="button"
+                class="icon-dropdown-preset-btn"
+                @click="openLink(RELEASE_URL)"
+                title="View Latest Release">
+                <i class="fa-solid fa-code-merge"></i> Release
+              </button>
+            </div>
             <div class="icon-dropdown-separator"></div>
-            <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
-              <i class="fa-brands fa-github"></i> GitHub Repository
-            </a>
-            <a href="#" @click.prevent="openLink(RELEASE_URL)" class="icon-dropdown-item">
-              <i class="fa-solid fa-download"></i> Latest Release
-            </a>
-            <a href="#" @click.prevent="triggerManualUpdateCheck" class="icon-dropdown-item">
-              <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Check for Updates
-            </a>
-            <div class="icon-dropdown-separator"></div>
             <a
-               href="#"
-               @click.prevent="!(anySyncing || isReloading) && openSshConfig()"
-               class="icon-dropdown-item"
-               :class="{ 'item-disabled': anySyncing || isReloading }"
-               title="Edit SSH Config (Local) — edits this machine's ~/.ssh/config">
+              href="#"
+              @click.prevent="!(anySyncing || isReloading) && openSshConfig()"
+              class="icon-dropdown-item"
+              :class="{ 'item-disabled': anySyncing || isReloading }"
+              title="Edit SSH Config (Local) - edits this machine's ~/.ssh/config">
               <i class="fa-solid fa-edit"></i> Edit SSH Config (Local)
             </a>
-            <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item icon-dropdown-item-ssh-color" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local — row shows the actual tint">
+            <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item icon-dropdown-item-ssh-color" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local - row shows the actual tint">
               <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
             </a>
             <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item" title="Build ~/.claude/statusline-command.sh visually, apply to local and/or any configured remote host">
@@ -44,51 +47,88 @@
                       :key="i"
                       :style="c.color ? { color: c.color } : null">{{ c.char }}</span></span>
             </a>
-            <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) — Native / Proxy settings for ~/.claude/settings.json on this machine">
+            <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) - Native / Proxy settings for ~/.claude/settings.json on this machine">
               <i class="fa-solid fa-sliders"></i> Claude Code Profile (Local)
             </a>
             <div class="icon-dropdown-separator"></div>
-            <a href="#" @click.prevent="openLink(AKICLAUDEDOC_REPO_URL)" class="icon-dropdown-item">
-              <i class="fa-brands fa-github"></i> AkiClaudeDoc Repo
-            </a>
-            <a href="#" @click.prevent="installAkiClaudeDoc" class="icon-dropdown-item">
-              <i class="fa-solid fa-download"></i> Install AkiClaudeDoc
-            </a>
+            <div class="icon-dropdown-ac-section">
+              <span class="ac-title"><i class="fa-solid fa-book"></i> AkiClaudeDoc:</span>
+              <div class="icon-dropdown-preset-row ac-row">
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  @click="openLink(AKICLAUDEDOC_REPO_URL)"
+                  title="AkiClaudeDoc Repository">
+                  <i class="fa-brands fa-github"></i> Repo
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  @click="installAkiClaudeDoc"
+                  title="Install AkiClaudeDoc">
+                  <i class="fa-solid fa-download"></i> Install
+                </button>
+              </div>
+            </div>
             <div class="icon-dropdown-separator"></div>
+            <div class="icon-dropdown-ac-section">
+              <span class="ac-title"><i class="fa-solid fa-layer-group"></i> Usage row:</span>
+              <div class="icon-dropdown-preset-row ac-row">
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': tierCount === 1 }"
+                  @click="setTierCount(1)"
+                  title="Usage Panel: 1 Row (2 slots side-by-side)">
+                  <i class="fa-solid fa-bars"></i> 1 row
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': tierCount === 2 }"
+                  @click="setTierCount(2)"
+                  title="Usage Panel: 2 Rows (4 slots stacked grid)">
+                  <i class="fa-solid fa-table-cells-large"></i> 2 rows
+                </button>
+              </div>
+            </div>
             <div class="icon-dropdown-preset-row">
               <button
-                      type="button"
-                      class="icon-dropdown-preset-btn"
-                      @click="setNarrowWidthSafe"
-                      title="Resize window width to 420px (narrow mode), keeping height and position">
+                type="button"
+                class="icon-dropdown-preset-btn"
+                @click="setNarrowWidthSafe"
+                title="Resize window width to 420px (narrow mode), keeping height and position">
                 <i class="fa-solid fa-compress"></i> Narrow
               </button>
               <button
-                      type="button"
-                      class="icon-dropdown-preset-btn"
-                      @click="setWideWidthSafe"
-                      title="Resize window width to 768px (wide mode), keeping height and position">
+                type="button"
+                class="icon-dropdown-preset-btn"
+                @click="setWideWidthSafe"
+                title="Resize window width to 768px (wide mode), keeping height and position">
                 <i class="fa-solid fa-expand"></i> Wide
               </button>
             </div>
             <div class="icon-dropdown-preset-row">
               <button
-                      type="button"
-                      class="icon-dropdown-preset-btn"
-                      @click="stickTopLeftSafe"
-                      title="Snap window to the top-left-most connected monitor and resize height to fit the whole project list">
+                type="button"
+                class="icon-dropdown-preset-btn"
+                @click="stickTopLeftSafe"
+                title="Snap window to the top-left-most connected monitor and resize height to fit the whole project list">
                 <i class="fa-solid fa-border-top-left"></i> Stick Top-Left
               </button>
               <button
-                      type="button"
-                      class="icon-dropdown-preset-btn"
-                      @click="centerPrimarySafe"
-                      title="Center window on the primary monitor (position only, no resize)">
+                type="button"
+                class="icon-dropdown-preset-btn"
+                @click="centerPrimarySafe"
+                title="Center window on the primary monitor (position only, no resize)">
                 <i class="fa-solid fa-crosshairs"></i> Center Primary
               </button>
             </div>
-            <div class="icon-dropdown-separator u-wide-hide"></div>
-            <a href="#" @click.prevent="openLink(DONATE_URL)" class="icon-dropdown-item u-wide-hide" style="color: #f87171;">
+            <div class="icon-dropdown-separator"></div>
+            <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
+              <i class="fa-brands fa-github"></i> GitHub Repository
+            </a>
+            <a href="#" @click.prevent="openLink(DONATE_URL)" class="icon-dropdown-item" style="color: #f87171;">
               <i class="fa-solid fa-heart"></i> Donate to AkiDevSync
             </a>
           </div>
@@ -115,11 +155,11 @@
         <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
           <i class="fa-solid fa-note-sticky" :style="noteContent ? 'color: #f59e0b;' : ''"></i>
         </button>
-        <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="openLink(DONATE_URL)" title="Donate — support development">
+        <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="openLink(DONATE_URL)" title="Donate - support development">
           <i class="fa-solid fa-heart"></i>
         </button>
         <div class="btn-group-refresh">
-          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="(anyRefreshing || isReloading) ? 'Refreshing all — git, remote diff, usage…' : 'Refresh all — git, remote diff, usage'" :disabled="anySyncing || anyRefreshing || isReloading">
+          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="(anyRefreshing || isReloading) ? 'Refreshing all - git, remote diff, usage…' : 'Refresh all - git, remote diff, usage'" :disabled="anySyncing || anyRefreshing || isReloading">
             <i class="fa-solid fa-rotate-right" :class="{ 'fa-spin': anyRefreshing || isReloading }"></i>
           </button>
           <button class="btn-tech btn-tech-secondary btn-refresh-settings" @click="showRefreshSettings = true" title="Background Refresh Settings" :disabled="isReloading">
@@ -168,6 +208,7 @@ import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
 import { openGlobalNote, noteContent } from '../composables/useGlobalNote';
 import { STATUSLINE_COLORS } from '../utils/statuslineColors';
+import { tierCount, setTierCount } from '../store/usageTierStore';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
 import UpdateModal from './modals/UpdateModal.vue';
@@ -193,7 +234,7 @@ const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
 
 // "Statusline Customizer" row: paint each letter with the actual palette the customizer
-// supports (src/utils/statuslineColors.js — the same array ClaudeSettingModal.vue's per-field
+// supports (src/utils/statuslineColors.js - the same array ClaudeSettingModal.vue's per-field
 // color picker uses), so the row demonstrates the feature instead of describing it in words.
 // Spaces are kept in the sequence (so word spacing is unchanged) but don't consume a color.
 const STATUSLINE_LABEL = 'Statusline Customizer';
@@ -333,12 +374,12 @@ async function installAkiClaudeDoc() {
   }
 }
 
-// Refreshes every project's derived status (git, remote diff, stack) plus the usage monitors —
+// Refreshes every project's derived status (git, remote diff, stack) plus the usage monitors  - 
 // exactly what the tooltip promises, and exactly the same unit of work a single project's own
 // Refresh button runs. It deliberately does NOT call loadData(): that re-reads projects.json, SSH
 // hosts and IDE availability from disk, which is an app-load concern, not a refresh. Routing this
 // button through loadData was why "everything dims" came from loadData's global isReloading flag
-// instead of from the projects themselves — making the global and per-project buttons two
+// instead of from the projects themselves - making the global and per-project buttons two
 // unrelated mechanisms that only looked like one feature.
 function handleRefresh() {
   refreshAllProjects();
@@ -419,7 +460,7 @@ function centerPrimarySafe() {
   font-weight: 400;
   font-size: 13px;
   /* SSoT echo: exact OSC 11 background src-tauri/src/system.rs patches into the terminal
-     (SSH_COLOR_SNIPPET, `printf '\033]11;#1a0f0f\007'`) — mirrored here once so the "Enable SSH
+     (SSH_COLOR_SNIPPET, `printf '\033]11;#1a0f0f\007'`) - mirrored here once so the "Enable SSH
      Terminal Color" row can show the real tint instead of describing it. */
   --ssh-terminal-bg: #1a0f0f;
 }
@@ -470,7 +511,7 @@ function centerPrimarySafe() {
   cursor: not-allowed;
 }
 
-/* Statusline Customizer row: each letter keeps its palette color regardless of hover — the
+/* Statusline Customizer row: each letter keeps its palette color regardless of hover - the
    inline per-letter color (set in the template from statuslineLabelChars) intentionally beats
    the generic .icon-dropdown-item:hover text-color rule above, since the whole point is a
    persistent, always-visible preview rather than a hover-only reveal. */
@@ -497,6 +538,64 @@ function centerPrimarySafe() {
 
 .icon-dropdown-item-ssh-color:hover i {
   color: #fca5a5;
+}
+
+.icon-dropdown-header-info {
+  padding: 4px 8px 6px 8px;
+  font-size: 11px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  opacity: 0.9;
+}
+
+.version-info-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-update-link {
+  color: #38bdf8;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 2px 6px;
+  background: rgba(56, 189, 248, 0.1);
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.header-update-link:hover {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.icon-dropdown-ac-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+  gap: 6px;
+}
+
+.ac-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ac-row {
+  flex: 1;
 }
 
 .icon-dropdown-separator {
@@ -734,7 +833,7 @@ function centerPrimarySafe() {
   }
 
   /* DEV badge now stacks under the title text only (not the whole logo-section, which also
-     contains the menu icon) — .title-block wraps just the h1 + dev-tag, so the icon stays on
+     contains the menu icon) - .title-block wraps just the h1 + dev-tag, so the icon stays on
      the same row while the title/DEV pair goes vertical to save horizontal space. A small gap
      (instead of 0) keeps the badge from visually running into the title text right below it. */
   .title-block {
@@ -751,7 +850,7 @@ function centerPrimarySafe() {
     line-height: 1.3;
   }
 
-  /* Build info shown at the DEV-tag position — same red, same tiny size, no click. DEV renders
+  /* Build info shown at the DEV-tag position - same red, same tiny size, no click. DEV renders
      below it (last in column) so the order reads: build ⟶ DEV if in dev mode. */
   .build-narrow {
     font-size: 6px;
@@ -761,7 +860,7 @@ function centerPrimarySafe() {
     line-height: 1.3;
   }
 
-  /* Disable changelog click in narrow — accidental opens during window drag are common. The
+  /* Disable changelog click in narrow - accidental opens during window drag are common. The
      update badge keeps its own pointer-events so it stays tappable. */
   .app-version.clickable {
     pointer-events: none;
@@ -777,7 +876,7 @@ function centerPrimarySafe() {
     margin-left: 5px;
   }
 
-  /* Folded in from the old 850px breakpoint (removed — 700px is the single narrow breakpoint;
+  /* Folded in from the old 850px breakpoint (removed - 700px is the single narrow breakpoint;
      INTRO's label now hides via u-narrow-hide like everything else). */
   .header-actions .btn-tech {
     padding: 0 8px !important;

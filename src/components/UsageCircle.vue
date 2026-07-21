@@ -4,8 +4,8 @@
     <div class="usage-circle-container" @mouseenter="updateTime">
       <div class="circle-main-row">
         <!-- Wide layout: label sits beside the ring. At the narrow breakpoint (<=700px) this
-             same span gets absolutely repositioned over the ring's top interior instead —
-             see the @media block below — so this markup covers both without branching. -->
+             same span gets absolutely repositioned over the ring's top interior instead  - 
+             see the @media block below - so this markup covers both without branching. -->
         <span class="circle-sub-label">{{ subLabel }}</span>
         <div class="circle-svg-wrapper">
           <svg class="radial-progress" viewBox="0 0 36 36">
@@ -16,7 +16,7 @@
                     cy="18"
                     r="15"
                     stroke-width="3" />
-            <!-- Active Progress Circle — wrapped in Vue's native <Transition> so appearing/
+            <!-- Active Progress Circle - wrapped in Vue's native <Transition> so appearing/
                  disappearing (N/A <-> real data, e.g. right after an account switch momentarily
                  clears percentage) fades via Vue's own enter/leave lifecycle instead of an
                  abrupt v-if mount/unmount. The persistent :stroke-dashoffset CSS transition
@@ -250,7 +250,7 @@ export default {
   transition: stroke-dashoffset 0.5s ease-in-out;
 }
 
-/* Vue <Transition name="circle-fill"> hooks — fade in/out on mount/unmount (N/A <-> real data) */
+/* Vue <Transition name="circle-fill"> hooks - fade in/out on mount/unmount (N/A <-> real data) */
 .circle-fill-enter-active,
 .circle-fill-leave-active {
   transition: opacity 0.3s ease-in-out;
@@ -331,7 +331,7 @@ export default {
   color: var(--text-darker);
 }
 
-/* Tooltip implementation — opens upward (not below-right) and sized down. The usage panel
+/* Tooltip implementation - opens upward (not below-right) and sized down. The usage panel
    that hosts these circles (AgentUsageSection.vue) is a fixed-height box with overflow-y:auto,
    and a tooltip opening downward from a circle near the bottom of that box got clipped by the
    scroll container before it ever became visible. Opening upward + shrinking the footprint is
@@ -422,7 +422,7 @@ export default {
   margin-top: 1px;
 }
 
-/* Narrow mode only (<=700px) — the ring is the only thing with spare room at this width, so the
+/* Narrow mode only (<=700px) - the ring is the only thing with spare room at this width, so the
    label moves off to the side and onto the ring itself instead: absolutely positioned over the
    ring's top interior, tiny but still legible, with the percentage nudged down a touch to make
    room. Outside this breakpoint the wide "label beside ring" layout above is untouched. */

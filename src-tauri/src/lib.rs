@@ -73,6 +73,7 @@ pub fn run() {
             agent_usage::provision_agent_usage,
             agent_usage::get_agent_usage,
             agent_usage::logout_antigravity,
+            agent_usage::logout_antigravity_cli,
             system::macos_open,
             system::install_ssh_terminal_color,
             system::install_akiclaudedoc,

@@ -49,7 +49,7 @@ if (subcommand !== 'dev') {
     for (let p = base; p < base + range; p++) {
       if (await isPortFree(p)) return p;
     }
-    throw new Error(`No free port in range ${base}–${base + range - 1}`);
+    throw new Error(`No free port in range ${base}-${base + range - 1}`);
   }
 
   const devPort = await findFreePort(1420);
@@ -57,7 +57,7 @@ if (subcommand !== 'dev') {
   console.log(`[tauri-runner] dev port=${devPort} hmr=${hmrPort}`);
 
   // Tauri CLI: override devUrl at runtime so it matches the port Vite will bind.
-  // Vite reads TAURI_DEV_PORT from env (set below) — see vite.config.js.
+  // Vite reads TAURI_DEV_PORT from env (set below) - see vite.config.js.
   // Using --config JSON merge instead of editing tauri.conf.json keeps that file clean.
   const configOverride = JSON.stringify({
     build: { devUrl: `http://localhost:${devPort}` },

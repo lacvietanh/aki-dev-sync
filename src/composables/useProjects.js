@@ -1,4 +1,4 @@
-// Thin re-export facade — all state and logic live in split modules.
+// Thin re-export facade - all state and logic live in split modules.
 import { projects, projectRuntime, anySyncing, anyRefreshing, isRefreshing, isReloading, Toast } from '../store/projectStore'
 import {
   showGitModal, gitProject, gitStatusText, fetchGitStatus, openGitModal, closeGitModal,
@@ -30,7 +30,7 @@ export {
   startBackgroundRefresh, refreshProject, refreshAllProjects,
 }
 
-// Factory shim — backward compat for components that call useProjects()
+// Factory shim - backward compat for components that call useProjects()
 export function useProjects() {
   return {
     projects, projectRuntime, anySyncing, anyRefreshing, isRefreshing, isReloading, Toast,

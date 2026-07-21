@@ -9,8 +9,8 @@ import { fetchProjectStack } from './useProjectStack'
 // ---------------------------------------------------------------------------
 // Refresh controller.
 //
-// There is exactly ONE unit of work in this app's status layer — "refresh
-// project X" — and exactly one place that schedules it. Everything that can
+// There is exactly ONE unit of work in this app's status layer - "refresh
+// project X" - and exactly one place that schedules it. Everything that can
 // cause a refresh is a caller of the same unit:
 //
 //   background git timer   → fetchGitStatus            for every project
@@ -22,7 +22,7 @@ import { fetchProjectStack } from './useProjectStack'
 // Because each check owns its own busy state (beginRefresh/endRefresh in
 // projectStore.js), all of the above light up the same per-project indicator
 // with no special-casing per trigger. The header button's own spinner reads
-// `anyRefreshing`, derived from those same counters — so it spins on a
+// `anyRefreshing`, derived from those same counters - so it spins on a
 // background tick too, not only when a human clicked it.
 //
 // This replaced an arrangement where the global button called loadData() (a
@@ -53,7 +53,7 @@ function restartGitTimer() {
 
 // Gated on syncCheckEnabled, not just left running to no-op inside checkProjectSyncStatus: with
 // sync check off there is nothing this cycle should be doing at all, so it should not exist as a
-// live timer either — matches the "off means off" behavior already expected of the PUSH/PULL
+// live timer either - matches the "off means off" behavior already expected of the PUSH/PULL
 // fieldset in ProjectTable.vue, at the controller level instead of only inside the leaf function.
 function restartDiffTimer() {
   if (diffTimer) clearInterval(diffTimer)
@@ -100,7 +100,7 @@ export function startBackgroundRefresh() {
     watch(() => refreshSettings.value.remote_diff_interval_s, restartDiffTimer)
     // Toggling sync check on/off must cleanly tear down and rebuild the diff cycle, not leave a
     // stale timer running and rely on the leaf function to silently no-op. Turning back on also
-    // runs one check immediately instead of waiting out the rest of the interval — the same
+    // runs one check immediately instead of waiting out the rest of the interval - the same
     // "resume now, don't wait" behavior the ring's own restart already gives on an interval change.
     watch(syncCheckEnabled, (enabled) => {
       restartDiffTimer()

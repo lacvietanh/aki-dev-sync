@@ -16,7 +16,7 @@ const isPinned = ref(localStorage.getItem(PIN_STORAGE_KEY) === "true");
 const NARROW_WIDTH = 420;
 const WIDE_WIDTH = 768;
 
-// tauri.conf.json's windows[0].minHeight — mirrored here so the "Stick Top-Left"
+// tauri.conf.json's windows[0].minHeight - mirrored here so the "Stick Top-Left"
 // auto-fit never programmatically requests a height smaller than the OS-enforced floor.
 const MIN_WINDOW_HEIGHT = 500;
 
@@ -112,7 +112,7 @@ export function useAppWindow() {
     const monitors = await availableMonitors();
     if (!monitors.length) return;
 
-    // "Topmost-leftmost" = smallest (x + y) among all connected monitors' origins —
+    // "Topmost-leftmost" = smallest (x + y) among all connected monitors' origins  - 
     // not necessarily the primary monitor.
     const target = monitors.reduce((best, m) =>
       m.position.x + m.position.y < best.position.x + best.position.y ? m : best

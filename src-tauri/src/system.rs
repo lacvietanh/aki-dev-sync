@@ -48,7 +48,7 @@ fn applescript_escape(s: &str) -> String {
 /// when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
 ///
 /// The wait for that default window is a poll (up to ~2s, checking every 100ms), not a fixed
-/// `delay` — a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the
+/// `delay` - a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the
 /// window isn't up yet when we check, we'd fall through to `do script` opening a *second* window,
 /// and the slow default window would still appear on its own moments later (the exact "one window
 /// at $HOME + one at the right target" bug this helper exists to prevent).
@@ -116,7 +116,7 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             #[cfg(target_os = "macos")]
             {
                 let expanded = expand_remote_tilde(&path);
-                // Quotes here are shell quotes inside the ssh command, not AppleScript quotes —
+                // Quotes here are shell quotes inside the ssh command, not AppleScript quotes  - 
                 // open_terminal_with_command applies the AppleScript escaping separately.
                 let shell_cmd = format!(
                     "ssh {} -t 'mkdir -p \"{}\" && cd \"{}\" ; exec bash'",
@@ -129,7 +129,7 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
         "antigravity" => {
             let expanded = expand_remote_tilde(&path);
             // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox,
-            // custom profile setup, etc.) — not available in macOS GUI app's stripped PATH.
+            // custom profile setup, etc.) - not available in macOS GUI app's stripped PATH.
             // Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
             let safe_path = expanded.replace('\'', "'\\''");
@@ -139,7 +139,7 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             );
             // -ilc: interactive (-i) sources ~/.zshrc (not just ~/.zprofile); login (-l) sources
             // ~/.zprofile. Both needed because antigravity-ide PATH is typically set in ~/.zshrc,
-            // which a non-interactive login shell (-lc) never reads — causing silent failure when
+            // which a non-interactive login shell (-lc) never reads - causing silent failure when
             // the app launches from Finder vs. from a terminal that already inherited full PATH.
             Command::new(&shell)
                 .args(["-ilc", &shell_cmd])
@@ -151,11 +151,11 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
     }
 }
 
-const SSH_COLOR_MARKER_BEGIN: &str = "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync — safe to remove) ---";
+const SSH_COLOR_MARKER_BEGIN: &str = "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
 const SSH_COLOR_MARKER_END: &str = "# --- Aki SSH remote color END ---";
 
 /// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is
-/// active, then resets on exit — the same OSC 11/111 background-swap trick the user already
+/// active, then resets on exit - the same OSC 11/111 background-swap trick the user already
 /// hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running
 /// strips any previously-installed block (between the markers) before writing a fresh one, so
 /// repeated installs never duplicate.
@@ -172,7 +172,7 @@ ssh() {
 /// customizer, which does need per-host rollout).
 ///
 /// `spawn_blocking`-wrapped per CLAUDE.md's blocking-UI rule: even "just" file I/O is a
-/// synchronous syscall, and the house rule now has zero exceptions for that — every command
+/// synchronous syscall, and the house rule now has zero exceptions for that - every command
 /// touching disk or a subprocess goes through the blocking thread-pool, no case-by-case judgment
 /// calls about whether a given file happens to be small.
 #[tauri::command]
@@ -221,7 +221,7 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
 }
 
 /// Resolves the local AkiClaudeDoc checkout by trying well-known candidate paths first (same
-/// conservative pattern as the CLAUDE_BIN resolver — a file-existence check has no dependency on
+/// conservative pattern as the CLAUDE_BIN resolver - a file-existence check has no dependency on
 /// where any given machine happens to keep its dev tree), so it's never a guess. Its exact
 /// location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to
 /// pointing the user at the GitHub repo to clone it.
@@ -400,7 +400,7 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
 ///
 /// Deliberately thin: mtime comparison reuses `git::get_file_conflict_info` (the existing
 /// local/remote stat-diff primitive, used by the SELECT conflict check) and the pull reuses
-/// `sync::rsync_pull_file` — no bespoke SSH stat script or rsync invocation here.
+/// `sync::rsync_pull_file` - no bespoke SSH stat script or rsync invocation here.
 #[tauri::command]
 pub async fn resolve_report_html(
     local_path: String,
@@ -454,7 +454,7 @@ pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
     Ok(if path.exists() { Some(path.to_string_lossy().to_string()) } else { None })
 }
 
-/// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates" —
+/// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates"  - 
 /// `curl`'s blocking network wait must never sit on the command-dispatch thread (a slow or dead
 /// network would freeze the whole app on launch). `spawn_blocking` per CLAUDE.md's blocking-UI
 /// rule.
@@ -566,7 +566,7 @@ pub fn run_project_command(local_path: String, cmd: String) -> Result<(), String
 
 /// DEV button command: opens the dev command in Terminal, exactly like `run_project_command`
 /// (BUILD). An earlier version also polled for the dev server's port to come up and auto-opened
-/// it in a browser; removed — it never reliably worked across the range of real project configs
+/// it in a browser; removed - it never reliably worked across the range of real project configs
 /// (custom dev scripts, non-standard ports, monorepo boot times) and the fixed-cost complexity
 /// (port resolution, TCP poll, detached background task) wasn't worth the unreliable payoff. The
 /// user opens the browser themselves once the Terminal shows the server is up.

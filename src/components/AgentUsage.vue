@@ -20,7 +20,7 @@
       </div>
       <div class="agent-status-badges">
         <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude — Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
@@ -30,16 +30,31 @@
     <!-- Antigravity Header (Keep tiny logo + email) -->
     <div v-else class="agent-header">
       <div class="agent-title-group">
-        <div class="agent-icon-wrapper">
-          <img src="/antigravity-icon.png" class="agent-img-icon icon-glow" alt="Antigravity" @click="handleIconClick" style="cursor: pointer;" title="Open Antigravity App" />
+        <div class="agent-icon-wrapper" :class="currentSourceType">
+          <i
+            v-if="currentSourceType === 'cli'"
+            class="fa-solid fa-terminal agent-cli-icon"
+            @click="handleIconClick"
+            style="cursor: pointer;"
+            title="AGY CLI Active"
+          ></i>
+          <img
+            v-else
+            src="/antigravity-icon.png"
+            class="agent-img-icon ag-ide-icon"
+            alt="Antigravity IDE"
+            @click="handleIconClick"
+            style="cursor: pointer;"
+            title="Antigravity IDE Active"
+          />
         </div>
         <div class="agent-info">
           <div class="agent-name">
             <span class="u-narrow-hide">{{ agentName }}</span>
             <span v-if="data && data.userTier?.name" class="agent-plan-badge ag">
-              {{ data.userTier.name.replace('Google', 'GG') }}
+              {{ data.userTier.name.replace(/\b(Google|AI)\b/gi, '').trim() }}
             </span>
-            <!-- Email doubles as the account-switch trigger (no extra element — Extreme Narrow).
+            <!-- Email doubles as the account-switch trigger (no extra element - Extreme Narrow).
                  The handler is on the wrapper because a blurred email has pointer-events:none. -->
             <span
               v-if="data && data.email"
@@ -56,20 +71,25 @@
               <div v-if="accountMenuOpen" class="ag-account-menu" @click.stop>
                 <button
                   v-for="acc in accounts"
-                  :key="acc.email"
+                  :key="acc.accountKey || acc.email"
                   class="ag-account-item"
-                  :class="{ 'is-current': acc.email === (viewingEmail || activeEmail) }"
-                  @click="pickAccount(acc.email)"
+                  :class="{ 'is-current': isAccountCurrent(acc) }"
+                  @click="pickAccount(acc)"
                 >
                   <span class="ag-account-email" :class="{ 'email-blurred': !showEmail }">{{ acc.email }}</span>
                   <span class="ag-account-metacol">
-                    <span v-if="acc.email === activeEmail" class="ag-live-dot" title="Live account"></span>
+                    <span
+                      v-if="acc.email === activeEmail || (activeEmails && activeEmails.has && (activeEmails.has(acc.accountKey) || activeEmails.has(acc.email)))"
+                      class="ag-live-dot"
+                      :class="acc.sourceType || 'ide'"
+                      :title="`Live account (${(acc.sourceType || 'ide').toUpperCase()})`"
+                    ></span>
                     <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
                   </span>
                 </button>
-                <button class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" title="Sign out — keeps settings/extensions/rules">
-                  <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : 'fa-right-from-bracket'"></i>
-                  <span>{{ loggingOut ? 'Logging out…' : 'Log Out' }}</span>
+                <button class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" :title="currentSourceType === 'cli' ? 'Sign out of AGY CLI session' : 'Sign out of Antigravity IDE session'">
+                  <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : (currentSourceType === 'cli' ? 'fa-terminal' : 'fa-right-from-bracket')"></i>
+                  <span>{{ loggingOut ? 'Logging out…' : (currentSourceType === 'cli' ? 'Log Out AGY CLI' : 'Log Out IDE') }}</span>
                 </button>
               </div>
             </span>
@@ -84,7 +104,7 @@
         <!-- Show cached badge when AG is offline; stale badge otherwise -->
         <span v-if="isCached" class="cached-note" :title="'Data cached at ' + cachedAbsTime">{{ cachedAgo }}</span>
         <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude — Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
+        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
         </button>
@@ -127,7 +147,7 @@
         </div>
       </div>
 
-      <!-- Off state (manual toggle OR locked-by-proxy) takes priority over stale cached bars —
+      <!-- Off state (manual toggle OR locked-by-proxy) takes priority over stale cached bars  - 
            this must not require `!data` to trigger, otherwise flipping the source off leaves
            the last-fetched bars on screen until the next app launch. -->
       <div v-else-if="uiStatus.kind === 'off'" class="usage-empty">
@@ -246,17 +266,18 @@ const props = defineProps({
   cachedAt: { type: Number, default: null },
   showEmail: { type: Boolean, default: true },
   sourceOff: { type: Boolean, default: false },
-  // True when sourceOff is forced (not user-toggled) — e.g. Claude Code local monitoring
+  // True when sourceOff is forced (not user-toggled) - e.g. Claude Code local monitoring
   // locked off while Proxy mode is active. Swaps the off-state message to explain why.
   locked: { type: Boolean, default: false },
   // AG-only multi-account view (unused for Claude Code)
   accounts: { type: Array, default: () => [] },
   viewingEmail: { default: null },
-  activeEmail: { default: null }
+  activeEmail: { default: null },
+  activeEmails: { type: Object, default: () => new Set() }
 });
 
 // Single source of truth for which body view to render. Priority: error > loading > off
-// (manual or locked) > empty (no data yet) > data. Off is checked before data on purpose —
+// (manual or locked) > empty (no data yet) > data. Off is checked before data on purpose  - 
 // otherwise flipping a source off leaves the last-fetched bars on screen until relaunch.
 const uiStatus = computed(() => {
   if (props.error) return { kind: 'error', text: props.error };
@@ -264,7 +285,7 @@ const uiStatus = computed(() => {
     return {
       kind: 'off',
       icon: 'fa-power-off mb-1',
-      text: props.locked ? 'Monitor only for native Claude — Proxy mode active' : 'Monitoring off',
+      text: props.locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off',
     };
   }
   if (props.loading && !props.data) return { kind: 'loading' };
@@ -272,7 +293,7 @@ const uiStatus = computed(() => {
     return {
       kind: 'empty',
       icon: props.agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1',
-      text: props.agentId === 'antigravity' ? 'Not connected — open & sign in to Antigravity to monitor' : 'No data — waiting for next session',
+      text: props.agentId === 'antigravity' ? 'Not connected - open & sign in to Antigravity to monitor' : 'No data - waiting for next session',
     };
   }
   return { kind: 'data' };
@@ -286,18 +307,29 @@ function toggleAccountMenu() {
   if (props.agentId !== 'antigravity') return;
   accountMenuOpen.value = !accountMenuOpen.value;
 }
-function pickAccount(email) {
-  // Picking the live/active account returns to the follow-live view (viewingEmail = null).
-  emit('select-account', email === props.activeEmail ? null : email);
+function isAccountCurrent(acc) {
+  const key = acc.accountKey || acc.email;
+  if (props.viewingEmail) {
+    return key === props.viewingEmail || acc.email === props.viewingEmail;
+  }
+  return key === props.activeEmail || acc.email === props.activeEmail;
+}
+
+function pickAccount(acc) {
+  const key = acc.accountKey || acc.email;
+  emit('select-account', key);
   accountMenuOpen.value = false;
 }
 const loggingOut = ref(false);
 async function logoutAntigravity() {
   if (loggingOut.value) return;
   accountMenuOpen.value = false;
+  const isCli = currentSourceType.value === 'cli';
   const { isConfirmed } = await Swal.fire({
-    title: 'Đăng xuất Antigravity?',
-    html: 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.',
+    title: isCli ? 'Đăng xuất AGY CLI (Terminal)?' : 'Đăng xuất Antigravity IDE?',
+    html: isCli
+      ? 'Ứng dụng sẽ dừng các tiến trình CLI và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.'
+      : 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#ef4444',
@@ -310,22 +342,27 @@ async function logoutAntigravity() {
   if (!isConfirmed) return;
   loggingOut.value = true;
   try {
-    await invoke('logout_antigravity');
-    // AG's own auth state is now wiped, but this app's per-account cache/view-state isn't —
-    // without this, the display would keep following the just-logged-out account until a live
-    // fetch for the next login happens to succeed (can be several polls away).
+    if (isCli) {
+      await invoke('logout_antigravity_cli');
+    } else {
+      await invoke('logout_antigravity');
+    }
     emit('logout-success');
   } finally {
     loggingOut.value = false;
   }
 }
-// Design lock: the header shows a truncated email (10 chars wide, 6 at the narrow breakpoint) to
+const currentSourceType = computed(() => {
+  return props.data?.sourceType || 'ide';
+});
+
+// Design lock: the header shows a truncated email (12 chars wide, 7 at the narrow breakpoint) to
 // keep width stable when the active/cached account changes; the full email is shown in the
 // dropdown rows untouched.
 const isNarrow = ref(typeof window !== 'undefined' && window.innerWidth <= 700);
 function updateIsNarrow() { isNarrow.value = window.innerWidth <= 700; }
 function truncEmail(email) {
-  const max = isNarrow.value ? 4 : 10;
+  const max = isNarrow.value ? 7 : 12;
   return email.length > max ? email.slice(0, max) + '…' : email;
 }
 function onDocClick() { accountMenuOpen.value = false; }
@@ -454,7 +491,7 @@ const ccNow = ref(Math.floor(Date.now() / 1000));
 let ccClockTimer = null;
 onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 
-// AG cached-at display — reactive relative time updated every 10s
+// AG cached-at display - reactive relative time updated every 10s
 const agCacheNow = ref(Math.floor(Date.now() / 1000));
 let agCacheTimer = null;
 onMounted(() => {
@@ -509,7 +546,7 @@ const cc5hResetsAt = computed(() => {
 const cc5hColorClass = computed(() => pctColorClass(cc5hPct.value));
 const cc5hResetLine = computed(() => formatResetLine(cc5hResetsAt.value, ccNow.value));
 
-// P4 boundary trigger: CC had no client-side equivalent of AG's UsageCircle @timeout — the
+// P4 boundary trigger: CC had no client-side equivalent of AG's UsageCircle @timeout - the
 // 5-hour bar could sit stale at "ready" past its reset with nothing prompting a refetch until
 // the next STALE_RESET poll noticed server-side. Same wasPast/nowPast edge-detect pattern as
 // UsageCircle.vue, wired to the existing @retry → refresh handler (AgentUsageSlot.vue).
@@ -538,7 +575,7 @@ const ccOrgName = computed(() => {
   return org;
 });
 
-// SVG ring — restarts on refresh complete or when interval setting changes
+// SVG ring - restarts on refresh complete or when interval setting changes
 const drainKey = ref(0);
 watch(() => props.loading, (newVal, oldVal) => {
   if (oldVal === true && newVal === false) drainKey.value++;
@@ -622,12 +659,24 @@ async function handleIconClick() {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.agent-icon-wrapper.ide .ag-ide-icon {
+  filter: drop-shadow(0 0 2px rgba(34, 211, 238, 0.5));
+}
+
+.agent-cli-icon {
+  font-size: 13px;
+  color: #c084fc;
+  filter: drop-shadow(0 0 2px rgba(192, 132, 252, 0.5));
 }
 
 .agent-img-icon {
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: 3px;
   object-fit: contain;
 }
 
@@ -693,7 +742,7 @@ async function handleIconClick() {
   min-width: 180px;
   max-width: 280px;
   padding: 3px;
-  background: #1a1d23; /* solid — --bg-tertiary is near-transparent and would show through */
+  background: #1a1d23; /* solid - --bg-tertiary is near-transparent and would show through */
   border: 1px solid var(--border-color);
   border-radius: 6px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
@@ -743,8 +792,15 @@ async function handleIconClick() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-cyan);
-  box-shadow: 0 0 5px var(--accent-cyan);
+  flex-shrink: 0;
+}
+.ag-live-dot.ide {
+  background: #22d3ee;
+  box-shadow: 0 0 3px rgba(34, 211, 238, 0.5);
+}
+.ag-live-dot.cli {
+  background: #c084fc;
+  box-shadow: 0 0 3px rgba(192, 132, 252, 0.5);
 }
 .ag-logout-item {
   justify-content: flex-start;
@@ -1119,7 +1175,7 @@ async function handleIconClick() {
   animation: pulse 1.5s infinite ease-in-out;
 }
 
-/* Reload button — circular, hosts the countdown ring */
+/* Reload button - circular, hosts the countdown ring */
 .btn-reload {
   position: relative;
   overflow: visible;
@@ -1148,7 +1204,27 @@ async function handleIconClick() {
   font-weight: 400;
 }
 
-/* Narrow mode (<=700px): the LOCAL/REMOTE columns stay side-by-side (not stacked) — the fix is
+.ag-src-tag {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 1px 3px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+.ag-src-tag.cli {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+.ag-src-tag.ide {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+/* Narrow mode (<=700px): the LOCAL/REMOTE columns stay side-by-side (not stacked) - the fix is
    letting each card's content, including the progress bars and reset-line text, actually shrink
    to fit its half instead of the fixed 200px forcing horizontal overflow past the window edge. */
 @media (max-width: 700px) {

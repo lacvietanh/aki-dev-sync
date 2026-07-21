@@ -2,23 +2,23 @@
   <BaseModal :show="show" @close="$emit('close')" container-style="width: 360px; max-width: calc(100vw - 32px);">
     <template #title>
       <i class="fa-solid fa-sliders"></i> Claude Code Profile
-      <span class="scope-tag" title="This always edits ~/.claude/settings.json on this machine — there is no remote-host target">
+      <span class="scope-tag" title="This always edits ~/.claude/settings.json on this machine - there is no remote-host target">
         <i class="fa-solid fa-laptop-code"></i> Local
       </span>
     </template>
 
     <div class="modal-body">
             <div class="proxy-fields">
-              <input v-model="cfg.endpoint" class="field-input" type="url" placeholder="Endpoint URL" title="env.ANTHROPIC_BASE_URL — proxy API base URL" spellcheck="false" />
+              <input v-model="cfg.endpoint" class="field-input" type="url" placeholder="Endpoint URL" title="env.ANTHROPIC_BASE_URL - proxy API base URL" spellcheck="false" />
               <div class="key-row">
-                <input v-model="cfg.apiKey" class="field-input key-input" :type="showKey ? 'text' : 'password'" placeholder="API Key" title="env.ANTHROPIC_AUTH_TOKEN — proxy API key" spellcheck="false" />
+                <input v-model="cfg.apiKey" class="field-input key-input" :type="showKey ? 'text' : 'password'" placeholder="API Key" title="env.ANTHROPIC_AUTH_TOKEN - proxy API key" spellcheck="false" />
                 <button class="btn-eye" @click="showKey = !showKey" :title="showKey ? 'Hide key' : 'Show key'">
                   <i class="fa-regular" :class="showKey ? 'fa-eye' : 'fa-eye-slash'"></i>
                 </button>
               </div>
-              <input v-model="cfg.modelOpus" class="field-input" type="text" :placeholder="DEFAULTS.opus" title="env.ANTHROPIC_DEFAULT_OPUS_MODEL — leave blank to use default" spellcheck="false" />
-              <input v-model="cfg.modelSonnet" class="field-input" type="text" :placeholder="DEFAULTS.sonnet" title="env.ANTHROPIC_DEFAULT_SONNET_MODEL — leave blank to use default" spellcheck="false" />
-              <input v-model="cfg.modelHaiku" class="field-input" type="text" :placeholder="DEFAULTS.haiku" title="env.ANTHROPIC_DEFAULT_HAIKU_MODEL — leave blank to use default" spellcheck="false" />
+              <input v-model="cfg.modelOpus" class="field-input" type="text" :placeholder="DEFAULTS.opus" title="env.ANTHROPIC_DEFAULT_OPUS_MODEL - leave blank to use default" spellcheck="false" />
+              <input v-model="cfg.modelSonnet" class="field-input" type="text" :placeholder="DEFAULTS.sonnet" title="env.ANTHROPIC_DEFAULT_SONNET_MODEL - leave blank to use default" spellcheck="false" />
+              <input v-model="cfg.modelHaiku" class="field-input" type="text" :placeholder="DEFAULTS.haiku" title="env.ANTHROPIC_DEFAULT_HAIKU_MODEL - leave blank to use default" spellcheck="false" />
             </div>
 
             <div v-if="status.msg" class="status-msg" :class="status.err ? 'err' : 'ok'">
@@ -280,7 +280,7 @@ async function applyMode(mode) {
   color: #fba97a;
 }
 
-/* Narrow mode (SSoT 700px, main.css) — this file's scoped padding outranks the global
+/* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global
    narrow rule, so the trim has to be repeated here. */
 @media (max-width: 700px) {
   .modal-body   { padding: 10px 10px 8px; }

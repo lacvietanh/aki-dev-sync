@@ -1,6 +1,6 @@
 // Usage-flow structured logger.
 //
-// Three levels — production default is ERROR-only:
+// Three levels - production default is ERROR-only:
 //   error  → always:     file + stderr
 //   info   → debug-only: file + stderr
 //   debug  → debug-only: file + stderr
@@ -156,7 +156,7 @@ pub fn info(tag: &str, msg: &str) {
 }
 
 /// Written only when --debug / AKI_DEBUG=1. Use for per-poll detail, parse internals,
-/// shell output lines — anything too verbose for normal operation.
+/// shell output lines - anything too verbose for normal operation.
 pub fn debug(tag: &str, msg: &str) {
     if is_debug() {
         write_line(tag, msg);
@@ -175,7 +175,7 @@ pub fn get_log_path() -> String {
 
 /// Receives a log entry from the frontend and routes it through the same
 /// backend pipeline (usage.log + stderr). Only info/debug are gated by debug
-/// mode; "error" is always written — matching the three-level contract.
+/// mode; "error" is always written - matching the three-level contract.
 #[tauri::command]
 pub fn log_frontend(level: String, tag: String, msg: String) {
     match level.as_str() {

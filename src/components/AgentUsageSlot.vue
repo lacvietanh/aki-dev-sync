@@ -1,7 +1,7 @@
 <template>
   <div class="usage-column">
     <div class="column-header">
-      <!-- Left: which category — LOCAL or REMOTE. -->
+      <!-- Left: which category - LOCAL or REMOTE. -->
       <div class="tab-group">
         <button class="tab" :class="{ 'is-active': topTab === 'local' }" title="Local" @click="topTab = 'local'">
           <i class="fa-solid fa-laptop-code"></i> <span class="u-narrow-hide">LOCAL</span>
@@ -9,8 +9,7 @@
         <button
           class="tab"
           :class="{ 'is-active': topTab === 'remote' }"
-          :disabled="remoteLockedByPeer"
-          :title="remoteLockedByPeer ? 'Already shown in the other panel' : 'Remote'"
+          title="Remote"
           @click="topTab = 'remote'"
         >
           <i class="fa-solid fa-cloud"></i> <span class="u-narrow-hide">REMOTE</span>
@@ -19,7 +18,7 @@
 
       <!-- Right: LOCAL mode picks which local agent (each with its own power button,
            colored to double as the on/off status). REMOTE mode shows the global Remote Mode
-           power icon (left of the host picker — only reachable/visible from this REMOTE tab,
+           power icon (left of the host picker - only reachable/visible from this REMOTE tab,
            native contextual placement) followed by the SSH host it's monitoring. There's only
            one source in REMOTE, so the space freed by not needing a tab-per-agent goes here. -->
       <div class="tab-group">
@@ -29,8 +28,7 @@
             :key="src.key"
             class="tab src-tab"
             :class="{ 'is-active': localSub === src.key }"
-            :disabled="peerView === `local-${src.key}`"
-            :title="peerView === `local-${src.key}` ? 'Already shown in the other panel' : src.source.locked ? `${src.title} monitoring locked OFF — Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.source.enabled ? 'ON — click to turn off' : 'OFF — click to turn on'}`"
+            :title="src.source.locked ? `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.source.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`"
             @click="localSub = src.key"
           >
             <i class="fa-solid fa-power-off src-power" :class="[src.source.enabled ? 'is-on' : 'is-off', { 'is-locked': src.source.locked }]"
@@ -44,7 +42,7 @@
             class="fa-solid fa-power-off src-power"
             :class="ccRemote.enabled ? 'is-on' : 'is-off'"
             @click.stop="ccRemote.toggle()"
-            :title="ccRemote.enabled ? 'Claude Code remote monitoring ON — click to turn off' : 'Claude Code remote monitoring OFF — click to turn on'"
+            :title="ccRemote.enabled ? 'Claude Code remote monitoring ON - click to turn off' : 'Claude Code remote monitoring OFF - click to turn on'"
           ></i>
           <select v-model="selectedSshHost" class="host-select-mini" :disabled="!ccRemote.enabled" title="Remote host to monitor">
             <option value="" disabled>Select Host</option>
@@ -57,20 +55,21 @@
     <AgentUsage
       :agentId="activeAgentId"
       :agentName="activeAgentName"
-      :data="activeSource.data"
+      :data="slotAccountInfo.data"
       :loading="activeSource.loading"
       :error="activeSource.error"
       :stale="activeSource.stale"
-      :isCached="activeSource.isCached"
-      :cachedAt="activeSource.cachedAt"
+      :isCached="slotAccountInfo.isCached"
+      :cachedAt="slotAccountInfo.cachedAt"
       :showEmail="showEmail"
       :sourceOff="!activeSource.enabled"
       :locked="!!activeSource.locked"
       :accounts="activeSource.accounts"
-      :viewing-email="activeSource.viewingEmail"
+      :viewing-email="slotViewingEmail"
       :active-email="activeSource.activeEmail"
+      :active-emails="activeSource.activeEmails"
       @retry="activeSource.refresh"
-      @select-account="activeSource.selectAccount"
+      @select-account="handleSelectAccount"
       @logout-success="activeSource.resetAccount"
       @toggle-email="toggleEmail"
     />
@@ -81,11 +80,10 @@
 import { ref, computed, watch } from 'vue';
 import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
-import { slotViews } from '../store/usageViewStore';
 
 // Each slot owns its own display selection (which source it shows) and email-visibility
 // preference, persisted per slot-id. The underlying sources (ag / ccLocal / ccRemote) are
-// shared reactive bundles owned by the parent — both slots can point at the same source
+// shared reactive bundles owned by the parent - both slots can point at the same source
 // simultaneously without double-polling, since polling is driven by the source's own
 // `enabled` flag, not by which slot currently displays it.
 const props = defineProps({
@@ -107,31 +105,8 @@ const topTab = ref(localStorage.getItem(topTabKey) || props.defaultTopTab);
 const localSub = ref(localStorage.getItem(localSubKey) || props.defaultLocalSub);
 const showEmail = ref(localStorage.getItem(showEmailKey) !== 'false');
 
-// Same-view lock: the two slots share `slotViews` (A/B) so each can tell what the other is
-// currently showing and disable picking that exact view here — the sole remaining Vue
-// components run their setup() synchronously in template order, so by the time slot B's
-// setup runs, slot A has already registered its view. If a restored (localStorage) selection
-// would collide with what the other slot registered first, fall back to the next free view
-// instead of leaving two panels stuck showing the same thing.
-const peerId = props.slotId === 'A' ? 'B' : 'A';
-const viewOrder = ['local-ag', 'local-cc', 'remote'];
-function viewKeyOf(top, sub) { return top === 'local' ? `local-${sub}` : 'remote'; }
-
-const initialView = viewKeyOf(topTab.value, localSub.value);
-const resolvedInitial = initialView === slotViews[peerId]
-  ? viewOrder.find(v => v !== slotViews[peerId])
-  : initialView;
-if (resolvedInitial !== initialView) {
-  if (resolvedInitial === 'remote') { topTab.value = 'remote'; }
-  else { topTab.value = 'local'; localSub.value = resolvedInitial.split('-')[1]; }
-}
-slotViews[props.slotId] = viewKeyOf(topTab.value, localSub.value);
-
-const peerView = computed(() => slotViews[peerId]);
-const remoteLockedByPeer = computed(() => topTab.value !== 'remote' && peerView.value === 'remote');
-
-watch(topTab, (v) => { localStorage.setItem(topTabKey, v); slotViews[props.slotId] = viewKeyOf(v, localSub.value); });
-watch(localSub, (v) => { localStorage.setItem(localSubKey, v); slotViews[props.slotId] = viewKeyOf(topTab.value, v); });
+watch(topTab, (v) => { localStorage.setItem(topTabKey, v); });
+watch(localSub, (v) => { localStorage.setItem(localSubKey, v); });
 
 function toggleEmail() {
   showEmail.value = !showEmail.value;
@@ -151,6 +126,54 @@ const activeAgentName = computed(() => (activeAgentId.value === 'antigravity') ?
 const activeSource = computed(() => {
   if (topTab.value === 'local') return localSub.value === 'ag' ? props.ag : props.ccLocal;
   return props.ccRemote;
+});
+
+// Per-slot viewing email/key state: lets Slot A and Slot B independently select and display
+// different active or cached accounts from the shared `ag` data source.
+const slotViewingEmail = ref(null);
+
+function handleSelectAccount(keyOrEmail) {
+  slotViewingEmail.value = slotViewingEmail.value === keyOrEmail ? null : keyOrEmail;
+}
+
+const slotAccountInfo = computed(() => {
+  const src = activeSource.value;
+  if (activeAgentId.value !== 'antigravity' || !src.data) {
+    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
+  }
+
+  const key = slotViewingEmail.value;
+  if (!key) {
+    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
+  }
+
+  const emailPart = key.includes(':') ? key.split(':')[0] : key;
+
+  // Check live match in allAccounts or src.data:
+  if (src.data.allAccounts && Array.isArray(src.data.allAccounts)) {
+    const liveMatch = src.data.allAccounts.find(a => {
+      const aKey = a.sourceType ? `${a.email}:${a.sourceType}` : a.email;
+      return aKey === key || (key.includes(':') ? aKey === key : a.email === emailPart);
+    });
+    if (liveMatch) {
+      return { data: liveMatch, isCached: false, cachedAt: null };
+    }
+  } else if (src.data.email === emailPart) {
+    return { data: src.data, isCached: false, cachedAt: null };
+  }
+
+  // Fallback to offline cache in localStorage:
+  const rawCache = localStorage.getItem('aki-antigravity-usage-cache-v2');
+  if (rawCache) {
+    try {
+      const parsed = JSON.parse(rawCache);
+      const acc = parsed.accounts?.[key] || parsed.accounts?.[emailPart];
+      if (acc) {
+        return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt };
+      }
+    } catch (_) {}
+  }
+  return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
 });
 </script>
 
@@ -212,10 +235,11 @@ const activeSource = computed(() => {
 }
 
 .src-icon {
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
   display: block;
+  object-fit: contain;
 }
 
 .host-select-mini {
@@ -242,7 +266,7 @@ const activeSource = computed(() => {
 
 /* Narrow mode (docs/plan/done/narrow-mode-and-ux-1.14.0.md §B2): labels are hidden via the global
    .u-narrow-hide utility (applied in the template); this block only tightens the layout that
-   utility can't express — icon-only tabs no longer need the old label-sized horizontal padding. */
+   utility can't express - icon-only tabs no longer need the old label-sized horizontal padding. */
 @media (max-width: 700px) {
   .tab {
     padding: 3px 5px;

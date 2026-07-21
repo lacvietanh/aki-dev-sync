@@ -6,22 +6,22 @@ FILE="$HOME/.claude/statusline-command.sh"
 if [ ! -f "$FILE" ]; then exit 0; fi
 # Version-aware patching.
 # v2 preserved the previous rate_limits verbatim, but ONLY when a turn omitted rate_limits
-# entirely — a turn that HAS rate_limits (the normal case on current CC: just `five_hour`, no
+# entirely - a turn that HAS rate_limits (the normal case on current CC: just `five_hour`, no
 # `seven_day`) still overwrote the whole cache file, silently clobbering a `seven_day` that the
 # OAuth poll (Rust side, separate recovery layer) had written moments earlier. v3 fixes this by
 # deep-merging .rate_limits (jq's `*`, right side wins per-key, recursive) instead of an
 # all-or-nothing swap: a turn with only five_hour now updates five_hour and leaves a
-# previously-cached seven_day untouched. Also switches the write to atomic (temp file + mv) —
+# previously-cached seven_day untouched. Also switches the write to atomic (temp file + mv)  - 
 # the OAuth poll's os.replace() comment already assumed this hook wrote non-atomically; matching
 # that closes the last read-half-written-file race between the two writers.
 # See docs/arch/usage-claudecode.md §3 (provision).
 if grep -q "aki-rlcache v3" "$FILE"; then
-    :  # already up to date — nothing to do
+    :  # already up to date - nothing to do
 else
     if grep -q "rate-limits-cache" "$FILE"; then
         # Old (v1 unmarked, or v2 marked) block present → delete it before injecting v3.
         # The functional block always spans from the `rl_input=` line through the trailing
-        # `printf ... rate-limits-cache.json` line regardless of version (same shape) — the
+        # `printf ... rate-limits-cache.json` line regardless of version (same shape) - the
         # `if [ -z ... ]` line also contains "rate-limits-cache.json", so the range END pattern
         # matches the printf line specifically, not any occurrence. A leading `# aki-rlcache vN`
         # marker comment (v2+) sits one line above that range and is stripped separately so no
@@ -48,7 +48,7 @@ EOF
     sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
     rm -f "${FILE}.bak"
 fi
-# Cache auth info (email, orgName) for UI — runs once per host session.
+# Cache auth info (email, orgName) for UI - runs once per host session.
 # BEST-EFFORT: this must NOT decide the script's exit code. The provisioning contract is the
 # statusline patch above (already done by here); auth caching is a side task. Previously the final
 # `[ "$AUTH_JSON" != '{}' ] && printf ...` line made the script's exit status hostage to the test,
@@ -61,6 +61,6 @@ if [ "$AUTH_JSON" != '{}' ]; then
 else
     # Empty auth is a REAL signal, not noise: it correlates with `/usage` returning empty (Bug B).
     # Surface it to stderr (the Rust side logs non-empty provision stderr at ERROR) but do not fail.
-    printf '[SHELL:provision] claude auth status returned empty ({}) — CLI may be unable to authenticate\n' >&2
+    printf '[SHELL:provision] claude auth status returned empty ({}) - CLI may be unable to authenticate\n' >&2
 fi
 exit 0

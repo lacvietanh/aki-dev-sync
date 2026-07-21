@@ -45,7 +45,7 @@
                               type="button"
                               class="swatch swatch-current"
                               :style="{ background: HEX[fieldByKey(control.key).color] }"
-                              :title="`Color: ${fieldByKey(control.key).color} — click to change`"
+                              :title="`Color: ${fieldByKey(control.key).color} - click to change`"
                               @click.stop="togglePicker(control.key)"
                             ></button>
                             <span v-if="pickerFor === control.key" class="swatch-pop" @click.stop>
@@ -74,7 +74,7 @@
 
             <div class="section-label">Dynamic color <span class="hint">(each band starts at the % below it)</span></div>
             <!-- The ladder drawn to scale: every band's width is its share of 0-100, and the number
-                 sits under the band's own left edge, so the input's position *is* its meaning — no
+                 sits under the band's own left edge, so the input's position *is* its meaning - no
                  </≥ symbols to decode. -->
             <div class="ladder-bar">
               <div v-for="t in ladder" :key="t.key" class="ladder-cell" :style="{ flexGrow: Math.max(1, t.to - t.from) }">
@@ -102,10 +102,10 @@
                 <i
                   v-if="hostStatus[h] && hostStatus[h].claude_installed && !hostStatus[h].statusline_configured"
                   class="fa-solid fa-triangle-exclamation warn-icon"
-                  title="Statusline not installed on this host yet — auto-installing…"
+                  title="Statusline not installed on this host yet - auto-installing…"
                 ></i>
               </label>
-              <div v-if="hostOptions.length === 1" class="hint no-remotes">No remote hosts configured yet — add a project with a remote host to push there too.</div>
+              <div v-if="hostOptions.length === 1" class="hint no-remotes">No remote hosts configured yet - add a project with a remote host to push there too.</div>
             </div>
 
             <div v-if="results.length" class="results-list">
@@ -153,7 +153,7 @@ const CATALOG = {
   identity_host: { label: 'host', desc: 'Short hostname, truncated to 5 characters' },
   cwd:         { label: 'Working directory',    desc: 'Current folder name (~ when at $HOME)' },
   model:       { label: 'Model',                desc: 'Model name, e.g. "sonnet 5"' },
-  effort:      { label: 'effort',               desc: 'Effort level (med/high), always grey — a qualifier of the model, not its own signal' },
+  effort:      { label: 'effort',               desc: 'Effort level (med/high), always grey - a qualifier of the model, not its own signal' },
   context:     { label: 'Context window',       desc: 'ctx NN% used/max, auto-colored by threshold' },
   rate_limits_5h: { label: '5h',          desc: '5-hour Pro/Max usage window, auto-colored by threshold' },
   rate_reset_5h:  { label: 'Reset ETA',   desc: 'Appends time-until-reset to the 5h window (e.g. 1h12m)' },
@@ -162,10 +162,10 @@ const CATALOG = {
   cache_pct:   { label: 'Cache hit %',          desc: 'Percent of the most recent request served from cache (green = high hit rate)' },
   cache_tokens:{ label: 'Cache tokens (read)',  desc: 'Tokens read from cache for the most recent request, grey and not colorable' },
   session:     { label: 'Session (dur/lines/$)',desc: 'Duration, lines +/- (bold green/red), and cost for this session' },
-  git_branch:  { label: 'Git branch',           desc: 'Experimental — depends on Claude Code version exposing it' },
+  git_branch:  { label: 'Git branch',           desc: 'Experimental - depends on Claude Code version exposing it' },
 };
 
-// The dynamic-color ladder, lowest tier first. `blue` has no threshold of its own — it is
+// The dynamic-color ladder, lowest tier first. `blue` has no threshold of its own - it is
 // everything below `green`, i.e. "plenty left". Mirrors color_for_pct() in
 // src-tauri/src/statusline.rs; the hexes are the terminal palette's rendering of those ANSI codes.
 const TIER_HEX = { blue: '#60a5fa', green: '#34d399', yellow: '#fbbf24', orange: '#fb923c', red: '#f87171' };
@@ -183,22 +183,22 @@ function isColorEditable(key) { return COLOR_EDITABLE.has(key); }
 // Declarative row/group catalog (RULE-design-core: one shape for every row, not a hardcoded
 // special case per group). A GROUP describes 1..N lines of controls; every key it lists moves
 // together as one draggable row. Any cfg.fields key NOT listed in any group here renders as a
-// plain 1-line, 1-toggle(+color) row — see `rows` computed below, which is the only place that
+// plain 1-line, 1-toggle(+color) row - see `rows` computed below, which is the only place that
 // tells bare fields and groups apart, and it does so from data, not markup.
 //
 // Control types:
-//   toggle  — one field's enable checkbox. `dependsOn` greys it out and forces it off while the
+//   toggle  - one field's enable checkbox. `dependsOn` greys it out and forces it off while the
 //             named field is off (effort only means something next to a model name).
-//   master  — a UI-only checkbox reflecting/setting several fields at once. No field key of its own.
-//   color   — the field's color picker, or the recessed "Dynamic color" note when the color is
+//   master  - a UI-only checkbox reflecting/setting several fields at once. No field key of its own.
+//   color   - the field's color picker, or the recessed "Dynamic color" note when the color is
 //             computed from the value rather than chosen (see COLOR_EDITABLE).
-//   parts   — non-interactive: names the pieces the field actually prints, in print order, so the
+//   parts   - non-interactive: names the pieces the field actually prints, in print order, so the
 //             row shows what it builds instead of only what it is called.
 //
-// A line normally holds one flat list of `controls`. A line may instead hold `segments` — several
+// A line normally holds one flat list of `controls`. A line may instead hold `segments` - several
 // sub-lists that each render as one flex unit. Special segment flags:
-//   tight   — visually brackets its controls with a subtle border (identity's `user @ host`).
-//   spacer  — an empty flex-1 gap; separates left controls from right controls in the same row.
+//   tight   - visually brackets its controls with a subtle border (identity's `user @ host`).
+//   spacer  - an empty flex-1 gap; separates left controls from right controls in the same row.
 //
 // `groupLabel` on a group: a fixed white label prepended in the preview when ≥1 member is enabled.
 // Needed when the label must persist regardless of which sub-field is on (cache's "cache" prefix).
@@ -313,7 +313,7 @@ const GROUPS = [
 
 // Color doctrine these defaults follow (docs/feat/statusline-customizer.md): white = labels,
 // cyan = ordinary information, grey = supporting detail, dynamic = must be noticed. "Which
-// machine" (host=magenta) and "where am I" (cwd=yellow) get standout hues — what the eye hunts
+// machine" (host=magenta) and "where am I" (cwd=yellow) get standout hues - what the eye hunts
 // for first with several terminals open. user=grey (present but not the focal point).
 // Mirrors default_config() in statusline.rs.
 function defaultLocalConfig() {
@@ -386,7 +386,7 @@ function loadCfg() {
   const def = defaultLocalConfig();
   if (!saved) return def;
   migrateOldKeys(saved);
-  // Field keys added in a later version aren't in an already-saved config — append them with
+  // Field keys added in a later version aren't in an already-saved config - append them with
   // their default state instead of leaving the user stuck on the old catalog. Order and
   // enabled/color of fields the user already has are left untouched.
   const known = new Set(saved.fields.map(f => f.key));
@@ -427,7 +427,7 @@ watch(() => props.show, async (val) => {
 });
 
 // Warns when a host has Claude Code but no statusline wired up yet, then auto-installs it
-// there — hosts with no Claude Code at all are skipped since this app's Claude-only features
+// there - hosts with no Claude Code at all are skipped since this app's Claude-only features
 // don't apply to them.
 async function checkAndAutoInstall() {
   try {
@@ -460,7 +460,7 @@ function setFieldEnabled(key, val) {
   const f = fieldByKey(key);
   if (f) f.enabled = val;
   // Turning a parent off takes its dependants down with it, so the stored config can never hold a
-  // dependant that is on while the field it qualifies is off — the preview and the generated
+  // dependant that is on while the field it qualifies is off - the preview and the generated
   // script both read `enabled` directly and would otherwise disagree with the greyed-out checkbox.
   if (!val) {
     for (const g of GROUPS) {
@@ -472,10 +472,10 @@ function setFieldEnabled(key, val) {
     }
   }
 }
-// A master checkbox (identity's "id", cache's "Cache") decides its children's on/off — it does
+// A master checkbox (identity's "id", cache's "Cache") decides its children's on/off - it does
 // NOT reflect them. Toggling one child (e.g. cache's "%") must never flip the master's own
 // checked state; only clicking the master itself does. So its checked value is independent state,
-// seeded once from the children (every() at first render) and never recomputed from them after —
+// seeded once from the children (every() at first render) and never recomputed from them after  - 
 // see resetMasterChecked(), called wherever cfg is reloaded wholesale.
 const masterChecked = ref({});
 function masterKey(keys) { return keys.join(','); }
@@ -492,7 +492,7 @@ function resetMasterChecked() { masterChecked.value = {}; }
 function controlBlocked(control) { return !!control.dependsOn && !fieldEnabled(control.dependsOn); }
 
 // A line is authored either as one flat `controls` list or as explicit `segments` when part of it
-// is its own visual unit — normalized here so the template renders one shape, not two.
+// is its own visual unit - normalized here so the template renders one shape, not two.
 function segmentsOf(line) { return line.segments || [{ controls: line.controls }]; }
 
 // The color control is a swatch, not a named dropdown: the name of a color says less than the
@@ -509,7 +509,7 @@ const closePicker = () => { pickerFor.value = null; };
 onMounted(() => window.addEventListener('click', closePicker));
 onBeforeUnmount(() => window.removeEventListener('click', closePicker));
 
-// The ladder, as the user's own thresholds currently define it — shown wherever a field's color is
+// The ladder, as the user's own thresholds currently define it - shown wherever a field's color is
 // computed rather than chosen, so "auto" says which colors and at what point instead of just
 // asserting that something happens.
 const ladder = computed(() => [
@@ -537,7 +537,7 @@ function lineActive(line) {
 // Projects the flat, persisted `cfg.fields` array into display rows: a row is either one of the
 // declarative GROUPS above (all its keys collapsed into one draggable unit) or a single bare
 // field rendered through the exact same 1-line/1-toggle(+color) shape. Row order follows first
-// appearance in `cfg.fields`, so this stays a pure read projection — `cfg.fields` remains the
+// appearance in `cfg.fields`, so this stays a pure read projection - `cfg.fields` remains the
 // only stored order (see `applyRowOrder`, which writes back through this same shape).
 const rows = computed(() => {
   const consumed = new Set();
@@ -563,7 +563,7 @@ const rows = computed(() => {
   return result;
 });
 
-// ---- drag-and-drop reorder (native HTML5 DnD, row-granularity — a group always moves whole) ----
+// ---- drag-and-drop reorder (native HTML5 DnD, row-granularity - a group always moves whole) ----
 const dragRowId = ref(null);
 const dropIndicator = reactive({ id: null, pos: null }); // pos: 'before' | 'after'
 
@@ -632,7 +632,7 @@ async function apply() {
     status.err = failed.length > 0;
     status.msg = failed.length === 0
       ? `Applied to ${hostResults.length} host${hostResults.length === 1 ? '' : 's'}. Restart Claude Code (or open a new terminal) to see it.`
-      : `${hostResults.length - failed.length}/${hostResults.length} hosts applied — see details above.`;
+      : `${hostResults.length - failed.length}/${hostResults.length} hosts applied - see details above.`;
   } catch (e) {
     status.msg = String(e);
     status.err = true;
@@ -653,7 +653,7 @@ const SAMPLE = {
 };
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-// `bold` is for the session +/- line count glyphs — too small to read at normal weight.
+// `bold` is for the session +/- line count glyphs - too small to read at normal weight.
 function span(text, hex, bold) { return `<span style="color:${hex}${bold ? ';font-weight:700' : ''}">${esc(text)}</span>`; }
 function tierHex(pct) {
   const t = cfg.thresholds;
@@ -767,7 +767,7 @@ const previewHtml = computed(() => {
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   font-size: 11px;
   margin: 0;
-  /* Wrapping is controlled by .pv-block, not by the text itself — see previewHtml. */
+  /* Wrapping is controlled by .pv-block, not by the text itself - see previewHtml. */
   white-space: normal;
   word-break: normal;
 }
@@ -814,7 +814,7 @@ const previewHtml = computed(() => {
 
 .row-item.dragging { opacity: 0.4; }
 
-/* Drop-position indicator: a thin accent line on the edge the dragged row would land on —
+/* Drop-position indicator: a thin accent line on the edge the dragged row would land on  - 
    communicated via an existing element's border, no extra DOM. */
 .row-item.drop-before { box-shadow: inset 0 2px 0 0 #d97757; }
 .row-item.drop-after { box-shadow: inset 0 -2px 0 0 #d97757; }
@@ -860,7 +860,7 @@ const previewHtml = computed(() => {
 .ctl-master { font-weight: 600; }
 
 /* A toggle whose parent field is off: still readable, clearly not actionable. No extra row or
-   explanatory text — the greying is the whole message (extreme-narrow rule, CLAUDE.md). */
+   explanatory text - the greying is the whole message (extreme-narrow rule, CLAUDE.md). */
 .ctl-blocked { cursor: not-allowed; opacity: 0.4; }
 .ctl-blocked input { cursor: not-allowed; }
 
@@ -937,7 +937,7 @@ const previewHtml = computed(() => {
   outline-offset: 1px;
 }
 
-/* 2 columns x 4 rows, filled column-first (top-to-bottom then next column) — a vertical grid
+/* 2 columns x 4 rows, filled column-first (top-to-bottom then next column) - a vertical grid
    takes less horizontal space than the old single row of 8 swatches. */
 .swatch-pop {
   position: absolute;
@@ -1014,7 +1014,7 @@ const previewHtml = computed(() => {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* TransitionGroup reorder animation — rows slide into their new slot; enter/leave stay minimal
+/* TransitionGroup reorder animation - rows slide into their new slot; enter/leave stay minimal
    since rows are only added/removed on Reset, not during a drag (drag mutates order in place). */
 .row-move { transition: transform 0.2s ease; }
 .row-enter-active, .row-leave-active { transition: opacity 0.15s ease; }
@@ -1124,7 +1124,7 @@ const previewHtml = computed(() => {
 
 .btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
 
-/* Narrow mode (SSoT 700px, main.css) — this file's scoped padding outranks the global
+/* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global
    narrow rule, so the trim has to be repeated here. */
 @media (max-width: 700px) {
   .modal-body   { padding: 10px 10px 8px; }

@@ -1,14 +1,14 @@
 <template>
   <BaseModal :show="showIntroModal" @close="closeIntroModal">
     <template #title>
-      <i class="fa-solid fa-book-open mr-1" style="color: #6ee7b7;"></i> Hướng Dẫn Sử Dụng — Aki Dev Sync
+      <i class="fa-solid fa-book-open mr-1" style="color: #6ee7b7;"></i> Hướng Dẫn Sử Dụng - Aki Dev Sync
     </template>
 
     <div class="modal-body scrollable intro-content">
       <div class="intro-header mb-3">
         <h3>🚀 Aki Dev Sync</h3>
         <p>
-          Command Center để đồng bộ code giữa <strong>Máy Local</strong> và <strong>Máy Remote</strong> qua SSH/rsync —
+          Command Center để đồng bộ code giữa <strong>Máy Local</strong> và <strong>Máy Remote</strong> qua SSH/rsync  - 
           không lo treo giao diện (UI freeze), không làm bẩn lịch sử Git bằng các commit tạm.
         </p>
       </div>
@@ -49,7 +49,7 @@
           <div class="feature-icon"><i class="fa-solid fa-arrow-up"></i></div>
           <div class="feature-text">
             <strong>PUSH</strong>
-            <span>Đẩy code Local → Remote, kèm mọi thứ không nằm trong <code>push_excludes</code>, cùng cấu hình "Force Delete" riêng từng dự án. Thư mục chỉ có trong <code>pull_excludes</code> là <strong>push-only</strong> — đẩy lên nhưng không kéo về và không tính là thay đổi (mặc định <code>.git/</code>: AI có đủ history, badge PUSH không sáng vì git tự dọn nội bộ).</span>
+            <span>Đẩy code Local → Remote, kèm mọi thứ không nằm trong <code>push_excludes</code>, cùng cấu hình "Force Delete" riêng từng dự án. Thư mục chỉ có trong <code>pull_excludes</code> là <strong>push-only</strong> - đẩy lên nhưng không kéo về và không tính là thay đổi (mặc định <code>.git/</code>: AI có đủ history, badge PUSH không sáng vì git tự dọn nội bộ).</span>
           </div>
         </div>
 
@@ -73,7 +73,7 @@
           <div class="feature-icon" style="color: #22c55e;"><i class="fa-solid fa-shield-halved"></i></div>
           <div class="feature-text">
             <strong>DRY RUN</strong>
-            <span>Xem trước (Dry Run) các file sẽ thay đổi — không ghi đè dữ liệu thực tế cho đến khi tắt chế độ này.</span>
+            <span>Xem trước (Dry Run) các file sẽ thay đổi - không ghi đè dữ liệu thực tế cho đến khi tắt chế độ này.</span>
           </div>
         </div>
 
@@ -81,7 +81,7 @@
           <div class="feature-icon" style="color: #a78bfa;"><i class="fa-solid fa-circle-dot"></i></div>
           <div class="feature-text">
             <strong>Sync Status</strong>
-            <span>Tự động kiểm tra — nút PUSH/PULL sáng lên để thông báo khi dữ liệu giữa hai phía có sự chênh lệch.</span>
+            <span>Tự động kiểm tra - nút PUSH/PULL sáng lên để thông báo khi dữ liệu giữa hai phía có sự chênh lệch.</span>
           </div>
         </div>
 
@@ -133,7 +133,7 @@
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-note-sticky"></i></div>
           <div class="feature-text">
             <strong>Global Note</strong>
-            <span>Tấm ghi chú toàn cục trên titlebar — icon chuyển màu vàng khi có nội dung. Không gắn với project nào, tự lưu sau 500ms vào <code>appDataDir</code>.</span>
+            <span>Tấm ghi chú toàn cục trên titlebar - icon chuyển màu vàng khi có nội dung. Không gắn với project nào, tự lưu sau 500ms vào <code>appDataDir</code>.</span>
           </div>
         </div>
 
@@ -141,14 +141,14 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) — cục bộ trên Mac này hoặc trên SSH host đang chọn — hiển thị plan tier, email, org name. <strong>Antigravity</strong> truy vấn native Language Server. Hai panel hiển thị độc lập (LOCAL/REMOTE, và trong LOCAL chọn AG/CC), mỗi nguồn có nút bật/tắt riêng; hai panel tự khóa không cho hiện trùng một nguồn. Đồng hồ đếm ngược reset real-time. Antigravity có mục <strong>Log Out</strong> trong dropdown tài khoản để xóa phiên đăng nhập cục bộ.</span>
+            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) - cục bộ trên Mac này hoặc trên SSH host đang chọn - hiển thị plan tier, email, org name. <strong>Antigravity</strong> truy vấn native Language Server. Hai panel hiển thị độc lập (LOCAL/REMOTE, và trong LOCAL chọn AG/CC), mỗi nguồn có nút bật/tắt riêng; hai panel tự khóa không cho hiện trùng một nguồn. Đồng hồ đếm ngược reset real-time. Antigravity có mục <strong>Log Out</strong> trong dropdown tài khoản để xóa phiên đăng nhập cục bộ.</span>
           </div>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-cloud"></i></div>
           <div class="feature-text">
-            <strong>Sync Check & CC Remote — 2 công tắc độc lập</strong>
+            <strong>Sync Check & CC Remote - 2 công tắc độc lập</strong>
             <span>Icon nguồn ở cột SYNC bật/tắt riêng PUSH/PULL/SELECT + mục IDE Remote trong popup Open + check sync diff (nền + thủ công). Icon nguồn cạnh ô chọn host (tab REMOTE của Agent Usage) bật/tắt riêng monitor Claude Code Remote. Tắt một công tắc không còn tắt luôn công tắc kia.</span>
           </div>
         </div>
@@ -157,7 +157,7 @@
           <div class="feature-icon" style="color: #94a3b8;"><i class="fa-solid fa-key"></i></div>
           <div class="feature-text">
             <strong>SSH Config</strong>
-            <span>Quản lý <code>~/.ssh/config</code> có undo/redo, kiêm chọn Remote Host cho quota & logs — không cần mở terminal.</span>
+            <span>Quản lý <code>~/.ssh/config</code> có undo/redo, kiêm chọn Remote Host cho quota & logs - không cần mở terminal.</span>
           </div>
         </div>
 
@@ -172,8 +172,8 @@
         <div class="feature-card">
           <div class="feature-icon" style="color: #fbbf24;"><i class="fa-solid fa-arrows-rotate"></i></div>
           <div class="feature-text">
-            <strong>Refresh — 1 unit of work</strong>
-            <span>Nút Refresh riêng-project và nút Refresh tổng ở titlebar đều gọi chung <code>refreshProject()</code> (git status + sync diff + stack detection, chạy song song) — không còn reload toàn app. Trạng thái xoay icon nằm ở chính từng check, nên vòng nền cũng làm icon xoay đúng lúc.</span>
+            <strong>Refresh - 1 unit of work</strong>
+            <span>Nút Refresh riêng-project và nút Refresh tổng ở titlebar đều gọi chung <code>refreshProject()</code> (git status + sync diff + stack detection, chạy song song) - không còn reload toàn app. Trạng thái xoay icon nằm ở chính từng check, nên vòng nền cũng làm icon xoay đúng lúc.</span>
           </div>
         </div>
 
@@ -201,27 +201,27 @@
           <li><strong>Stack Detector & Lockfile Analyzer:</strong> Tự nhận dạng Tauri vs Node và phân tích lockfiles (`pnpm`, `yarn`, `bun`, `npm`) để tự chạy lệnh chạy thử nghiệm (dev/preview) mà không cần cấu hình thủ công.</li>
           <li><strong>Co giãn Textarea Native (CSS-only):</strong> Sử dụng thuộc tính CSS mới `field-sizing: content` giúp co giãn chiều cao của Tasks & Notes tự động theo nội dung thực tế, không tốn dù chỉ một dòng JS resize hay gây giật giao diện.</li>
           <li><strong>Changelog Modal kế thừa:</strong> Bổ sung tham số `projectId` và tùy biến title/content giúp tái sử dụng component xem Changelog dùng chung cho cả Changelog nội bộ của từng dự án.</li>
-          <li><strong>Quota thực tế:</strong> Đọc trực tiếp `rate_limits` do server Anthropic trả về qua `statusLine` hook, không chắp vá hay giả lập request — an toàn tuyệt đối.</li>
+          <li><strong>Quota thực tế:</strong> Đọc trực tiếp `rate_limits` do server Anthropic trả về qua `statusLine` hook, không chắp vá hay giả lập request - an toàn tuyệt đối.</li>
           <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn `rate_limits`. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
           <li><strong>Hạn ngạch đa luồng (v1.3.0):</strong> Truy vấn song song hai endpoint Connect RPC để kéo đồng thời hạn ngạch 5H và hạn ngạch tuần (Weekly) cho cả Gemini và Claude/GPT pools, phân cụm bằng fieldset tinh gọn.</li>
-          <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng `lsof` để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
-          <li><strong>Antigravity Log Out đúng nghĩa:</strong> Xóa Cookies/Local Storage không đủ — token đăng nhập được mã hóa bởi `safeStorage` của Electron, khóa AES nằm ở đúng một mục Keychain macOS (`"Antigravity IDE Safe Storage"`). Log Out đóng app rồi xóa đúng mục đó (không quét/dump Keychain), khiến token bị mã hóa vĩnh viễn không đọc được nữa — settings/extension/rule nằm ở file riêng nên không bị ảnh hưởng.</li>
-          <li><strong>Claude Code — một nguồn dữ liệu duy nhất:</strong> App không tự chạy <code>claude</code> để lấy usage. Luồng active cũ (force-sync, probe Haiku) đã bị xoá hẳn: nó từng làm rò 19 session mồ côi (6GB RAM + 4GB swap) trên một máy remote, và đo thật cho thấy một turn headless chỉ trả về mốc reset chứ không có phần trăm. Cache hook <code>statusLine</code> giờ là nguồn duy nhất.</li>
+          <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) - quét native process + dò cổng bằng `lsof` để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
+          <li><strong>Antigravity Log Out đúng nghĩa:</strong> Xóa Cookies/Local Storage không đủ - token đăng nhập được mã hóa bởi `safeStorage` của Electron, khóa AES nằm ở đúng một mục Keychain macOS (`"Antigravity IDE Safe Storage"`). Log Out đóng app rồi xóa đúng mục đó (không quét/dump Keychain), khiến token bị mã hóa vĩnh viễn không đọc được nữa - settings/extension/rule nằm ở file riêng nên không bị ảnh hưởng.</li>
+          <li><strong>Claude Code - một nguồn dữ liệu duy nhất:</strong> App không tự chạy <code>claude</code> để lấy usage. Luồng active cũ (force-sync, probe Haiku) đã bị xoá hẳn: nó từng làm rò 19 session mồ côi (6GB RAM + 4GB swap) trên một máy remote, và đo thật cho thấy một turn headless chỉ trả về mốc reset chứ không có phần trăm. Cache hook <code>statusLine</code> giờ là nguồn duy nhất.</li>
           <li><strong>App-icon menu & window presets:</strong> Menu ☰ ở titlebar gom link GitHub/Release, check update thủ công, SSH Config, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile, cài AkiClaudeDoc, cùng 4 preset kích thước cửa sổ: Narrow (420px), Wide (768px), Stick Top-Left (auto-fit chiều cao theo danh sách project), Center Primary.</li>
           <li><strong>Khắc phục lỗi mtime của `.git/`:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
           <li><strong>Phân tách EC-3 hai chiều (Baseline Manifest):</strong> rsync không phân biệt được "remote tạo file X" vs "Local xóa file X", hay "Mac tạo file Y" vs "remote xóa file Y". Sau mỗi lần sync đầy đủ, app ghi snapshot danh sách file local vào <code>appDataDir/baselines/</code>. Lần check tiếp theo: file trong pull_list + có trong baseline + không còn ở Local → Local đã xóa → cộng vào push_count; file trong push_list + có trong baseline → remote đã xóa → loại khỏi push_count. Giải quyết hoàn toàn badge PUSH sáng nhầm khi code chủ yếu trên remote.</li>
-          <li><strong>Narrow Mode (v1.14.0):</strong> Cửa sổ dùng được xuống tới 400px (<code>minWidth</code> trong <code>tauri.conf.json</code>), một breakpoint dùng chung duy nhất (700px) và hai utility class toàn cục (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) — không component nào tự định nghĩa breakpoint riêng. Nhãn chữ ẩn đi vẫn giữ nguyên trong tooltip <code>title</code>, không nút nào bị mất cả icon lẫn nhãn.</li>
+          <li><strong>Narrow Mode (v1.14.0):</strong> Cửa sổ dùng được xuống tới 400px (<code>minWidth</code> trong <code>tauri.conf.json</code>), một breakpoint dùng chung duy nhất (700px) và hai utility class toàn cục (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) - không component nào tự định nghĩa breakpoint riêng. Nhãn chữ ẩn đi vẫn giữ nguyên trong tooltip <code>title</code>, không nút nào bị mất cả icon lẫn nhãn.</li>
         </ul>
       </div>
 
-      <!-- Origin Story — moved to bottom, preserved -->
+      <!-- Origin Story - moved to bottom, preserved -->
       <div class="alert-box origin mt-3">
         <h4 class="alert-title"><i class="fa-solid fa-bullseye"></i> Bối Cảnh Ra Đời</h4>
         <p class="mb-1">Ứng dụng phát triển để phục vụ chính nhu cầu của tác giả (Lạc Việt Anh) trong việc tối ưu luồng code hàng ngày:</p>
         <ul class="custom-list">
-          <li><strong>Local — Source of Truth:</strong> code an toàn, giữ Git, dùng <em>Antigravity Pro</em> cá nhân.</li>
-          <li><strong>Remote — AI Workspace:</strong> đẩy code lên cho <em>Claude Code / MAX</em> (tài khoản riêng) sinh code hàng loạt qua Terminal.</li>
-          <li><strong>Reverse Engineering Quota:</strong> Đo lường hạn mức Antigravity bằng cách phân tích ngược IDE — quét native process, dùng <code>lsof</code> dò cổng Connect RPC và truy vấn trực tiếp local proxy.</li>
+          <li><strong>Local - Source of Truth:</strong> code an toàn, giữ Git, dùng <em>Antigravity Pro</em> cá nhân.</li>
+          <li><strong>Remote - AI Workspace:</strong> đẩy code lên cho <em>Claude Code / MAX</em> (tài khoản riêng) sinh code hàng loạt qua Terminal.</li>
+          <li><strong>Reverse Engineering Quota:</strong> Đo lường hạn mức Antigravity bằng cách phân tích ngược IDE - quét native process, dùng <code>lsof</code> dò cổng Connect RPC và truy vấn trực tiếp local proxy.</li>
         </ul>
       </div>
     </div>
