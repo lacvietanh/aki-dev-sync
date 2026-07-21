@@ -20,11 +20,23 @@ pub struct StatuslineField {
     pub color: String,
 }
 
+/// The percentage at which each tier of the dynamic-color ladder starts. Below `green` the value
+/// is blue — "plenty left", the calmest colour, deliberately not a warning shade.
+///
+/// The bands are intentionally uneven: they narrow as the value gets more urgent, so the top of
+/// the range gets more resolution than the bottom where nothing is at stake yet.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StatuslineThresholds {
+    /// Added after the 4-tier ladder shipped, so old saved configs have no value for it.
+    #[serde(default = "default_green_threshold")]
+    pub green: u8,
     pub yellow: u8,
     pub orange: u8,
     pub red: u8,
+}
+
+fn default_green_threshold() -> u8 {
+    25
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -41,9 +53,13 @@ pub struct HostApplyResult {
 }
 
 /// Fields whose label color the user may override. Everything else keeps its locked-in,
-/// semantically-meaningful color (identity user/@/host, %, +/-).
+/// semantically-meaningful color (identity user/@/host, %, +/-, session duration/cache read
+/// count — both grey qualifiers, not a value the eye should be steered to by color choice).
 fn field_color_editable(key: &str) -> bool {
-    matches!(key, "cwd" | "model" | "session" | "git_branch" | "cache_tokens")
+    matches!(
+        key,
+        "identity_user" | "identity_host" | "cwd" | "model" | "git_branch"
+    )
 }
 
 fn ansi_for(name: &str) -> &'static str {
@@ -63,6 +79,12 @@ fn ansi_for(name: &str) -> &'static str {
 /// Default catalog + order, matching the hand-tuned preset already locked in during the planning
 /// chat (see docs/plan/statusline-customizer.md). Used as the Vue-side fallback default too (kept
 /// in sync manually — small, stable list).
+///
+/// Color doctrine these defaults follow (docs/feat/statusline-customizer.md):
+/// white = labels, cyan = ordinary information, grey = supporting detail (raw token counts,
+/// separators, qualifiers), dynamic = anything that must be *noticed*. "Which machine" and
+/// "where am I" get their own standout hues (magenta host, yellow cwd) because they are what the
+/// eye looks for first when several terminals are open.
 pub fn default_config() -> StatuslineConfig {
     let f = |key: &str, enabled: bool, color: &str| StatuslineField {
         key: key.to_string(),
@@ -71,29 +93,85 @@ pub fn default_config() -> StatuslineConfig {
     };
     StatuslineConfig {
         fields: vec![
-            f("identity", true, "cyan"),
-            f("cwd", true, "blue"),
+            f("identity_user", true, "grey"),
+            f("identity_host", true, "magenta"),
+            f("cwd", true, "yellow"),
             f("model", true, "cyan"),
+            f("effort", true, "grey"),
             f("context", true, "white"),
-            f("rate_limits", true, "white"),
-            f("rate_reset", false, "grey"),
-            f("cache_pct", false, "white"),
-            f("cache_tokens", false, "cyan"),
+            f("rate_limits_5h", true, "white"),
+            f("rate_reset_5h", false, "grey"),
+            f("rate_limits_7d", true, "white"),
+            f("rate_reset_7d", false, "grey"),
             f("session", true, "grey"),
-            f("git_branch", false, "magenta"),
+            f("git_branch", true, "magenta"),
+            f("cache_pct", false, "white"),
+            f("cache_tokens", false, "grey"),
         ],
-        thresholds: StatuslineThresholds { yellow: 50, orange: 70, red: 85 },
+        // Uneven by design (see StatuslineThresholds): wide calm bands at the bottom, narrow
+        // urgent ones at the top.
+        thresholds: StatuslineThresholds { green: 25, yellow: 51, orange: 75, red: 90 },
     }
 }
 
-fn sanitized_thresholds(t: &StatuslineThresholds) -> (u8, u8, u8) {
-    let mut v = [t.yellow.min(100), t.orange.min(100), t.red.min(100)];
+/// Fields that render as one visual unit: their blocks are joined by the group's own `sep` instead
+/// of the ` | ` separator, so the statusline reads them as a single group. Members stay independently
+/// toggleable and independently ordered-as-a-unit. Mirrored by `GROUPS` in
+/// `src/components/modals/ClaudeSettingModal.vue` (the customizer UI and live preview) — the two
+/// lists must stay in sync, so a group added here needs the matching UI entry there.
+/// Non-rendering flag keys (`rate_reset_*`) are deliberately absent: they modify another field's
+/// block rather than producing one of their own.
+pub struct Group {
+    pub id: &'static str,
+    pub keys: &'static [&'static str],
+    /// Shell expression for what goes between two members. Most groups just want a space; identity
+    /// wants a literal `@` with no padding, which is the only reason this is configurable.
+    pub sep: &'static str,
+    /// A fixed white label prepended once, only when the group produced non-empty output. For
+    /// cache: neither `cache_pct` nor `cache_tokens` prints "cache" itself (see their match arms
+    /// below), so the label has to live on the group or it disappears whichever member is off.
+    pub label: Option<&'static str>,
+}
+
+const GROUPS: &[Group] = &[
+    Group { id: "identity", keys: &["identity_user", "identity_host"], sep: r#"$(colored "$WHITE" "@")"#, label: None },
+    Group { id: "model", keys: &["model", "effort"], sep: " ", label: None },
+    Group { id: "quota", keys: &["rate_limits_5h", "rate_limits_7d"], sep: " ", label: None },
+    Group { id: "cache", keys: &["cache_pct", "cache_tokens"], sep: " ", label: Some("cache") },
+];
+
+fn group_of(key: &str) -> Option<&'static Group> {
+    GROUPS.iter().find(|g| g.keys.contains(&key))
+}
+
+/// Clamps to 0-100 and sorts, so a user who types the tiers out of order still gets a monotonic
+/// ladder rather than a tier that can never be reached.
+fn sanitized_thresholds(t: &StatuslineThresholds) -> (u8, u8, u8, u8) {
+    let mut v = [
+        t.green.min(100),
+        t.yellow.min(100),
+        t.orange.min(100),
+        t.red.min(100),
+    ];
     v.sort_unstable();
-    (v[0], v[1], v[2])
+    (v[0], v[1], v[2], v[3])
 }
 
 const HELPERS: &str = r#"
 colored() { printf '%s%s%s' "$1" "$2" "$RESET"; }
+
+# Joins the non-empty arguments with $1. Used to compose a group (see GROUPS in statusline.rs)
+# into one block, so its members read as one unit and a member that produced no output — disabled,
+# or no data this turn — leaves no stray separator behind.
+join_with() {
+  sep="$1"; shift
+  out=""
+  for part in "$@"; do
+    [ -z "$part" ] && continue
+    if [ -z "$out" ]; then out="$part"; else out="$out$sep$part"; fi
+  done
+  printf '%s' "$out"
+}
 
 fmt_k() {
   awk -v t="$1" 'BEGIN {
@@ -135,7 +213,7 @@ rate_block() {
   block="$(colored "$COLOR_rate_limits" "$label")$(colored "$GREY" ":")$(colored "$pct_color" "${used_int}%")"
   if [ -n "$reset" ]; then
     eta=$(fmt_eta "$reset")
-    [ -n "$eta" ] && block="${block}$(colored "$GREY" " ⟳")$(colored "$GREY" "$eta")"
+    [ -n "$eta" ] && block="${block}$(colored "$GREY" " $eta")"
   fi
   printf '%s' "$block"
 }
@@ -145,7 +223,7 @@ rate_block() {
 /// standard `#!/bin/bash`) from `config`. The `aki-rlcache v2` block is always emitted — the
 /// app's rate-limit caching depends on it and it must not be user-togglable (see plan doc).
 pub fn generate_statusline_script(config: &StatuslineConfig) -> String {
-    let (yellow, orange, red) = sanitized_thresholds(&config.thresholds);
+    let (green, yellow, orange, red) = sanitized_thresholds(&config.thresholds);
 
     let mut s = String::new();
     s.push_str("#!/bin/bash\n");
@@ -220,20 +298,20 @@ printf '%s' "$input" > "$HOME/.claude/rate-limits-cache.json"
     }
     // fixed colors for non-editable fields that still need a named var (rate labels, identity host)
     s.push_str("COLOR_rate_limits='\\033[97m'\n"); // white, locked
-    s.push_str("COLOR_identity_host='\\033[01;32m'\n"); // bold green, locked
-    s.push_str("COLOR_identity_user='\\033[36m'\n"); // cyan, locked
 
     s.push_str(HELPERS);
 
     s.push_str(&format!(
         r#"
-# 4-tier usage scale: green <{yellow}%, yellow {yellow}-{orange}%, orange {orange}-{red}%, red >={red}%
+# 5-tier usage scale: blue <{green}%, green {green}-{yellow}%, yellow {yellow}-{orange}%,
+# orange {orange}-{red}%, red >={red}%
 color_for_pct() {{
   p="$1"
   if awk -v p="$p" 'BEGIN{{exit !(p>={red})}}'; then printf '%s' "$BOLD_RED"
   elif awk -v p="$p" 'BEGIN{{exit !(p>={orange})}}'; then printf '%s' "$BOLD_ORANGE"
   elif awk -v p="$p" 'BEGIN{{exit !(p>={yellow})}}'; then printf '%s' "$BOLD_YELLOW"
-  else printf '%s' "$BOLD_GREEN"; fi
+  elif awk -v p="$p" 'BEGIN{{exit !(p>={green})}}'; then printf '%s' "$BOLD_GREEN"
+  else printf '%s' "$BOLD_BLUE"; fi
 }}
 
 # Inverse of color_for_pct: for metrics where HIGH is good (cache hit rate), not bad — reuses the
@@ -245,12 +323,17 @@ color_for_pct_inv() {{
 }}
 
 "#,
+        green = green,
         yellow = yellow,
         orange = orange,
         red = red
     ));
 
-    s.push_str("SEP=\"$(colored \"$GREY\" \" | \")\"\n\n");
+    s.push_str("SEP=\"$(colored \"$GREY\" \" | \")\"\n");
+    // The spend at which a session's cost reads as fully "red". Not a threshold the customizer
+    // exposes — it is the denominator that turns dollars into a percentage the shared tier ladder
+    // can color, not a tier of its own.
+    s.push_str("COST_FULL_USD=30\n\n");
 
     // cache_pct and cache_tokens both need the same total — computed once here (SSoT) so either
     // field can be toggled independently without depending on the other's match arm having run.
@@ -263,10 +346,15 @@ color_for_pct_inv() {{
     // ---- group builders (only for enabled fields; each var is empty string if unused) ----
     for field in &config.fields {
         match field.key.as_str() {
-            "identity" => s.push_str(
+            "identity_user" => s.push_str(
                 r#"_user="$(whoami)"; _user="${_user:0:5}"
-_host="$(hostname -s)"; _host="${_host:0:5}"
-g_identity="$(colored "$COLOR_identity_user" "$_user")$(colored "$WHITE" "@")$(colored "$COLOR_identity_host" "$_host")"
+g_identity_user="$(colored "$COLOR_identity_user" "$_user")"
+
+"#,
+            ),
+            "identity_host" => s.push_str(
+                r#"_host="$(hostname -s)"; _host="${_host:0:5}"
+g_identity_host="$(colored "$COLOR_identity_host" "$_host")"
 
 "#,
             ),
@@ -281,9 +369,17 @@ g_cwd="$(colored "$COLOR_cwd" "$_cwd_dir")"
                 r#"model_name="$(printf '%s' "$model_name" | sed -E 's/ *\([^)]*\)$//')"
 model_lower=$(printf '%s' "$model_name" | tr 'A-Z' 'a-z')
 g_model="$(colored "$COLOR_model" "$model_lower")"
+
+"#,
+            ),
+            // Its own field rather than part of `model`'s block, so it can be turned off while the
+            // model name stays. Locked to grey — it is a qualifier of the model, not a field the
+            // eye should land on (hence no entry in `field_color_editable`).
+            "effort" => s.push_str(
+                r#"g_effort=""
 effort_abbr="$effort_level"
 [ "$effort_abbr" = "medium" ] && effort_abbr="med"
-[ -n "$effort_abbr" ] && g_model="$g_model $(colored "$GREY" "$effort_abbr")"
+[ -n "$effort_abbr" ] && g_effort="$(colored "$GREY" "$effort_abbr")"
 
 "#,
             ),
@@ -292,48 +388,47 @@ effort_abbr="$effort_level"
 if [ "$ctx_size" != "0" ]; then
   ctx_pct_int=$(round_pct "$ctx_used_pct")
   ctx_total=$(( ${ctx_input%.*} + ${ctx_output%.*} ))
-  ctx_breakdown="$(colored "$CYAN" "$(fmt_k "$ctx_total")")$(colored "$GREY" "/")$(colored "$CYAN" "$(fmt_k "$ctx_size")")"
+  ctx_breakdown="$(colored "$GREY" "$(fmt_k "$ctx_total")")$(colored "$GREY" "/")$(colored "$GREY" "$(fmt_k "$ctx_size")")"
   g_context="$(colored "$WHITE" "ctx") $(colored "$(color_for_pct "$ctx_pct_int")" "${ctx_pct_int}%") $ctx_breakdown"
 fi
 
 "#,
             ),
-            "rate_limits" => {
-                let reset_enabled = config.fields.iter().any(|f| f.key == "rate_reset" && f.enabled);
+            "rate_limits_5h" => {
+                let reset_enabled = config.fields.iter().any(|f| f.key == "rate_reset_5h" && f.enabled);
                 if reset_enabled {
-                    s.push_str(
-                        r#"five_block=$(rate_block "5h" "$five_used" "$five_reset")
-seven_block=$(rate_block "7d" "$seven_used" "$seven_reset")
-if [ -n "$five_block" ] && [ -n "$seven_block" ]; then
-  g_rate_limits="${five_block}  ${seven_block}"
-else
-  g_rate_limits="${five_block}${seven_block}"
-fi
+                    s.push_str(r#"g_rate_limits_5h=$(rate_block "5h" "$five_used" "$five_reset")
 
-"#,
-                    );
+"#);
                 } else {
-                    s.push_str(
-                        r#"five_block=$(rate_block "5h" "$five_used")
-seven_block=$(rate_block "7d" "$seven_used")
-if [ -n "$five_block" ] && [ -n "$seven_block" ]; then
-  g_rate_limits="${five_block}  ${seven_block}"
-else
-  g_rate_limits="${five_block}${seven_block}"
-fi
+                    s.push_str(r#"g_rate_limits_5h=$(rate_block "5h" "$five_used")
 
-"#,
-                    );
+"#);
+                }
+            }
+            "rate_limits_7d" => {
+                let reset_enabled = config.fields.iter().any(|f| f.key == "rate_reset_7d" && f.enabled);
+                if reset_enabled {
+                    s.push_str(r#"g_rate_limits_7d=$(rate_block "7d" "$seven_used" "$seven_reset")
+
+"#);
+                } else {
+                    s.push_str(r#"g_rate_limits_7d=$(rate_block "7d" "$seven_used")
+
+"#);
                 }
             }
             "session" => s.push_str(
-                r#"g_session="$(colored "$COLOR_session" "$(fmt_dur "$duration_ms")")"
+                r#"g_session="$(colored "$WHITE" "ss") $(colored "$GREY" "$(fmt_dur "$duration_ms")")"
 if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
-  g_lines="$(colored "$GREEN" "+${lines_added}")$(colored "$GREY" "/")$(colored "$RED" "-${lines_removed}")"
+  g_lines="$(colored "$BOLD_GREEN" "+${lines_added}")$(colored "$GREY" "/")$(colored "$BOLD_RED" "-${lines_removed}")"
   g_session="$g_session $g_lines"
 fi
 cost_fmt=$(awk -v c="$cost_usd" 'BEGIN{printf "$%.2f", c}')
-g_session="$g_session $(colored "$CYAN" "$cost_fmt")"
+# Session cost has no percentage of its own, so it is scaled against COST_FULL_USD to reuse the
+# same tier ladder as every other dynamic value. Anything at or above that ceiling is red.
+cost_pct=$(awk -v c="$cost_usd" -v full="$COST_FULL_USD" 'BEGIN{p=(full>0)?c/full*100:0; if(p>100)p=100; printf "%.0f", p}')
+g_session="$g_session $(colored "$(color_for_pct "$cost_pct")" "$cost_fmt")"
 
 "#,
             ),
@@ -343,18 +438,22 @@ g_session="$g_session $(colored "$CYAN" "$cost_fmt")"
 
 "#,
             ),
+            // No "cache" text here — the group's own `label` (see GROUPS) prepends it once, so it
+            // survives regardless of which of cache_pct/cache_tokens is actually enabled.
             "cache_pct" => s.push_str(
                 r#"g_cache_pct=""
 if [ "$_cache_total" -gt 0 ]; then
   _cache_pct=$(awk -v r="$cache_read" -v t="$_cache_total" 'BEGIN{printf "%.0f", r/t*100}')
-  g_cache_pct="$(colored "$WHITE" "cache") $(colored "$(color_for_pct_inv "$_cache_pct")" "${_cache_pct}%")"
+  g_cache_pct="$(colored "$(color_for_pct_inv "$_cache_pct")" "${_cache_pct}%")"
 fi
 
 "#,
             ),
+            // Read count only, fixed grey — a supporting detail next to cache_pct's colored
+            // percentage, not a value with its own color choice.
             "cache_tokens" => s.push_str(
                 r#"g_cache_tokens=""
-[ "$_cache_total" -gt 0 ] && g_cache_tokens="$(colored "$COLOR_cache_tokens" "$(fmt_k "$cache_read")")$(colored "$GREY" "/")$(colored "$COLOR_cache_tokens" "$(fmt_k "$_cache_total")")"
+[ "$_cache_total" -gt 0 ] && g_cache_tokens="$(colored "$GREY" "$(fmt_k "$cache_read")")"
 
 "#,
             ),
@@ -362,13 +461,52 @@ fi
         }
     }
 
-    // ---- join enabled groups, in configured order, with " | " ----
-    let enabled_keys: Vec<&str> = config
-        .fields
-        .iter()
-        .filter(|f| f.enabled)
-        .map(|f| f.key.as_str())
-        .collect();
+    // ---- join enabled blocks, in configured order, with " | " ----
+    // A grouped field contributes its group's combined var once (at the position of its first
+    // enabled member) instead of one ` | `-separated block per member.
+    let mut enabled_keys: Vec<String> = Vec::new();
+    let mut emitted_groups: Vec<&str> = Vec::new();
+    for field in config.fields.iter().filter(|f| f.enabled) {
+        match group_of(&field.key) {
+            None => enabled_keys.push(field.key.clone()),
+            Some(group) => {
+                if emitted_groups.contains(&group.id) {
+                    continue;
+                }
+                emitted_groups.push(group.id);
+                // Only enabled members go into the group var; a disabled member's `g_` var is
+                // still assigned above, so filtering here is what actually turns it off.
+                let members: Vec<String> = group
+                    .keys
+                    .iter()
+                    .filter(|k| config.fields.iter().any(|f| &f.key == *k && f.enabled))
+                    .map(|k| format!("\"$g_{}\"", k))
+                    .collect();
+                s.push_str(&format!(
+                    "g_group_{}=$(join_with \"{}\" {})\n",
+                    group.id,
+                    group.sep,
+                    members.join(" ")
+                ));
+                // Group-level label (cache's "cache"): prepended only if the group actually
+                // produced output, via an intermediate variable so the nested-quote command
+                // substitution never has to sit inside another double-quoted string.
+                if let Some(label) = group.label {
+                    s.push_str(&format!(
+                        r#"if [ -n "$g_group_{id}" ]; then
+  _lbl="$(colored "$WHITE" "{label}")"
+  g_group_{id}="$_lbl $g_group_{id}"
+fi
+"#,
+                        id = group.id,
+                        label = label
+                    ));
+                }
+                enabled_keys.push(format!("group_{}", group.id));
+            }
+        }
+    }
+    s.push('\n');
     let word_list = if enabled_keys.is_empty() {
         "\"\"".to_string()
     } else {
@@ -511,5 +649,66 @@ fn preview(s: &str, max: usize) -> String {
         s[..end].replace('\n', " ")
     } else {
         s.replace('\n', " ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The generated script is a string built from fragments, so a bad edit produces broken shell
+    /// that no compiler catches — `bash -n` is the only thing that does.
+    #[test]
+    fn generated_script_is_valid_shell() {
+        let script = generate_statusline_script(&default_config());
+        let mut child = std::process::Command::new("bash")
+            .arg("-n")
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn bash");
+        use std::io::Write;
+        child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "bash -n failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// Group members must join with their own separator instead of the ` | ` one, and a grouped
+    /// field must not also be emitted standalone.
+    #[test]
+    fn groups_join_without_separator() {
+        let script = generate_statusline_script(&default_config());
+        assert!(script.contains(r#"g_group_quota=$(join_with " " "$g_rate_limits_5h" "$g_rate_limits_7d")"#));
+        assert!(script.contains(r#"g_group_model=$(join_with " " "$g_model" "$g_effort")"#));
+        // identity is the one group whose members are glued by something other than a space
+        assert!(script.contains(r#"g_group_identity=$(join_with "$(colored "$WHITE" "@")" "$g_identity_user" "$g_identity_host")"#));
+        let join_line = script.lines().find(|l| l.starts_with("for g in ")).expect("join line");
+        assert!(join_line.contains("$g_group_quota") && !join_line.contains("$g_rate_limits_5h"));
+    }
+
+    /// End-to-end: run the generated script against a realistic Claude Code payload and print the
+    /// line it produces, so a rendering change is visible instead of merely compiling.
+    #[test]
+    fn renders_a_line() {
+        let script = generate_statusline_script(&default_config());
+        let dir = std::env::temp_dir().join("aki-statusline-smoke");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sl.sh");
+        std::fs::write(&path, &script).unwrap();
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"cost":{"total_cost_usd":8.4,"total_duration_ms":720000,"total_lines_added":122,"total_lines_removed":52},"context_window":{"total_input_tokens":120000,"total_output_tokens":14400,"context_window_size":1000000,"used_percentage":72,"current_usage":{"cache_read_input_tokens":12400,"cache_creation_input_tokens":800,"input_tokens":32000}},"effort":{"level":"medium"},"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":92,"resets_at":0}},"workspace":{"git_branch":"master"}}"#;
+        let out = std::process::Command::new("bash")
+            .arg(&path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut c| {
+                use std::io::Write;
+                c.stdin.as_mut().unwrap().write_all(payload.as_bytes())?;
+                c.wait_with_output()
+            })
+            .unwrap();
+        let line = String::from_utf8_lossy(&out.stdout).to_string();
+        println!("RENDERED>>>{}<<<", line);
+        assert!(!line.trim().is_empty(), "statusline rendered empty");
     }
 }
