@@ -22,7 +22,7 @@ Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
     - Tauri: DEV = `{pm} tauri dev`, BUILD = `{pm} build:app`
     - Nuxt / Node: DEV = `{pm} dev`, BUILD = `{pm} build`
   - **Tự động cấu hình Package Manager**: Quét lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) để tự chọn `pnpm`/`yarn`/`bun`/`npm`.
-  - **Per-project override**: Có thể ghi đè lệnh DEV/BUILD cho từng project trong Project Settings ("RUN COMMANDS — LOCAL ONLY"). Để trống = dùng mặc định theo stack.
+  - **Per-project override**: Có thể ghi đè lệnh DEV/BUILD cho từng project trong Project Settings ("RUN COMMANDS - LOCAL ONLY"). Để trống = dùng mặc định theo stack.
 
 ### 3. Remote SSH Targets
 Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa:

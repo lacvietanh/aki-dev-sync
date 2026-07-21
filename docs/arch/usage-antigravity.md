@@ -1,6 +1,8 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE in this project.
+This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & AGY CLI in this project.
+
+> **Updated 2026-07-22:** Multi-instance discovery support added for simultaneous Antigravity IDE & agy CLI multi-account quota monitoring. See detailed research document: [docs/research/antigravity-multi-instance-cli-discovery-20260722.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/research/antigravity-multi-instance-cli-discovery-20260722.md).
 
 ## Mechanism of Action
 
@@ -42,22 +44,19 @@ sequenceDiagram
     Rust-->>Rust: Parse & return to Vue Frontend
 ```
 
-### 1. Process Detection
+### 1. Process Detection (Multi-Instance: IDE & CLI agy)
 * **Execution:** Runs `ps auxww` on macOS/Unix to output the command list without line truncation.
-* **Targeting:** Filters lines containing exact native binary executable names:
-  * `language_server_macos_arm` (macOS Apple Silicon)
-  * `language_server_macos_x64` (macOS Intel)
-  * `language_server_linux_x64` (Linux Intel)
-  * `language_server_linux_arm64` (Linux ARM)
-  * `language_server_windows_x64.exe` (Windows)
+* **Targeting:** Detects both Antigravity IDE and standalone `agy` CLI processes running simultaneously:
+  * **IDE Language Server binaries:** `language_server_macos_arm`, `language_server_macos_x64`, `language_server_linux_x64`, `language_server_linux_arm64`, `language_server_windows_x64.exe` (with `--csrf_token` and `--extension_server_port`).
+  * **AGY CLI binary:** Standalone `agy` process instances listening on local Connect RPC HTTPS ports.
 * **Argument Extraction:** Parses the command arguments using regular expressions to extract:
-  * `--csrf_token` (Security token required for all Connect RPC queries).
-  * `--extension_server_port` (Base extension communication port).
+  * `--csrf_token` (Security token required for IDE Connect RPC queries).
+  * `--extension_server_port` (Base extension communication port for IDE).
 
 ### 2. Port Discovery & Probing
-* **TCP Port Detection:** Runs `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` to gather active ports listening on the target process ID.
-* **Seed Ports:** Seeds the candidate list with the extracted `extensionServerPort` and its adjacent port (`port + 1`).
-* **Connection Probing:** Sends POST requests to `/exa.language_server_pb.LanguageServerService/GetUnleashData` containing the CSRF token to check for valid Connect RPC statuses (`200` or `401`).
+* **TCP Port Detection:** Runs `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` to gather active ports listening on each target process ID (both IDE and CLI).
+* **Seed Ports:** Seeds candidate lists with extracted `extensionServerPort` and adjacent ports (`port + 1`).
+* **Connection Probing:** Sends POST requests to `/exa.language_server_pb.LanguageServerService/GetUnleashData` (probing HTTPS and HTTP) to check for valid Connect RPC statuses (`200` or `401`).
 
 ### 3. API Query & Standardization
 * **Parallel Queries:** Performs two Connect RPC queries concurrently using `Promise.all`:
@@ -72,7 +71,7 @@ sequenceDiagram
 
 When the user is signed out while the language server is still running, `GetUserStatus` does **not**
 reliably return `401`. On the current Antigravity build it returns **HTTP `500`** with body
-`{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` — the server answers, but has
+`{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` - the server answers, but has
 no session, so the account-derived model config is nil (empirically verified on this machine after
 a real logout). The earlier code assumed signed-out == `401`, so it mislabeled this as a generic
 connection failure. `get-antigravity-usage.js` still uses `Promise.allSettled` to keep the raw
@@ -84,13 +83,13 @@ rejection reason, and now classifies **both** signatures as signed-out:
 **Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100%
 stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing:
 `agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"`
-/ `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case — port
+/ `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port
 not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set
 `error.value` in `useAgentUsage.js`, flashing an error banner every poll. AG usage is a best-effort
 monitor and the frontend already has a graceful null path (show the last cached account), so
 `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason
 at debug level. Result: transient/offline/signed-out states show the cached account (or the
-"Not connected — open & sign in to Antigravity to monitor" empty state), never a repeating banner.
+"Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
 
 ## Log Out (fixed 2026-07-03, v1.9.x → next)
 
@@ -102,9 +101,9 @@ session is stored in VS Code's globalState SQLite store,
 `User/globalStorage/state.vscdb`, in the `ItemTable` under two keys:
 
 - `antigravityUnifiedStateSync.oauthToken` (~1 KB)
-- `antigravityUnifiedStateSync.userStatus` (~8 KB — account/email/quota)
+- `antigravityUnifiedStateSync.userStatus` (~8 KB - account/email/quota)
 
-These values are **not** Electron `safeStorage` ciphertext — they carry no `v10`/`v11` prefix
+These values are **not** Electron `safeStorage` ciphertext - they carry no `v10`/`v11` prefix
 (inspected without materializing the token; first byte `0x43` = base64 protobuf, the Connect-RPC
 wire form). The earlier theory that the token was `safeStorage`-encrypted and that deleting the
 `"Antigravity IDE Safe Storage"` Keychain item made it "permanently undecryptable" was **wrong**:
@@ -118,9 +117,9 @@ fully readable, so the IDE re-read it on next launch and silently signed back in
 2. Deletes the account-only Chromium files (`ANTIGRAVITY_ACCOUNT_ONLY_PATHS`).
 3. **Deletes the two auth rows** (`ANTIGRAVITY_AUTH_KEYS`) from `state.vscdb` **and** `state.vscdb.backup`
    (Antigravity restores from the backup if the primary is missing) via the system `/usr/bin/sqlite3`
-   — `remove_antigravity_auth_rows()`. This is what actually forces re-login. A `DELETE ... WHERE key IN (...)`
+   - `remove_antigravity_auth_rows()`. This is what actually forces re-login. A `DELETE ... WHERE key IN (...)`
    touches only those two rows and leaves all other globalState intact (verified: 2 keys removed, 1632 rows preserved).
-4. Deletes the `"Antigravity IDE Safe Storage"` Keychain item (defense-in-depth — harmless, and covers
+4. Deletes the `"Antigravity IDE Safe Storage"` Keychain item (defense-in-depth - harmless, and covers
    any future build that *does* move to `safeStorage`).
 
 `User/` (settings, keybindings, snippets, extensions, workspaceStorage) and the rest of
@@ -157,7 +156,7 @@ in `localStorage` under `aki-antigravity-usage-cache-v2`:
 * **Migration:** the old single-blob key `aki-antigravity-usage-cache` is migrated once (keyed by the
   blob's `data.email`) into the v2 map, then removed. Handled by `loadAgStore()` in `useAgentUsage.js`.
 * **Why it also fixes the stale-account bug:** previously the cache was one un-keyed blob. When a live
-  fetch returned `null` (the language server restarts right after an account switch — very common),
+  fetch returned `null` (the language server restarts right after an account switch - very common),
   the null branch displayed that blob = the *previous* account; whether you saw old or new depended
   on whether the fetch happened to succeed that tick (a race, persisted even across reload). Now the
   null branch deterministically shows the **last-active account's** cache (labeled *Cached*), and the
@@ -169,37 +168,60 @@ in `localStorage` under `aki-antigravity-usage-cache-v2`:
   returns to follow-live. State lives in the composable: `accounts`, `viewingEmail`, `activeEmail`,
   `selectAccount()`. The email-blur eye-toggle applies to dropdown rows too.
 
-> **Contrast with Claude Code:** CC deliberately has **no** multi-account cache — exactly one account
+> **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account
 > per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
 
-## Log Out behavior & cache retention (PO decision, chốt 2026-07-07 — nguồn chân lý)
+## Smart Multi-Environment Logout (`logout_antigravity` vs `logout_antigravity_cli`)
+
+To support simultaneous multi-account monitoring across Antigravity IDE and AGY CLI, logout is environment-aware:
+
+1. **Antigravity IDE (`sourceType: "ide"`):**
+   - Command: `logout_antigravity`
+   - Action: Quits `Antigravity IDE.app` (`osascript` / `pkill`) and wipes OAuth session rows (`antigravityUnifiedStateSync.oauthToken` and `.userStatus`) from SQLite `state.vscdb` (`~/Library/Application Support/antigravity-ide/User/globalStorage/state.vscdb`).
+   - UI: Dropdown displays `<i class="fa-solid fa-right-from-bracket"></i> Log Out IDE`.
+2. **AGY CLI (`sourceType: "cli"`):**
+   - Command: `logout_antigravity_cli`
+   - Action: Terminates `agy` CLI binary processes (`pkill -f agy`) and removes CLI credential files (`oauth_creds.json`, `google_accounts.json`, `state.json`) from `~/.gemini/`.
+   - UI: Dropdown displays `<i class="fa-solid fa-terminal"></i> Log Out AGY CLI`.
+
+Both commands trigger `@logout-success`, causing all active usage slots to self-heal and fall back cleanly to remaining active accounts.
+
+## Dynamic N-Tier Grid Architecture (`usageTierStore.js` & `AgentUsageSection.vue`)
+
+The usage section uses a declarative, standardized N-Tier slot architecture:
+
+* **Declarative Schema (`ALL_TIER_ROWS`):** Slots are modeled declaratively as rows of slot configurations (`Slot A` & `Slot B` for Tier 1; `Slot C` & `Slot D` for Tier 2).
+* **Zero Template Duplication:** A nested `v-for` renders `activeTierRows` dynamically based on `tierCount`. Adding N tiers requires zero HTML template edits.
+* **User Control:** The App Titlebar Menu (☰) includes a 1 Tier / 2 Tiers toggle, persisting the preference in `localStorage` (`aki-usage-tier-count`).
+
+## Log Out behavior & cache retention (PO decision, chốt 2026-07-07 - nguồn chân lý)
 
 **Mục tiêu của cache multi-account**: xem được hiện trạng lần cuối (last-known state) của **từng**
 account, vì AG native chỉ hiển thị được 1 account tại 1 thời điểm. Cache tồn tại để bù đắp đúng giới
-hạn đó — không phải để "dọn dẹp" hay "ẩn" tài khoản không còn active.
+hạn đó - không phải để "dọn dẹp" hay "ẩn" tài khoản không còn active.
 
-- **Sau khi Log Out 1 account trong app**: header hiện **như bình thường** — không có xử lý đặc biệt,
+- **Sau khi Log Out 1 account trong app**: header hiện **như bình thường** - không có xử lý đặc biệt,
   không blank/reset về trạng thái trống. `resetAccount()` chỉ kích một lần `checkUsage()` ngay (đẩy
-  nhanh việc phát hiện account mới nếu người dùng sắp login lại) — **không** xóa `data`, `activeEmail`,
+  nhanh việc phát hiện account mới nếu người dùng sắp login lại) - **không** xóa `data`, `activeEmail`,
   `viewingEmail`, hay bất kỳ entry nào trong `accounts`. Chấm "live" (`ag-live-dot`) đã tự nhiên di
-  chuyển sang account mới active ngay khi nó có live fetch đầu tiên — không cần thêm indicator/badge
+  chuyển sang account mới active ngay khi nó có live fetch đầu tiên - không cần thêm indicator/badge
   riêng cho "account này vừa logout".
 - **Thời hạn giữ trong dropdown: vô hạn.** Không có cơ chế dọn theo thời gian/số lượng. Một account đã
   từng xuất hiện thì luôn có mặt trong dropdown cho tới khi bị dọn thủ công (không có UI cho việc này
-  ở v1 — nếu cần, đó là yêu cầu riêng).
+  ở v1 - nếu cần, đó là yêu cầu riêng).
 - **Hiển thị "hiện trạng lần cuối": tooltip hiện tại là đủ** (`cachedAgo`/`cachedAbsTime` trong
-  `AgentUsage.vue`) — không cần thêm timestamp tường minh ở dòng dropdown.
+  `AgentUsage.vue`) - không cần thêm timestamp tường minh ở dòng dropdown.
 
-### Lịch sử — vì sao mục này tồn tại (tránh tái phạm)
+### Lịch sử - vì sao mục này tồn tại (tránh tái phạm)
 
-1.9.3 (`a26b8f5` → `b082d0d`) từng thêm `resetAccount()` gọi `clearAgStore()` để giải quyết vấn đề
-"header vẫn hiện account vừa logout" — nhưng đó **không phải là bug** theo mục tiêu thật của tính năng
+1.9.3 (`a26b8f5` -> `b082d0d`) từng thêm `resetAccount()` gọi `clearAgStore()` để giải quyết vấn đề
+"header vẫn hiện account vừa logout" - nhưng đó **không phải là bug** theo mục tiêu thật của tính năng
 (xem đầu mục này), và cách giải quyết (xóa toàn bộ store) là một regression nghiêm trọng: mỗi lần
 logout xóa sạch lịch sử mọi account, không chỉ account vừa logout. Đã sửa 2026-07-07: `resetAccount()`
-không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard — Multi-entity State" trong
+không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi-entity State" trong
 `CLAUDE.md` (repo root) cho nguyên tắc chung rút ra từ sự việc này.
 
-### Design locks (by design — do not "fix")
+### Design locks (by design - do not "fix")
 
 - **CC has no multi-account cache.** One account per remote host; do not add an AG-style store to CC.
 - **`viewingEmail` is not persisted.** Pinning the view to a previous account is transient; every
@@ -210,21 +232,23 @@ không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard — Mul
 - **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always
   carries `email`; no empty-email guard is added in the live cache path.
 - **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache
-  retention" above — this is a deliberate product decision, not a gap to "fix" later.
+  retention" above - this is a deliberate product decision, not a gap to "fix" later.
 - **No retention limit on cached accounts.** Do not add a cleanup/expiry mechanism unless explicitly
-  requested — infinite retention is the intended behavior.
+  requested - infinite retention is the intended behavior.
 
 ---
 
 ## Related Source Files
 
 - **Backend / Scripts:**
-  - [get-antigravity-usage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-antigravity-usage.js) — Node.js script to probe and fetch Connect RPC metrics.
-  - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) — Tauri Rust backend executor command handler.
-- **Frontend:**
-  - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) — Vue frontend composable managing state. Guards: `isSyncing` (forceSync), `isChecking` (checkUsage).
-  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) — Owns the `ag` source (always `host = 'local'`) and renders two `AgentUsageSlot` display panels.
-  - [AgentUsageSlot.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSlot.vue) — Each panel independently picks LOCAL/REMOTE and, within LOCAL, AG/CC; synced with `usageViewStore` so both panels can't show AG at once.
-  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) — Usage card component. Antigravity header shows full email with eye-toggle visibility and an account dropdown with per-account switching plus the Log Out action.
-  - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) — SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
-  - [RefreshRing.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/RefreshRing.vue) — Countdown ring on the reload button (overlay mode).
+  - [get-antigravity-usage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-antigravity-usage.js) - Node.js script to probe and fetch Connect RPC metrics.
+  - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) - Tauri Rust backend executor command handlers (`logout_antigravity`, `logout_antigravity_cli`).
+- **Frontend Stores & Composables:**
+  - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) - Vue frontend composable managing state and multi-account persistence.
+  - [usageTierStore.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/store/usageTierStore.js) - Reactive store managing 1 Tier / 2 Tiers layout preference.
+- **UI Components:**
+  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) - Owns usage sources and dynamically renders declarative N-Tier slot rows.
+  - [AgentUsageSlot.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
+  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon, cyan/purple live dots, and environment-aware logout.
+  - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) - SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
+  - [RefreshRing.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).

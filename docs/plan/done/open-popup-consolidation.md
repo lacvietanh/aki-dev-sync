@@ -94,21 +94,21 @@ Mỗi case chỉ build arguments khác nhau cho cùng một binary `open`. Đây
 
 #### 2.1. Nguyên tắc phân loại
 
-**Giữ ở Rust** — khi có complexity thực sự cần Rust:
+**Giữ ở Rust** - khi có complexity thực sự cần Rust:
 - AppleScript string construction + escaping (injection risk)
 - Subprocess CLI không phải `open` (`antigravity-ide --remote`)
 - Filesystem check (`check_ide_availability`)
 
-**Chuyển về JS** — khi chỉ là build args cho `open`:
+**Chuyển về JS** - khi chỉ là build args cho `open`:
 - Tất cả `open -a <app> <path>`, `open <url>`, `open <path>`
-- VSCode Remote URL scheme (`vscode://...`) — chỉ là string building
+- VSCode Remote URL scheme (`vscode://...`) - chỉ là string building
 
 #### 2.2. Rust sau refactor
 
 **Giữ nguyên:**
-- `check_ide_availability()` — filesystem check
-- `open_ide_remote("terminal", ...)` — AppleScript SSH
-- `open_ide_remote("antigravity", ...)` — `antigravity-ide --remote` CLI
+- `check_ide_availability()` - filesystem check
+- `open_ide_remote("terminal", ...)` - AppleScript SSH
+- `open_ide_remote("antigravity", ...)` - `antigravity-ide --remote` CLI
 
 **Thêm mới:**
 ```rust
@@ -129,10 +129,10 @@ pub fn macos_open(args: Vec<String>) -> Result<(), String> {
 
 #### 2.3. JS sau refactor
 
-`ProjectTable.vue` — thay `openIdeLocal` và `openIdeRemote`:
+`ProjectTable.vue` - thay `openIdeLocal` và `openIdeRemote`:
 
 ```js
-// Toàn bộ LOCAL cases — chỉ build args
+// Toàn bộ LOCAL cases - chỉ build args
 const IDE_LOCAL_ARGS = {
   finder:          path => [path],
   terminal:        path => ['-a', 'Terminal', path],
@@ -146,7 +146,7 @@ async function openIdeLocal(ideName, path) {
   if (args) await invoke('macos_open', { args })
 }
 
-// REMOTE — split: URL scheme về macos_open, subprocess về Rust
+// REMOTE - split: URL scheme về macos_open, subprocess về Rust
 async function openIdeRemote(ideName, host, path) {
   if (ideName === 'vscode') {
     await invoke('macos_open', { args: [`vscode://vscode-remote/ssh-remote+${host}${path}`] })

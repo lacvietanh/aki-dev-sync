@@ -20,7 +20,7 @@ a confusing UX where users cannot drag the window or access minimize/close.
 | Element type | Violation example | Correct behavior |
 |---|---|---|
 | Modal / dialog | `top: 0` or `position: fixed; inset: 0` | Start at `top: 42px` or use `margin-top: 42px` |
-| Full-screen overlay | `position: fixed; top: 0; left: 0; right: 0; bottom: 0` | `top: 42px` — never cover the header |
+| Full-screen overlay | `position: fixed; top: 0; left: 0; right: 0; bottom: 0` | `top: 42px` - never cover the header |
 | Dropdown / tooltip | Positioned anchor is near the top-left | Ensure calculated position never goes above y=42 |
 | Sidebar / drawer | Slides in from top-left without offset | Start below the header; use `top: 42px; height: calc(100% - 42px)` |
 | Notification / toast | Positioned at `top-right` with `top: 0` | Use `top: 50px` or `bottom-end` position |
@@ -63,9 +63,9 @@ The titlebar's effective z-index must always beat overlays:
 
 | Layer | z-index | Notes |
 |---|---|---|
-| Page content | 1–9 | Tables, cards, static elements |
-| Floating UI (tooltips, dropdowns) | 10–99 | Must not extend above y=42 |
-| Modals / overlays | 100–199 | Must start at top: 42px or higher |
+| Page content | 1-9 | Tables, cards, static elements |
+| Floating UI (tooltips, dropdowns) | 10-99 | Must not extend above y=42 |
+| Modals / overlays | 100-199 | Must start at top: 42px or higher |
 | Titlebar | 200 | Hard ceiling for app UI |
 
 ## Checklist for new UI that uses `position: fixed` or `position: absolute`

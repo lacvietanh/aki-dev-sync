@@ -1,8 +1,8 @@
-# Research — Sync Button Semantic Analysis
+# Research - Sync Button Semantic Analysis
 
-**Date:** 2026-06-29 — 2026-06-30  
+**Date:** 2026-06-29 - 2026-06-30  
 **Triggered by:** Real incident + hands-on reproduction session  
-**Status:** All items resolved. Tier 1 + Tier 2 (baseline manifest, bidirectional) + DRY RUN guard bug + EC-3 symmetric — complete.
+**Status:** All items resolved. Tier 1 + Tier 2 (baseline manifest, bidirectional) + DRY RUN guard bug + EC-3 symmetric - complete.
 
 Cross-refs:
 - Feature doc: `docs/feat/sync-flow.md` (CRITICAL section + Status Checker)
@@ -21,7 +21,7 @@ Cross-refs:
 | **PUSH** | Local has files or changes Remote does not yet have |
 | **PULL** | Remote has files or changes Local does not yet have |
 
-This is directional freshness, not rsync work-to-do. A button lighting means "**that side originated something the other side should receive.**" It does NOT mean "rsync has operations to perform in that direction" — those are related but not the same concept.
+This is directional freshness, not rsync work-to-do. A button lighting means "**that side originated something the other side should receive.**" It does NOT mean "rsync has operations to perform in that direction" - those are related but not the same concept.
 
 ---
 
@@ -36,7 +36,7 @@ This is directional freshness, not rsync work-to-do. A button lighting means "**
   - Remote-only new files → **deleted** (--delete removed them)
   - Previously deleted remote files → **restored** from local (they existed locally, --delete doesn't apply)
   - Remote-edited files (newer mtime) → **survived** (-u skipped them)
-- Diagnostic fingerprint: asymmetric "Frankenstein" result — exactly what `-u --delete` produces.
+- Diagnostic fingerprint: asymmetric "Frankenstein" result - exactly what `-u --delete` produces.
 
 ### 2b. Reproduction session (2026-06-29)
 
@@ -66,11 +66,11 @@ The dry-run shows: hundreds of `deleting …` lines (files in LOCAL that remote 
 
 ## 3. Code Analysis
 
-### 3a. `count_rsync_changes` — the status check (sync.rs ~312)
+### 3a. `count_rsync_changes` - the status check (sync.rs ~312)
 
 ```rust
 fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, String> {
-    // builds args using build_rsync_args — inherits --delete if project.delete_on_push/pull
+    // builds args using build_rsync_args - inherits --delete if project.delete_on_push/pull
     let mut args = build_rsync_args(project, is_push, true, &[], sync_git, src, dest);
     args.insert(insert_pos, "--modify-window=2".to_string());
     // runs rsync --dry-run, counts non-noise output lines
@@ -84,14 +84,14 @@ fn count_rsync_changes(project: &SyncProject, is_push: bool) -> Result<usize, St
 }
 ```
 
-**Bug (pre-fix):** The filter did NOT exclude `deleting …` lines. Those lines represent files the DESTINATION has that the SOURCE lacks — i.e., the opposite direction's signal. Counting them toward the current direction's button was wrong.
+**Bug (pre-fix):** The filter did NOT exclude `deleting …` lines. Those lines represent files the DESTINATION has that the SOURCE lacks - i.e., the opposite direction's signal. Counting them toward the current direction's button was wrong.
 
 **Example of wrong counting:**  
 PULL dry-run (source=remote, dest=local). Remote is empty. Local is full. `--delete` causes rsync to list all local files as `deleting …`. Old code counted those → `pull_count = 500+` → PULL lit. But remote has nothing new; PULL lighting was incorrect.
 
 **Fix applied (2026-06-29):** Added `&& !l.starts_with("deleting ")` to the filter. Count is now additive-only: each direction counts only content the source is offering the destination.
 
-### 3b. `build_rsync_args` — the `-u` + `--delete` incoherence (sync.rs ~129)
+### 3b. `build_rsync_args` - the `-u` + `--delete` incoherence (sync.rs ~129)
 
 ```rust
 let mut args = vec!["-avzu".to_string()];  // -u always present
@@ -106,8 +106,8 @@ if (!is_push && project.delete_on_pull) || (is_push && project.delete_on_push) {
 
 These two flags have contradictory semantics when the intent is "mirror":
 
-- Mirror intent: "make destination exactly match source — source is authoritative."
-- `-u` says: "if destination file is newer, protect it — don't overwrite."
+- Mirror intent: "make destination exactly match source - source is authoritative."
+- `-u` says: "if destination file is newer, protect it - don't overwrite."
 - Together: `--delete` removes destination-only files ✓, but `-u` protects destination-newer files ✗ (they should be overwritten in a true mirror).
 
 **Concrete manifestation (EC-1):**  
@@ -120,7 +120,7 @@ After `rm -fR ./*` on remote, `.gitignore` survived with its original mtime. Loc
 
 **This is not a bug in either `-u` or `--delete` individually.** Each is correct for its own purpose. The bug is combining them: mirror mode should use `--delete` WITHOUT `-u`. Merge mode should use `-u` WITHOUT `--delete`.
 
-### 3c. Safety guard (useSync.js:24–39)
+### 3c. Safety guard (useSync.js:24-39)
 
 ```js
 if (direction === 'push' && project.delete_on_push && specificPaths.length === 0) {
@@ -130,7 +130,7 @@ if (direction === 'push' && project.delete_on_push && specificPaths.length === 0
 }
 ```
 
-The guard reads `hasPendingPull` from `projectRuntime` — the value set by the last background poll (up to 60s ago). If the poll just ran and cleared the flag (or if the flag was cleared optimistically after a prior push), the guard silently passes even if remote actually has pending changes.
+The guard reads `hasPendingPull` from `projectRuntime` - the value set by the last background poll (up to 60s ago). If the poll just ran and cleared the flag (or if the flag was cleared optimistically after a prior push), the guard silently passes even if remote actually has pending changes.
 
 Additionally: the guard shows a warning message but no concrete list of what will be deleted, and requires only one click to dismiss.
 
@@ -147,9 +147,9 @@ Consequence: the status check can show "in sync" while an actual sync would stil
 | ID | Scenario | Button behavior (pre-fix) | Button behavior (post deleting-fix) | Root | Remaining fix |
 |----|----------|--------------------------|-------------------------------------|------|--------------|
 | EC-1 | Dotfile (`.gitignore`) survives `rm -fR ./*`; PUSH with delete doesn't overwrite it; PULL stays lit | PULL sáng (deleting lines + mtime issue) | PULL still lit (mtime issue persists) | `-u` + `--delete` incoherence | Tier 1 #3: drop `-u` in mirror mode |
-| EC-2 | Remote emptied; PULL lights from deleting lines | PULL sáng (wrong) | **Fixed** — PULL off ✓ | `deleting` lines counted in pull_count | Done |
-| EC-3 | Local deletes file; remote still has it | PULL sáng (rsync sees remote has file local doesn't) | **Fixed (v1.7)** — reclassified to push_count via baseline | No baseline; rsync can't distinguish "remote created" vs "local deleted" | Tier 2: PULL file + in baseline + absent locally → push_count |
-| EC-3-sym | Remote deletes file; Mac still has it | PUSH sáng (rsync sees Mac has file remote doesn't) | **Fixed (v1.7)** — suppressed from push_count via baseline | Same stateless ambiguity, opposite direction | Tier 2: PUSH file + in baseline → remote deleted → suppress push_count |
+| EC-2 | Remote emptied; PULL lights from deleting lines | PULL sáng (wrong) | **Fixed** - PULL off ✓ | `deleting` lines counted in pull_count | Done |
+| EC-3 | Local deletes file; remote still has it | PULL sáng (rsync sees remote has file local doesn't) | **Fixed (v1.7)** - reclassified to push_count via baseline | No baseline; rsync can't distinguish "remote created" vs "local deleted" | Tier 2: PULL file + in baseline + absent locally → push_count |
+| EC-3-sym | Remote deletes file; Mac still has it | PUSH sáng (rsync sees Mac has file remote doesn't) | **Fixed (v1.7)** - suppressed from push_count via baseline | Same stateless ambiguity, opposite direction | Tier 2: PUSH file + in baseline → remote deleted → suppress push_count |
 | EC-4 | `--modify-window=2` in status but not in sync | Status "clean" but sync transfers ≤2s delta files | Same | Asymmetric flag | Document; optionally apply to run_sync |
 | EC-5 | Safety guard uses stale `hasPendingPull` (up to 60s old) | Guard may silently pass when it shouldn't | Same | Cached poll value, not fresh check | Tier 1 #2: fresh dry-run at click time |
 | EC-6 | Optimistic `hasPendingPush=false` set before 3s recheck | 3s window shows false "all clear" | Same | Optimistic clear without confirmation | Accept or delay optimistic clear |
@@ -191,7 +191,7 @@ The resolution is either: PULL the `.gitignore` once (restores local to T₀), o
 
 Both directions of the ambiguity are now resolved via the Tier 2 baseline manifest.
 
-**Direction A — PULL side (Mac deleted, remote still has):**
+**Direction A - PULL side (Mac deleted, remote still has):**
 ```
 State: local and remote synced. File X exists on both. Baseline records X.
 
@@ -209,7 +209,7 @@ Resolution (v1.7.0 baseline):
   → PUSH lights (needs PUSH --delete to propagate deletion) ✓
 ```
 
-**Direction B — PUSH side / EC-3-sym (remote deleted, Mac still has):**
+**Direction B - PUSH side / EC-3-sym (remote deleted, Mac still has):**
 ```
 State: local and remote synced. File Y exists on both. Baseline records Y.
 
@@ -231,11 +231,11 @@ This is the dominant case when 75%+ of coding happens on the remote server.
 Without the fix, every file deleted on the remote falsely inflates the PUSH badge on Mac.
 ```
 
-**Baseline location:** `{appDataDir}/baselines/{project_id}.json` (Tauri appDataDir, e.g. `~/Library/Application Support/Aki Dev Sync/baselines/` on macOS). Old builds wrote to `~/.aki/devsync-baselines/` — still read as fallback for smooth upgrades.
+**Baseline location:** `{appDataDir}/baselines/{project_id}.json` (Tauri appDataDir, e.g. `~/Library/Application Support/Aki Dev Sync/baselines/` on macOS). Old builds wrote to `~/.aki/devsync-baselines/` - still read as fallback for smooth upgrades.
 
 ---
 
-## 5. Status Check vs Actual Sync — Flag Separation
+## 5. Status Check vs Actual Sync - Flag Separation
 
 Status check và actual sync dùng flag khác nhau có chủ đích. Đây là lý do và các edge case.
 
@@ -245,11 +245,11 @@ Status check và actual sync dùng flag khác nhau có chủ đích. Đây là l
 |--|--------------------------------------|--------------------------|
 | **Mục tiêu** | "Bên này có gì mới hơn để cung cấp cho bên kia?" | "Thực hiện đồng bộ theo mode đã chọn" |
 | **Merge mode** | `-avzu` (no `--delete`) | `-avzu` (no `--delete`) |
-| **Mirror mode** | `-avzu` (no `--delete`) — **giữ nguyên** | `-avz --delete` (bỏ `-u`) |
+| **Mirror mode** | `-avzu` (no `--delete`) - **giữ nguyên** | `-avz --delete` (bỏ `-u`) |
 | **Vai trò của `-u`** | Phân biệt chiều: chỉ đếm file mà source mới hơn dest | Mirror: không cần (source fully authoritative) |
 
 **Tại sao status check không được dùng `-avz` (không có `-u`):**  
-Không có `-u`, rsync chỉ so mtime/size — thấy khác là list, không quan tâm bên nào mới hơn. Kết quả: local modify file → cả PUSH lẫn PULL đều show file đó → cả 2 nút sáng sai.
+Không có `-u`, rsync chỉ so mtime/size - thấy khác là list, không quan tâm bên nào mới hơn. Kết quả: local modify file → cả PUSH lẫn PULL đều show file đó → cả 2 nút sáng sai.
 
 **`-u` hoạt động thế nào trong status check:**
 - PULL check (source=remote, dest=local): `-u` skip nếu local mới hơn remote → chỉ đếm file remote mới hơn → đúng
@@ -268,7 +268,7 @@ Không có `-u`, rsync chỉ so mtime/size — thấy khác là list, không qua
 | EC-3: local xóa file, remote còn | ❌ Không | ✅ Có → **reclassified to push_count (v1.7)** | ✓ (fixed) | Baseline: PULL file + in baseline + absent locally → push_count |
 | EC-3-sym: remote xóa file, Mac còn | ✅ Có → **suppressed (v1.7)** | ❌ Không | ✓ (fixed) | Baseline: PUSH file + in baseline → remote deleted → suppress |
 | EC-4: mtime chênh <2s | ❌ Không (window=2 bỏ qua) | ❌ Không | ✓ (cosmetic) | Actual sync vẫn transfer nếu mtime khác; status show sạch. Không gây mất data. |
-| Force-PULL khi local mới hơn (mirror mode) | — | Không sáng (đúng) | ✓ | Nếu user vẫn bấm PULL: mirror overwrite local bằng remote-older — expected behavior |
+| Force-PULL khi local mới hơn (mirror mode) | - | Không sáng (đúng) | ✓ | Nếu user vẫn bấm PULL: mirror overwrite local bằng remote-older - expected behavior |
 
 ### Side effect của việc tách
 
@@ -281,11 +281,11 @@ Không có `-u`, rsync chỉ so mtime/size — thấy khác là list, không qua
 
 | Fix | File | Mô tả |
 |-----|------|--------|
-| EC-2 | `sync.rs` | Exclude `deleting` lines khỏi `count_rsync_changes` — additive-only count |
+| EC-2 | `sync.rs` | Exclude `deleting` lines khỏi `count_rsync_changes` - additive-only count |
 | EC-1 root | `sync.rs:build_rsync_args` | Mirror mode: `-avz --delete` (bỏ `-u`). Merge: `-avzu`. Tách hoàn toàn |
-| EC-7 | `sync.rs:count_rsync_changes` | Force `-avzu` + remove `--delete` sau `build_rsync_args` — status check không kế thừa mirror flags |
+| EC-7 | `sync.rs:count_rsync_changes` | Force `-avzu` + remove `--delete` sau `build_rsync_args` - status check không kế thừa mirror flags |
 | EC-5 | `useSync.js` | Replace stale guard bằng fresh `get_sync_delete_preview` tại click time |
-| EC-5 UX | `useSync.js` | `syncing: true` set ngay sau re-entry guard — button disable tức thì, không đơ |
+| EC-5 UX | `useSync.js` | `syncing: true` set ngay sau re-entry guard - button disable tức thì, không đơ |
 | DIVERGED UI | `ProjectTable.vue` | Orange outline + `btn-sync-diverged` khi cả 2 pending. Count badge absolute overlay. Không thêm row |
 | Per-side counts | `sync.rs`, `useSyncStatus.js`, `ProjectTable.vue` | `push_count`/`pull_count` từ Rust → runtime → badge trên button |
 | New command | `sync.rs`, `lib.rs` | `get_sync_delete_preview` → list files sẽ bị xóa, dùng cho confirm dialog |
@@ -297,17 +297,17 @@ Không có `-u`, rsync chỉ so mtime/size — thấy khác là list, không qua
 |------|--------|---------|
 | EC-1 (dotfile loop) | ✓ Done | Mirror mode: `-avz --delete` (bỏ `-u`) |
 | EC-2 (PULL sáng khi remote trống) | ✓ Done | Filter `deleting` lines khỏi count |
-| EC-3 (local delete vs remote create — PULL side) | ✓ Done | Tier 2 baseline: PULL file + in baseline + absent locally → push_count |
-| EC-3-sym (remote delete vs Mac create — PUSH side) | ✓ Done (v1.7.0) | Tier 2 baseline: PUSH file + in baseline → remote deleted → suppress from push_count |
+| EC-3 (local delete vs remote create - PULL side) | ✓ Done | Tier 2 baseline: PULL file + in baseline + absent locally → push_count |
+| EC-3-sym (remote delete vs Mac create - PUSH side) | ✓ Done (v1.7.0) | Tier 2 baseline: PUSH file + in baseline → remote deleted → suppress from push_count |
 | EC-4 (`--modify-window=2` asymmetry) | Accepted | Cosmetic only, không gây mất data |
 | EC-5 (stale 60s guard) | ✓ Done | Fresh `get_sync_delete_preview` tại click time |
-| EC-6 (optimistic clear 3s window) | Accepted | 3s false "all clear" — minor, recheck corrects it |
+| EC-6 (optimistic clear 3s window) | Accepted | 3s false "all clear" - minor, recheck corrects it |
 | EC-7 (cả 2 nút sáng cùng lúc) | ✓ Done | Force `-avzu` trong status check |
-| **DRY RUN guard bug** | ✓ Done | `isDeleteOp` skip khi `dry_run=true` — xem bên dưới |
+| **DRY RUN guard bug** | ✓ Done | `isDeleteOp` skip khi `dry_run=true` - xem bên dưới |
 
 ### DRY RUN guard bug (2026-06-30)
 
-**Phát hiện sau Tier 2:** `isDryRun` được đọc SAU block `isDeleteOp` trong `useSync.js`. Khi dry_run ON + delete_on_push ON: dialog type-to-confirm vẫn hiện (sai — sync sẽ là dry run, không xóa gì cả). User nhầm tưởng phải xác nhận xóa, nhưng thực ra không có gì bị xóa.
+**Phát hiện sau Tier 2:** `isDryRun` được đọc SAU block `isDeleteOp` trong `useSync.js`. Khi dry_run ON + delete_on_push ON: dialog type-to-confirm vẫn hiện (sai - sync sẽ là dry run, không xóa gì cả). User nhầm tưởng phải xác nhận xóa, nhưng thực ra không có gì bị xóa.
 
 **Fix (2026-06-30):**
 ```js
