@@ -26,5 +26,5 @@ ADVISE.html
 *.sln
 *.sw?
 
-# Disposable visual export from /akihtmlreport — regenerated wholesale each run, not a doc source of truth (docs/ is)
+# Disposable visual export from /akihtmlreport - regenerated wholesale each run, not a doc source of truth (docs/ is)
 REPORT.html

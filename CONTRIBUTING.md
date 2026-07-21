@@ -36,17 +36,17 @@ sudo apt install -y \
   pkg-config
 ```
 
-> `build-essential`, `libssl-dev`, and `pkg-config` are usually already present on a dev machine — kept here for fresh installs.
+> `build-essential`, `libssl-dev`, and `pkg-config` are usually already present on a dev machine - kept here for fresh installs.
 
 ## Run & build
 
 ```bash
 npm install
-npm run tauri dev    # dev (first run compiles Rust, ~5–10 min)
+npm run tauri dev    # dev (first run compiles Rust, ~5-10 min)
 npm run build:app    # production build + post-build artifact rename
 ```
 
-Use `npm run build:app`, **not** raw `tauri build` — see "Post-build artifact rename" below.
+Use `npm run build:app`, **not** raw `tauri build` - see "Post-build artifact rename" below.
 
 ## Tauri gotchas & conventions
 
@@ -58,21 +58,21 @@ Lessons from building a macOS-first Tauri v2 app. Recorded to avoid re-discovery
 
 → Full rule + rationale: [`docs/ref/titlebar-sacred-boundary.md`](docs/ref/titlebar-sacred-boundary.md)
 
-### Version SSOT — `package.json` only
+### Version SSOT - `package.json` only
 
-`tauri.conf.json` sets `"version": "../package.json"`. Do **not** hardcode a version there or sync `Cargo.toml`'s version to track the app release — they are separate concerns. Bump only `package.json`.
+`tauri.conf.json` sets `"version": "../package.json"`. Do **not** hardcode a version there or sync `Cargo.toml`'s version to track the app release - they are separate concerns. Bump only `package.json`.
 
 ### Post-build artifact rename
 
-Raw `npm run tauri build` outputs filenames with spaces (e.g. `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead — it chains `tauri build` and `node scripts/post-build.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
+Raw `npm run tauri build` outputs filenames with spaces (e.g. `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead - it chains `tauri build` and `node scripts/post-build.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
 
 ### IPC capability: silent failures
 
-Every Tauri command — including `@tauri-apps/api/window` calls — must be **granted** in `src-tauri/capabilities/default.json`. A missing entry causes a **silent no-op**: the JS call resolves without error and nothing happens. This was the root cause of window drag/minimize/close not responding (fixed by adding `core:window:allow-start-dragging`, `core:window:allow-minimize`, `core:window:allow-close`).
+Every Tauri command - including `@tauri-apps/api/window` calls - must be **granted** in `src-tauri/capabilities/default.json`. A missing entry causes a **silent no-op**: the JS call resolves without error and nothing happens. This was the root cause of window drag/minimize/close not responding (fixed by adding `core:window:allow-start-dragging`, `core:window:allow-minimize`, `core:window:allow-close`).
 
 ### async IPC + blocking subprocess
 
-Tauri runs `async fn` commands on an async executor. Calling `std::process::Command` (blocking) directly inside an `async fn` starves the thread pool — the UI appears frozen until the command returns. Use `tauri::async_runtime::spawn_blocking` for any blocking work inside an `async fn` command.
+Tauri runs `async fn` commands on an async executor. Calling `std::process::Command` (blocking) directly inside an `async fn` starves the thread pool - the UI appears frozen until the command returns. Use `tauri::async_runtime::spawn_blocking` for any blocking work inside an `async fn` command.
 
 > History: `run_sync` was temporarily changed to a sync `fn` as a workaround, introducing a different UI freeze. Reverted in v1.1.1 with proper `spawn_blocking`.
 
@@ -86,7 +86,7 @@ Never leave `"csp": null` in `tauri.conf.json`. Minimum safe policy:
 
 ### Serde struct fields and old JSON
 
-Adding a field to a Rust struct deserialized from persisted JSON (e.g. `projects.json`) will **silently drop** records missing the new key — unless the field is annotated `#[serde(default)]`. Always add `#[serde(default)]` to new optional fields on persistent structs.
+Adding a field to a Rust struct deserialized from persisted JSON (e.g. `projects.json`) will **silently drop** records missing the new key - unless the field is annotated `#[serde(default)]`. Always add `#[serde(default)]` to new optional fields on persistent structs.
 
 ### `#[cfg(target_os = "macos")]` variable scoping
 
@@ -96,4 +96,4 @@ Variables declared **outside** a `#[cfg(target_os = "macos")]` block but only us
 
 - Follow **SRP, SOLID, DRY**.
 - Shared engineering rules live under `~/.aki/claudedoc/` (see [`CLAUDE.md`](CLAUDE.md)).
-- Documentation lives under `docs/` — start at [`docs/index.md`](docs/index.md).
+- Documentation lives under `docs/` - start at [`docs/index.md`](docs/index.md).

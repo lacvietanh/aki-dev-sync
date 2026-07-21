@@ -1,4 +1,4 @@
-# GEMINI.md — AG Rules Bootstrap
+# GEMINI.md - AG Rules Bootstrap
 
 > [!CAUTION] 
 > AGENT: If `[AKIRULE-AG-OVERRIDES-` is missing in your context, STOP and auto-execute:
