@@ -47,6 +47,10 @@ body {
   user-select: text;
 }
 
+/* Prevent text-selection on interactive elements — buttons everywhere in the app. The body
+   default stays user-select: text so form inputs and console output remain selectable. */
+button { user-select: none; -webkit-user-select: none; }
+
 .mr-1 {
   margin-right: 4px;
 }

@@ -148,8 +148,8 @@
         <div class="feature-card">
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-cloud"></i></div>
           <div class="feature-text">
-            <strong>Remote Mode</strong>
-            <span>Một công tắc tổng duy nhất — icon nguồn cạnh ô chọn host trong tab REMOTE của Agent Usage — bật/tắt toàn bộ hoạt động remote/SSH của app: nút PUSH/PULL/SELECT, mục IDE Remote trong popup Open, check sync diff (nền + thủ công), và monitor Claude Code Remote. Mặc định BẬT; tắt đi nếu bạn không dùng remote để app không chạy bất kỳ check SSH nào nữa.</span>
+            <strong>Sync Check & CC Remote — 2 công tắc độc lập</strong>
+            <span>Icon nguồn ở cột SYNC bật/tắt riêng PUSH/PULL/SELECT + mục IDE Remote trong popup Open + check sync diff (nền + thủ công). Icon nguồn cạnh ô chọn host (tab REMOTE của Agent Usage) bật/tắt riêng monitor Claude Code Remote. Tắt một công tắc không còn tắt luôn công tắc kia.</span>
           </div>
         </div>
 
@@ -172,8 +172,8 @@
         <div class="feature-card">
           <div class="feature-icon" style="color: #fbbf24;"><i class="fa-solid fa-arrows-rotate"></i></div>
           <div class="feature-text">
-            <strong>Force Sync Quota</strong>
-            <span>Làm mới Quota (↻): Đọc logs cục bộ trên máy này hoặc trên Remote. Tự động chạy Probe Session (Haiku ~100 tokens) nếu chưa có session trong chu kỳ hiện tại hoặc nếu mốc reset đã qua nhưng cache chưa làm mới — đảm bảo UI luôn tự phục hồi sau quota reset mà không cần thao tác thủ công.</span>
+            <strong>Refresh — 1 unit of work</strong>
+            <span>Nút Refresh riêng-project và nút Refresh tổng ở titlebar đều gọi chung <code>refreshProject()</code> (git status + sync diff + stack detection, chạy song song) — không còn reload toàn app. Trạng thái xoay icon nằm ở chính từng check, nên vòng nền cũng làm icon xoay đúng lúc.</span>
           </div>
         </div>
 
@@ -206,7 +206,8 @@
           <li><strong>Hạn ngạch đa luồng (v1.3.0):</strong> Truy vấn song song hai endpoint Connect RPC để kéo đồng thời hạn ngạch 5H và hạn ngạch tuần (Weekly) cho cả Gemini và Claude/GPT pools, phân cụm bằng fieldset tinh gọn.</li>
           <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) — quét native process + dò cổng bằng `lsof` để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
           <li><strong>Antigravity Log Out đúng nghĩa:</strong> Xóa Cookies/Local Storage không đủ — token đăng nhập được mã hóa bởi `safeStorage` của Electron, khóa AES nằm ở đúng một mục Keychain macOS (`"Antigravity IDE Safe Storage"`). Log Out đóng app rồi xóa đúng mục đó (không quét/dump Keychain), khiến token bị mã hóa vĩnh viễn không đọc được nữa — settings/extension/rule nằm ở file riêng nên không bị ảnh hưởng.</li>
-          <li><strong>Force Sync với Auto-Probe:</strong> Tự động kích hoạt Probe Session (Haiku ~100 tokens) trong hai trường hợp: chưa có session local trong chu kỳ 5h, hoặc mốc reset đã qua nhưng cache chưa được làm mới — UI luôn tự phục hồi sau quota reset.</li>
+          <li><strong>Claude Code — một nguồn dữ liệu duy nhất:</strong> App không tự chạy <code>claude</code> để lấy usage. Luồng active cũ (force-sync, probe Haiku) đã bị xoá hẳn: nó từng làm rò 19 session mồ côi (6GB RAM + 4GB swap) trên một máy remote, và đo thật cho thấy một turn headless chỉ trả về mốc reset chứ không có phần trăm. Cache hook <code>statusLine</code> giờ là nguồn duy nhất.</li>
+          <li><strong>App-icon menu & window presets:</strong> Menu ☰ ở titlebar gom link GitHub/Release, check update thủ công, SSH Config, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile, cài AkiClaudeDoc, cùng 4 preset kích thước cửa sổ: Narrow (420px), Wide (768px), Stick Top-Left (auto-fit chiều cao theo danh sách project), Center Primary.</li>
           <li><strong>Khắc phục lỗi mtime của `.git/`:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
           <li><strong>Phân tách EC-3 hai chiều (Baseline Manifest):</strong> rsync không phân biệt được "remote tạo file X" vs "Local xóa file X", hay "Mac tạo file Y" vs "remote xóa file Y". Sau mỗi lần sync đầy đủ, app ghi snapshot danh sách file local vào <code>appDataDir/baselines/</code>. Lần check tiếp theo: file trong pull_list + có trong baseline + không còn ở Local → Local đã xóa → cộng vào push_count; file trong push_list + có trong baseline → remote đã xóa → loại khỏi push_count. Giải quyết hoàn toàn badge PUSH sáng nhầm khi code chủ yếu trên remote.</li>
           <li><strong>Narrow Mode (v1.14.0):</strong> Cửa sổ dùng được xuống tới 400px (<code>minWidth</code> trong <code>tauri.conf.json</code>), một breakpoint dùng chung duy nhất (700px) và hai utility class toàn cục (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) — không component nào tự định nghĩa breakpoint riêng. Nhãn chữ ẩn đi vẫn giữ nguyên trong tooltip <code>title</code>, không nút nào bị mất cả icon lẫn nhãn.</li>

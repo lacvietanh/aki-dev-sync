@@ -5,6 +5,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.15.1] - 2026-07-21
+
+#### Added
+- **Donate button**: Added to the titlebar (hidden in narrow mode) and the app-icon dropdown menu.
+- **Dropdown color previews**: Statusline Customizer and Enable SSH Terminal Color items in the app-icon dropdown now demonstrate their own visual effect (custom palette and OSC 11 background tint).
+- **Statusline Customizer: fields are reordered by drag and drop** (`ClaudeSettingModal.vue`), replacing the up/down chevrons. Native HTML5 drag events plus `<TransitionGroup>`, no new dependency. A group moves as one unit; a member cannot be dragged out of its group.
+- **`user` and `host` are separately colorable** (`identity_user`/`identity_host`). They used to be hardcoded cyan and green while the customizer claimed the color was dynamic, which was not true of either half. They stay glued by `@` with no padding.
+- **Effort level is its own toggle** (`effort`), split out of the model field so the model name can stay without it. Locked to grey. Existing configs get it seeded from the model's own on/off state, inserted next to it.
+- **Reset ETA is per window**: `rate_limits`/`rate_reset` split into `rate_limits_5h`/`rate_limits_7d` and `rate_reset_5h`/`rate_reset_7d`, so the 5h and 7d windows each get their own ETA tick. Saved configs migrate in place, keeping their position in the field order.
+- **Three regression tests for the generated script** (`statusline.rs`): `bash -n` on the full script, an assertion of each group's join expression, and an end-to-end run against a realistic Claude Code payload. The script is built from string fragments, so nothing else catches a broken edit.
+
+#### Changed
+- **The dynamic-color ladder has five tiers, not four**: blue below 25%, green 25-55%, yellow 55-75%, orange 75-88%, red at 88% and above. The bands narrow as the value gets urgent, since that is where the color has to carry information. Configs saved under the old ladder fill in the new tier from the default rather than breaking.
+- **Session cost is colored by the same ladder**, scaled against $30 for a full red. It is a denominator rather than a tier, so it is not exposed as a threshold.
+- **"Dynamic color" shows the ladder instead of asserting it exists**: the five tier colors as dots, in order, with the current thresholds in the tooltip. The threshold editor renders from the tier list, so the implied blue floor is visible and adding a tier is one entry rather than four hand-written rows.
+- **The live preview wraps between blocks, not mid-word.** It was breaking values away from their labels in a narrow modal.
+- **Grouped fields render as one block, with no ` | ` between members** (`statusline.rs` `GROUPS` + `join_sp`). Three groups: model+effort, 5h+7d, cache %+tokens. The separator is applied between blocks only, and the customizer's live preview computes the same two-level join so it cannot disagree with the script.
+- **The Statusline Customizer shows what each row prints**, as small monospace chips: `context` reads `ctx · NN% · in+out · /max` (the printed number is input+output, which the label alone never said), `cache` reads `read/all% · read/all`. Both quota lines now carry the "Dynamic color" note, and "locked" was renamed to it everywhere.
+- **The `⟳` icon before a reset ETA is gone** — the time value alone already said it.
+
+#### Removed
+- **`UsageProgressBar.vue`**, orphaned since the Claude Code usage flow was deleted in 1.14.0: no call sites, but still carrying a live force-sync button wired to nothing.
+- **`is_vite_project()` and `ProjectStackInfo.is_vite`** (`system.rs`), leftovers of the DEV auto-open-browser feature removed in 1.15.0. Nothing on the frontend read the field.
+
+#### Fixed
+- **`docs/plan/audit-1.11-1.15.md` written**: An audit of breaking changes across the last 5 releases. Findings #1 (orphaned `UsageProgressBar.vue`) and #2 (dead `is_vite` leftovers) resolved in this release.
+- **`docs/feat/statusline-customizer.md` written** as the living description of the feature, which until now existed only as plan documents. Three completed plans moved to `docs/plan/done/` and the docs index updated.
+- **README, the in-app intro, and `docs/index.md` rewritten against the code** rather than patched again. They still advertised Force Sync Quota (deleted in 1.14.0), described Remote Mode as one switch (split in 1.15.0), described background refresh as three loose pollers, and never mentioned the app-icon menu or the window-size presets that shipped in 1.11.0. One dead doc link fixed; the release build command (`build:rmud`) documented.
+- **Statusline Customizer: color swatches replace text dropdowns** (`ClaudeSettingModal.vue`). Per-field color selection was a labeled `<select>` — each option named a color in words and consumed most of the row's width. Now it is a 14 × 14 px colored block; clicking opens an 8-swatch palette popup. Same information, ≈70% less horizontal space.
+- **Statusline Customizer: dynamic-color section redesigned** (`ClaudeSettingModal.vue`). The five threshold inputs were a row of `< N ≥` symbols that were hard to parse and wasteful of width. Now a proportional colored bar represents the five tiers side-by-side; each threshold input sits below the left edge of its own band, so the input's position is its meaning. Inputs narrowed to 30 px (minimum readable width, spinner arrows removed).
+- **Statusline Customizer: identity row redesigned** (`ClaudeSettingModal.vue`). `user` and `host` are now visually bracketed as one group in the editor (`[ ] id  ·  user[swatch] @ host[swatch]`), matching the `@`-joined block they produce in the statusline. The `@` separator is present in the live preview too (it was missing).
+- **Statusline Customizer: session field gets an `ss` prefix in the live preview** — matches what the generated statusline actually prints, which the preview was not showing.
+- **Color doctrine added to `docs/feat/statusline-customizer.md`**: white = label/punctuation, cyan = ordinary information, yellow/magenta = "which machine / where am I" (standout slots the eye hunts for with multiple terminals open), grey = qualifier/detail, dynamic = must-notice. Default config encodes these choices; Reset restores them.
+- **Narrow mode: version + build visible at the DEV-tag position** (`AppHeader.vue`). Previously hidden in narrow mode, the info now appears in the title block — same small red text style as the DEV badge, build info first, DEV below it (if in dev mode).
+- **Narrow mode: changelog click disabled** (`AppHeader.vue`). The version/build area is no longer a click target in narrow mode (`pointer-events: none`) to eliminate accidental changelog opens during window drag. The update badge keeps its own `pointer-events` and remains tappable.
+- **Buttons are not text-selectable** (`main.css`). One `button { user-select: none }` rule in the global stylesheet covers every `<button>` element in the app, with no per-component additions. Header elements were already covered by the existing `.top-header *` rule; this fills in modal, table, and form buttons.
+
+---
+
 ### [1.15.0] - 2026-07-21
 
 #### Added
