@@ -488,7 +488,6 @@ pub struct ProjectStackInfo {
     pub is_node: bool,
     pub is_tauri: bool,
     pub is_nuxt: bool,
-    pub is_vite: bool,
     pub label: String,
     pub cmd: String,
     pub dev_cmd: String,
@@ -500,19 +499,12 @@ fn is_nuxt_project(path: &std::path::Path) -> bool {
     path.join("nuxt.config.js").exists() || path.join("nuxt.config.ts").exists() || path.join(".nuxt").exists()
 }
 
-/// True when `path` has a Vite config — used to decide whether `run_project_dev` should try to
-/// open a browser tab for this project (Nuxt/Vite web projects only, never Tauri).
-fn is_vite_project(path: &std::path::Path) -> bool {
-    path.join("vite.config.ts").exists() || path.join("vite.config.js").exists() || path.join("vite.config.mjs").exists()
-}
-
 #[tauri::command]
 pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
     let path = std::path::Path::new(&local_path);
     let is_node = path.join("package.json").exists();
     let is_tauri = path.join("src-tauri").exists() || path.join("src-tauri/tauri.conf.json").exists();
     let is_nuxt = is_nuxt_project(path);
-    let is_vite = is_vite_project(path);
 
     let mut pm = "npm";
     let mut run_prefix = "run ";
@@ -548,7 +540,6 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
         is_node,
         is_tauri,
         is_nuxt,
-        is_vite,
         label,
         cmd,
         dev_cmd,
