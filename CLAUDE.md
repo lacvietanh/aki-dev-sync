@@ -80,7 +80,8 @@ field needed resetting. Rule, to make this class of bug structurally harder to r
 
 - **Titlebar height**: 42px (`var(--titlebar-h)`). Ref: `docs/ref/titlebar-sacred-boundary.md`
 - **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/post-build.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X-arch.dmg`.
-- **Release build & GitHub release command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg), then attach DMG to GitHub release via `cat << 'EOF' | gh release create X.Y.Z <dmg_path> --title "X.Y.Z" --notes-file -`.
+- **Release build command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg) - not `build:app`/`build:rmad` - unless the user asks for a different bundle.
+- **Release and tag via CLI**: check remote tags (`git ls-remote --tags origin | sort -V | tail -5`) and follow convention (`git tag X.Y.Z`), push (`git push && git push --tags`), then create GitHub release with DMG asset (`gh release create X.Y.Z <dmg_path> --title "X.Y.Z" --notes "<notes>"`).
 - **async fn + blocking subprocess history**: `run_sync` v1.1.1 hit the UI-freeze pitfall (see GLOBAL TAURI STACK) - already fixed, kept here as the concrete precedent.
 
 ### Runtime log location
