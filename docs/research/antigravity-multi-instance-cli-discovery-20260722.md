@@ -12,8 +12,8 @@
 Trước phiên bản 1.15.1, ứng dụng Aki Dev Sync thực hiện đo Quota Antigravity bằng cách quét bảng tiến trình hệ thống (`ps auxww`) để tìm tiến trình nhị phân `language_server_*` của Antigravity IDE. 
 
 tuy nhiên, trong kịch bản thực tế phức tạp hơn:
-* Người dùng sử dụng **Tài khoản A** (`lacvietanh@gmail.com`) trên giao diện Antigravity IDE.
-* Người dùng đồng thời mở Terminal và sử dụng **Tài khoản B** (`lva...`) thông qua công cụ dòng lệnh **AGY CLI (`agy`)**.
+* Người dùng sử dụng **Tài khoản A** (`user-a@example.com`) trên giao diện Antigravity IDE.
+* Người dùng đồng thời mở Terminal và sử dụng **Tài khoản B** (`user-b@example.com`) thông qua công cụ dòng lệnh **AGY CLI (`agy`)**.
 
 **Vấn đề phát sinh:** Script đo quota cũ chỉ lấy duy nhất tiến trình IDE đầu tiên tìm thấy, dẫn đến việc tài khoản CLI (Acc B) bị bỏ qua hoàn toàn, không thể hiển thị trạng thái Live trên ứng dụng.
 
@@ -92,11 +92,11 @@ graph TD
 Script `get-antigravity-usage.js` duyệt qua tất cả các tiến trình phát hiện được, thực hiện song song việc truy vấn dữ liệu Connect RPC. Kết quả trả về chứa mảng `allAccounts`:
 ```json
 {
-  "email": "lacvietanh@gmail.com",
+  "email": "user-a@example.com",
   "sourceType": "cli",
   "allAccounts": [
-    { "email": "lacvietanh@gmail.com", "sourceType": "cli", "quotaSummary": { ... } },
-    { "email": "lacvietanh@gmail.com", "sourceType": "ide", "quotaSummary": { ... } }
+    { "email": "user-a@example.com", "sourceType": "cli", "quotaSummary": { ... } },
+    { "email": "user-b@example.com", "sourceType": "ide", "quotaSummary": { ... } }
   ]
 }
 ```
