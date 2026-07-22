@@ -83,6 +83,36 @@ field needed resetting. Rule, to make this class of bug structurally harder to r
 - **Release build command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg) - not `build:app`/`build:rmad` - unless the user asks for a different bundle.
 - **async fn + blocking subprocess history**: `run_sync` v1.1.1 hit the UI-freeze pitfall (see GLOBAL TAURI STACK) - already fixed, kept here as the concrete precedent.
 
+### Release Workflow (CLI Automated)
+
+When a release is requested, follow this exact CLI sequence:
+
+1. **Version SSOT Bump**:
+   - Update `package.json` (`"version": "X.Y.Z"`) and `src-tauri/Cargo.toml` (`version = "X.Y.Z"`).
+   - Both must use bare semver (`1.17.0`, no `v` prefix).
+
+2. **Documentation & Changelog**:
+   - Create/update plan file under `docs/plan/done/X.Y.Z-....md`.
+   - Add entry to `CHANGELOG.md` under `### [X.Y.Z] - YYYY-MM-DD`.
+   - Update `IntroModal.vue` and `README.md` when introducing new user-facing capabilities.
+
+3. **Git Commit & Tag**:
+   - Stage and commit: `git add . && git commit -m "release: vX.Y.Z - Description"`.
+   - Create bare semver tag: `git tag X.Y.Z` (never `vX.Y.Z`).
+   - Push commits and tags: `git push && git push --tags`.
+
+4. **Universal DMG Build**:
+   - Execute `npm run build:rmud` (outputs `Aki-DevSync-vX.Y.Z.XXXX-uni.dmg` inside `./src-tauri/target/universal-apple-darwin/release/bundle/dmg/`).
+
+5. **GitHub Release via `gh` CLI**:
+   - Locate DMG file: `find ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/ -name "*.dmg"`.
+   - Pipe CHANGELOG release notes into `gh release create`:
+     ```bash
+     cat << 'EOF' | gh release create X.Y.Z ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/<dmg-name>.dmg --title "X.Y.Z" --notes-file -
+     <Release notes from CHANGELOG.md>
+     EOF
+     ```
+
 ### Runtime log location
 
 - Usage/debug log: `~/Library/Application Support/aki.devsync/usage.log` (macOS) / `~/.local/share/aki.devsync/usage.log` (Linux). Ref: `docs/arch/logger.md`, `docs/arch/usage-claudecode.md`.
