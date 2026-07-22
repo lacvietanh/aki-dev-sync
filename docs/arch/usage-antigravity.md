@@ -2,7 +2,7 @@
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & AGY CLI in this project.
 
-> **Updated 2026-07-22:** Multi-instance discovery support (v1.16.0) & SRP Indicator Refactor / 10-day Cache Pruning (v1.16.1). See [docs/plan/done/1.16.1-ag-usage.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/plan/done/1.16.1-ag-usage.md).
+> **Updated 2026-07-22:** Multi-Surface Integration (v1.17.0: Antigravity Desktop App `AG`, IDE `AG IDE`, AGY CLI `AGY`). See [docs/plan/done/1.17.0-ag-multi-surface.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/plan/done/1.17.0-ag-multi-surface.md).
 
 ## Mechanism of Action
 

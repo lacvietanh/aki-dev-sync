@@ -44,6 +44,7 @@ const debug = (...args) => {
 
 // Target native binary filenames of the Antigravity Language Server across OS/archs
 const BINARY_NAMES = [
+  'language_server',
   'language_server_macos_arm',
   'language_server_macos_x64',
   'language_server_linux_x64',
@@ -78,8 +79,12 @@ async function detectOnUnix() {
         const processInfo = parseUnixProcessLine(line);
         if (processInfo && !seenPids.has(processInfo.pid)) {
           seenPids.add(processInfo.pid);
-          processInfo.type = 'ide';
-          debug(`Matched Antigravity IDE process line (PID ${processInfo.pid}): ${line.trim()}`);
+          if (line.includes('Antigravity.app') && !line.includes('Antigravity IDE.app')) {
+            processInfo.type = 'desktop';
+          } else {
+            processInfo.type = 'ide';
+          }
+          debug(`Matched Antigravity process line (PID ${processInfo.pid}, type ${processInfo.type}): ${line.trim()}`);
           processes.push(processInfo);
         }
       }
@@ -598,10 +603,28 @@ async function main() {
       process.exit(1);
     }
 
+    // Deduplicate shared Gemini Core sessions (desktop + cli on same email)
+    const finalSnapshots = [];
+    const coreMap = new Map();
+
+    for (const s of snapshots) {
+      if (s.sourceType === 'desktop' || s.sourceType === 'cli') {
+        if (coreMap.has(s.email)) {
+          const existing = coreMap.get(s.email);
+          existing.sourceType = 'desktop_cli';
+        } else {
+          coreMap.set(s.email, s);
+          finalSnapshots.push(s);
+        }
+      } else {
+        finalSnapshots.push(s);
+      }
+    }
+
     // Return primary snapshot with allAccounts attached for multi-account support
-    const primary = snapshots[0];
-    if (snapshots.length > 1) {
-      primary.allAccounts = snapshots.map(s => ({
+    const primary = finalSnapshots[0];
+    if (finalSnapshots.length > 1) {
+      primary.allAccounts = finalSnapshots.map(s => ({
         email: s.email,
         method: s.method,
         sourceType: s.sourceType,

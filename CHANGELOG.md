@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.17.0] - 2026-07-22
+
+#### Added
+- **Antigravity 2.0 Desktop App Support ("Bản Trắng")**: Full support for detecting and monitoring the standalone Antigravity Electron App (`/Applications/Antigravity.app`), supporting all 3 execution surfaces: Desktop App (`AG`), IDE (`AG IDE`), and AGY CLI (`AGY`).
+- **Brand Assets**: Extracted official crisp 64x64 PNG icon for Antigravity Desktop App (`public/antigravity-app-icon.png`).
+
+#### Changed
+- **Multi-Surface Labeling Specification**: Locked header title labels:
+  - `AG`: Antigravity Desktop App (`sourceType: "desktop"` - Bản trắng).
+  - `AG IDE`: Antigravity IDE (`sourceType: "ide"` - Bản VS Code).
+  - `AGY`: AGY CLI (`sourceType: "cli"` - Terminal CLI).
+  - `AG / AGY`: Consolidated Desktop App + CLI session (`sourceType: "desktop_cli"`).
+- **Smart Session Deduplication**: Automatically merges concurrent Desktop App and CLI processes running on the same machine under the same account into a single consolidated card (`AG / AGY`), preventing duplicate cards while keeping distinct slots for different accounts.
+- **Contextual Environment Logout**:
+  - `Log Out AG App`: Clears shared `~/.gemini/` credentials.
+  - `Log Out AG IDE`: Clears SQLite `state.vscdb` OAuth rows.
+  - `Log Out AGY CLI`: Clears shared `~/.gemini/` credentials.
+
+---
+
 ### [1.16.1] - 2026-07-22
 
 #### Changed

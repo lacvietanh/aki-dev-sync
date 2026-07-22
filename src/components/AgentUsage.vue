@@ -39,13 +39,22 @@
             title="AGY CLI Active"
           ></i>
           <img
+            v-else-if="currentSourceType === 'desktop' || currentSourceType === 'desktop_cli'"
+            src="/antigravity-app-icon.png"
+            class="agent-img-icon ag-desktop-icon"
+            alt="AG App"
+            @click="handleIconClick"
+            style="cursor: pointer;"
+            title="AG Desktop App Active"
+          />
+          <img
             v-else
             src="/antigravity-icon.png"
             class="agent-img-icon ag-ide-icon"
-            alt="Antigravity IDE"
+            alt="AG IDE"
             @click="handleIconClick"
             style="cursor: pointer;"
-            title="Antigravity IDE Active"
+            title="AG IDE Active"
           />
         </div>
         <div class="agent-info">
@@ -79,7 +88,8 @@
                 >
                   <span class="ag-account-left">
                     <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="AGY CLI"></i>
-                    <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="Antigravity IDE" />
+                    <img v-else-if="acc.sourceType === 'desktop' || acc.sourceType === 'desktop_cli'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG Desktop App" />
+                    <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="AG IDE" />
                     <span v-if="showEmail" class="ag-account-email">{{ acc.email }}</span>
                     <span v-else class="ag-account-email-masked">
                       <span class="email-prefix">{{ getEmailPrefix(acc.email) }}</span><span class="email-blurred-fixed">••••••••</span>
@@ -94,9 +104,9 @@
                     <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
                   </span>
                 </button>
-                <button class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" :title="currentSourceType === 'cli' ? 'Sign out of AGY CLI session' : 'Sign out of Antigravity IDE session'">
-                  <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : (currentSourceType === 'cli' ? 'fa-terminal' : 'fa-right-from-bracket')"></i>
-                  <span>{{ loggingOut ? 'Logging out…' : (currentSourceType === 'cli' ? 'Log Out AGY CLI' : 'Log Out IDE') }}</span>
+                <button class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" :title="getLogoutTitle()">
+                  <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : (currentSourceType === 'ide' ? 'fa-right-from-bracket' : (currentSourceType === 'cli' ? 'fa-terminal' : 'fa-desktop'))"></i>
+                  <span>{{ loggingOut ? 'Logging out…' : getLogoutBtnText() }}</span>
                 </button>
               </div>
             </span>
@@ -322,15 +332,51 @@ function pickAccount(acc) {
   const key = acc.accountKey || acc.email;
   emit('select-account', key);
 }
+const currentSourceType = computed(() => {
+  return props.data?.sourceType || 'ide';
+});
+
+const agDisplayName = computed(() => {
+  if (props.agentId !== 'antigravity') return props.agentName;
+  if (currentSourceType.value === 'desktop') return 'AG';
+  if (currentSourceType.value === 'desktop_cli') return 'AG / AGY';
+  if (currentSourceType.value === 'cli') return 'AGY';
+  return 'AG IDE';
+});
+
+function getLogoutBtnText() {
+  if (currentSourceType.value === 'ide') return 'Log Out AG IDE';
+  if (currentSourceType.value === 'cli') return 'Log Out AGY CLI';
+  return 'Log Out AG App';
+}
+
+function getLogoutTitle() {
+  if (currentSourceType.value === 'ide') return 'Sign out of AG IDE session';
+  if (currentSourceType.value === 'cli') return 'Sign out of AGY CLI session';
+  return 'Sign out of AG App session';
+}
+
 const loggingOut = ref(false);
 async function logoutAntigravity() {
   if (loggingOut.value) return;
+  const isIde = currentSourceType.value === 'ide';
   const isCli = currentSourceType.value === 'cli';
+  const isDesktop = currentSourceType.value === 'desktop' || currentSourceType.value === 'desktop_cli';
+
+  let title = 'Đăng xuất AG IDE?';
+  let html = 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.';
+
+  if (isDesktop) {
+    title = 'Đăng xuất AG App (Desktop)?';
+    html = 'Ứng dụng sẽ dừng các tiến trình và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.';
+  } else if (isCli) {
+    title = 'Đăng xuất AGY CLI (Terminal)?';
+    html = 'Ứng dụng sẽ dừng các tiến trình CLI và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.';
+  }
+
   const { isConfirmed } = await Swal.fire({
-    title: isCli ? 'Đăng xuất AGY CLI (Terminal)?' : 'Đăng xuất Antigravity IDE?',
-    html: isCli
-      ? 'Ứng dụng sẽ dừng các tiến trình CLI và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.'
-      : 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.',
+    title,
+    html,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#ef4444',
@@ -343,24 +389,16 @@ async function logoutAntigravity() {
   if (!isConfirmed) return;
   loggingOut.value = true;
   try {
-    if (isCli) {
-      await invoke('logout_antigravity_cli');
-    } else {
+    if (isIde) {
       await invoke('logout_antigravity');
+    } else {
+      await invoke('logout_antigravity_cli');
     }
     emit('logout-success');
   } finally {
     loggingOut.value = false;
   }
 }
-const currentSourceType = computed(() => {
-  return props.data?.sourceType || 'ide';
-});
-
-const agDisplayName = computed(() => {
-  if (props.agentId !== 'antigravity') return props.agentName;
-  return currentSourceType.value === 'cli' ? 'agy' : 'AG IDE';
-});
 
 function getEmailPrefix(email) {
   if (!email) return '';

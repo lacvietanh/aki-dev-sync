@@ -194,7 +194,7 @@ function listAgAccounts() {
   const itemsMap = new Map();
   for (const [key, v] of Object.entries(store.accounts)) {
     const email = v.data?.email || key.split(':')[0];
-    const sourceType = v.data?.sourceType || (key.endsWith(':cli') ? 'cli' : 'ide');
+    const sourceType = v.data?.sourceType || (key.includes(':cli') ? 'cli' : key.includes(':desktop') ? 'desktop' : 'ide');
     const canonicalKey = `${email}:${sourceType}`;
     if (!itemsMap.has(canonicalKey) || (v.fetchedAt || 0) > (itemsMap.get(canonicalKey).fetchedAt || 0)) {
       itemsMap.set(canonicalKey, {
