@@ -141,7 +141,7 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) - cục bộ trên Mac này hoặc trên SSH host đang chọn - hiển thị plan tier, email, org name. <strong>Antigravity</strong> truy vấn native Language Server. Hai panel hiển thị độc lập (LOCAL/REMOTE, và trong LOCAL chọn AG/CC), mỗi nguồn có nút bật/tắt riêng; hai panel tự khóa không cho hiện trùng một nguồn. Đồng hồ đếm ngược reset real-time. Antigravity có mục <strong>Log Out</strong> trong dropdown tài khoản để xóa phiên đăng nhập cục bộ.</span>
+            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) - cục bộ trên Mac này hoặc trên SSH host đang chọn - hiển thị plan tier, email, org name. <strong>Antigravity</strong> hỗ trợ trọn vẹn 3 môi trường: <code>AG</code> (Desktop App bản trắng), <code>AG IDE</code> (bản VS Code extension), và <code>AGY</code> (bản CLI Terminal) với cơ chế Smart Deduplicate gộp 1-pass gọn nhẹ (~40ms). Tách bạch 2 Domain Auth (IDE SQLite vs Gemini Core shared <code>~/.gemini/</code>) cùng nút Log Out theo ngữ cảnh. Hai panel hiển thị độc lập, tự khóa không cho hiện trùng nguồn. Đồng hồ đếm ngược reset real-time.</span>
           </div>
         </div>
 

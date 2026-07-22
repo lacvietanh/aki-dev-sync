@@ -147,13 +147,13 @@ export async function startSync(project, direction, specificPaths = []) {
 
     if (deleteList.length > 0) {
       const dest = direction === 'push' ? 'Remote' : 'Local'
-      const sample = deleteList.slice(0, 8).map(f => `  ${f}`).join('\n')
-      const moreNote = deleteList.length > 8 ? `\n  … and ${deleteList.length - 8} more` : ''
+      const fullFileList = deleteList.map(f => `  ${f}`).join('\n')
       const { isConfirmed } = await Swal.fire({
         title: `XÁC NHẬN: ${deleteList.length} FILE SẼ BỊ XÓA`,
+        width: '560px',
         html:
           `<b>${direction.toUpperCase()} --delete</b> sẽ xóa vĩnh viễn <b>${deleteList.length}</b> file(s) chỉ tồn tại trên <b>${dest}</b> (không có ở phía nguồn):<br>` +
-          `<pre style="text-align:left;font-size:11px;background:#0a0f16;padding:8px;border-radius:6px;max-height:140px;overflow:auto;margin:10px 0;">${sample}${moreNote}</pre>` +
+          `<pre style="text-align:left;font-size:11px;line-height:1.5;background:#0a0f16;padding:10px;border-radius:6px;max-height:240px;overflow-y:auto;margin:10px 0;white-space:pre;word-break:break-all;border:1px solid #1f2937;color:#e5e7eb;">${fullFileList}</pre>` +
           `Nhập tên project <b>${project.name}</b> để xác nhận:`,
         input: 'text',
         inputPlaceholder: project.name,

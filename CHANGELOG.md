@@ -23,6 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   - `Log Out AG IDE`: Clears SQLite `state.vscdb` OAuth rows.
   - `Log Out AGY CLI`: Clears shared `~/.gemini/` credentials.
 
+#### Fixed
+- **Full Deleted File List Preview in `--delete` Confirmation Modal**: Removed sample file truncation (`slice(0, 8)` and `... and X more`), displaying 100% of deleted files in a scrollable code block (`max-height: 240px; overflow-y: auto;`). Expanded modal width (`560px`) for comfortable reading.
+
 ---
 
 ### [1.16.1] - 2026-07-22
