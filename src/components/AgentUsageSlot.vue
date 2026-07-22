@@ -68,6 +68,7 @@
       :viewing-email="slotViewingEmail"
       :active-email="activeSource.activeEmail"
       :active-emails="activeSource.activeEmails"
+      :popup-position="popupPosition"
       @retry="activeSource.refresh"
       @select-account="handleSelectAccount"
       @logout-success="activeSource.resetAccount"
@@ -123,6 +124,15 @@ const localTabs = computed(() => [
 // <AgentUsage> binding instead of three near-identical blocks.
 const activeAgentId = computed(() => (topTab.value === 'local' && localSub.value === 'ag') ? 'antigravity' : 'claudecode');
 const activeAgentName = computed(() => (activeAgentId.value === 'antigravity') ? 'Antigravity' : 'Claude Code');
+const popupPosition = computed(() => {
+  switch (props.slotId) {
+    case 'A': return 'popup-pos-tl';
+    case 'B': return 'popup-pos-tr';
+    case 'C': return 'popup-pos-bl';
+    case 'D': return 'popup-pos-br';
+    default: return 'popup-pos-tl';
+  }
+});
 const activeSource = computed(() => {
   if (topTab.value === 'local') return localSub.value === 'ag' ? props.ag : props.ccLocal;
   return props.ccRemote;

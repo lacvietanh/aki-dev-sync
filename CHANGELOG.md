@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.16.1] - 2026-07-22
+
+#### Changed
+- **Antigravity Header Title (Wide Mode)**: Renamed wide mode title from generic `Antigravity` to source-aware `agy` (when CLI source is active) or `AG IDE` (when IDE source is active). Remains hidden in narrow mode (`<= 700px`).
+- **SRP Type & Live Status Icons**:
+  - Row start icon in account dropdown menu now explicitly displays `<i class="fa-solid fa-terminal"></i>` for AGY CLI (purple `#c084fc`) or `<img src="/antigravity-icon.png">` for AG IDE (`12px × 12px`).
+  - Live status dot refactored to pure **Live Green (`#22c55e`)**, disentangling application type from active status.
+- **Strict Live Account Detection**: Refactored `isAccountLive` to verify that the account is present in the current live poll **AND** its `fetchedAt` timestamp is within 600 seconds (10 minutes), preventing historical records (e.g. 337h ago) from showing stale live dots.
+- **Stable Masked Email Display**: Masked emails (`showEmail === false`) now display 4 prefix characters followed by a fixed-width `3rem` blurred element (`email-blurred-fixed`), maintaining stable layout width during visibility toggling.
+- **Smart 4-Corner Dropdown Placement Pattern**: Created explicit CSS pattern classes (`popup-pos-tl`, `popup-pos-tr`, `popup-pos-bl`, `popup-pos-br`) with `top: auto` / `bottom: auto` / `left: auto` / `right: auto` resets, dynamically bound to slot positions (A/B/C/D) to ensure popups expand correctly in all 4 directions.
+
+#### Fixed
+- **10-Day Account Cache Eviction**: Integrated automatic cache pruning in `loadAgStore()` to evict account records older than 10 days (`> 864,000s`) from `localStorage`.
+
+---
+
 ### [1.16.0] - 2026-07-22
 
 #### Added

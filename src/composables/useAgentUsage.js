@@ -1,5 +1,6 @@
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
+// @docs docs/plan/done/1.16.1-ag-usage.md
 // @docs docs/research/claudecode-usage-FINAL.md
 // @docs docs/arch/logger.md
 import { ref, watch, onUnmounted } from 'vue';
@@ -88,6 +89,7 @@ async function logStartupInfo() {
 // the display randomly flipped between accounts during an IDE restart.
 const AG_CACHE_KEY_V1 = 'aki-antigravity-usage-cache';    // legacy single-blob key
 const AG_CACHE_KEY = 'aki-antigravity-usage-cache-v2';    // per-account store
+const AG_EVICTION_TTL_SEC = 10 * 86400;                   // 10 days eviction TTL
 
 function saveAgStore(store) {
   try { localStorage.setItem(AG_CACHE_KEY, JSON.stringify(store)); } catch (_) {}
@@ -98,7 +100,18 @@ function loadAgStore() {
     const raw = localStorage.getItem(AG_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.accounts) return parsed;
+      if (parsed && parsed.accounts) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        let pruned = false;
+        for (const [k, v] of Object.entries(parsed.accounts)) {
+          if (v?.fetchedAt && (nowSec - v.fetchedAt) > AG_EVICTION_TTL_SEC) {
+            delete parsed.accounts[k];
+            pruned = true;
+          }
+        }
+        if (pruned) saveAgStore(parsed);
+        return parsed;
+      }
     }
     // One-time migration: v1 single-blob → v2 per-account map, keyed by the blob's email.
     const v1raw = localStorage.getItem(AG_CACHE_KEY_V1);

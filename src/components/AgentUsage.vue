@@ -50,25 +50,26 @@
         </div>
         <div class="agent-info">
           <div class="agent-name">
-            <span class="u-narrow-hide">{{ agentName }}</span>
+            <span class="u-narrow-hide">{{ agDisplayName }}</span>
             <span v-if="data && data.userTier?.name" class="agent-plan-badge ag">
               {{ data.userTier.name.replace(/\b(Google|AI)\b/gi, '').trim() }}
             </span>
-            <!-- Email doubles as the account-switch trigger (no extra element - Extreme Narrow).
-                 The handler is on the wrapper because a blurred email has pointer-events:none. -->
             <span
               v-if="data && data.email"
               class="ag-account-wrap"
               role="button"
               tabindex="0"
               title="Switch account view"
-              @click.stop="toggleAccountMenu"
             >
-              <span
-                class="agent-account ag-account-trigger"
-                :class="{ 'email-blurred': !showEmail }"
-              >{{ truncEmail(data.email) }}</span>
-              <div v-if="accountMenuOpen" class="ag-account-menu" @click.stop>
+              <span class="agent-account ag-account-trigger">
+                <template v-if="showEmail">
+                  {{ truncEmail(data.email) }}
+                </template>
+                <template v-else>
+                  <span class="email-prefix">{{ getEmailPrefix(data.email) }}</span><span class="email-blurred-fixed">••••••••</span>
+                </template>
+              </span>
+              <div class="ag-account-menu" :class="popupPosition" @click.stop>
                 <button
                   v-for="acc in accounts"
                   :key="acc.accountKey || acc.email"
@@ -76,13 +77,19 @@
                   :class="{ 'is-current': isAccountCurrent(acc) }"
                   @click="pickAccount(acc)"
                 >
-                  <span class="ag-account-email" :class="{ 'email-blurred': !showEmail }">{{ acc.email }}</span>
+                  <span class="ag-account-left">
+                    <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="AGY CLI"></i>
+                    <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="Antigravity IDE" />
+                    <span v-if="showEmail" class="ag-account-email">{{ acc.email }}</span>
+                    <span v-else class="ag-account-email-masked">
+                      <span class="email-prefix">{{ getEmailPrefix(acc.email) }}</span><span class="email-blurred-fixed">••••••••</span>
+                    </span>
+                  </span>
                   <span class="ag-account-metacol">
                     <span
-                      v-if="acc.email === activeEmail || (activeEmails && activeEmails.has && (activeEmails.has(acc.accountKey) || activeEmails.has(acc.email)))"
+                      v-if="isAccountLive(acc)"
                       class="ag-live-dot"
-                      :class="acc.sourceType || 'ide'"
-                      :title="`Live account (${(acc.sourceType || 'ide').toUpperCase()})`"
+                      title="Live account"
                     ></span>
                     <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
                   </span>
@@ -248,6 +255,7 @@
 <script setup>
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
+// @docs docs/plan/done/1.16.1-ag-usage.md
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import Swal from 'sweetalert2';
@@ -273,7 +281,8 @@ const props = defineProps({
   accounts: { type: Array, default: () => [] },
   viewingEmail: { default: null },
   activeEmail: { default: null },
-  activeEmails: { type: Object, default: () => new Set() }
+  activeEmails: { type: Object, default: () => new Set() },
+  popupPosition: { type: String, default: 'popup-pos-tl' }
 });
 
 // Single source of truth for which body view to render. Priority: error > loading > off
@@ -301,12 +310,6 @@ const uiStatus = computed(() => {
 
 const emit = defineEmits(['retry', 'select-account', 'toggle-email', 'logout-success']);
 
-// AG account-switch dropdown
-const accountMenuOpen = ref(false);
-function toggleAccountMenu() {
-  if (props.agentId !== 'antigravity') return;
-  accountMenuOpen.value = !accountMenuOpen.value;
-}
 function isAccountCurrent(acc) {
   const key = acc.accountKey || acc.email;
   if (props.viewingEmail) {
@@ -318,12 +321,10 @@ function isAccountCurrent(acc) {
 function pickAccount(acc) {
   const key = acc.accountKey || acc.email;
   emit('select-account', key);
-  accountMenuOpen.value = false;
 }
 const loggingOut = ref(false);
 async function logoutAntigravity() {
   if (loggingOut.value) return;
-  accountMenuOpen.value = false;
   const isCli = currentSourceType.value === 'cli';
   const { isConfirmed } = await Swal.fire({
     title: isCli ? 'Đăng xuất AGY CLI (Terminal)?' : 'Đăng xuất Antigravity IDE?',
@@ -356,6 +357,27 @@ const currentSourceType = computed(() => {
   return props.data?.sourceType || 'ide';
 });
 
+const agDisplayName = computed(() => {
+  if (props.agentId !== 'antigravity') return props.agentName;
+  return currentSourceType.value === 'cli' ? 'agy' : 'AG IDE';
+});
+
+function getEmailPrefix(email) {
+  if (!email) return '';
+  return email.slice(0, 4);
+}
+
+function isAccountLive(acc) {
+  if (!acc || props.isCached) return false;
+  const key = acc.accountKey || acc.email;
+  const email = acc.email;
+  const inActive = props.activeEmail === key || props.activeEmail === email ||
+    (props.activeEmails && (props.activeEmails.has(key) || props.activeEmails.has(email)));
+  if (!inActive) return false;
+  if (acc.fetchedAt && (agCacheNow.value - acc.fetchedAt) > 600) return false;
+  return true;
+}
+
 // Design lock: the header shows a truncated email (12 chars wide, 7 at the narrow breakpoint) to
 // keep width stable when the active/cached account changes; the full email is shown in the
 // dropdown rows untouched.
@@ -365,16 +387,10 @@ function truncEmail(email) {
   const max = isNarrow.value ? 7 : 12;
   return email.length > max ? email.slice(0, max) + '…' : email;
 }
-function onDocClick() { accountMenuOpen.value = false; }
-function onDocKey(e) { if (e.key === 'Escape') accountMenuOpen.value = false; }
 onMounted(() => {
-  document.addEventListener('click', onDocClick);
-  document.addEventListener('keydown', onDocKey);
   window.addEventListener('resize', updateIsNarrow);
 });
 onUnmounted(() => {
-  document.removeEventListener('click', onDocClick);
-  document.removeEventListener('keydown', onDocKey);
   window.removeEventListener('resize', updateIsNarrow);
 });
 
@@ -736,12 +752,10 @@ async function handleIconClick() {
 }
 .ag-account-menu {
   position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
   z-index: 50;
-  min-width: 180px;
+  min-width: 185px;
   max-width: 280px;
-  padding: 3px;
+  padding: 4px;
   background: #1a1d23; /* solid - --bg-tertiary is near-transparent and would show through */
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -749,7 +763,47 @@ async function handleIconClick() {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
 }
+
+.ag-account-wrap:hover .ag-account-menu {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+/* Smart 4-position pattern classes */
+.ag-account-menu.popup-pos-tl {
+  top: calc(100% + 4px);
+  bottom: auto;
+  left: 0;
+  right: auto;
+  transform-origin: top left;
+}
+.ag-account-menu.popup-pos-tr {
+  top: calc(100% + 4px);
+  bottom: auto;
+  right: 0;
+  left: auto;
+  transform-origin: top right;
+}
+.ag-account-menu.popup-pos-bl {
+  bottom: calc(100% + 4px);
+  top: auto;
+  left: 0;
+  right: auto;
+  transform-origin: bottom left;
+}
+.ag-account-menu.popup-pos-br {
+  bottom: calc(100% + 4px);
+  top: auto;
+  right: 0;
+  left: auto;
+  transform-origin: bottom right;
+}
+
 .ag-account-item {
   display: flex;
   align-items: center;
@@ -773,11 +827,58 @@ async function handleIconClick() {
   background: rgba(0, 210, 255, 0.1);
   color: var(--accent-cyan);
 }
+
+.ag-account-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ag-account-type-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.ag-account-type-icon.cli {
+  font-size: 10px;
+  color: #c084fc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .ag-account-email {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.ag-account-email-masked {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.email-prefix {
+  font-weight: 600;
+}
+
+.email-blurred-fixed {
+  filter: blur(3.5px);
+  user-select: none;
+  pointer-events: none;
+  display: inline-block;
+  width: 3rem;
+  overflow: hidden;
+  vertical-align: middle;
+  opacity: 0.65;
+  margin-left: 1px;
+}
+
 .ag-account-metacol {
   display: inline-flex;
   align-items: center;
@@ -793,14 +894,8 @@ async function handleIconClick() {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-.ag-live-dot.ide {
-  background: #22d3ee;
-  box-shadow: 0 0 3px rgba(34, 211, 238, 0.5);
-}
-.ag-live-dot.cli {
-  background: #c084fc;
-  box-shadow: 0 0 3px rgba(192, 132, 252, 0.5);
+  background: #22c55e;
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
 }
 .ag-logout-item {
   justify-content: flex-start;

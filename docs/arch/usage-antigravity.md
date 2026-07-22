@@ -2,7 +2,7 @@
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & AGY CLI in this project.
 
-> **Updated 2026-07-22:** Multi-instance discovery support added for simultaneous Antigravity IDE & agy CLI multi-account quota monitoring. See detailed research document: [docs/research/antigravity-multi-instance-cli-discovery-20260722.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/research/antigravity-multi-instance-cli-discovery-20260722.md).
+> **Updated 2026-07-22:** Multi-instance discovery support (v1.16.0) & SRP Indicator Refactor / 10-day Cache Pruning (v1.16.1). See [docs/plan/done/1.16.1-ag-usage.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/plan/done/1.16.1-ag-usage.md).
 
 ## Mechanism of Action
 
@@ -233,8 +233,7 @@ không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi
   carries `email`; no empty-email guard is added in the live cache path.
 - **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache
   retention" above - this is a deliberate product decision, not a gap to "fix" later.
-- **No retention limit on cached accounts.** Do not add a cleanup/expiry mechanism unless explicitly
-  requested - infinite retention is the intended behavior.
+- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted during `loadAgStore()` to prevent indefinite accumulation of obsolete sessions.
 
 ---
 
