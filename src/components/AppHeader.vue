@@ -8,17 +8,18 @@
           <div class="icon-dropdown">
             <div class="icon-dropdown-header-info">
               <span class="version-info-tag"><i class="fa-solid fa-code"></i> {{ appVersion }} {{ buildTime }}</span>
-              <a href="#" @click.prevent="triggerManualUpdateCheck" class="header-update-link" title="Check for Updates">
-                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Update
+              <a href="#" @click.prevent="showChangelogModal = true" class="header-changelog-link" title="View Changelog">
+                <i class="fa-solid fa-clock-rotate-left"></i> Changelog
               </a>
             </div>
             <div class="icon-dropdown-preset-row">
               <button
                 type="button"
                 class="icon-dropdown-preset-btn"
-                @click="showChangelogModal = true"
-                title="View Changelog">
-                <i class="fa-solid fa-clock-rotate-left"></i> Changelog
+                @click="triggerManualUpdateCheck"
+                :disabled="isCheckingUpdates"
+                title="Check for Updates">
+                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isCheckingUpdates }"></i> Check Update
               </button>
               <button
                 type="button"
@@ -40,12 +41,16 @@
             <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item icon-dropdown-item-ssh-color" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local - row shows the actual tint">
               <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
             </a>
-            <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item" title="Build ~/.claude/statusline-command.sh visually, apply to local and/or any configured remote host">
+            <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item statusline-menu-item" title="Build & deploy statuslines for AG CLI (~/.gemini/antigravity-cli/) visually, apply to local and/or remote hosts">
               <i class="fa-solid fa-terminal"></i>
               <span class="statusline-label"><span
                       v-for="(c, i) in statuslineLabelChars"
                       :key="i"
                       :style="c.color ? { color: c.color } : null">{{ c.char }}</span></span>
+              <span class="statusline-menu-targets">
+                <img src="/claude-icon.png" class="statusline-target-icon" alt="Claude Code" title="Claude Code" />
+                <img src="/antigravity-app-icon.png" class="statusline-target-icon ag" alt="Antigravity" title="AG CLI" />
+              </span>
             </a>
             <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) - Native / Proxy settings for ~/.claude/settings.json on this machine">
               <i class="fa-solid fa-sliders"></i> Claude Code Profile (Local)
@@ -92,37 +97,64 @@
                 </button>
               </div>
             </div>
-            <div class="icon-dropdown-preset-row">
-              <button
-                type="button"
-                class="icon-dropdown-preset-btn"
-                @click="setNarrowWidthSafe"
-                title="Resize window width to 420px (narrow mode), keeping height and position">
-                <i class="fa-solid fa-compress"></i> Narrow
-              </button>
-              <button
-                type="button"
-                class="icon-dropdown-preset-btn"
-                @click="setWideWidthSafe"
-                title="Resize window width to 768px (wide mode), keeping height and position">
-                <i class="fa-solid fa-expand"></i> Wide
-              </button>
+            <div class="icon-dropdown-separator"></div>
+            <div class="icon-dropdown-ac-section">
+              <span class="ac-title"><i class="fa-solid fa-window-maximize"></i> AppWindow:</span>
+              <label
+                class="remember-view"
+                :class="{ on: rememberView }"
+                title="Remember the window presets picked here and re-apply them on next launch">
+                <input type="checkbox" :checked="rememberView" @change="toggleRememberView" />
+                remember
+              </label>
             </div>
-            <div class="icon-dropdown-preset-row">
-              <button
-                type="button"
-                class="icon-dropdown-preset-btn"
-                @click="stickTopLeftSafe"
-                title="Snap window to the top-left-most connected monitor and resize height to fit the whole project list">
-                <i class="fa-solid fa-border-top-left"></i> Stick Top-Left
-              </button>
-              <button
-                type="button"
-                class="icon-dropdown-preset-btn"
-                @click="centerPrimarySafe"
-                title="Center window on the primary monitor (position only, no resize)">
-                <i class="fa-solid fa-crosshairs"></i> Center Primary
-              </button>
+            <!-- 2x2: each column is one ⌘ combo, so its key badge sits on the seam between the
+                 column's two buttons rather than adding a row of its own. -->
+            <div class="view-preset-grid">
+              <div class="icon-dropdown-preset-row">
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': savedView.width === 'narrow' }"
+                  @click="applyViewSafe('width', 'narrow')"
+                  title="Resize window width to 420px (narrow mode), keeping height and position">
+                  <i class="fa-solid fa-compress"></i> Narrow
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': savedView.width === 'wide' }"
+                  @click="applyViewSafe('width', 'wide')"
+                  title="Resize window width to 768px (wide mode), keeping height and position">
+                  <i class="fa-solid fa-expand"></i> Wide
+                </button>
+              </div>
+              <div class="icon-dropdown-preset-row">
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': savedView.place === 'stick' }"
+                  @click="applyViewSafe('place', 'stick')"
+                  title="Snap window to the top-left-most connected monitor and resize height to fit the whole project list">
+                  <i class="fa-solid fa-border-top-left"></i> Stick Top-Left
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': savedView.place === 'center' }"
+                  @click="applyViewSafe('place', 'center')"
+                  title="Center window on the primary monitor (position only, no resize)">
+                  <i class="fa-solid fa-crosshairs"></i> Center Primary
+                </button>
+              </div>
+              <span
+                class="view-combo-key col-1"
+                @click="applyViewComboSafe(1)"
+                title="⌘1 - Narrow + Stick Top-Left">⌘1</span>
+              <span
+                class="view-combo-key col-2"
+                @click="applyViewComboSafe(2)"
+                title="⌘2 - Wide + Center Primary">⌘2</span>
             </div>
             <div class="icon-dropdown-separator"></div>
             <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
@@ -200,7 +232,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
@@ -258,10 +290,12 @@ const {
   isPinned,
   togglePin,
   restorePin,
-  setNarrowWidth,
-  setWideWidth,
-  stickTopLeft,
-  centerPrimary,
+  applyView,
+  applyViewCombo,
+  savedView,
+  rememberView,
+  toggleRememberView,
+  restoreView,
 } = useAppWindow();
 const { openSshConfig } = useSsh();
 const { refreshAllProjects, anySyncing, anyRefreshing, isReloading, Toast } = useProjects();
@@ -290,6 +324,8 @@ function applyLatestRelease(latest) {
 
 onMounted(async () => {
   restorePin();
+  restoreView().catch((e) => console.error('Failed to restore window view:', e));
+  window.addEventListener('keydown', onViewShortcut);
   try {
     const raw = await invoke('check_for_updates');
     const latest = JSON.parse(raw);
@@ -303,6 +339,10 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to check for updates:', e);
   }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onViewShortcut);
 });
 
 function dismissUpdateModal() {
@@ -385,20 +425,21 @@ function handleRefresh() {
   refreshAllProjects();
 }
 
-function setNarrowWidthSafe() {
-  setNarrowWidth().catch((e) => console.error('Failed to set narrow width:', e));
+function applyViewSafe(axis, name) {
+  applyView(axis, name).catch((e) => console.error(`Failed to apply "${name}" window view:`, e));
 }
 
-function setWideWidthSafe() {
-  setWideWidth().catch((e) => console.error('Failed to set wide width:', e));
+function applyViewComboSafe(slot) {
+  applyViewCombo(slot).catch((e) => console.error(`Failed to apply window combo ${slot}:`, e));
 }
 
-function stickTopLeftSafe() {
-  stickTopLeft().catch((e) => console.error('Failed to stick window top-left:', e));
-}
-
-function centerPrimarySafe() {
-  centerPrimary().catch((e) => console.error('Failed to center window:', e));
+// ⌘1 / ⌘2 - global, because the point of the shortcut is not having to open the menu first.
+// Only bare ⌘+digit: ⌘⇧1 and ⌘⌥1 belong to whatever else may claim them.
+function onViewShortcut(e) {
+  if (!e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.repeat) return;
+  if (e.key !== '1' && e.key !== '2') return;
+  e.preventDefault();
+  applyViewComboSafe(Number(e.key));
 }
 </script>
 
@@ -505,6 +546,31 @@ function centerPrimarySafe() {
   color: #94a3b8;
 }
 
+.statusline-menu-item {
+  justify-content: space-between;
+}
+
+.statusline-menu-targets {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.statusline-target-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+  opacity: 0.9;
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+.statusline-menu-item:hover .statusline-target-icon {
+  opacity: 1;
+}
+
 .icon-dropdown-item.item-disabled {
   opacity: 0.4;
   pointer-events: none;
@@ -557,23 +623,18 @@ function centerPrimarySafe() {
   gap: 6px;
 }
 
-.header-update-link {
-  color: #38bdf8;
+.header-changelog-link {
+  color: #94a3b8;
   text-decoration: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
-  font-weight: 500;
-  padding: 2px 6px;
-  background: rgba(56, 189, 248, 0.1);
-  border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
+  font-size: 11px;
+  transition: color 0.12s;
 }
 
-.header-update-link:hover {
-  color: #7dd3fc;
-  background: rgba(56, 189, 248, 0.2);
+.header-changelog-link:hover {
+  color: #e2e8f0;
 }
 
 .icon-dropdown-ac-section {
@@ -646,6 +707,99 @@ function centerPrimarySafe() {
 
 .icon-dropdown-preset-btn:hover i {
   color: #a5f3fc;
+}
+
+/* The preset currently in effect (usage row) or remembered for next launch (AppWindow). */
+.icon-dropdown-preset-btn.is-active,
+.icon-dropdown-preset-btn.is-active i {
+  color: #a5f3fc;
+}
+
+.icon-dropdown-preset-btn.is-active {
+  background: rgba(0, 210, 255, 0.14);
+  border-color: rgba(0, 210, 255, 0.45);
+}
+
+/* The ⌘ badge overlays the gap between a column's two buttons - an absolute overlay, never a
+   row of its own (the menu has no vertical budget for one). */
+.view-preset-grid {
+  position: relative;
+}
+
+.view-combo-key {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.3px;
+  color: #a5f3fc;
+  background: #0b1220;
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  border-radius: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.view-combo-key:hover {
+  background: rgba(0, 210, 255, 0.18);
+}
+
+.view-combo-key.col-1 {
+  left: 25%;
+}
+
+.view-combo-key.col-2 {
+  left: 75%;
+}
+
+.remember-view {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #64748b;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.remember-view.on {
+  color: #a5f3fc;
+}
+
+/* Hollow square that fills on check - the native control renders as a filled white box that
+   reads like a color swatch in this dark menu. */
+.remember-view input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+
+.remember-view input:checked {
+  background: #00d2ff;
+  border-color: #00d2ff;
+}
+
+.remember-view input:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 3px;
+  height: 6px;
+  border: solid #0f172a;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
 }
 
 .btn-intro {

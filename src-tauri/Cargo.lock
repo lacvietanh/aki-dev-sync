@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "aki-dev-sync"
-version = "1.17.0"
+version = "1.18.0"
 dependencies = [
  "base64 0.22.1",
  "dirs",

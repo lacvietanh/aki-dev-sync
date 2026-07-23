@@ -50,9 +50,9 @@ This tool was built for a specific way of working - you'll feel at home if you:
 | Feature | What it does |
 |---|---|
 | **Project Tasks** | Per-project task list in a centered modal dialog (TASKS column, right before GIT). Track active, pinned (📌), and wish (🕒) tasks with independent toggles. Pinned tasks sort to the top, wish tasks sink to the bottom, and completed tasks sink to the absolute bottom with a smooth Vue transition. Marking a task as completed automatically unpins it. Includes a project notes card at the top with native height autogrow (`field-sizing: content`) and auto-trim. Stored in `projects.json`. |
-| **Open Popup** | One menu to open a project - **Local:** Finder, Terminal, VSCode, VSCode Insiders, Antigravity; **Remote (SSH):** SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote. Two inline **DEV** (green) and **BUILD** (amber) buttons auto-detected by stack (Tauri / Nuxt / Node) with tooltip showing the exact command - both just open Terminal with that command (DEV's earlier auto-open-in-browser behavior was removed, see [Open Popup](docs/feat/open-popup.md)); per-project overrides in Settings. Unavailable IDEs are dimmed automatically. |
+| **Open Popup** | One menu to open a project - **Local:** Finder, Terminal, VSCode, VSCode Insiders, Antigravity; **Remote (SSH):** SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote. Two inline **DEV** (green) and **BUILD** (amber) buttons auto-detected by stack (Tauri / Nuxt / Node) with tooltip showing the exact command - both just open Terminal with that command (DEV's earlier auto-open-in-browser behavior was removed, see [Open Popup](docs/feat/open-popup.md)); per-project overrides in Settings. Unavailable IDEs are dimmed automatically. Every Terminal window this app opens (local, SSH, DEV/BUILD, AkiClaudeDoc install) auto-snaps to 124 columns in the top-right corner of the main display. |
 | **Global Note** | A persistent free-form notepad in the titlebar (sticky note icon, turns amber when non-empty). Not tied to any project - jot down anything across sessions. Auto-saves with 500ms debounce to `{appDataDir}/globalnote.json`. |
-| **Agent Usage** | **Real** quota - not estimates. **Claude Code** reads the number Anthropic's own CLI already computed via the `statusLine` hook cache (5-hour + 7-day `rate_limits`) - locally on this Mac or on any selected SSH host - showing plan tier, email, and org name. **Antigravity** supports all 3 execution surfaces: Desktop App (`AG` - white icon), IDE (`AG IDE` - VS Code extension), and AGY CLI (`AGY` - terminal), querying local Connect RPC endpoints with 1-pass process detection (~40ms) and smart session deduplication (`AG / AGY`). Two independent display slots each freely pick LOCAL/REMOTE; each source has its own power icon, and slots refuse to show duplicate sources. Contextual Log Out clears the specific auth domain (`state.vscdb` for IDE vs `~/.gemini/` for AG App & CLI, see [Antigravity quota](docs/arch/usage-antigravity.md)). |
+| **Agent Usage** | **Real** quota - not estimates. **Claude Code** reads the number Anthropic's own CLI already computed via the `statusLine` hook cache (5-hour + 7-day `rate_limits`) - locally on this Mac or on any selected SSH host - showing plan tier, email, and org name. **Antigravity** supports all 3 execution surfaces: Desktop App (`AG` - white icon), IDE (`IDE` - VS Code extension), and CLI (`CLI` - terminal), querying local Connect RPC endpoints with 1-pass process detection (~40ms) and smart session deduplication (`AG`). Two independent display slots each freely pick LOCAL/REMOTE; each source has its own power icon, and slots refuse to show duplicate sources. Contextual Log Out clears the specific auth domain (`state.vscdb` for IDE vs `~/.gemini/` for AG & CLI, see [Antigravity quota](docs/arch/usage-antigravity.md)). |
 | **Sync Check switch** | One power icon in the SYNC column header turns project sync on/off app-wide: PUSH/PULL/SELECT buttons, the Open popup's remote IDE options, and background + manual remote-diff checks. Independent of the Claude Code remote monitor below - muting one no longer mutes the other (see [Sync check & usage switches](docs/feat/sync-check-and-usage-switches.md)). |
 | **Claude Code Remote switch** | A separate power icon next to the SSH host picker in the usage widget's REMOTE tab turns Claude Code's remote quota polling on/off, independent of the Sync Check switch above. |
 | **SSH Config Editor** | Edit `~/.ssh/config` in-app with a built-in undo/backup safety net - auto-loads your hosts. |
@@ -61,8 +61,8 @@ This tool was built for a specific way of working - you'll feel at home if you:
 | **Project Config** | Per-direction rsync excludes with one-click presets (**Nuxt 4 / Tauri v2 / Aki Default**) in a side-by-side PUSH/PULL layout. Per-project DEV/BUILD command overrides. Production URL quick-open, run-hooks-local-or-remote, and ignore-hook-errors toggles. |
 | **Background Refresh** | One unit of work (`refreshProject`) runs a project's git status, remote diff, and dev/build stack detection in parallel; the same unit backs the two background timers, the per-project Refresh button, and the global Refresh button - clicking global Refresh no longer reloads the whole app. Visual countdown rings on the GIT and ACTIONS column headers show live refresh progress; per-type intervals are configurable. See [Refresh controller](docs/arch/refresh-controller.md). |
 | **Narrow Mode** | The window stays usable resized down to 400px wide. One shared 700px breakpoint drives every component; labels hide first (icons + tooltips stay), never the reverse. |
-| **App-icon menu** | Titlebar dropdown (☰) - GitHub/release links, manual update check, SSH config editor, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile, AkiClaudeDoc install, plus window-size presets: **Narrow** (420px), **Wide** (768px), **Stick Top-Left** (snaps to the top-left monitor, auto-fits height to the project list), **Center Primary**. |
-| **Statusline Customizer** | Visually build `~/.claude/statusline-command.sh` - toggle fields (identity, model, context %, cache %, 5h/7d rate limits + reset ETA, session cost), reorder groups, recolor thresholds - and push the result to local and/or any configured remote host. |
+| **App-icon menu** | Titlebar dropdown (☰) - GitHub/release links, manual update check, SSH config editor, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile, AkiClaudeDoc install, plus window presets under `AppWindow:` - **Narrow** (420px), **Wide** (768px), **Stick Top-Left** (snaps to the top-left monitor, auto-fits height to the project list), **Center Primary**. `⌘1` applies Narrow + Stick Top-Left, `⌘2` applies Wide + Center Primary. Tick **remember** and the width and placement you pick are re-applied on the next launch. |
+| **Statusline Customizer** | Visually build **one** statusline script for both CLIs - toggle fields (identity, model, context, cache, 5h/7d rate limits + reset ETA, session, git, RAM), drag to reorder, recolor, set per-field truncate widths and the alternating block background - and push the result to local and/or any configured remote host. The same file is installed for Claude Code and AGY CLI - each CLI also gets pointed at it in its own `settings.json` - and it identifies which one is running it from its own path. Every host row shows a `CC` / `AG` tag per CLI found there - filled once that CLI's statusline actually renders, hollow while it is still unwired. |
 
 ## 🔬 Under the Hood
 
@@ -91,33 +91,6 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 3. The build is unsigned - on first launch macOS Gatekeeper will block it. **Right-click the app → Open**, then confirm. (Or run `xattr -dr com.apple.quarantine "/Applications/Aki Dev Sync.app"`.)
 
 **Requirements:** `rsync` and `ssh` available on your `PATH` (preinstalled on macOS), plus an SSH host you can reach.
-
-## 🖥 Bonus: Aki StatusLine for Claude Code
-
-A polished one-line statusline for the Claude Code CLI itself - no Aki Dev Sync install required.
-
-![Aki Claude Code StatusLine](share/aki-statusLine/demo.png)
-
-```
-aki@Aki-M | kinhdich.akinet.me | opus 4.8 med | ctx 5% 56.9k/1M | 5h:38%  7d:52% | 3h21m +148/-24 $8.08
-```
-
-Identity, workspace, model + effort, context window %, 5h/7d rate limits, and session duration/lines/cost on one line, with 4-tier dynamic color (green/yellow/orange/red) and rate-limit caching (`aki-rlcache v2`) so the 5h/7d numbers survive turns where Claude Code omits `rate_limits`.
-
-```bash
-cp share/aki-statusLine/statusline.sh ~/.claude/statusline-command.sh
-chmod +x ~/.claude/statusline-command.sh
-```
-
-Then add to `~/.claude/settings.json`:
-
-```json
-"statusLine": { "type": "command", "command": "$HOME/.claude/statusline-command.sh" }
-```
-
-Requires `jq` on `PATH` (macOS: `brew install jq`, Ubuntu: `apt install jq`).
-
-This script is also the default preset behind the in-app **Statusline Customizer** (in the app-icon menu, top-left titlebar) - use the app if you want to toggle fields, reorder groups, recolor labels, and push the result to remote hosts without hand-editing.
 
 ## 🛠 Tech Stack
 

@@ -139,22 +139,29 @@ const activeSource = computed(() => {
 });
 
 // Per-slot viewing email/key state: lets Slot A and Slot B independently select and display
-// different active or cached accounts from the shared `ag` data source.
-const slotViewingEmail = ref(null);
+// different active or cached accounts from the shared `ag` data source, persisted per slot.
+const slotViewingEmailKey = `aki-usage-slot-${props.slotId}-viewing-account`;
+const slotViewingEmail = ref(localStorage.getItem(slotViewingEmailKey) || null);
 
 function handleSelectAccount(keyOrEmail) {
-  slotViewingEmail.value = slotViewingEmail.value === keyOrEmail ? null : keyOrEmail;
+  const nextVal = slotViewingEmail.value === keyOrEmail ? null : keyOrEmail;
+  slotViewingEmail.value = nextVal;
+  if (nextVal) {
+    localStorage.setItem(slotViewingEmailKey, nextVal);
+  } else {
+    localStorage.removeItem(slotViewingEmailKey);
+  }
 }
 
 const slotAccountInfo = computed(() => {
   const src = activeSource.value;
   if (activeAgentId.value !== 'antigravity' || !src.data) {
-    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
+    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: false };
   }
 
   const key = slotViewingEmail.value;
   if (!key) {
-    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
+    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: false };
   }
 
   const emailPart = key.includes(':') ? key.split(':')[0] : key;
@@ -166,10 +173,10 @@ const slotAccountInfo = computed(() => {
       return aKey === key || (key.includes(':') ? aKey === key : a.email === emailPart);
     });
     if (liveMatch) {
-      return { data: liveMatch, isCached: false, cachedAt: null };
+      return { data: liveMatch, isCached: false, cachedAt: null, isMissing: false };
     }
   } else if (src.data.email === emailPart) {
-    return { data: src.data, isCached: false, cachedAt: null };
+    return { data: src.data, isCached: false, cachedAt: null, isMissing: false };
   }
 
   // Fallback to offline cache in localStorage:
@@ -179,11 +186,20 @@ const slotAccountInfo = computed(() => {
       const parsed = JSON.parse(rawCache);
       const acc = parsed.accounts?.[key] || parsed.accounts?.[emailPart];
       if (acc) {
-        return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt };
+        return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt, isMissing: false };
       }
     } catch (_) {}
   }
-  return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
+
+  return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: true };
+});
+
+// Defensive fallback watcher: if selected account is missing from live & offline cache once loaded, clear state
+watch(slotAccountInfo, (info) => {
+  if (info.isMissing && slotViewingEmail.value && !activeSource.value.loading) {
+    slotViewingEmail.value = null;
+    localStorage.removeItem(slotViewingEmailKey);
+  }
 });
 </script>
 

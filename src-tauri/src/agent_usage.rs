@@ -4,10 +4,10 @@
 
 use crate::logger;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::process::{Command, Output, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Hard ceiling for any `ssh host sh` call. A hung `claude auth status` (network/API stall)
@@ -18,6 +18,18 @@ const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 /// `claude auth status` still runs through this preamble - the usage-fetch flow no longer
 /// spawns `claude` at all (see docs/arch/usage-claudecode.md §5).
 const CLAUDE_CALL_TIMEOUT_SECS: u64 = 45;
+
+/// Hard LOCAL ceiling for the statusline probe/apply calls specifically. That work is a
+/// handful of local file-system calls on the remote (mkdir/cat/chmod/jq) - nothing like the
+/// network/API round-trip `claude auth status` needs 30-45s for - so there is nothing to gain
+/// from waiting anywhere near REMOTE_SCRIPT_TIMEOUT_SECS, and everything to lose: a stuck host
+/// held the whole Customizer "busy" for up to 30s per host before this was split out.
+const STATUSLINE_TIMEOUT_SECS: u64 = 5;
+
+/// The self-timeout embedded in [`bounded_remote_sh`]'s wrapper - kept under
+/// STATUSLINE_TIMEOUT_SECS so the remote/local shell has already terminated itself by the time
+/// this module's own clock runs out, instead of the two racing each other.
+const STATUSLINE_REMOTE_BOUND_SECS: u64 = 4;
 
 /// Sends `script` to `ssh host sh` via stdin and returns the combined output.
 pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, String> {
@@ -30,6 +42,39 @@ pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, Stri
 /// had no timeout at all, so a blackholed SSH/local probe wedged `isChecking` permanently.
 pub(crate) fn run_remote_node_timeout(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(host, Interpreter::Node, script, REMOTE_SCRIPT_TIMEOUT_SECS)
+}
+
+/// Like [`run_remote_script`], but for the statusline customizer's probe/apply calls: a much
+/// shorter local ceiling ([`STATUSLINE_TIMEOUT_SECS`]), and the remote/local shell itself is
+/// wrapped in a self-terminating timeout (see [`bounded_remote_sh`]) so a killed local SSH
+/// client can never leave an orphaned remote process running unbounded.
+pub(crate) fn run_remote_script_bounded(host: &str, script: &str) -> Result<Output, String> {
+    run_interpreter_timeout(
+        host,
+        Interpreter::BoundedSh(STATUSLINE_REMOTE_BOUND_SECS),
+        script,
+        STATUSLINE_TIMEOUT_SECS,
+    )
+}
+
+/// Returns the shared lock for `host`, creating it on first use. Held for the duration of one
+/// [`run_interpreter_timeout`] call so that no two remote-script invocations - regardless of
+/// which feature triggered them (usage polling, git info, statusline probe/apply, ...) - ever
+/// run concurrently against the same host.
+///
+/// WHY: a burst of overlapping SSH connections to one host (e.g. the statusline auto-install
+/// probe firing while the user manually clicks Apply) can, over a constrained network path,
+/// stall *other*, unrelated SSH sessions to that same host for a moment even though nothing is
+/// actually killed - this serializes this app's own traffic to each host so it can never be the
+/// cause of that. Different hosts are unaffected - each gets its own independent lock, so
+/// per-host parallelism (see `apply_statusline_config`) is untouched.
+fn host_lock(host: &str) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    let registry = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = registry.lock().unwrap_or_else(|e| e.into_inner());
+    map.entry(host.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
 }
 
 fn is_local_host(host: &str) -> bool {
@@ -66,6 +111,12 @@ enum Interpreter {
     /// AG: local `zsh -lc node` (login shell - resolves `node` via nvm/PATH, same rc-sourcing
     /// race as CLAUDE_BIN, see stack-tauri rule), remote `ssh host node`. No preamble.
     Node,
+    /// Like `Sh`, but the local/remote shell invocation itself is wrapped in
+    /// [`bounded_remote_sh`]'s self-timeout (the carried `u64`, in seconds) instead of relying
+    /// solely on this module's own kill-after-timeout on the *local* `ssh`/`sh` process. See
+    /// [`run_remote_script_bounded`] for why. No preamble - statusline scripts never invoke
+    /// `claude`.
+    BoundedSh(u64),
 }
 
 impl Interpreter {
@@ -73,6 +124,12 @@ impl Interpreter {
         let mut cmd = match (self, local) {
             (Interpreter::Sh, true) => Command::new("sh"),
             (Interpreter::Sh, false) => polling_ssh(host, "sh"),
+            (Interpreter::BoundedSh(secs), true) => {
+                let mut c = Command::new("sh");
+                c.arg("-c").arg(bounded_remote_sh(secs));
+                c
+            }
+            (Interpreter::BoundedSh(secs), false) => polling_ssh(host, &bounded_remote_sh(secs)),
             (Interpreter::Node, true) => {
                 let mut c = Command::new("zsh");
                 c.args(["-lc", "node"]);
@@ -90,9 +147,40 @@ impl Interpreter {
         match self {
             Interpreter::Sh => CLAUDE_BIN_RESOLVER_PREAMBLE
                 .replace("__CLAUDE_CALL_TIMEOUT__", &CLAUDE_CALL_TIMEOUT_SECS.to_string()),
-            Interpreter::Node => String::new(),
+            Interpreter::Node | Interpreter::BoundedSh(_) => String::new(),
         }
     }
+}
+
+/// A one-liner run in place of a bare `sh`/`ssh host sh` (local or remote respectively) that
+/// picks whichever self-timeout mechanism the shell has available and `exec`s into a bounded
+/// `sh` reading the actual script from the same stdin - mirroring the
+/// timeout/gtimeout/perl-alarm fallback triple already established in
+/// [`CLAUDE_BIN_RESOLVER_PREAMBLE`]'s `AKI_CLAUDE_TMO`, but bounding the ENTIRE invocation
+/// instead of one call inside it.
+///
+/// WHY: if the local side's own timeout fires first and kills its `ssh`/`sh` client, the
+/// process it was talking to does not reliably die with it (SIGHUP does not dependably reach a
+/// grandchild through a login shell - the same caveat `AKI_CLAUDE_TMO`'s doc comment already
+/// notes for `claude` itself). Left unbounded, that orphan can run indefinitely - holding
+/// memory on the remote host - with nothing left on the local side able to clean it up. Making
+/// the shell bound *itself* means it always exits on its own, independent of what happens to
+/// the connection driving it.
+///
+/// The final `else exec sh` (no timeout/gtimeout/perl found at all) is a real, if rare,
+/// residual gap - logged to stderr so it is visible rather than silent, same precedent as
+/// `AKI_CLAUDE_TMO`'s own last-resort branch.
+fn bounded_remote_sh(timeout_secs: u64) -> String {
+    format!(
+        r#"if command -v timeout >/dev/null 2>&1; then exec timeout -k 1 {t} sh
+elif command -v gtimeout >/dev/null 2>&1; then exec gtimeout -k 1 {t} sh
+elif command -v perl >/dev/null 2>&1; then exec perl -e 'alarm shift; exec "sh"' {t}
+else
+  printf '[SHELL:bounded_remote_sh] WARNING no timeout/gtimeout/perl on this host - running unbounded\n' >&2
+  exec sh
+fi"#,
+        t = timeout_secs
+    )
 }
 
 /// Prepended to every `sh` script sent through [`run_interpreter_timeout`], local or remote.
@@ -163,12 +251,18 @@ export AKI_CLAUDE_TMO
 /// `host == "local"`/`"localhost"` runs `script` through the interpreter's local invocation
 /// instead of SSH - this is how usage is monitored when the agent runs on the same machine as
 /// this app, no remote involved.
+///
+/// Held for the whole call: [`host_lock`], so this and every other feature's calls to the same
+/// host serialize against each other (see that function's doc comment for why).
 fn run_interpreter_timeout(
     host: &str,
     interpreter: Interpreter,
     script: &str,
     timeout_secs: u64,
 ) -> Result<Output, String> {
+    let host_mutex = host_lock(host);
+    let _host_guard = host_mutex.lock().unwrap_or_else(|e| e.into_inner());
+
     let local = is_local_host(host);
     let mut child = interpreter
         .spawn(host, local)

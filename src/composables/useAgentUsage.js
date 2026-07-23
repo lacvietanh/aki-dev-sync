@@ -142,14 +142,20 @@ function persistAgAccount(dataObj, fetchedAt) {
     const email = accObj?.email;
     if (!email) continue;
     const st = accObj.sourceType || 'ide';
-    const key = `${email}:${st}`;
-    // Delete legacy un-suffixed key if present
-    if (store.accounts[email]) {
-      delete store.accounts[email];
+    const canonicalKey = `${email}:${st}`;
+
+    // Clean up any stale keys for this email (unsuffixed or with older sourceType)
+    for (const k of Object.keys(store.accounts)) {
+      if (k === email || k.startsWith(`${email}:`)) {
+        if (k !== canonicalKey) {
+          delete store.accounts[k];
+        }
+      }
     }
-    const existing = store.accounts[key];
-    if (accObj.quotaSummary || !existing?.data?.quotaSummary) {
-      store.accounts[key] = { data: accObj, fetchedAt };
+
+    const existing = store.accounts[canonicalKey];
+    if (accObj.quotaSummary || !existing?.data?.quotaSummary || (fetchedAt || 0) >= (existing?.fetchedAt || 0)) {
+      store.accounts[canonicalKey] = { data: accObj, fetchedAt };
     }
   }
 
@@ -165,7 +171,7 @@ function loadAgAccount(keyOrEmail) {
   if (store.accounts[keyOrEmail]) return store.accounts[keyOrEmail];
   const emailPart = keyOrEmail.split(':')[0];
   for (const [k, v] of Object.entries(store.accounts)) {
-    if (k.startsWith(emailPart)) return v;
+    if (k === emailPart || k.startsWith(`${emailPart}:`)) return v;
   }
   return null;
 }
@@ -174,39 +180,45 @@ function listAgAccounts() {
   const store = loadAgStore();
   let changed = false;
 
-  // Cleanup & migrate legacy un-suffixed keys
+  // Deduplicate store.accounts per email: keep only the newest record for each email
+  const bestByEmail = new Map();
   for (const [key, v] of Object.entries(store.accounts)) {
-    if (!key.includes(':')) {
-      const email = v.data?.email || key;
-      const st = v.data?.sourceType || 'ide';
-      const canonicalKey = `${email}:${st}`;
-      if (!store.accounts[canonicalKey]) {
-        store.accounts[canonicalKey] = v;
+    const email = v.data?.email || key.split(':')[0];
+    if (!email) continue;
+
+    const existing = bestByEmail.get(email);
+    if (!existing) {
+      bestByEmail.set(email, { key, record: v });
+    } else {
+      const existingFetched = existing.record.fetchedAt || 0;
+      const currentFetched = v.fetchedAt || 0;
+      if (currentFetched > existingFetched || (currentFetched === existingFetched && v.data?.quotaSummary && !existing.record.data?.quotaSummary)) {
+        delete store.accounts[existing.key];
+        bestByEmail.set(email, { key, record: v });
+        changed = true;
+      } else {
+        delete store.accounts[key];
+        changed = true;
       }
-      delete store.accounts[key];
-      changed = true;
     }
   }
+
   if (changed) {
     saveAgStore(store);
   }
 
-  const itemsMap = new Map();
-  for (const [key, v] of Object.entries(store.accounts)) {
-    const email = v.data?.email || key.split(':')[0];
-    const sourceType = v.data?.sourceType || (key.includes(':cli') ? 'cli' : key.includes(':desktop') ? 'desktop' : 'ide');
-    const canonicalKey = `${email}:${sourceType}`;
-    if (!itemsMap.has(canonicalKey) || (v.fetchedAt || 0) > (itemsMap.get(canonicalKey).fetchedAt || 0)) {
-      itemsMap.set(canonicalKey, {
-        accountKey: canonicalKey,
-        email,
-        sourceType,
-        fetchedAt: v.fetchedAt
-      });
-    }
+  const items = [];
+  for (const [email, { key, record }] of bestByEmail.entries()) {
+    const sourceType = record.data?.sourceType || (key.includes(':cli') ? 'cli' : key.includes(':desktop') ? 'desktop' : 'ide');
+    items.push({
+      accountKey: key,
+      email,
+      sourceType,
+      fetchedAt: record.fetchedAt
+    });
   }
 
-  return Array.from(itemsMap.values()).sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
+  return items.sort((a, b) => (b.fetchedAt || 0) - (a.fetchedAt || 0));
 }
 
 // ─── Wake self-heal (P1) ─────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & AGY CLI in this project.
+This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
-> **Updated 2026-07-22:** Multi-Surface Integration (v1.17.0: Antigravity Desktop App `AG`, IDE `AG IDE`, AGY CLI `AGY`). See [docs/plan/done/1.17.0-ag-multi-surface.md](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/docs/plan/done/1.17.0-ag-multi-surface.md).
+> **Updated 2026-07-22:** Multi-Surface Integration (v1.17.0: Antigravity Desktop App `AG`, IDE `IDE`, CLI `CLI`). See [docs/plan/done/1.17.0-ag-multi-surface.md](../plan/done/1.17.0-ag-multi-surface.md).
 
 ## Mechanism of Action
 
@@ -12,7 +12,7 @@ Instead of making external network requests to Google Cloud Code APIs (which ret
 
 ## Flow of Action
 
-Quota retrieval is executed by the self-contained Node.js script [get-antigravity-usage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-antigravity-usage.js) compiled directly into the Tauri Rust backend.
+Quota retrieval is executed by the self-contained Node.js script [get-antigravity-usage.js](../../scripts/get-antigravity-usage.js) compiled directly into the Tauri Rust backend.
 
 ```mermaid
 sequenceDiagram
@@ -127,7 +127,7 @@ fully readable, so the IDE re-read it on next launch and silently signed back in
 
 ## Execution Environment
 
-The script is compiled into the Tauri binary via `include_str!` inside [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) and executed in a shell using `zsh -lc node` for local targets or `ssh <host> node` for remote targets. 
+The script is compiled into the Tauri binary via `include_str!` inside [agent_usage.rs](../../src-tauri/src/agent_usage.rs) and executed in a shell using `zsh -lc node` for local targets or `ssh <host> node` for remote targets. 
 
 Using a login shell (`-lc`) is mandatory for desktop GUI execution since GUI apps launched from Finder/Launchpad do not inherit the user's shell profile `PATH` where Node.js is located.
 
@@ -182,7 +182,7 @@ To support simultaneous multi-account monitoring across Antigravity IDE and AGY 
 2. **AGY CLI (`sourceType: "cli"`):**
    - Command: `logout_antigravity_cli`
    - Action: Terminates `agy` CLI binary processes (`pkill -f agy`) and removes CLI credential files (`oauth_creds.json`, `google_accounts.json`, `state.json`) from `~/.gemini/`.
-   - UI: Dropdown displays `<i class="fa-solid fa-terminal"></i> Log Out AGY CLI`.
+   - UI: Dropdown displays `<i class="fa-solid fa-terminal"></i> Log Out CLI`.
 
 Both commands trigger `@logout-success`, causing all active usage slots to self-heal and fall back cleanly to remaining active accounts.
 
@@ -240,14 +240,14 @@ không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi
 ## Related Source Files
 
 - **Backend / Scripts:**
-  - [get-antigravity-usage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-antigravity-usage.js) - Node.js script to probe and fetch Connect RPC metrics.
-  - [agent_usage.rs](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src-tauri/src/agent_usage.rs) - Tauri Rust backend executor command handlers (`logout_antigravity`, `logout_antigravity_cli`).
+  - [get-antigravity-usage.js](../../scripts/get-antigravity-usage.js) - Node.js script to probe and fetch Connect RPC metrics.
+  - [agent_usage.rs](../../src-tauri/src/agent_usage.rs) - Tauri Rust backend executor command handlers (`logout_antigravity`, `logout_antigravity_cli`).
 - **Frontend Stores & Composables:**
-  - [useAgentUsage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/composables/useAgentUsage.js) - Vue frontend composable managing state and multi-account persistence.
-  - [usageTierStore.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/store/usageTierStore.js) - Reactive store managing 1 Tier / 2 Tiers layout preference.
+  - [useAgentUsage.js](../../src/composables/useAgentUsage.js) - Vue frontend composable managing state and multi-account persistence.
+  - [usageTierStore.js](../../src/store/usageTierStore.js) - Reactive store managing 1 Tier / 2 Tiers layout preference.
 - **UI Components:**
-  - [AgentUsageSection.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSection.vue) - Owns usage sources and dynamically renders declarative N-Tier slot rows.
-  - [AgentUsageSlot.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
-  - [AgentUsage.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon, cyan/purple live dots, and environment-aware logout.
-  - [UsageCircle.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/UsageCircle.vue) - SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
-  - [RefreshRing.vue](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).
+  - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Owns usage sources and dynamically renders declarative N-Tier slot rows.
+  - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
+  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon, cyan/purple live dots, and environment-aware logout.
+  - [UsageCircle.vue](../../src/components/UsageCircle.vue) - SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
+  - [RefreshRing.vue](../../src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).

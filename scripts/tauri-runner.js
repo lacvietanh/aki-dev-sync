@@ -52,9 +52,12 @@ if (subcommand !== 'dev') {
     throw new Error(`No free port in range ${base}-${base + range - 1}`);
   }
 
-  const devPort = await findFreePort(1420);
+  // TAURI_FORCE_PORT pins the dev port (e.g. to match an existing SSH port-forward)
+  // instead of auto-picking the first free one starting at 1420.
+  const forcedPort = process.env.TAURI_FORCE_PORT ? parseInt(process.env.TAURI_FORCE_PORT, 10) : null;
+  const devPort = forcedPort || await findFreePort(1420);
   const hmrPort = devPort + 1;
-  console.log(`[tauri-runner] dev port=${devPort} hmr=${hmrPort}`);
+  console.log(`[tauri-runner] dev port=${devPort} hmr=${hmrPort}${forcedPort ? ' (forced)' : ''}`);
 
   // Tauri CLI: override devUrl at runtime so it matches the port Vite will bind.
   // Vite reads TAURI_DEV_PORT from env (set below) - see vite.config.js.

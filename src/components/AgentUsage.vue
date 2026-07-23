@@ -36,25 +36,25 @@
             class="fa-solid fa-terminal agent-cli-icon"
             @click="handleIconClick"
             style="cursor: pointer;"
-            title="AGY CLI Active"
+            title="CLI Active"
           ></i>
           <img
             v-else-if="currentSourceType === 'desktop' || currentSourceType === 'desktop_cli'"
             src="/antigravity-app-icon.png"
             class="agent-img-icon ag-desktop-icon"
-            alt="AG App"
+            alt="AG"
             @click="handleIconClick"
             style="cursor: pointer;"
-            title="AG Desktop App Active"
+            title="AG Active"
           />
           <img
             v-else
             src="/antigravity-icon.png"
             class="agent-img-icon ag-ide-icon"
-            alt="AG IDE"
+            alt="IDE"
             @click="handleIconClick"
             style="cursor: pointer;"
-            title="AG IDE Active"
+            title="IDE Active"
           />
         </div>
         <div class="agent-info">
@@ -87,9 +87,9 @@
                   @click="pickAccount(acc)"
                 >
                   <span class="ag-account-left">
-                    <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="AGY CLI"></i>
-                    <img v-else-if="acc.sourceType === 'desktop' || acc.sourceType === 'desktop_cli'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG Desktop App" />
-                    <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="AG IDE" />
+                    <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="CLI"></i>
+                    <img v-else-if="acc.sourceType === 'desktop' || acc.sourceType === 'desktop_cli'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG" />
+                    <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="IDE" />
                     <span v-if="showEmail" class="ag-account-email">{{ acc.email }}</span>
                     <span v-else class="ag-account-email-masked">
                       <span class="email-prefix">{{ getEmailPrefix(acc.email) }}</span><span class="email-blurred-fixed">••••••••</span>
@@ -338,22 +338,21 @@ const currentSourceType = computed(() => {
 
 const agDisplayName = computed(() => {
   if (props.agentId !== 'antigravity') return props.agentName;
-  if (currentSourceType.value === 'desktop') return 'AG';
-  if (currentSourceType.value === 'desktop_cli') return 'AG / AGY';
-  if (currentSourceType.value === 'cli') return 'AGY';
-  return 'AG IDE';
+  if (currentSourceType.value === 'cli') return 'CLI';
+  if (currentSourceType.value === 'ide') return 'IDE';
+  return 'AG';
 });
 
 function getLogoutBtnText() {
-  if (currentSourceType.value === 'ide') return 'Log Out AG IDE';
-  if (currentSourceType.value === 'cli') return 'Log Out AGY CLI';
-  return 'Log Out AG App';
+  if (currentSourceType.value === 'ide') return 'Log Out IDE';
+  if (currentSourceType.value === 'cli') return 'Log Out CLI';
+  return 'Log Out AG';
 }
 
 function getLogoutTitle() {
-  if (currentSourceType.value === 'ide') return 'Sign out of AG IDE session';
-  if (currentSourceType.value === 'cli') return 'Sign out of AGY CLI session';
-  return 'Sign out of AG App session';
+  if (currentSourceType.value === 'ide') return 'Sign out of IDE session';
+  if (currentSourceType.value === 'cli') return 'Sign out of CLI session';
+  return 'Sign out of AG session';
 }
 
 const loggingOut = ref(false);
@@ -363,14 +362,14 @@ async function logoutAntigravity() {
   const isCli = currentSourceType.value === 'cli';
   const isDesktop = currentSourceType.value === 'desktop' || currentSourceType.value === 'desktop_cli';
 
-  let title = 'Đăng xuất AG IDE?';
+  let title = 'Đăng xuất IDE?';
   let html = 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.';
 
   if (isDesktop) {
-    title = 'Đăng xuất AG App (Desktop)?';
+    title = 'Đăng xuất AG?';
     html = 'Ứng dụng sẽ dừng các tiến trình và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.';
   } else if (isCli) {
-    title = 'Đăng xuất AGY CLI (Terminal)?';
+    title = 'Đăng xuất CLI (Terminal)?';
     html = 'Ứng dụng sẽ dừng các tiến trình CLI và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.';
   }
 

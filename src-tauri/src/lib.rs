@@ -95,7 +95,6 @@ pub fn run() {
             claude_profile::get_claude_mode,
             claude_profile::set_claude_profile,
             // statusline customizer
-            statusline::get_default_statusline_config,
             statusline::apply_statusline_config,
             statusline::check_statusline_status,
             // logger / debug

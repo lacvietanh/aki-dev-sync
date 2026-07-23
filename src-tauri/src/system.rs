@@ -79,7 +79,74 @@ fn open_terminal_with_command(shell_cmd: &str) -> Result<(), String> {
         .arg(&script)
         .spawn()
         .map_err(|e| format!("Failed to open Terminal: {}", e))?;
+    snap_frontmost_terminal_window();
     Ok(())
+}
+
+/// Resizes/repositions the Terminal window this call just opened to 124 columns, snapped to the
+/// top-right corner of the main display (below the menu bar, above the Dock), height filling the
+/// available screen height. Fire-and-forget in its own `osascript` process, started right after
+/// the one that opens the window - it sleeps briefly up front so the new window exists and has
+/// settled before being resized, matching every other caller of Terminal in this file (spawn, no
+/// wait).
+///
+/// Resize (`numberOfColumns`) happens first, at the window's original (cascaded) position where
+/// it has room to grow; only once the true post-resize width is known does the single `bounds`
+/// write move+resize it into the target rectangle - resizing before positioning, not after,
+/// so the width read back is the true 124-column width, not one clipped by an edge the window
+/// was already pinned to.
+///
+/// The move+resize itself goes through System Events' Accessibility API (`AXPosition`/`AXSize`
+/// on the window element), not Terminal's own scriptable `bounds` property - `bounds` was
+/// proven (logged bounds at every step, see PR discussion) to silently refuse a cross-screen
+/// jump: X moved correctly but Y stayed within a few px of its original (wrong) value whenever
+/// the target Y belonged to a different display than the one the window opened on. AXPosition/
+/// AXSize apply cleanly to both axes regardless of which screen the window currently occupies.
+/// Requires System Events to have Accessibility permission for whatever process runs `osascript`
+/// - macOS will prompt for this on first use if not already granted.
+#[cfg(target_os = "macos")]
+fn snap_frontmost_terminal_window() {
+    let script = r#"
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+var Terminal = Application('Terminal');
+var SystemEvents = Application('System Events');
+$.NSThread.sleepForTimeInterval(0.6);
+if (Terminal.windows.length === 0) { $.exit(0); }
+var win = Terminal.windows[0];
+
+win.numberOfColumns = 124;
+$.NSThread.sleepForTimeInterval(0.2);
+var w = win.bounds().width;
+
+var screens = $.NSScreen.screens;
+var target = null;
+for (var i = 0; i < screens.count; i++) {
+  var s = screens.objectAtIndex(i);
+  if (s.frame.origin.x === 0 && s.frame.origin.y === 0) { target = s; break; }
+}
+if (!target) target = screens.objectAtIndex(0);
+var vf = target.visibleFrame;
+var full = target.frame;
+var screenHeight = full.size.height;
+var topY = screenHeight - (vf.origin.y + vf.size.height);
+var bottomY = screenHeight - vf.origin.y;
+var rightX = vf.origin.x + vf.size.width;
+var targetX = rightX - w;
+var targetH = bottomY - topY;
+
+var proc = SystemEvents.processes.byName('Terminal');
+var axWin = proc.windows[0];
+axWin.position = [targetX, topY];
+$.NSThread.sleepForTimeInterval(0.2);
+axWin.size = [w, targetH];
+"#;
+    let _ = Command::new("osascript")
+        .arg("-l")
+        .arg("JavaScript")
+        .arg("-e")
+        .arg(script)
+        .spawn();
 }
 
 /// Passes args directly to macOS `open`. JS is responsible for building the arg list.

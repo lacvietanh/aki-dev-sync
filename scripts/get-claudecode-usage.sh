@@ -122,14 +122,112 @@ except Exception as e:
         _log "meta: auth_status subtype=$SUB_TYPE"
     fi
 
+    # ── 6b. Read-side sanitizing (v4 gates - mirrors statusline.rs writer) ─
+    # DESIGN LOCK - same two invariants as the `aki-rlcache v4` writer block in
+    # src-tauri/src/statusline.rs: an entry whose resets_at has passed must never be shown, and a
+    # cache written by a different account must never be shown. The writer only protects hosts
+    # that already received the new script; this reader protects the app even against a host still
+    # running an older statusline hook. Read-only: never touches $FILE. See docs/arch/usage-claudecode.md §3.
+    CURRENT_ACCT=""
+    if [ -f "$HOME/.claude.json" ]; then
+        CURRENT_ACCT=$(python3 -c "
+import json
+try:
+    d = json.load(open('$HOME/.claude.json'))
+    print(d.get('oauthAccount', {}).get('emailAddress', '') or '')
+except Exception:
+    print('')
+" 2>/dev/null)
+    fi
+    _log "sanitize: current_account='$CURRENT_ACCT'"
+
+    # Sanitizer emits one "LOG:<message>" line per decision, followed by exactly one final
+    # "STATUS:<code>[:<json>]" line. Everything goes to stdout (no stray files, no reliance on a
+    # writable $HOME/.claude for a scratch stderr file) so a single `python3 -c` failure can never
+    # abort the outer `set -e` script - a non-zero exit or empty output is simply treated as
+    # "no trustworthy data".
+    SANITIZED=$(python3 -c "
+import json, sys
+now = $NOW
+current_acct = '''$CURRENT_ACCT'''
+try:
+    with open('$FILE') as f:
+        d = json.load(f)
+except Exception as e:
+    print('LOG:cache unparseable: {}'.format(e))
+    print('STATUS:PARSE_ERROR')
+    sys.exit(0)
+
+cached_acct = d.get('account', '') or ''
+if cached_acct == '':
+    print('LOG:legacy cache has no account field (pre-v4 script) - not dropping, host should be re-applied')
+elif current_acct != '' and cached_acct != current_acct:
+    print('LOG:account mismatch cached={} current={} - cache untrusted, dropping whole cache'.format(cached_acct, current_acct))
+    print('STATUS:ACCOUNT_MISMATCH')
+    sys.exit(0)
+
+rl = d.get('rate_limits', {})
+if not isinstance(rl, dict):
+    rl = {}
+
+kept = {}
+for key, entry in rl.items():
+    if not isinstance(entry, dict):
+        print('LOG:dropped {} (not an object)'.format(key))
+        continue
+    resets_at = entry.get('resets_at', 0) or 0
+    try:
+        resets_at = int(resets_at)
+    except Exception:
+        resets_at = 0
+    if resets_at <= 0:
+        print('LOG:dropped {} (resets_at=0/missing - unverifiable window)'.format(key))
+        continue
+    if resets_at <= now:
+        print('LOG:dropped {} (expired resets_at={} now={})'.format(key, resets_at, now))
+        continue
+    kept[key] = entry
+    print('LOG:kept {} (resets_at={} still in future)'.format(key, resets_at))
+
+if not kept:
+    print('STATUS:EMPTY_AFTER_FILTER')
+    sys.exit(0)
+
+out = dict(d)
+out['rate_limits'] = kept
+print('STATUS:OK:' + json.dumps(out))
+" 2>/dev/null)
+    SANITIZE_RC=$?
+
+    printf '%s\n' "$SANITIZED" | while IFS= read -r _line; do
+        case "$_line" in
+            LOG:*) _log "sanitize: ${_line#LOG:}" ;;
+        esac
+    done
+
+    SANITIZE_LAST=$(printf '%s\n' "$SANITIZED" | grep '^STATUS:' | tail -n 1)
+    SANITIZE_STATUS=$(printf '%s' "$SANITIZE_LAST" | awk -F: '{print $2}')
+    _log "sanitize: exit=$SANITIZE_RC status=${SANITIZE_STATUS:-NONE}"
+
+    SANITIZED_JSON=""
+    if [ "$SANITIZE_RC" -eq 0 ] && [ "$SANITIZE_STATUS" = "OK" ]; then
+        SANITIZED_JSON=$(printf '%s' "$SANITIZE_LAST" | cut -d: -f3-)
+    else
+        _log "sanitize: no trustworthy data (status=${SANITIZE_STATUS:-NONE}, rc=$SANITIZE_RC) → no stdout"
+    fi
+
     # ── 7. Write stdout payload ───────────────────────────────────────────
-    _log "stdout_write: emitting cache_json + MTIME=$MTIME SUBTYPE=$SUB_TYPE TIER=$TIER"
-    cat "$FILE"
-    echo "|||MTIME|||$MTIME"
-    echo "|||SUBTYPE|||$SUB_TYPE"
-    echo "|||TIER|||$TIER"
-    echo "|||AUTHINFO|||$AUTH_INFO"
-    _log "stdout_write: done - all delimiters emitted"
+    if [ -z "$SANITIZED_JSON" ]; then
+        _log "stdout_write: nothing to emit after sanitizing → Rust returns null, same as missing-file branch"
+    else
+        _log "stdout_write: emitting sanitized cache_json + MTIME=$MTIME SUBTYPE=$SUB_TYPE TIER=$TIER"
+        printf '%s\n' "$SANITIZED_JSON"
+        echo "|||MTIME|||$MTIME"
+        echo "|||SUBTYPE|||$SUB_TYPE"
+        echo "|||TIER|||$TIER"
+        echo "|||AUTHINFO|||$AUTH_INFO"
+        _log "stdout_write: done - all delimiters emitted"
+    fi
 else
     _log "cache file missing: $FILE → no stdout output → Rust returns null → JS shows empty state"
 fi

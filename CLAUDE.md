@@ -47,6 +47,8 @@ into any new Tauri project's `CLAUDE.md`.
 
 **Stack**: Vue 3 (Vite), Tauri v2, Rust. Dark mode desktop tool for rsync-based deploy workflows.
 
+**Ships macOS-only** - the only bundle produced is a `.dmg` (`npm run build:rmud`). Treat mac as the sole runtime target when writing user-facing text or platform-specific code: print `⌘` in shortcut labels (no OS-detection branch), assume macOS paths first, and add a Windows/Linux branch only when a build for that platform actually ships. The Linux path in "Runtime log location" below is for running the dev build on the remote dev box, not a shipped target.
+
 ### UI Principle - Extreme Narrow (ABSOLUTE, Never Violate)
 
 This app optimizes space with extreme aggression. Every pixel counts.
@@ -78,6 +80,7 @@ field needed resetting. Rule, to make this class of bug structurally harder to r
 
 ### This-project Tauri specifics
 
+- **Feature changed?** Check `README.md` and `src/components/modals/IntroModal.vue` in the same task. English, terse.
 - **Titlebar height**: 42px (`var(--titlebar-h)`). Ref: `docs/ref/titlebar-sacred-boundary.md`
 - **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/post-build.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X-arch.dmg`.
 - **Release build command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg) - not `build:app`/`build:rmad` - unless the user asks for a different bundle.
@@ -87,3 +90,8 @@ field needed resetting. Rule, to make this class of bug structurally harder to r
 ### Runtime log location
 
 - Usage/debug log: `~/Library/Application Support/aki.devsync/usage.log` (macOS) / `~/.local/share/aki.devsync/usage.log` (Linux). Ref: `docs/arch/logger.md`, `docs/arch/usage-claudecode.md`.
+
+### Statusline script paths (local machine)
+
+- AGY: `~/.gemini/antigravity-cli/statusline.sh`
+- Claude Code: `~/.claude/statusline-command.sh`

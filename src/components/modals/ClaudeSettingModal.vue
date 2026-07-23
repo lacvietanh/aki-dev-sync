@@ -1,7 +1,22 @@
 <template>
   <BaseModal :show="show" @close="$emit('close')" container-style="width: 90vw; max-width: 1100px;">
     <template #title>
-      <i class="fa-solid fa-terminal"></i> Statusline Customizer
+      <div class="modal-title-wrap">
+        <span class="modal-title-text">
+          <i class="fa-solid fa-terminal"></i> Statusline Customizer
+        </span>
+        <div class="header-target-selector">
+          <span class="target-label">Apply to:</span>
+          <label class="target-check-item">
+            <input type="checkbox" value="ag" v-model="selectedTargets" />
+            <span>agy</span>
+          </label>
+          <label class="target-check-item">
+            <input type="checkbox" value="cc" v-model="selectedTargets" />
+            <span>claude</span>
+          </label>
+        </div>
+      </div>
     </template>
 
     <div class="modal-body">
@@ -9,7 +24,29 @@
               <pre class="preview-line" v-html="previewHtml"></pre>
             </div>
 
-            <div class="section-label">Fields <span class="hint">(drag the grip to reorder)</span></div>
+            <div class="section-label fields-header">
+              <span>Fields <span class="hint">(drag the grip to reorder)</span></span>
+              <button type="button" class="toggle-all-btn" @click="toggleAllFields">{{ allFieldsEnabled ? 'Uncheck all' : 'Check all' }}</button>
+            </div>
+            <!-- Pinned, not part of the draggable field-list below: it must always render first,
+                 so unlike every other field it has no grip handle and isn't a TransitionGroup item. -->
+            <div class="row-item pinned-row" :title="CATALOG.cli_tag.desc">
+              <i class="fa-solid fa-thumbtack pin-icon" title="Fixed position - always first"></i>
+              <label class="ctl-toggle">
+                <input type="checkbox" :checked="fieldEnabled('cli_tag')" @change="setFieldEnabled('cli_tag', $event.target.checked)" />
+                <span class="ctl-label">{{ CATALOG.cli_tag.label }}</span>
+              </label>
+              <!-- Account lives in this cluster, not in the draggable list: the script glues it to
+                   the tag and paints it on the tag's own background. -->
+              <label class="ctl-toggle" :title="CATALOG.account.desc">
+                <input type="checkbox" :checked="fieldEnabled('account')" @change="setFieldEnabled('account', $event.target.checked)" />
+                <span class="ctl-label">{{ CATALOG.account.label }}</span>
+              </label>
+              <label class="ctl-trunc" :title="truncTitle('account')">
+                <i class="fa-solid fa-scissors"></i>
+                <input type="number" :min="TRUNC_MIN" :max="truncMax('account')" :value="cfg.trunc.account" @change="setTrunc('account', $event.target.value)" />
+              </label>
+            </div>
             <TransitionGroup tag="div" name="row" class="field-list">
               <div
                 v-for="row in rows"
@@ -24,6 +61,7 @@
               >
                 <i class="fa-solid fa-grip-vertical drag-handle" title="Drag to reorder"></i>
                 <div class="row-lines">
+                  <div v-if="row.note" class="row-note">{{ row.note }}</div>
                   <div v-for="(line, li) in row.lines" :key="li" class="row-line" :class="{ disabled: !lineActive(line) }">
                     <template v-for="(seg, si) in segmentsOf(line)" :key="si">
                       <span v-if="seg.spacer" class="ctl-spacer"></span>
@@ -64,6 +102,14 @@
                           <span v-else-if="control.type === 'color'" class="color-dynamic" :title="ladderTitle">
                             <span v-for="t in ladder" :key="t.key" class="tier-dot" :style="{ background: t.hex }"></span>
                           </span>
+                          <label v-else-if="control.type === 'trunc'" class="ctl-trunc" :title="truncTitle(control.name)">
+                            <i class="fa-solid fa-scissors"></i>
+                            <input
+                              type="number" :min="TRUNC_MIN" :max="truncMax(control.name)"
+                              :value="cfg.trunc[control.name]"
+                              @change="setTrunc(control.name, $event.target.value)"
+                            />
+                          </label>
                         </template>
                       </span>
                     </template>
@@ -89,21 +135,53 @@
               </div>
             </div>
 
-            <div class="section-label">Apply to <span class="hint">(local + configured remote hosts)</span></div>
+            <!-- There is no separator character any more: blocks are told apart by alternating
+                 background shades. Two swatch rows, not a free color picker - the choice is
+                 restricted to the neutral ramp so a background can never fight a text color. -->
+            <div class="section-label">
+              <span>Block background</span>
+              <label class="sep-toggle" title="Pad every block with a space on each side, so the shades read as separate plates instead of one strip. The tag cluster is never padded.">
+                <input type="checkbox" v-model="cfg.separate" />
+                <span>separate</span>
+              </label>
+            </div>
+            <div class="zebra-rows">
+              <div v-for="slot in ['a', 'b']" :key="slot" class="zebra-row">
+                <span class="zebra-name">{{ slot === 'a' ? 'odd' : 'even' }}</span>
+                <button
+                  v-for="n in ZEBRA_SHADES"
+                  :key="n"
+                  type="button"
+                  class="zebra-swatch"
+                  :class="{ sel: cfg.zebra[slot] === n }"
+                  :style="{ background: zebraHex(n) }"
+                  :title="`ANSI 48;5;${n}`"
+                  @click="cfg.zebra[slot] = n"
+                ></button>
+              </div>
+            </div>
+
+            <div class="section-label">Target Hosts <span class="hint">(tag per CLI found: filled = statusline live)</span></div>
             <div class="host-list">
               <label
                 v-for="h in hostOptions"
                 :key="h"
                 class="host-chip"
-                :class="{ active: selectedHosts.includes(h), warn: hostStatus[h] && hostStatus[h].claude_installed && !hostStatus[h].statusline_configured }"
+                :class="{ active: selectedHosts.includes(h) }"
               >
                 <input type="checkbox" :value="h" v-model="selectedHosts" />
-                {{ h === 'local' ? 'Local (this machine)' : h }}
-                <i
-                  v-if="hostStatus[h] && hostStatus[h].claude_installed && !hostStatus[h].statusline_configured"
-                  class="fa-solid fa-triangle-exclamation warn-icon"
-                  title="Statusline not installed on this host yet - auto-installing…"
-                ></i>
+                {{ h === 'local' ? 'Local' : h }}
+                <!-- One tag per CLI actually present on that host: lit = its statusline renders,
+                     hollow amber = the CLI is there but nothing is wired up. A CLI the host does
+                     not have prints nothing at all - absence is the honest reading, and it costs
+                     no width. -->
+                <span
+                  v-for="t in cliTags(h)"
+                  :key="t.cli"
+                  class="cli-tag"
+                  :class="t.configured ? 'on' : 'off'"
+                  :title="t.title"
+                >{{ t.cli }}</span>
               </label>
               <div v-if="hostOptions.length === 1" class="hint no-remotes">No remote hosts configured yet - add a project with a remote host to push there too.</div>
             </div>
@@ -126,7 +204,7 @@
             <button class="btn-reset" @click="resetToDefault" :disabled="busy" title="Reload the built-in default preset">
               <i class="fa-solid fa-arrow-rotate-left"></i> Reset
             </button>
-            <button class="btn-apply" @click="apply" :disabled="busy || selectedHosts.length === 0" title="Write statusline-command.sh + patch settings.json on every checked host">
+            <button class="btn-apply" @click="apply" :disabled="busy || selectedHosts.length === 0 || selectedTargets.length === 0" :title="applyTitle">
               <i class="fa-solid" :class="busy ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
               {{ busy ? 'Applying…' : `Apply to ${selectedHosts.length} host${selectedHosts.length === 1 ? '' : 's'}` }}
             </button>
@@ -145,12 +223,20 @@ const props = defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
 
 const STORAGE_KEY = 'aki-statusline-config';
+// Bumped whenever the defaults themselves change meaning (colors, field set, thresholds). A stored
+// config from an older version is discarded outright rather than translated - see loadCfg. Without
+// this, a saved config keeps overriding the new standard field-by-field and the only way to see it
+// is to press Reset, which is exactly the confusion this avoids.
+const CONFIG_VERSION = 3;
+const TARGETS_KEY = 'aki-statusline-targets';
 
 // UI-only metadata for the field keys the Rust side understands (src-tauri/src/statusline.rs).
 // Keep in sync with `default_config()` there when adding a new field key.
 const CATALOG = {
-  identity_user: { label: 'user', desc: 'Local username, truncated to 5 characters' },
-  identity_host: { label: 'host', desc: 'Short hostname, truncated to 5 characters' },
+  cli_tag:     { label: 'CLI tag', desc: 'Colored tag at the very start of the line identifying which CLI rendered it - always first, cannot be reordered' },
+  identity_user: { label: 'user', desc: 'Local username, cut to the width set on this row' },
+  identity_host: { label: 'host', desc: 'Short hostname, cut to the width set on this row' },
+  account:       { label: 'Account', desc: 'Active account name - the domain is dropped first ("lva@akitao.com" becomes "lva"), then cut to the width set on this row' },
   cwd:         { label: 'Working directory',    desc: 'Current folder name (~ when at $HOME)' },
   model:       { label: 'Model',                desc: 'Model name, e.g. "sonnet 5"' },
   effort:      { label: 'effort',               desc: 'Effort level (med/high), always grey - a qualifier of the model, not its own signal' },
@@ -159,10 +245,12 @@ const CATALOG = {
   rate_reset_5h:  { label: 'Reset ETA',   desc: 'Appends time-until-reset to the 5h window (e.g. 1h12m)' },
   rate_limits_7d: { label: '7d',          desc: '7-day Pro/Max usage window, auto-colored by threshold' },
   rate_reset_7d:  { label: 'Reset ETA',   desc: 'Appends time-until-reset to the 7d window (e.g. 2d3h)' },
+  cache:       { label: 'Cache', desc: 'Master switch for the cache block - the two readings below only print while this is on' },
   cache_pct:   { label: 'Cache hit %',          desc: 'Percent of the most recent request served from cache (green = high hit rate)' },
   cache_tokens:{ label: 'Cache tokens (read)',  desc: 'Tokens read from cache for the most recent request, grey and not colorable' },
   session:     { label: 'Session (dur/lines/$)',desc: 'Duration, lines +/- (bold green/red), and cost for this session' },
   git_branch:  { label: 'Git branch',           desc: 'Experimental - depends on Claude Code version exposing it' },
+  ram:         { label: 'System RAM',           desc: 'Whole-machine memory in use (⚅ NN%) - read from the OS, not from the CLI payload' },
 };
 
 // The dynamic-color ladder, lowest tier first. `blue` has no threshold of its own - it is
@@ -175,9 +263,60 @@ const TIER_KEYS = ['green', 'yellow', 'orange', 'red'];
 // Mirrors COST_FULL_USD in src-tauri/src/statusline.rs.
 const COST_FULL_USD = 30;
 
+// Truncate widths are one contract shared by the UI, the generator and the shell script's own
+// clamp. Keep all three at 3..12: below 3 a name stops being recognisable, above 12 a single field
+// can eat a narrow terminal's whole line.
+const TRUNC_MIN = 3;
+const TRUNC_MAX = 12;
+// Per-field ceiling. Not uniform on purpose: a directory or branch name needs more room before it
+// stops being recognisable than a user or account name does. Anything absent uses TRUNC_MAX.
+const TRUNC_MAX_FOR = { cwd: 15, branch: 15 };
+function truncMax(name) { return TRUNC_MAX_FOR[name] || TRUNC_MAX; }
+// Which fields own a truncate width, and the cfg.trunc key each one reads.
+const TRUNC_FOR = { identity_user: 'user', identity_host: 'host', account: 'account', cwd: 'cwd', git_branch: 'branch' };
+
+// Field dependencies, declared once. A field is only ACTIVE when it is enabled AND every field it
+// hangs off is active too - checking `enabled` alone would let a reset ETA print with no window to
+// reset, or an effort level with no model name in front of it.
+// This one map drives all three consumers: the greyed-out checkbox, the preview, and (Phase 2.2)
+// what the generator emits. Anything that needs the rule reads it from here, never re-states it.
+const DEPENDS = {
+  effort: 'model',
+  rate_reset_5h: 'rate_limits_5h',
+  rate_reset_7d: 'rate_limits_7d',
+  cache_pct: 'cache',
+  cache_tokens: 'cache',
+};
+
+// The zebra picker is deliberately restricted to the neutral ramp: 16 (absolute black) plus the
+// 232..255 greyscale. Offering the full 256 palette here would let a hue land behind every field
+// and fight whatever foreground colors the user picked - a two-dimensional problem. Greys keep it
+// one-dimensional: only brightness has to work.
+const ZEBRA_SHADES = [16, ...Array.from({ length: 12 }, (_, i) => 232 + i)];
+// xterm-256 greyscale: 232 is #080808 and each step adds 10. 16 is pure #000000.
+function zebraHex(n) {
+  if (n === 16) return '#000000';
+  const v = 8 + (n - 232) * 10;
+  const h = v.toString(16).padStart(2, '0');
+  return `#${h}${h}${h}`;
+}
+
+function setTrunc(name, raw) {
+  cfg.trunc[name] = clampTrunc(raw, defaultLocalConfig().trunc[name], name);
+}
+function truncTitle(name) {
+  const extra = name === 'account'
+    ? ' - applied after the domain is stripped ("lva@akitao.com" is cut to "lva" first)'
+    : '';
+  return `Truncate to N characters (${TRUNC_MIN}-${truncMax(name)})${extra}`;
+}
+
 const COLORS = STATUSLINE_COLORS;
 const HEX = Object.fromEntries(COLORS.map(c => [c.key, c.hex]));
-const COLOR_EDITABLE = new Set(['identity_user', 'identity_host', 'cwd', 'model', 'git_branch']);
+// The only fields with a real picker; everything else is colored by the ladder or by a fixed label
+// color. Must name the same six keys as COLOR_KEYS in statusline.rs and the COLOR_* block in the
+// script template, or the UI grows a picker that changes nothing.
+const COLOR_EDITABLE = new Set(['identity_user', 'identity_host', 'account', 'cwd', 'model', 'git_branch']);
 function isColorEditable(key) { return COLOR_EDITABLE.has(key); }
 
 // Declarative row/group catalog (RULE-design-core: one shape for every row, not a hardcoded
@@ -200,27 +339,29 @@ function isColorEditable(key) { return COLOR_EDITABLE.has(key); }
 //   tight   - visually brackets its controls with a subtle border (identity's `user @ host`).
 //   spacer  - an empty flex-1 gap; separates left controls from right controls in the same row.
 //
-// `groupLabel` on a group: a fixed white label prepended in the preview when ≥1 member is enabled.
-// Needed when the label must persist regardless of which sub-field is on (cache's "cache" prefix).
-//
-// `GROUPS` here mirrors the `GROUPS` const in src-tauri/src/statusline.rs, which is what actually
-// joins a group's members with the group's own separator instead of the ` | ` one. Both the
-// members and the separator must match; adding a group needs an entry in both files.
+// `GROUPS` here is a UI grouping only. The generated script has no notion of it: each block is a
+// `g_<block>` variable assembled in src-tauri/src/statusline-unified.sh, and the row order becomes
+// BLOCK_ORDER. A group's `sep` must therefore match how that block glues its members in the
+// template (identity '@', model '', quota ' ', cache ' ') - the preview is what would drift.
 const GROUPS = [
   {
     id: 'identity',
     keys: ['identity_user', 'identity_host'],
     sep: '@',
+    // Grey, not white: the '@' is glue between two names, not a label of its own (matches script).
+    // Literal rather than GREY_HEX - GROUPS is evaluated at module load, before that const exists.
+    sepColor: '#64748b',
     lines: [
       { segments: [
         { controls: [{ type: 'master', keys: ['identity_user', 'identity_host'], label: 'id' }] },
-        { spacer: true },
         { tight: true, controls: [
           { type: 'toggle', key: 'identity_user', label: 'user' },
           { type: 'color', key: 'identity_user' },
+          { type: 'trunc', name: 'user' },
           { type: 'parts', items: ['@'] },
           { type: 'toggle', key: 'identity_host', label: 'host' },
           { type: 'color', key: 'identity_host' },
+          { type: 'trunc', name: 'host' },
         ] },
       ] },
     ],
@@ -228,16 +369,16 @@ const GROUPS = [
   {
     id: 'model',
     keys: ['model', 'effort'],
-    sep: ' ',
+    // Empty, not a space: model and effort read as one token ("Opus4.8med"). Every pixel counts.
+    sep: '',
     lines: [
       { segments: [
         { controls: [
           { type: 'toggle', key: 'model', label: 'model' },
           { type: 'color', key: 'model' },
         ] },
-        { spacer: true },
         { controls: [
-          { type: 'toggle', key: 'effort', label: 'effort', dependsOn: 'model' },
+          { type: 'toggle', key: 'effort', label: 'effort' },
         ] },
       ] },
     ],
@@ -248,7 +389,6 @@ const GROUPS = [
     lines: [
       { controls: [
         { type: 'toggle', key: 'context', label: 'Context window' },
-        { type: 'parts', items: ['%'] },
         { type: 'color', key: 'context' },
         { type: 'parts', items: ['token in+out', '/Max Token'] },
       ] },
@@ -258,6 +398,9 @@ const GROUPS = [
     id: 'quota',
     keys: ['rate_limits_5h', 'rate_reset_5h', 'rate_limits_7d', 'rate_reset_7d'],
     sep: ' ',
+    // AGY splits its quota into a Gemini pool and a 3P (Claude/GPT) pool; the script picks the
+    // pool matching the running model, so there is nothing to configure here.
+    note: 'AGY: pool follows the selected model',
     lines: [
       { segments: [
         { controls: [
@@ -267,7 +410,7 @@ const GROUPS = [
         ] },
         { spacer: true },
         { controls: [
-          { type: 'toggle', key: 'rate_reset_5h', label: 'Reset ETA', dependsOn: 'rate_limits_5h' },
+          { type: 'toggle', key: 'rate_reset_5h', label: 'Reset ETA' },
         ] },
       ] },
       { segments: [
@@ -278,7 +421,7 @@ const GROUPS = [
         ] },
         { spacer: true },
         { controls: [
-          { type: 'toggle', key: 'rate_reset_7d', label: 'Reset ETA', dependsOn: 'rate_limits_7d' },
+          { type: 'toggle', key: 'rate_reset_7d', label: 'Reset ETA' },
         ] },
       ] },
     ],
@@ -296,12 +439,14 @@ const GROUPS = [
   },
   {
     id: 'cache',
-    keys: ['cache_pct', 'cache_tokens'],
-    groupLabel: 'cache',
+    keys: ['cache', 'cache_pct', 'cache_tokens'],
+    // The block leads with the '↬' glyph, which cache_pct prints itself - no extra group label.
     sep: ' ',
     lines: [
       { controls: [
-        { type: 'master', keys: ['cache_pct', 'cache_tokens'], label: 'Cache' },
+        // A real gate field, not a UI-only master: the two readings are meaningless without the
+        // block itself, so the dependency is stored, not simulated in the component.
+        { type: 'toggle', key: 'cache', label: 'Cache' },
         { type: 'toggle', key: 'cache_pct', label: '%' },
         { type: 'parts', items: ['hit/max Token'] },
         { type: 'toggle', key: 'cache_tokens', label: 'read' },
@@ -311,87 +456,110 @@ const GROUPS = [
   },
 ];
 
-// Color doctrine these defaults follow (docs/feat/statusline-customizer.md): white = labels,
-// cyan = ordinary information, grey = supporting detail, dynamic = must be noticed. "Which
-// machine" (host=magenta) and "where am I" (cwd=yellow) get standout hues - what the eye hunts
-// for first with several terminals open. user=grey (present but not the focal point).
-// Mirrors default_config() in statusline.rs.
+// SSOT: this function is the single source of truth for the statusline's defaults. `statusline.rs`
+// defines none of its own - it receives this config and patches it into the script template. The
+// Rust side has one test (`generated_defaults_match_template`) whose whole job is to fail if the
+// values below stop matching src-tauri/src/statusline-unified.sh, so the two can never drift apart.
+//
+// The values below are transcribed from the verified reference implementation
+// (src-tauri/src/statusline-unified.sh, spec §8.2) - i.e. from the statusline that actually runs, not
+// from a doctrine table. If the two ever disagree again, the script is right and this list is wrong.
 function defaultLocalConfig() {
   return {
     fields: [
-      { key: 'identity_user',  enabled: true,  color: 'grey' },
-      { key: 'identity_host',  enabled: true,  color: 'magenta' },
-      { key: 'cwd',            enabled: true,  color: 'yellow' },
+      // Pinned first - see the dedicated non-draggable row in the template and `applyRowOrder`,
+      // which re-prepends this field object on every drag reorder so it can never end up
+      // anywhere else or get dropped from cfg.fields entirely.
+      { key: 'cli_tag',        enabled: true,  color: '' },
+      // Rendered inside the tag cluster, not as a block of its own - see the pinned row.
+      { key: 'account',        enabled: true,  color: 'grey' },
+      { key: 'identity_user',  enabled: true,  color: 'white' },
+      { key: 'identity_host',  enabled: true,  color: 'white' },
+      { key: 'cwd',            enabled: true,  color: 'magenta' },
       { key: 'model',          enabled: true,  color: 'cyan' },
       { key: 'effort',         enabled: true,  color: 'grey' },
       { key: 'context',        enabled: true,  color: 'white' },
+      // cache sits directly after context: the two are read together ("how many tokens, and how
+      // much of it came from cache"). Order fixed in docs/ref/statusline-unified-spec.md §8.2.
+      { key: 'cache',          enabled: true,  color: '' },
+      { key: 'cache_pct',      enabled: true,  color: 'grey' },
+      { key: 'cache_tokens',   enabled: false, color: 'grey' },
       { key: 'rate_limits_5h', enabled: true,  color: 'white' },
-      { key: 'rate_reset_5h',  enabled: false, color: 'grey' },
+      { key: 'rate_reset_5h',  enabled: true,  color: 'grey' },
       { key: 'rate_limits_7d', enabled: true,  color: 'white' },
-      { key: 'rate_reset_7d',  enabled: false, color: 'grey' },
+      { key: 'rate_reset_7d',  enabled: true,  color: 'grey' },
       { key: 'session',        enabled: true,  color: 'grey' },
       { key: 'git_branch',     enabled: true,  color: 'magenta' },
-      { key: 'cache_pct',      enabled: false, color: 'white' },
-      { key: 'cache_tokens',   enabled: false, color: 'grey' },
+      { key: 'ram',            enabled: true,  color: 'grey' },
     ],
-    // Uneven by design: wide calm bands at the bottom, narrow urgent ones at the top.
-    // Mirrors default_config() in src-tauri/src/statusline.rs.
-    thresholds: { green: 25, yellow: 51, orange: 75, red: 90 },
+    // Uneven by design: a wide calm green band, then bands that narrow as the number gets urgent.
+    // Must stay identical to color_for_pct() in src-tauri/src/statusline-unified.sh.
+    thresholds: { green: 20, yellow: 51, orange: 75, red: 90 },
+    // Per-field truncate widths. Range 3..12 for every one of them - see TRUNC_MIN/TRUNC_MAX and
+    // docs/ref/statusline-unified-spec.md §8.2. `account` is applied AFTER the domain is stripped
+    // ("lva@akitao.com" -> "lva"), never to the raw address.
+    trunc: { account: 4, user: 5, host: 6, cwd: 12, branch: 10 },
+    // Zebra background: blocks alternate between these two shades instead of being separated by a
+    // '|' character. Both must come from the neutral greyscale (16, or 232..255) - grey has no hue,
+    // so it can never clash in hue with a user-chosen text color; only brightness has to be judged.
+    zebra: { a: 16, b: 235 },
+    // On by default: a space either side of each block lets the two shades read as separate
+    // plates. Off, blocks butt directly together and the boundary is the shade change alone.
+    separate: true,
+    version: CONFIG_VERSION,
   };
 }
 
-// Migrates older config shapes onto the current key set, preserving the user's enabled/color
-// choices. No-op once a config is already migrated. Runs before loadCfg's generic
-// append-unknown-keys step, so a key handled here lands in its right position rather than being
-// appended to the bottom of the list.
-function migrateOldKeys(saved) {
-  // Splices the new keys in at the old key's own index, so a user who had put the field somewhere
-  // other than the end of the list keeps that position.
-  // `colors` lets a split assign a different color per new key; omitted, both inherit the old
-  // field's color.
-  const splitInPlace = (oldKey, newKeys, colors) => {
-    const idx = saved.fields.findIndex(f => f.key === oldKey);
-    if (idx === -1) return;
-    const old = saved.fields[idx];
-    saved.fields.splice(idx, 1, ...newKeys.map((key, i) => ({ key, enabled: old.enabled, color: colors?.[i] ?? old.color })));
-  };
-  // identity's two halves used to be hardcoded cyan/green with no user control; seed the new
-  // editable colors with exactly those, so nothing changes on screen until the user picks.
-  splitInPlace('identity', ['identity_user', 'identity_host'], ['cyan', 'green']);
-  splitInPlace('rate_limits', ['rate_limits_5h', 'rate_limits_7d']);
-  splitInPlace('rate_reset', ['rate_reset_5h', 'rate_reset_7d']);
-
-  // `effort` used to be printed unconditionally as part of the model block; it is now its own
-  // toggleable field. Seed it from the model's state so an existing statusline looks identical
-  // until the user changes it, and place it directly after model rather than at the bottom.
-  if (!saved.fields.some(f => f.key === 'effort')) {
-    const idx = saved.fields.findIndex(f => f.key === 'model');
-    if (idx !== -1) saved.fields.splice(idx + 1, 0, { key: 'effort', enabled: saved.fields[idx].enabled, color: 'grey' });
-  }
-
-  // The ladder gained a `green` tier below the old bottom tier. A saved config predating it has no
-  // value, which would render an empty number input and make every low value fall through to blue.
-  const defThresholds = defaultLocalConfig().thresholds;
-  for (const [key, val] of Object.entries(defThresholds)) {
-    if (typeof saved.thresholds[key] !== 'number') saved.thresholds[key] = val;
-  }
+// Same contract the shell script clamps to: floor of 3 everywhere, per-field ceiling. A
+// non-numeric or out-of-range value falls back rather than propagating into a generated script.
+function clampTrunc(val, fallback, name) {
+  const n = Math.round(Number(val));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(truncMax(name), Math.max(TRUNC_MIN, n));
 }
 
+// Loads the saved config, keeping only what the current catalog still knows about. There is NO
+// migration path: an unknown key is dropped, a missing one takes its default. Old shapes are not
+// translated forward - the default above is the standard, and anything that doesn't fit it is
+// stale data, not a second source of truth to reconcile with.
+//
+// What survives from a saved config: which fields are on, their colors, their order, the ladder
+// thresholds, the truncate widths and the zebra shades. Everything else is rebuilt from default.
 function loadCfg() {
+  const def = defaultLocalConfig();
   let saved = null;
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (raw && Array.isArray(raw.fields) && raw.thresholds) saved = raw;
+    if (raw && Array.isArray(raw.fields) && raw.version === CONFIG_VERSION) saved = raw;
   } catch { /* fall through to default */ }
-  const def = defaultLocalConfig();
   if (!saved) return def;
-  migrateOldKeys(saved);
-  // Field keys added in a later version aren't in an already-saved config - append them with
-  // their default state instead of leaving the user stuck on the old catalog. Order and
-  // enabled/color of fields the user already has are left untouched.
-  const known = new Set(saved.fields.map(f => f.key));
-  saved.fields.push(...def.fields.filter(f => !known.has(f.key)));
-  return saved;
+
+  const defByKey = new Map(def.fields.map(f => [f.key, f]));
+  const fields = saved.fields
+    .filter(f => f && defByKey.has(f.key))
+    .map(f => ({ key: f.key, enabled: !!f.enabled, color: f.color || defByKey.get(f.key).color }));
+  // A field the saved config never heard of drops in at its default position, not at the bottom.
+  const have = new Set(fields.map(f => f.key));
+  def.fields.forEach((f, i) => { if (!have.has(f.key)) fields.splice(i, 0, { ...f }); });
+  // cli_tag and account are the pinned cluster and have no draggable row, so the UI could never
+  // fix them if a stored order put them elsewhere - force them back to the front.
+  for (const key of ['account', 'cli_tag']) {
+    const idx = fields.findIndex(f => f.key === key);
+    if (idx > 0) fields.unshift(fields.splice(idx, 1)[0]);
+  }
+
+  const thresholds = { ...def.thresholds };
+  for (const k of Object.keys(def.thresholds)) {
+    if (typeof saved.thresholds?.[k] === 'number') thresholds[k] = saved.thresholds[k];
+  }
+  const trunc = { ...def.trunc };
+  for (const k of Object.keys(def.trunc)) trunc[k] = clampTrunc(saved.trunc?.[k], def.trunc[k], k);
+  const separate = typeof saved.separate === 'boolean' ? saved.separate : def.separate;
+  const zebra = { ...def.zebra };
+  for (const k of ['a', 'b']) {
+    if (ZEBRA_SHADES.includes(saved.zebra?.[k])) zebra[k] = saved.zebra[k];
+  }
+  return { version: CONFIG_VERSION, fields, thresholds, trunc, zebra, separate };
 }
 
 const cfg = reactive(loadCfg());
@@ -399,9 +567,52 @@ const busy = ref(false);
 const status = reactive({ msg: '', err: false });
 const results = ref([]);
 const selectedHosts = ref(['local']);
+// Which CLIs Apply writes to. Both are on by default - the previous `['ag']` default meant a plain
+// Apply silently skipped ~/.claude/statusline-command.sh, so edits aimed at Claude Code never
+// landed. Persisted separately from the field config so the choice survives closing the modal.
+const selectedTargets = ref(loadTargets());
 const hostStatus = ref({});
 
+// The two CLI tags drawn inside a host chip. Built here rather than in the template so the chip
+// stays one line and the "only what the host actually has" rule lives in exactly one place.
+const CLI_TAGS = [
+  { cli: 'CC', name: 'Claude Code', present: 'cc_present', configured: 'cc_configured' },
+  { cli: 'AG', name: 'AGY CLI', present: 'ag_present', configured: 'ag_configured' },
+];
+function cliTags(host) {
+  const s = hostStatus.value[host];
+  if (!s) return [];
+  return CLI_TAGS.filter(t => s[t.present]).map(t => ({
+    cli: t.cli,
+    configured: s[t.configured],
+    title: s[t.configured]
+      ? `${t.name}: statusline installed and wired up`
+      : `${t.name}: found, but no statusline wired up yet`,
+  }));
+}
+
+function loadTargets() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TARGETS_KEY) || 'null');
+    if (Array.isArray(raw) && raw.length) return raw.filter(t => t === 'ag' || t === 'cc');
+  } catch { /* fall through to default */ }
+  return ['ag', 'cc'];
+}
+
 watch(cfg, () => localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg)), { deep: true });
+watch(selectedTargets, v => localStorage.setItem(TARGETS_KEY, JSON.stringify(v)), { deep: true });
+
+// The tooltip names the files Apply will actually write, so it can never promise a Claude Code
+// write while the "claude" box is unticked.
+const applyTitle = computed(() => {
+  if (!selectedTargets.value.length) return 'Tick at least one target (agy / claude) above';
+  const what = [];
+  // Both targets get the same two writes: the script, and the settings key that points the CLI at
+  // it. Naming only the script would under-promise - and hide the half whose absence is silent.
+  if (selectedTargets.value.includes('cc')) what.push('~/.claude/statusline-command.sh + patch settings.json');
+  if (selectedTargets.value.includes('ag')) what.push('~/.gemini/antigravity-cli/statusline.sh + patch settings.json');
+  return `Write ${what.join(' and ')} on every checked host`;
+});
 
 const hostOptions = computed(() => {
   const remotes = new Set();
@@ -415,20 +626,17 @@ watch(() => props.show, async (val) => {
   if (!val) return;
   status.msg = '';
   results.value = [];
+  // No backend default to fetch: defaultLocalConfig() above IS the standard. The old call to
+  // `get_default_statusline_config` overwrote it with a second table living in statusline.rs,
+  // which is how the UI ended up showing colors the running script never used.
   Object.assign(cfg, loadCfg());
   resetMasterChecked();
-  if (localStorage.getItem(STORAGE_KEY) == null) {
-    try {
-      const remote = await invoke('get_default_statusline_config');
-      Object.assign(cfg, remote);
-    } catch { /* keep local default */ }
-  }
   checkAndAutoInstall();
 });
 
-// Warns when a host has Claude Code but no statusline wired up yet, then auto-installs it
-// there - hosts with no Claude Code at all are skipped since this app's Claude-only features
-// don't apply to them.
+// Auto-repairs the Claude Code side only: a host with Claude Code but no statusline gets one
+// written, because this app's quota reading depends on that hook existing. AGY is never written
+// without being asked - its tag simply shows hollow until the user ticks AG and applies.
 async function checkAndAutoInstall() {
   try {
     const list = await invoke('check_statusline_status', { hosts: hostOptions.value });
@@ -436,13 +644,20 @@ async function checkAndAutoInstall() {
     for (const s of list) map[s.host] = s;
     hostStatus.value = map;
 
-    const toInstall = list.filter(s => s.claude_installed && !s.statusline_configured).map(s => s.host);
+    const toInstall = list.filter(s => s.cc_present && !s.cc_configured).map(s => s.host);
     if (!toInstall.length) return;
 
     const config = JSON.parse(JSON.stringify(cfg));
-    const autoResults = await invoke('apply_statusline_config', { config, targetHosts: toInstall });
+    // The probe above only looks for the *Claude Code* statusline, so the repair must write that
+    // same target. Leaving it to the backend default installed the AGY file instead and then
+    // marked the host configured - the probe failed again on every reopen, forever.
+    const autoResults = await invoke('apply_statusline_config', {
+      config,
+      targetHosts: toInstall,
+      selectedTargets: ['cc']
+    });
     for (const r of autoResults) {
-      if (hostStatus.value[r.host]) hostStatus.value[r.host].statusline_configured = r.ok;
+      if (hostStatus.value[r.host]) hostStatus.value[r.host].cc_configured = r.ok;
     }
     const ok = autoResults.filter(r => r.ok).map(r => r.host);
     if (ok.length) {
@@ -459,18 +674,12 @@ function fieldEnabled(key) { return !!fieldByKey(key)?.enabled; }
 function setFieldEnabled(key, val) {
   const f = fieldByKey(key);
   if (f) f.enabled = val;
-  // Turning a parent off takes its dependants down with it, so the stored config can never hold a
-  // dependant that is on while the field it qualifies is off - the preview and the generated
-  // script both read `enabled` directly and would otherwise disagree with the greyed-out checkbox.
-  if (!val) {
-    for (const g of GROUPS) {
-      for (const line of g.lines) {
-        for (const c of segmentsOf(line).flatMap(s => s.controls || [])) {
-          if (c.type === 'toggle' && c.dependsOn === key) setFieldEnabled(c.key, false);
-        }
-      }
-    }
-  }
+  // Deliberately NOT cascading into the children. A gate decides whether the group is reachable,
+  // it does not own what is inside it: turning the gate off must leave every child's stored
+  // enabled state untouched, so turning it back on restores exactly what the user had. Rendering
+  // and interactivity are gated by fieldActive()/controlBlocked() instead - the same semantics as
+  // a disabled <fieldset>. Writing false into the children here is destructive and loses their
+  // choices; that is the bug this comment exists to stop coming back.
 }
 // A master checkbox (identity's "id", cache's "Cache") decides its children's on/off - it does
 // NOT reflect them. Toggling one child (e.g. cache's "%") must never flip the master's own
@@ -489,7 +698,25 @@ function toggleMaster(keys, val) {
   keys.forEach(k => setFieldEnabled(k, val));
 }
 function resetMasterChecked() { masterChecked.value = {}; }
-function controlBlocked(control) { return !!control.dependsOn && !fieldEnabled(control.dependsOn); }
+// A field's checkbox is locked while whatever it depends on is inactive. Derived from DEPENDS, so
+// a new dependency needs one line there and nothing here - plus the matching line in the DEPENDS
+// table in statusline.rs, which resolves the same rule into the generated EN_ flags.
+function controlBlocked(control) {
+  const dep = DEPENDS[control.key];
+  return !!dep && !fieldActive(dep);
+}
+// Enabled AND reachable. This - not `enabled` - is what the preview and the generator must ask.
+function fieldActive(key) {
+  if (!fieldEnabled(key)) return false;
+  const dep = DEPENDS[key];
+  return dep ? fieldActive(dep) : true;
+}
+const allFieldsEnabled = computed(() => cfg.fields.every(f => f.enabled));
+function toggleAllFields() {
+  const val = !allFieldsEnabled.value;
+  cfg.fields.forEach(f => setFieldEnabled(f.key, val));
+  resetMasterChecked();
+}
 
 // A line is authored either as one flat `controls` list or as explicit `segments` when part of it
 // is its own visual unit - normalized here so the template renders one shape, not two.
@@ -539,14 +766,19 @@ function lineActive(line) {
 // field rendered through the exact same 1-line/1-toggle(+color) shape. Row order follows first
 // appearance in `cfg.fields`, so this stays a pure read projection - `cfg.fields` remains the
 // only stored order (see `applyRowOrder`, which writes back through this same shape).
+//
+// `cli_tag` is excluded here on purpose - it gets its own pinned, non-draggable row in the
+// template (rendered outside this list) instead of one more entry a user could drag around.
 const rows = computed(() => {
-  const consumed = new Set();
+  // `account` joins cli_tag in the pinned row: the script prints it glued to the tag, sharing that
+  // cluster's own background, so it has no position of its own to drag it to.
+  const consumed = new Set(['cli_tag', 'account']);
   const result = [];
   for (const f of cfg.fields) {
     if (consumed.has(f.key)) continue;
     const group = GROUPS.find(g => g.keys.includes(f.key));
     if (group) {
-      result.push({ id: group.id, keys: group.keys, lines: group.lines });
+      result.push({ id: group.id, keys: group.keys, lines: group.lines, note: group.note });
       group.keys.forEach(k => consumed.add(k));
     } else {
       consumed.add(f.key);
@@ -556,6 +788,9 @@ const rows = computed(() => {
         lines: [{ controls: [
           { type: 'toggle', key: f.key, label: CATALOG[f.key]?.label || f.key },
           { type: 'color', key: f.key },
+          // Bare rows that carry a name the statusline has to cut short get their width input
+          // here, from the same TRUNC_FOR map the preview reads - not a per-field special case.
+          ...(TRUNC_FOR[f.key] ? [{ type: 'trunc', name: TRUNC_FOR[f.key] }] : []),
         ] }],
       });
     }
@@ -604,6 +839,10 @@ function clearDrag() { dragRowId.value = null; dropIndicator.id = null; dropIndi
 function applyRowOrder(idOrder) {
   const byId = new Map(rows.value.map(r => [r.id, r]));
   const newFields = [];
+  // rows excludes cli_tag entirely, so idOrder never mentions it - re-prepend it explicitly or
+  // a drag reorder would silently drop it from cfg.fields instead of just leaving it in place.
+  const pinned = fieldByKey('cli_tag');
+  if (pinned) newFields.push(pinned);
   for (const id of idOrder) {
     const row = byId.get(id);
     if (!row) continue;
@@ -626,7 +865,11 @@ async function apply() {
   results.value = [];
   try {
     const config = JSON.parse(JSON.stringify(cfg));
-    const hostResults = await invoke('apply_statusline_config', { config, targetHosts: [...selectedHosts.value] });
+    const hostResults = await invoke('apply_statusline_config', {
+      config,
+      targetHosts: [...selectedHosts.value],
+      selectedTargets: [...selectedTargets.value]
+    });
     results.value = hostResults;
     const failed = hostResults.filter(r => !r.ok);
     status.err = failed.length > 0;
@@ -641,20 +884,24 @@ async function apply() {
   }
 }
 
-// ---- live preview: mirrors the coloring rules in src-tauri/src/statusline.rs, against fixed
+// ---- live preview: mirrors the rendering rules in src-tauri/src/statusline-unified.sh, against fixed
 // sample data, purely for on-screen feedback (never sent to the backend). ----
 const SAMPLE = {
-  user: 'guest', host: 'roscy', cwd: 'Aki-Dev-Sync', model: 'sonnet 5', effort: 'med',
+  user: 'aki', host: 'akitao', account: 'user-a@example.com', cwd: 'Aki-Dev-Sync', model: 'sonnet 5', effort: 'med',
   ctxPct: 72, ctxUsed: '134.4k', ctxMax: '1M',
   rate5h: 42, rate7d: 92, rate5hEta: '1h12m', rate7dEta: '2d3h',
   duration: '12m', linesAdded: 122, linesRemoved: 52, cost: '$8.40', costUsd: 8.4,
   gitBranch: 'master',
-  cachePct: 78, cacheRead: '12.4k', cacheTotal: '45.2k',
+  cachePct: 78, cacheRead: '12.4k',
+  ramPct: 24,
 };
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 // `bold` is for the session +/- line count glyphs - too small to read at normal weight.
 function span(text, hex, bold) { return `<span style="color:${hex}${bold ? ';font-weight:700' : ''}">${esc(text)}</span>`; }
+// Only the CLI tag has a background - it's a fixed brand color, not a value-driven foreground -
+// so it gets its own tiny helper rather than overloading `span`'s (hex, bold) signature.
+function bgSpan(text, bgHex, fgHex) { return `<span style="background:${bgHex};color:${fgHex};padding:0 3px">${esc(text)}</span>`; }
 function tierHex(pct) {
   const t = cfg.thresholds;
   if (pct >= t.red) return TIER_HEX.red;
@@ -664,42 +911,63 @@ function tierHex(pct) {
   return TIER_HEX.blue;
 }
 const GREY_HEX = '#64748b';
+// The preview truncates exactly where the script does, so the number the user types is visibly
+// the number that lands on the terminal.
+function cut(text, name) { return String(text).slice(0, cfg.trunc[name]); }
 
 function renderField(key) {
   const color = (k, fallback) => HEX[cfg.fields.find(f => f.key === k)?.color] || fallback;
   switch (key) {
+    case 'cli_tag': {
+      // Tag + account are one cluster on a light background (bg 255 for the tag, 252 for the
+      // name), exactly as the script prints them. Each CLI stamps its own label; both are shown
+      // because this single preview stands in for the CC and the AGY output at once.
+      const acct = fieldEnabled('account')
+        // Domain first, width second - the same order the script uses. Cutting the raw address
+        // instead would show "user@" and teach the wrong lesson about what the number does.
+        ? bgSpan(' ' + cut(SAMPLE.account.split('@')[0], 'account'), '#d0d0d0', HEX[fieldByKey('account')?.color] || '#626262')
+        : '';
+      return bgSpan('CC', '#eeeeee', '#d78700') + acct + ' ' + bgSpan('AG', '#eeeeee', '#0087ff') + acct;
+    }
     case 'identity_user':
-      return span(SAMPLE.user, color('identity_user', '#22d3ee'));
+      return span(cut(SAMPLE.user, 'user'), color('identity_user', '#e2e8f0'));
     case 'identity_host':
-      return span(SAMPLE.host, color('identity_host', '#34d399'));
+      return span(cut(SAMPLE.host, 'host'), color('identity_host', '#e2e8f0'));
+    case 'account':
+      // Printed by the cli_tag case above, never as a block of its own.
+      return '';
     case 'cwd':
-      return span(SAMPLE.cwd, color('cwd', '#60a5fa'));
+      return span(cut(SAMPLE.cwd, 'cwd'), color('cwd', '#e879f9'));
     case 'model':
       return span(SAMPLE.model, color('model', '#22d3ee'));
     case 'effort':
       return span(SAMPLE.effort, GREY_HEX);
     case 'context':
-      return span('ctx', '#e2e8f0') + ' ' + span(`${SAMPLE.ctxPct}%`, tierHex(SAMPLE.ctxPct)) + ' ' +
-        span(`${SAMPLE.ctxUsed}/${SAMPLE.ctxMax}`, GREY_HEX);
+      // No percentage: the script dropped it and colors the token count itself against a fixed
+      // 200k scale, because that number is what starts to hurt regardless of the window size.
+      return span('ctx', '#e2e8f0') + span(SAMPLE.ctxUsed, tierHex(SAMPLE.ctxPct)) +
+        span('/', GREY_HEX) + span(SAMPLE.ctxMax, GREY_HEX);
     case 'rate_limits_5h': {
       const resetOn = fieldEnabled('rate_reset_5h');
-      const eta = resetOn ? span(` ${SAMPLE.rate5hEta}`, GREY_HEX) : '';
-      return span('5h', '#e2e8f0') + span(':', GREY_HEX) + span(`${SAMPLE.rate5h}%`, tierHex(SAMPLE.rate5h)) + eta;
+      const eta = resetOn ? span(SAMPLE.rate5hEta, GREY_HEX) : '';
+      return span('5h:', '#e2e8f0') + span(`${SAMPLE.rate5h}%`, tierHex(SAMPLE.rate5h)) + eta;
     }
     case 'rate_limits_7d': {
       const resetOn = fieldEnabled('rate_reset_7d');
-      const eta = resetOn ? span(` ${SAMPLE.rate7dEta}`, GREY_HEX) : '';
-      return span('7d', '#e2e8f0') + span(':', GREY_HEX) + span(`${SAMPLE.rate7d}%`, tierHex(SAMPLE.rate7d)) + eta;
+      const eta = resetOn ? span(SAMPLE.rate7dEta, GREY_HEX) : '';
+      return span('7d:', '#e2e8f0') + span(`${SAMPLE.rate7d}%`, tierHex(SAMPLE.rate7d)) + eta;
     }
     case 'rate_reset_5h':
     case 'rate_reset_7d':
       return '';
     case 'cache_pct':
-      return span(`${SAMPLE.cachePct}%`, tierHex(100 - SAMPLE.cachePct));
+      // Static grey in the script, not on the ladder - a high cache hit rate is good news and
+      // must not shout in red.
+      return span('↬', '#e2e8f0') + span(`${SAMPLE.cachePct}%`, GREY_HEX);
     case 'cache_tokens':
       return span(SAMPLE.cacheRead, GREY_HEX);
     case 'session': {
-      let out = span('ss', '#e2e8f0') + ' ' + span(SAMPLE.duration, color('session', GREY_HEX));
+      let out = span('ss', '#e2e8f0') + span(SAMPLE.duration, color('session', GREY_HEX));
       if (SAMPLE.linesAdded || SAMPLE.linesRemoved) {
         out += ' ' + span(`+${SAMPLE.linesAdded}`, '#34d399', true) + span('/', GREY_HEX) + span(`-${SAMPLE.linesRemoved}`, '#f87171', true);
       }
@@ -707,42 +975,66 @@ function renderField(key) {
       return out;
     }
     case 'git_branch':
-      return span(SAMPLE.gitBranch, color('git_branch', '#e879f9'));
+      return span(cut(SAMPLE.gitBranch, 'branch'), color('git_branch', '#e879f9'));
+    case 'ram':
+      // Static grey like the script: whole-machine RAM is context, not something the ladder
+      // should escalate about mid-session.
+      return span('⚅', '#e2e8f0') + span(`${SAMPLE.ramPct}%`, color('ram', GREY_HEX));
     default:
       return '';
   }
 }
 
-// Mirrors the join in statusline.rs: a group's enabled members are joined by the group's own `sep`
-// into one block, and only whole blocks get the ` | ` separator. A group contributes its block
-// once, at the position of its first enabled member.
+// Mirrors the block assembly in the script: a group's active members are joined by the group's own
+// `sep` into one block, and a group contributes that block once, at the position of its first
+// active member - the same rule block_order() applies in statusline.rs.
 const previewHtml = computed(() => {
   const blocks = [];
   const done = new Set();
   for (const f of cfg.fields) {
-    if (!f.enabled || done.has(f.key)) continue;
+    if (!fieldActive(f.key) || done.has(f.key)) continue;
     const group = GROUPS.find(g => g.keys.includes(f.key));
     if (!group) {
-      blocks.push(renderField(f.key));
+      const html = renderField(f.key);
+      // `tag` marks the cluster that paints its own background - see the zebra loop below.
+      if (html) blocks.push({ html, tag: f.key === 'cli_tag' });
       continue;
     }
     group.keys.forEach(k => done.add(k));
-    const inner = group.keys.filter(fieldEnabled).map(renderField).filter(Boolean);
-    // `sep` defaults to a space for groups that don't declare one (matches statusline.rs); a
-    // non-space separator is printed white, like a label, since it is punctuation the user reads.
-    const sep = group.sep && group.sep !== ' ' ? span(group.sep, '#e2e8f0') : ' ';
+    const inner = group.keys.filter(fieldActive).map(renderField).filter(Boolean);
+    // A group that declares no `sep` at all defaults to a space (matches statusline.rs). An
+    // explicitly empty `sep` means "glue the members together" and must survive this check - hence
+    // the `=== undefined` test rather than a truthiness one. A non-space separator is printed
+    // white, like a label, since it is punctuation the user reads.
+    const raw = group.sep === undefined ? ' ' : group.sep;
+    const sep = raw && raw !== ' ' ? span(raw, group.sepColor || '#e2e8f0') : raw;
     if (inner.length) {
       const joined = inner.join(sep);
-      blocks.push(group.groupLabel ? span(group.groupLabel, '#e2e8f0') + ' ' + joined : joined);
+      blocks.push({ html: joined, tag: false });
     }
   }
-  const parts = blocks.filter(Boolean);
+  const parts = blocks.filter(b => b && b.html);
   if (!parts.length) return '<span style="color:#374151">(no fields enabled)</span>';
-  // Each block, plus the separator that follows it, is one unbreakable inline-block: the preview
-  // wraps between blocks the way the real statusline does in a narrow terminal, instead of
-  // breaking mid-word and splitting a value away from its label.
+  // Each block is one unbreakable inline-block: the preview wraps between blocks the way the real
+  // statusline does in a narrow terminal, instead of breaking mid-word and splitting a value away
+  // from its label. Blocks butt directly against each other - no separator glyph, no padding
+  // space; the boundary is drawn by the alternating background alone.
+  //
+  // The tag cluster carries its own light background and is NOT part of the zebra, so it must not
+  // consume an alternation slot either - counting it would shift every following block onto the
+  // wrong shade and make the preview disagree with the terminal.
+  let zi = 0;
   return parts
-    .map((html, i) => `<span class="pv-block">${html}${i < parts.length - 1 ? span(' | ', GREY_HEX) : ''}</span>`)
+    .map(({ html, tag }) => {
+      // The tag cluster paints its own background and is never padded - it has to stay glued to
+      // the account name beside it.
+      if (tag) return `<span class="pv-block">${html}</span>`;
+      const bg = zebraHex(zi++ % 2 === 0 ? cfg.zebra.a : cfg.zebra.b);
+      // A NON-BREAKING space, not a plain one: leading/trailing whitespace inside an inline-block
+      // is collapsed away by the HTML layout, which made this toggle look like it did nothing.
+      const pad = cfg.separate ? '\u00a0' : '';
+      return `<span class="pv-block" style="background:${bg}">${pad}${html}${pad}</span>`;
+    })
     .join('');
 });
 </script>
@@ -772,8 +1064,10 @@ const previewHtml = computed(() => {
   word-break: normal;
 }
 
-/* One statusline block (a field, or a whole group) plus its trailing separator. inline-block +
-   nowrap makes the line break between blocks rather than inside one. */
+/* One statusline block (a field, or a whole group). inline-block + nowrap makes the line break
+   between blocks rather than inside one. The alternating background is set inline per block (see
+   previewHtml) and is the only thing separating two blocks - so no margin or padding here, or the
+   gap would reintroduce the separator this design removed. */
 :deep(.pv-block) {
   display: inline-block;
   white-space: nowrap;
@@ -786,6 +1080,28 @@ const previewHtml = computed(() => {
   letter-spacing: 0.4px;
   color: #94a3b8;
   margin-top: 6px;
+}
+.fields-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.toggle-all-btn {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #94a3b8;
+  background: none;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 1px 7px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.toggle-all-btn:hover {
+  color: #e2e8f0;
+  border-color: #6b7280;
 }
 
 .hint {
@@ -830,6 +1146,16 @@ const previewHtml = computed(() => {
 
 .drag-handle:active { cursor: grabbing; }
 
+.pinned-row { margin-bottom: 3px; }
+.pin-icon {
+  color: #475569;
+  font-size: 10px;
+  align-self: center;
+  padding: 0 2px;
+  flex-shrink: 0;
+  cursor: default;
+}
+
 .row-lines {
   display: flex;
   flex-direction: column;
@@ -855,7 +1181,55 @@ const previewHtml = computed(() => {
   min-width: 0;
 }
 
-.ctl-toggle input { accent-color: #d97757; cursor: pointer; flex-shrink: 0; }
+/* One checkbox shape for the whole modal. The native control renders as a light filled square,
+   which at 14px sat right beside the color swatches and read as "the white color". This one is
+   hollow when off and carries a drawn check when on - a state, not a color sample. */
+.ctl-toggle input[type="checkbox"],
+.host-chip input[type="checkbox"],
+.sep-toggle input[type="checkbox"],
+.target-check-item input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+}
+
+.ctl-toggle input[type="checkbox"]:checked,
+.host-chip input[type="checkbox"]:checked,
+.sep-toggle input[type="checkbox"]:checked {
+  background: #d97757;
+  border-color: #d97757;
+}
+
+/* Same shape, the violet the "Apply to" pair already used - it marks scope, not a field. */
+.target-check-item input[type="checkbox"]:checked {
+  background: #a78bfa;
+  border-color: #a78bfa;
+}
+
+/* The check itself: two borders rotated into a tick, so it needs no font or icon file. */
+.ctl-toggle input[type="checkbox"]:checked::after,
+.host-chip input[type="checkbox"]:checked::after,
+.sep-toggle input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0.5px;
+  width: 3px;
+  height: 6px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.ctl-toggle input[type="checkbox"]:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .ctl-master { font-weight: 600; }
 
@@ -971,6 +1345,86 @@ const previewHtml = computed(() => {
   flex-shrink: 0;
 }
 
+/* The "separate" switch rides in the section label rather than taking a row of its own - it is a
+   property of the backgrounds named right beside it (extreme-narrow rule, CLAUDE.md). */
+.sep-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: none;
+  color: #64748b;
+  cursor: pointer;
+}
+.sep-toggle input { margin: 0; }
+
+/* A row's one-line note: states behaviour the row has no control for, so the user stops looking
+   for the switch. Recessed - it is not another setting. */
+.row-note {
+  font-size: 9px;
+  color: #475569;
+  font-style: italic;
+  line-height: 1.2;
+}
+
+/* Per-field truncate width. Sits inline in the row it belongs to rather than in a settings block
+   of its own - the number means nothing away from the field it cuts. */
+.ctl-trunc {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #64748b;
+  font-size: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ctl-trunc input {
+  width: 30px;
+  padding: 1px 2px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 3px;
+  color: #cbd5e1;
+  font-size: 10px;
+  text-align: center;
+}
+.ctl-trunc input:focus {
+  outline: none;
+  border-color: #334155;
+}
+
+/* Zebra background pickers: two rows of neutral shades only. */
+.zebra-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.zebra-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.zebra-name {
+  width: 32px;
+  color: #64748b;
+  font-size: 10px;
+}
+.zebra-swatch {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #1e293b;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.zebra-swatch.sel {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
+
 /* Dynamic-color threshold bar: proportional colored bands + minimal number inputs. */
 .ladder-bar {
   display: flex;
@@ -1021,25 +1475,38 @@ const previewHtml = computed(() => {
 .row-enter-from, .row-leave-to { opacity: 0; }
 .row-leave-active { position: absolute; }
 
-.host-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.host-list { display: flex; flex-wrap: wrap; gap: 4px; }
 
+/* Square, tight, data-dense - a pill with 10px side padding spent most of its width on air. */
 .host-chip {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: 10px;
   color: #94a3b8;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 4px 10px;
+  border-radius: 3px;
+  padding: 2px 5px;
   cursor: pointer;
 }
 
-.host-chip input { accent-color: #d97757; cursor: pointer; }
 .host-chip.active { color: #fba97a; border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
-.host-chip.warn { border-color: rgba(251, 191, 36, 0.5); }
-.warn-icon { color: #fbbf24; font-size: 9px; }
+
+/* Per-CLI state, inside the chip. Lit = renders a line; hollow amber = CLI present, nothing wired.
+   Deliberately a bordered rectangle with a letter in it - a color swatch is a solid, borderless
+   square of a single color, so the two can never be read as the same control. */
+.cli-tag {
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 2px 3px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+.cli-tag.on { color: #0f172a; background: #4ade80; }
+.cli-tag.off { color: #fbbf24; border-color: rgba(251, 191, 36, 0.55); background: transparent; }
 
 .no-remotes { width: 100%; font-size: 10px; }
 
@@ -1123,6 +1590,43 @@ const previewHtml = computed(() => {
 }
 
 .btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
+
+.modal-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.modal-title-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-target-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+}
+
+.target-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.target-check-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
 
 /* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global
    narrow rule, so the trim has to be repeated here. */

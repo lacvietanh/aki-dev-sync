@@ -79,6 +79,14 @@ check) - xem `docs/feat/sync-check-and-usage-switches.md`.
 Kèm `BatchMode=yes`, `ConnectTimeout=10`, `ServerAliveInterval=5`, `ServerAliveCountMax=3`.
 Thiếu `ConnectTimeout`, một host bão hoà có thể đốt trọn ngân sách 30s chỉ ở khâu bắt tay TCP.
 
+### Một khoá cho mỗi host
+
+`run_interpreter_timeout()` lấy `host_lock(host)` (registry `HashMap<host, Arc<Mutex<()>>>`) trước
+khi spawn. Vì mọi lệnh remote của app đều đi qua funnel này, hai tính năng khác nhau (probe
+statusline, Apply, poll usage, git info) không bao giờ bắn SSH chồng lên **cùng một host**; host
+khác nhau vẫn chạy song song bình thường. Khoá dùng `unwrap_or_else(|e| e.into_inner())` để một
+panic không khoá chết host đó vĩnh viễn.
+
 ### Mọi lệnh `claude` chạy xa đều có giới hạn tại chỗ
 
 `CLAUDE_BIN_RESOLVER_PREAMBLE` đặt `AKI_CLAUDE_TMO` - prefix bound 45s cho mọi lệnh `claude`,
@@ -98,6 +106,46 @@ Preamble này cũng resolve `$CLAUDE_BIN` bằng kiểm tra file tĩnh trước 
 
 Khi turn của CLI đẩy ra JSON **không có** `rate_limits`, script merge nguyên vẹn cục
 `rate_limits` cũ từ cache vào JSON mới - **không fabricate** giá trị.
+
+Từ 1.18.0 (`aki-rlcache v4`), việc merge đó có hai điều kiện bắt buộc - đánh dấu `DESIGN LOCK`
+ngay trong script `src-tauri/src/statusline-unified.sh` (khối `# aki-rlcache v4`, chỉ chạy khi
+`CLI=CC`; xem `docs/feat/statusline-customizer.md`):
+- entry đã qua `resets_at` bị **loại**, không hiển thị (`resets_at: 0` = "không rõ", vẫn giữ);
+- cache ghi kèm account đã ghi nó; cache của account khác (hoặc cache cũ 1.10.0-1.17.0 không có
+  field `account` trong khi máy đang biết account) bị bỏ, không đọc.
+
+Thiếu hai điều kiện này, một field lọt vào cache sẽ sống vĩnh viễn (merge chỉ thêm/ghi đè key có
+trong payload, không bao giờ xoá key vắng mặt) - đúng nguyên nhân của quota ma `7d 45%` cho account
+không hề có weekly limit. Chi tiết: `docs/plan/1.18.0-statusline-apply-correctness.md` §P0-5.
+
+Hai điều kiện này được test khoá lại (`cc_drops_a_cached_quota_whose_reset_has_passed`,
+`cc_ignores_a_cache_written_by_another_account`), cùng với việc **nhánh AGY không bao giờ đọc/ghi
+file cache này** (`agy_never_touches_the_claude_rate_limit_cache`). Cách chạy các test đó trên máy
+không build được Tauri: `docs/research/statusline-generator-test-suite.md`.
+
+### Hai gate, hai vai trò khác nhau
+
+Gate ở trên nằm trong `statusLine` hook (Rust generate ra, chạy trên máy được theo dõi) - đó là
+phía **ghi**: "dọn tận gốc", loại field trước khi nó kịp ghi xuống `rate-limits-cache.json`. Nhưng
+hook đó chỉ chạy trên host **đã** nhận bản script mới; một host chưa được Apply lại vẫn có thể ghi
+ra một cache không có field `account`, hoặc một cache có `resets_at` đã qua mà không ai dọn.
+
+Vì vậy `scripts/get-claudecode-usage.sh` (phía **đọc**, chạy mỗi ~30s cả local lẫn qua SSH) áp lại
+đúng hai gate đó một lần nữa, ngay trước khi ghi ra stdout - "lọc lúc hiển thị", không đụng tới file:
+
+1. **Account gate**: so `account` trong cache với `.oauthAccount.emailAddress` hiện tại
+   (`~/.claude.json`). Hai bên đều có giá trị và khác nhau → toàn bộ cache bị coi là không đáng
+   tin, script không in gì ra stdout (giống hệt nhánh "thiếu file cache"). Cache cũ (v2/v3, không
+   có field `account`) **không** bị bỏ theo cách này - nếu bỏ, mọi host chưa được vá lại sẽ mất
+   trắng quota hiển thị; script chỉ log cảnh báo là host đó nên được Apply lại.
+2. **Expiry gate**, áp cho từng entry trong `rate_limits`: bỏ entry có `resets_at` đã qua; bỏ luôn
+   entry có `resets_at` bằng 0 hoặc thiếu - một cửa sổ không xác minh được chính là hình dạng của
+   quota ma `7d` năm xưa, không hiện còn an toàn hơn hiện sai.
+3. Sau khi lọc, `rate_limits` rỗng → cũng không in gì ra stdout.
+
+Script đọc **không bao giờ** ghi lại hay xoá `rate-limits-cache.json` - việc đó vẫn là của
+statusLine hook. Nếu `python3` lỗi phân tích JSON, coi như "không có dữ liệu đáng tin", không cho
+`set -e` giết cả script và không rơi về in nguyên file thô.
 
 Tier hiển thị (Pro/Max): đọc `.credentials.json` trước; file này không còn trên bản CC mới nên
 fallback sang parse `subscriptionType` từ `claude auth status` (đã cache). `rateLimitTier`

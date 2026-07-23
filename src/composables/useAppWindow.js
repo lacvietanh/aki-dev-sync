@@ -9,8 +9,23 @@ import {
 } from "@tauri-apps/api/window";
 
 const PIN_STORAGE_KEY = "aki-devsync-pin-all-spaces";
+const VIEW_REMEMBER_KEY = "aki-devsync-remember-view";
+const VIEW_STORAGE_KEY = "aki-devsync-window-view";
 
 const isPinned = ref(localStorage.getItem(PIN_STORAGE_KEY) === "true");
+const rememberView = ref(localStorage.getItem(VIEW_REMEMBER_KEY) === "true");
+
+function readSavedView() {
+  try {
+    return JSON.parse(localStorage.getItem(VIEW_STORAGE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+// The last preset picked on each axis, or {} when nothing is remembered. Reactive so the menu
+// can show which preset is currently the remembered one instead of describing it in words.
+const savedView = ref(readSavedView());
 
 // Width presets (logical px). NARROW matches tauri.conf.json's minWidth (420) exactly.
 const NARROW_WIDTH = 420;
@@ -94,12 +109,68 @@ export function useAppWindow() {
     }
   }
 
-  function setNarrowWidth() {
-    return setWidthPreset(NARROW_WIDTH);
+  /**
+   * The window presets the menu offers, grouped by the axis each one owns: `width` resizes,
+   * `place` positions. Two axes rather than one flat list because they are independent - a
+   * remembered "narrow" must survive picking "Center Primary" afterwards.
+   */
+  const VIEWS = {
+    width: {
+      narrow: () => setWidthPreset(NARROW_WIDTH),
+      wide: () => setWidthPreset(WIDE_WIDTH),
+    },
+    place: {
+      stick: () => stickTopLeft(),
+      center: () => centerPrimary(),
+    },
+  };
+
+  /**
+   * The two presets ⌘1 / ⌘2 fire, one per column of the menu's 2x2 preset grid: the whole
+   * column, both axes, so one keystroke lands a complete layout instead of half of one.
+   */
+  const VIEW_COMBOS = {
+    1: { width: "narrow", place: "stick" },
+    2: { width: "wide", place: "center" },
+  };
+
+  /** Applies one preset and, while "remember" is on, records it as that axis' saved choice. */
+  function applyView(axis, name) {
+    if (rememberView.value) {
+      savedView.value = { ...savedView.value, [axis]: name };
+      localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(savedView.value));
+    }
+    return VIEWS[axis][name]();
   }
 
-  function setWideWidth() {
-    return setWidthPreset(WIDE_WIDTH);
+  /** Width before placement, for the same reason `restoreView` does it in that order. */
+  async function applyViewCombo(slot) {
+    const combo = VIEW_COMBOS[slot];
+    if (!combo) return;
+    await applyView("width", combo.width);
+    await applyView("place", combo.place);
+  }
+
+  function toggleRememberView() {
+    rememberView.value = !rememberView.value;
+    localStorage.setItem(VIEW_REMEMBER_KEY, String(rememberView.value));
+    // Turning it off drops what was remembered - leaving a stale preset behind would make the
+    // next toggle-on silently restore a layout the user never picked in that session.
+    if (!rememberView.value) {
+      savedView.value = {};
+      localStorage.removeItem(VIEW_STORAGE_KEY);
+    }
+  }
+
+  /**
+   * Replays the remembered presets on launch. Width first: "Stick Top-Left" measures height
+   * against the *current* width, so restoring it before the width would fit the wrong layout.
+   */
+  async function restoreView() {
+    if (!rememberView.value) return;
+    const { width, place } = savedView.value;
+    if (VIEWS.width[width]) await VIEWS.width[width]();
+    if (VIEWS.place[place]) await VIEWS.place[place]();
   }
 
   /**
@@ -151,9 +222,11 @@ export function useAppWindow() {
     isPinned,
     togglePin,
     restorePin,
-    setNarrowWidth,
-    setWideWidth,
-    stickTopLeft,
-    centerPrimary,
+    applyView,
+    applyViewCombo,
+    savedView,
+    rememberView,
+    toggleRememberView,
+    restoreView,
   };
 }

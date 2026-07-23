@@ -1,48 +1,70 @@
-// @docs docs/plan/statusline-customizer.md
-// Generates a Claude Code statusline-command.sh from a user-editable field/order/color config,
-// then pushes it (+ patches settings.json's statusLine key) to local and/or remote hosts.
+// @docs docs/ref/statusline-unified-spec.md
+// Generates the ONE unified statusline script (Claude Code + AGY CLI share the same file, which
+// self-identifies from $0), then pushes it - and, for Claude Code, a settings.json patch - to the
+// local and/or remote hosts the user ticked.
 //
-// Field catalog is intentionally NOT the full 41-key statusLine schema (see the plan doc) - it
-// covers the groups already present in the hand-tuned reference script this was built from, plus
-// one defensive git-branch field. Adding a field later means one new match arm in
-// `render_field()` + one catalog entry in `default_config()`, nothing structural.
+// SSOT: this module holds NO defaults. Every value below arrives from the Statusline Customizer
+// (src/components/modals/ClaudeSettingModal.vue, defaultLocalConfig()) and every line of shell
+// comes from the template (statusline-unified.sh, beside this file). All this file does is patch the one
+// into the other. A default table here would be a second source of truth, which is exactly the
+// drift Phase 2 removed - do not reintroduce one.
 
-use crate::agent_usage::run_remote_script;
+use crate::agent_usage::run_remote_script_bounded;
 use serde::{Deserialize, Serialize};
+
+/// The script itself, compiled in verbatim. It is a runnable, checked-in reference as well as the
+/// template: the region between the two markers below is the only part Apply rewrites.
+const TEMPLATE: &str = include_str!("statusline-unified.sh");
+const MARK_BEGIN: &str = "# >>> AKI-GENERATED-CONFIG >>>";
+const MARK_END: &str = "# <<< AKI-GENERATED-CONFIG <<<";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StatuslineField {
     pub key: String,
     pub enabled: bool,
-    /// Only honored for fields whose label color is user-editable (see FIELD_COLOR_EDITABLE).
-    /// Fields with intrinsic meaning (identity, %, +/-) keep their locked-in colors regardless
-    /// of what's stored here.
+    /// Only honored for the keys in COLOR_KEYS; every other field's color is computed from its
+    /// value (the UI shows "Dynamic color" and offers no picker).
     pub color: String,
 }
 
-/// The percentage at which each tier of the dynamic-color ladder starts. Below `green` the value
-/// is blue - "plenty left", the calmest colour, deliberately not a warning shade.
-///
-/// The bands are intentionally uneven: they narrow as the value gets more urgent, so the top of
-/// the range gets more resolution than the bottom where nothing is at stake yet.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StatuslineThresholds {
-    /// Added after the 4-tier ladder shipped, so old saved configs have no value for it.
-    #[serde(default = "default_green_threshold")]
     pub green: u8,
     pub yellow: u8,
     pub orange: u8,
     pub red: u8,
 }
 
-fn default_green_threshold() -> u8 {
-    25
+#[derive(Serialize, Deserialize, Clone)]
+pub struct StatuslineTrunc {
+    pub account: u8,
+    pub user: u8,
+    pub host: u8,
+    pub cwd: u8,
+    pub branch: u8,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct StatuslineZebra {
+    pub a: u8,
+    pub b: u8,
+}
+
+/// Deliberately WITHOUT `#[serde(default)]` on any field, against the usual "new serde fields on
+/// persisted JSON need a default" rule (RULE-stack-tauri B3). That rule guards against a field
+/// silently dropping to nothing; here the opposite is wanted. A default here would be a Rust-side
+/// default, i.e. the second source of truth this whole module exists to remove - and it cannot
+/// happen by accident anyway: `loadCfg()` in the Vue component always builds the complete shape,
+/// and a stored config from an older `CONFIG_VERSION` is discarded rather than sent. So a missing
+/// field means a genuinely malformed payload, and failing the Apply loudly beats writing a script
+/// from values the user never chose.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StatuslineConfig {
     pub fields: Vec<StatuslineField>,
     pub thresholds: StatuslineThresholds,
+    pub trunc: StatuslineTrunc,
+    pub zebra: StatuslineZebra,
+    pub separate: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -52,14 +74,67 @@ pub struct HostApplyResult {
     pub message: String,
 }
 
-/// Fields whose label color the user may override. Everything else keeps its locked-in,
-/// semantically-meaningful color (identity user/@/host, %, +/-, session duration/cache read
-/// count - both grey qualifiers, not a value the eye should be steered to by color choice).
-fn field_color_editable(key: &str) -> bool {
-    matches!(
-        key,
-        "identity_user" | "identity_host" | "cwd" | "model" | "git_branch"
-    )
+/// Every EN_ flag the template declares, in template order. A key here that the UI never sends
+/// still gets a flag (0), so a stale saved config can never leave a gate undefined.
+const EN_KEYS: &[&str] = &[
+    "cli_tag",
+    "account",
+    "identity_user",
+    "identity_host",
+    "cwd",
+    "model",
+    "effort",
+    "context",
+    "cache",
+    "cache_pct",
+    "cache_tokens",
+    "rate_limits_5h",
+    "rate_reset_5h",
+    "rate_limits_7d",
+    "rate_reset_7d",
+    "session",
+    "git_branch",
+    "ram",
+];
+
+/// The keys whose color the user picks. Mirrors COLOR_EDITABLE in ClaudeSettingModal.vue and the
+/// COLOR_* block in the template - all three lists must name the same six keys, or the UI grows a
+/// picker that changes nothing.
+const COLOR_KEYS: &[&str] = &[
+    "identity_user",
+    "identity_host",
+    "cwd",
+    "model",
+    "git_branch",
+    "account",
+];
+
+/// (child, parent). Mirrors DEPENDS in ClaudeSettingModal.vue: a child is only reachable while its
+/// parent is on. Resolved here so the generated flags are already final and no shell gate has to
+/// re-check a parent.
+const DEPENDS: &[(&str, &str)] = &[
+    ("effort", "model"),
+    ("rate_reset_5h", "rate_limits_5h"),
+    ("rate_reset_7d", "rate_limits_7d"),
+    ("cache_pct", "cache"),
+    ("cache_tokens", "cache"),
+];
+
+/// Which printed block a field belongs to. `None` = printed outside the block loop (the tag
+/// cluster) or unknown to this version of the template.
+fn block_of(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "identity_user" | "identity_host" => "identity",
+        "cwd" => "cwd",
+        "model" | "effort" => "model",
+        "context" => "context",
+        "cache" | "cache_pct" | "cache_tokens" => "cache",
+        "rate_limits_5h" | "rate_reset_5h" | "rate_limits_7d" | "rate_reset_7d" => "quota",
+        "session" => "session",
+        "git_branch" => "git_branch",
+        "ram" => "ram",
+        _ => return None,
+    })
 }
 
 fn ansi_for(name: &str) -> &'static str {
@@ -76,76 +151,25 @@ fn ansi_for(name: &str) -> &'static str {
     }
 }
 
-/// Default catalog + order, matching the hand-tuned preset already locked in during the planning
-/// chat (see docs/plan/statusline-customizer.md). Used as the Vue-side fallback default too (kept
-/// in sync manually - small, stable list).
-///
-/// Color doctrine these defaults follow (docs/feat/statusline-customizer.md):
-/// white = labels, cyan = ordinary information, grey = supporting detail (raw token counts,
-/// separators, qualifiers), dynamic = anything that must be *noticed*. "Which machine" and
-/// "where am I" get their own standout hues (magenta host, yellow cwd) because they are what the
-/// eye looks for first when several terminals are open.
-pub fn default_config() -> StatuslineConfig {
-    let f = |key: &str, enabled: bool, color: &str| StatuslineField {
-        key: key.to_string(),
-        enabled,
-        color: color.to_string(),
-    };
-    StatuslineConfig {
-        fields: vec![
-            f("identity_user", true, "grey"),
-            f("identity_host", true, "magenta"),
-            f("cwd", true, "yellow"),
-            f("model", true, "cyan"),
-            f("effort", true, "grey"),
-            f("context", true, "white"),
-            f("rate_limits_5h", true, "white"),
-            f("rate_reset_5h", false, "grey"),
-            f("rate_limits_7d", true, "white"),
-            f("rate_reset_7d", false, "grey"),
-            f("session", true, "grey"),
-            f("git_branch", true, "magenta"),
-            f("cache_pct", false, "white"),
-            f("cache_tokens", false, "grey"),
-        ],
-        // Uneven by design (see StatuslineThresholds): wide calm bands at the bottom, narrow
-        // urgent ones at the top.
-        thresholds: StatuslineThresholds { green: 25, yellow: 51, orange: 75, red: 90 },
+// The returned reference borrows from `config`, not from `key` - tying both inputs to one lifetime
+// (as the compiler's suggestion does) would force callers to keep the key alive as long as the config.
+fn field<'a>(config: &'a StatuslineConfig, key: &str) -> Option<&'a StatuslineField> {
+    config.fields.iter().find(|f| f.key == key)
+}
+
+/// Enabled AND reachable - the same rule as fieldActive() in the Vue component. A field the config
+/// does not mention at all counts as off.
+fn is_active(config: &StatuslineConfig, key: &str) -> bool {
+    if !field(config, key).map(|f| f.enabled).unwrap_or(false) {
+        return false;
+    }
+    match DEPENDS.iter().find(|(child, _)| *child == key) {
+        Some((_, parent)) => is_active(config, parent),
+        None => true,
     }
 }
 
-/// Fields that render as one visual unit: their blocks are joined by the group's own `sep` instead
-/// of the ` | ` separator, so the statusline reads them as a single group. Members stay independently
-/// toggleable and independently ordered-as-a-unit. Mirrored by `GROUPS` in
-/// `src/components/modals/ClaudeSettingModal.vue` (the customizer UI and live preview) - the two
-/// lists must stay in sync, so a group added here needs the matching UI entry there.
-/// Non-rendering flag keys (`rate_reset_*`) are deliberately absent: they modify another field's
-/// block rather than producing one of their own.
-pub struct Group {
-    pub id: &'static str,
-    pub keys: &'static [&'static str],
-    /// Shell expression for what goes between two members. Most groups just want a space; identity
-    /// wants a literal `@` with no padding, which is the only reason this is configurable.
-    pub sep: &'static str,
-    /// A fixed white label prepended once, only when the group produced non-empty output. For
-    /// cache: neither `cache_pct` nor `cache_tokens` prints "cache" itself (see their match arms
-    /// below), so the label has to live on the group or it disappears whichever member is off.
-    pub label: Option<&'static str>,
-}
-
-const GROUPS: &[Group] = &[
-    Group { id: "identity", keys: &["identity_user", "identity_host"], sep: r#"$(colored "$WHITE" "@")"#, label: None },
-    Group { id: "model", keys: &["model", "effort"], sep: " ", label: None },
-    Group { id: "quota", keys: &["rate_limits_5h", "rate_limits_7d"], sep: " ", label: None },
-    Group { id: "cache", keys: &["cache_pct", "cache_tokens"], sep: " ", label: Some("cache") },
-];
-
-fn group_of(key: &str) -> Option<&'static Group> {
-    GROUPS.iter().find(|g| g.keys.contains(&key))
-}
-
-/// Clamps to 0-100 and sorts, so a user who types the tiers out of order still gets a monotonic
-/// ladder rather than a tier that can never be reached.
+/// Ascending, so the ladder can never be inverted by a config that has red below green.
 fn sanitized_thresholds(t: &StatuslineThresholds) -> (u8, u8, u8, u8) {
     let mut v = [
         t.green.min(100),
@@ -157,483 +181,305 @@ fn sanitized_thresholds(t: &StatuslineThresholds) -> (u8, u8, u8, u8) {
     (v[0], v[1], v[2], v[3])
 }
 
-const HELPERS: &str = r#"
-colored() { printf '%s%s%s' "$1" "$2" "$RESET"; }
-
-# Joins the non-empty arguments with $1. Used to compose a group (see GROUPS in statusline.rs)
-# into one block, so its members read as one unit and a member that produced no output - disabled,
-# or no data this turn - leaves no stray separator behind.
-join_with() {
-  sep="$1"; shift
-  out=""
-  for part in "$@"; do
-    [ -z "$part" ] && continue
-    if [ -z "$out" ]; then out="$part"; else out="$out$sep$part"; fi
-  done
-  printf '%s' "$out"
+/// Into the neutral greyscale ramp the UI's picker is restricted to (16, or 232..=255). A clamp,
+/// not a fallback to some "default" shade - this module owns no defaults.
+fn sanitized_shade(n: u8) -> u8 {
+    if n == 16 {
+        16
+    } else {
+        n.clamp(232, 255)
+    }
 }
 
-fmt_k() {
-  awk -v t="$1" 'BEGIN {
-    if (t >= 1000000) { m = t/1000000; if (m == int(m)) printf "%dM", m; else printf "%.1fM", m }
-    else if (t >= 1000) { printf "%.1fk", t/1000 }
-    else { printf "%d", t }
-  }'
-}
-
-fmt_dur() {
-  ms="$1"
-  s=$(( ${ms%.*} / 1000 ))
-  h=$(( s / 3600 ))
-  m=$(( (s % 3600) / 60 ))
-  if [ "$h" -gt 0 ]; then printf '%dh%dm' "$h" "$m"; else printf '%dm' "$m"; fi
-}
-
-round_pct() {
-  awk -v p="$1" 'BEGIN{printf "%.0f", p}'
-}
-
-fmt_eta() {
-  epoch="$1"
-  [ -z "$epoch" ] || [ "$epoch" = "0" ] && return
-  now=$(date +%s)
-  diff=$(( epoch - now ))
-  [ "$diff" -le 0 ] && return
-  d=$(( diff / 86400 ))
-  h=$(( (diff % 86400) / 3600 ))
-  m=$(( (diff % 3600) / 60 ))
-  if [ "$d" -gt 0 ]; then printf '%dd%dh' "$d" "$h"; else printf '%dh%dm' "$h" "$m"; fi
-}
-
-rate_block() {
-  label="$1" used="$2" reset="$3"
-  [ "$used" = "-1" ] && return
-  used_int=$(round_pct "$used")
-  pct_color=$(color_for_pct "$used_int")
-  block="$(colored "$COLOR_rate_limits" "$label")$(colored "$GREY" ":")$(colored "$pct_color" "${used_int}%")"
-  if [ -n "$reset" ]; then
-    eta=$(fmt_eta "$reset")
-    [ -n "$eta" ] && block="${block}$(colored "$GREY" " $eta")"
-  fi
-  printf '%s' "$block"
-}
-"#;
-
-/// Builds the full `~/.claude/statusline-command.sh` body (no shebang concerns beyond the
-/// standard `#!/bin/bash`) from `config`. The `aki-rlcache v2` block is always emitted - the
-/// app's rate-limit caching depends on it and it must not be user-togglable (see plan doc).
-pub fn generate_statusline_script(config: &StatuslineConfig) -> String {
-    let (green, yellow, orange, red) = sanitized_thresholds(&config.thresholds);
-
-    let mut s = String::new();
-    s.push_str("#!/bin/bash\n");
-    s.push_str("# Generated by Aki Dev Sync - Statusline Customizer. Manual edits survive until the\n");
-    s.push_str("# next Apply from the app (a .bak of your previous file is kept alongside this one).\n");
-    s.push_str("input=$(cat)\n\n");
-
-    s.push_str(
-        r#"# aki-rlcache v2 - persist rate_limits across calls that omit it
-rl_input=$(echo "$input" | jq -c '.rate_limits // empty')
-if [ -z "$rl_input" ] && [ -f "$HOME/.claude/rate-limits-cache.json" ]; then
-    input=$(echo "$input" | jq --argjson old "$(cat "$HOME/.claude/rate-limits-cache.json")" '
-        if ($old.rate_limits != null) then
-            .rate_limits = $old.rate_limits
-        else . end
-    ')
-fi
-printf '%s' "$input" > "$HOME/.claude/rate-limits-cache.json"
-
-"#,
-    );
-
-    s.push_str(
-        r#"IFS=$'\x1f' read -r cwd model_name cost_usd duration_ms lines_added lines_removed \
-  ctx_input ctx_output ctx_size ctx_used_pct effort_level five_used seven_used git_branch five_reset seven_reset \
-  cache_read cache_creation cache_input <<< "$(echo "$input" | jq -r '[
-    (.cwd // .workspace.current_dir // ""),
-    (.model.display_name // ""),
-    (.cost.total_cost_usd // 0),
-    (.cost.total_duration_ms // 0),
-    (.cost.total_lines_added // 0),
-    (.cost.total_lines_removed // 0),
-    (.context_window.total_input_tokens // 0),
-    (.context_window.total_output_tokens // 0),
-    (.context_window.context_window_size // 0),
-    (.context_window.used_percentage // 0),
-    (.effort.level // ""),
-    (.rate_limits.five_hour.used_percentage // -1),
-    (.rate_limits.seven_day.used_percentage // -1),
-    (.workspace.git_branch // .git.branch // ""),
-    (.rate_limits.five_hour.resets_at // 0),
-    (.rate_limits.seven_day.resets_at // 0),
-    (.context_window.current_usage.cache_read_input_tokens // 0),
-    (.context_window.current_usage.cache_creation_input_tokens // 0),
-    (.context_window.current_usage.input_tokens // 0)
-  ] | join("")')"
-
-"#,
-    );
-
-    // ---- palette ----
-    s.push_str("RESET='\\033[00m'\n");
-    s.push_str("BOLD_GREEN='\\033[01;32m'\n");
-    s.push_str("BOLD_YELLOW='\\033[01;33m'\n");
-    s.push_str("BOLD_ORANGE='\\033[01;38;5;208m'\n");
-    s.push_str("BOLD_RED='\\033[01;31m'\n");
-    s.push_str("GREEN='\\033[32m'\n");
-    s.push_str("RED='\\033[31m'\n");
-    s.push_str("WHITE='\\033[97m'\n");
-    s.push_str("GREY='\\033[90m'\n");
-    s.push_str("CYAN='\\033[36m'\n");
-    s.push_str("BOLD_BLUE='\\033[01;34m'\n");
-    // per-field editable label colors, exposed as COLOR_<key>
-    for field in &config.fields {
-        if field_color_editable(&field.key) {
-            s.push_str(&format!(
-                "COLOR_{}='{}'\n",
-                field.key,
-                ansi_for(&field.color)
-            ));
+/// Print order, one entry per block, in the order the user dragged the rows into. A block appears
+/// at its first member's position; whether it prints at all is the EN_ flags' business, not this
+/// list's, so a block with everything switched off still appears here and simply renders empty.
+fn block_order(config: &StatuslineConfig) -> Vec<&'static str> {
+    let mut order: Vec<&'static str> = Vec::new();
+    for f in &config.fields {
+        if let Some(block) = block_of(&f.key) {
+            if !order.contains(&block) {
+                order.push(block);
+            }
         }
     }
-    // fixed colors for non-editable fields that still need a named var (rate labels, identity host)
-    s.push_str("COLOR_rate_limits='\\033[97m'\n"); // white, locked
+    order
+}
 
-    s.push_str(HELPERS);
+/// The generated region: nothing but variable assignments the template's body reads.
+fn config_block(config: &StatuslineConfig) -> String {
+    let (green, yellow, orange, red) = sanitized_thresholds(&config.thresholds);
+    let mut s = String::new();
+
+    s.push_str("# Enable flags, already dependency-resolved (see DEPENDS in ClaudeSettingModal.vue).\n");
+    for key in EN_KEYS {
+        s.push_str(&format!(
+            "EN_{}={}\n",
+            key,
+            if is_active(config, key) { 1 } else { 0 }
+        ));
+    }
+
+    s.push_str("\n# User-chosen colors. Every other color is a fixed label color or comes from the ladder.\n");
+    for key in COLOR_KEYS {
+        let color = field(config, key).map(|f| f.color.as_str()).unwrap_or("");
+        s.push_str(&format!("COLOR_{}='{}'\n", key, ansi_for(color)));
+    }
 
     s.push_str(&format!(
-        r#"
-# 5-tier usage scale: blue <{green}%, green {green}-{yellow}%, yellow {yellow}-{orange}%,
-# orange {orange}-{red}%, red >={red}%
-color_for_pct() {{
-  p="$1"
-  if awk -v p="$p" 'BEGIN{{exit !(p>={red})}}'; then printf '%s' "$BOLD_RED"
-  elif awk -v p="$p" 'BEGIN{{exit !(p>={orange})}}'; then printf '%s' "$BOLD_ORANGE"
-  elif awk -v p="$p" 'BEGIN{{exit !(p>={yellow})}}'; then printf '%s' "$BOLD_YELLOW"
-  elif awk -v p="$p" 'BEGIN{{exit !(p>={green})}}'; then printf '%s' "$BOLD_GREEN"
-  else printf '%s' "$BOLD_BLUE"; fi
-}}
-
-# Inverse of color_for_pct: for metrics where HIGH is good (cache hit rate), not bad - reuses the
-# same threshold ladder against (100 - p) instead of duplicating the tier logic.
-color_for_pct_inv() {{
-  p="$1"
-  inv=$(awk -v p="$p" 'BEGIN{{printf "%.0f", 100 - p}}')
-  color_for_pct "$inv"
-}}
-
-"#,
-        green = green,
-        yellow = yellow,
-        orange = orange,
-        red = red
+        "\n# Dynamic-color ladder, ascending. Below THRESH_GREEN is the calm blue tier.\n\
+         THRESH_GREEN={green}\n\
+         THRESH_YELLOW={yellow}\n\
+         THRESH_ORANGE={orange}\n\
+         THRESH_RED={red}\n"
     ));
 
-    s.push_str("SEP=\"$(colored \"$GREY\" \" | \")\"\n");
-    // The spend at which a session's cost reads as fully "red". Not a threshold the customizer
-    // exposes - it is the denominator that turns dollars into a percentage the shared tier ladder
-    // can color, not a tier of its own.
-    s.push_str("COST_FULL_USD=30\n\n");
+    s.push_str(&format!(
+        "\n# Truncate widths. The template clamps these itself (floor 3, per-field ceiling).\n\
+         TRUNC_ACCOUNT={account}   # applied AFTER stripping everything from '@' onwards\n\
+         TRUNC_USER={user}\n\
+         TRUNC_HOST={host}\n\
+         TRUNC_CWD={cwd}\n\
+         TRUNC_BRANCH={branch}\n",
+        account = config.trunc.account,
+        user = config.trunc.user,
+        host = config.trunc.host,
+        cwd = config.trunc.cwd,
+        branch = config.trunc.branch,
+    ));
 
-    // cache_pct and cache_tokens both need the same total - computed once here (SSoT) so either
-    // field can be toggled independently without depending on the other's match arm having run.
-    s.push_str(
-        r#"_cache_total=$(( ${cache_read%.*} + ${cache_creation%.*} + ${cache_input%.*} ))
+    s.push_str(&format!(
+        "\n# Zebra background shades, from the neutral ramp only.\n\
+         BG_ZEBRA_A={a}\n\
+         BG_ZEBRA_B={b}\n\
+         \n# One space either side of every zebra block. The tag cluster is never padded.\n\
+         SEPARATE_BLOCKS={sep}\n",
+        a = sanitized_shade(config.zebra.a),
+        b = sanitized_shade(config.zebra.b),
+        sep = if config.separate { 1 } else { 0 },
+    ));
 
-"#,
-    );
-
-    // ---- group builders (only for enabled fields; each var is empty string if unused) ----
-    for field in &config.fields {
-        match field.key.as_str() {
-            "identity_user" => s.push_str(
-                r#"_user="$(whoami)"; _user="${_user:0:5}"
-g_identity_user="$(colored "$COLOR_identity_user" "$_user")"
-
-"#,
-            ),
-            "identity_host" => s.push_str(
-                r#"_host="$(hostname -s)"; _host="${_host:0:5}"
-g_identity_host="$(colored "$COLOR_identity_host" "$_host")"
-
-"#,
-            ),
-            "cwd" => s.push_str(
-                r#"_cwd_dir="${cwd:-$(pwd)}"
-[ "$_cwd_dir" = "$HOME" ] && _cwd_dir="~" || _cwd_dir="$(basename "$_cwd_dir")"
-g_cwd="$(colored "$COLOR_cwd" "$_cwd_dir")"
-
-"#,
-            ),
-            "model" => s.push_str(
-                r#"model_name="$(printf '%s' "$model_name" | sed -E 's/ *\([^)]*\)$//')"
-model_lower=$(printf '%s' "$model_name" | tr 'A-Z' 'a-z')
-g_model="$(colored "$COLOR_model" "$model_lower")"
-
-"#,
-            ),
-            // Its own field rather than part of `model`'s block, so it can be turned off while the
-            // model name stays. Locked to grey - it is a qualifier of the model, not a field the
-            // eye should land on (hence no entry in `field_color_editable`).
-            "effort" => s.push_str(
-                r#"g_effort=""
-effort_abbr="$effort_level"
-[ "$effort_abbr" = "medium" ] && effort_abbr="med"
-[ -n "$effort_abbr" ] && g_effort="$(colored "$GREY" "$effort_abbr")"
-
-"#,
-            ),
-            "context" => s.push_str(
-                r#"g_context=""
-if [ "$ctx_size" != "0" ]; then
-  ctx_pct_int=$(round_pct "$ctx_used_pct")
-  ctx_total=$(( ${ctx_input%.*} + ${ctx_output%.*} ))
-  ctx_breakdown="$(colored "$GREY" "$(fmt_k "$ctx_total")")$(colored "$GREY" "/")$(colored "$GREY" "$(fmt_k "$ctx_size")")"
-  g_context="$(colored "$WHITE" "ctx") $(colored "$(color_for_pct "$ctx_pct_int")" "${ctx_pct_int}%") $ctx_breakdown"
-fi
-
-"#,
-            ),
-            "rate_limits_5h" => {
-                let reset_enabled = config.fields.iter().any(|f| f.key == "rate_reset_5h" && f.enabled);
-                if reset_enabled {
-                    s.push_str(r#"g_rate_limits_5h=$(rate_block "5h" "$five_used" "$five_reset")
-
-"#);
-                } else {
-                    s.push_str(r#"g_rate_limits_5h=$(rate_block "5h" "$five_used")
-
-"#);
-                }
-            }
-            "rate_limits_7d" => {
-                let reset_enabled = config.fields.iter().any(|f| f.key == "rate_reset_7d" && f.enabled);
-                if reset_enabled {
-                    s.push_str(r#"g_rate_limits_7d=$(rate_block "7d" "$seven_used" "$seven_reset")
-
-"#);
-                } else {
-                    s.push_str(r#"g_rate_limits_7d=$(rate_block "7d" "$seven_used")
-
-"#);
-                }
-            }
-            "session" => s.push_str(
-                r#"g_session="$(colored "$WHITE" "ss") $(colored "$GREY" "$(fmt_dur "$duration_ms")")"
-if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
-  g_lines="$(colored "$BOLD_GREEN" "+${lines_added}")$(colored "$GREY" "/")$(colored "$BOLD_RED" "-${lines_removed}")"
-  g_session="$g_session $g_lines"
-fi
-cost_fmt=$(awk -v c="$cost_usd" 'BEGIN{printf "$%.2f", c}')
-# Session cost has no percentage of its own, so it is scaled against COST_FULL_USD to reuse the
-# same tier ladder as every other dynamic value. Anything at or above that ceiling is red.
-cost_pct=$(awk -v c="$cost_usd" -v full="$COST_FULL_USD" 'BEGIN{p=(full>0)?c/full*100:0; if(p>100)p=100; printf "%.0f", p}')
-g_session="$g_session $(colored "$(color_for_pct "$cost_pct")" "$cost_fmt")"
-
-"#,
-            ),
-            "git_branch" => s.push_str(
-                r#"g_git_branch=""
-[ -n "$git_branch" ] && g_git_branch="$(colored "$COLOR_git_branch" "$git_branch")"
-
-"#,
-            ),
-            // No "cache" text here - the group's own `label` (see GROUPS) prepends it once, so it
-            // survives regardless of which of cache_pct/cache_tokens is actually enabled.
-            "cache_pct" => s.push_str(
-                r#"g_cache_pct=""
-if [ "$_cache_total" -gt 0 ]; then
-  _cache_pct=$(awk -v r="$cache_read" -v t="$_cache_total" 'BEGIN{printf "%.0f", r/t*100}')
-  g_cache_pct="$(colored "$(color_for_pct_inv "$_cache_pct")" "${_cache_pct}%")"
-fi
-
-"#,
-            ),
-            // Read count only, fixed grey - a supporting detail next to cache_pct's colored
-            // percentage, not a value with its own color choice.
-            "cache_tokens" => s.push_str(
-                r#"g_cache_tokens=""
-[ "$_cache_total" -gt 0 ] && g_cache_tokens="$(colored "$GREY" "$(fmt_k "$cache_read")")"
-
-"#,
-            ),
-            _ => {}
-        }
-    }
-
-    // ---- join enabled blocks, in configured order, with " | " ----
-    // A grouped field contributes its group's combined var once (at the position of its first
-    // enabled member) instead of one ` | `-separated block per member.
-    let mut enabled_keys: Vec<String> = Vec::new();
-    let mut emitted_groups: Vec<&str> = Vec::new();
-    for field in config.fields.iter().filter(|f| f.enabled) {
-        match group_of(&field.key) {
-            None => enabled_keys.push(field.key.clone()),
-            Some(group) => {
-                if emitted_groups.contains(&group.id) {
-                    continue;
-                }
-                emitted_groups.push(group.id);
-                // Only enabled members go into the group var; a disabled member's `g_` var is
-                // still assigned above, so filtering here is what actually turns it off.
-                let members: Vec<String> = group
-                    .keys
-                    .iter()
-                    .filter(|k| config.fields.iter().any(|f| &f.key == *k && f.enabled))
-                    .map(|k| format!("\"$g_{}\"", k))
-                    .collect();
-                s.push_str(&format!(
-                    "g_group_{}=$(join_with \"{}\" {})\n",
-                    group.id,
-                    group.sep,
-                    members.join(" ")
-                ));
-                // Group-level label (cache's "cache"): prepended only if the group actually
-                // produced output, via an intermediate variable so the nested-quote command
-                // substitution never has to sit inside another double-quoted string.
-                if let Some(label) = group.label {
-                    s.push_str(&format!(
-                        r#"if [ -n "$g_group_{id}" ]; then
-  _lbl="$(colored "$WHITE" "{label}")"
-  g_group_{id}="$_lbl $g_group_{id}"
-fi
-"#,
-                        id = group.id,
-                        label = label
-                    ));
-                }
-                enabled_keys.push(format!("group_{}", group.id));
-            }
-        }
-    }
-    s.push('\n');
-    let word_list = if enabled_keys.is_empty() {
-        "\"\"".to_string()
-    } else {
-        enabled_keys
-            .iter()
-            .map(|k| format!("\"$g_{}\"", k))
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    s.push_str("out=\"\"\n");
-    s.push_str(&format!("for g in {}; do\n", word_list));
-    s.push_str(
-        r#"  [ -z "$g" ] && continue
-  if [ -z "$out" ]; then out="$g"; else out="${out}${SEP}${g}"; fi
-done
-
-printf '%b' "$out"
-"#,
-    );
+    s.push_str(&format!(
+        "\n# Print order, by block, taken from the row order in the Statusline Customizer.\n\
+         BLOCK_ORDER=\"{}\"\n",
+        block_order(config).join(" ")
+    ));
 
     s
 }
 
-const INSTALLER_HEADER: &str = r#"set -e
-mkdir -p "$HOME/.claude"
-FILE="$HOME/.claude/statusline-command.sh"
-if [ -f "$FILE" ] && [ ! -f "$FILE.aki-bak" ]; then cp "$FILE" "$FILE.aki-bak"; fi
-cat > "$FILE" <<'AKI_STATUSLINE_EOF_9f3'
-"#;
-
-const INSTALLER_FOOTER: &str = r#"
-AKI_STATUSLINE_EOF_9f3
-chmod +x "$FILE"
-SETTINGS="$HOME/.claude/settings.json"
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-tmp=$(mktemp)
-jq '.statusLine.type = "command" | .statusLine.command = "~/.claude/statusline-command.sh"' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-"#;
-
-fn build_installer_script(body: &str) -> String {
-    format!("{}{}{}", INSTALLER_HEADER, body, INSTALLER_FOOTER)
+/// Splices the generated region into the template. Everything outside the two markers - the whole
+/// body of the script - is shipped byte-for-byte.
+pub fn generate_statusline_script(config: &StatuslineConfig) -> Result<String, String> {
+    let begin = TEMPLATE
+        .find(MARK_BEGIN)
+        .ok_or("statusline template is missing its opening AKI-GENERATED-CONFIG marker")?;
+    let head_end = TEMPLATE[begin..]
+        .find('\n')
+        .map(|i| begin + i + 1)
+        .ok_or("statusline template's opening marker has no line break after it")?;
+    let end = TEMPLATE
+        .find(MARK_END)
+        .ok_or("statusline template is missing its closing AKI-GENERATED-CONFIG marker")?;
+    if end < head_end {
+        return Err("statusline template markers are in the wrong order".to_string());
+    }
+    Ok(format!(
+        "{}{}{}",
+        &TEMPLATE[..head_end],
+        config_block(config),
+        &TEMPLATE[end..]
+    ))
 }
 
-#[tauri::command]
-pub fn get_default_statusline_config() -> StatuslineConfig {
-    default_config()
+/// Where one generated body gets written, and what else has to be patched there. Both targets take
+/// the SAME body - the script decides at run time which CLI it is speaking for.
+struct Target {
+    /// Values the frontend may send for this target.
+    aliases: &'static [&'static str],
+    installer: fn(&str) -> String,
 }
 
+const TARGETS: &[Target] = &[
+    Target {
+        aliases: &["cc", "claude"],
+        installer: |body| {
+            format!(
+                "mkdir -p \"$HOME/.claude\"\n\
+                 FILE=\"$HOME/.claude/statusline-command.sh\"\n\
+                 if [ -f \"$FILE\" ] && [ ! -f \"$FILE.aki-bak\" ]; then cp \"$FILE\" \"$FILE.aki-bak\"; fi\n\
+                 cat > \"$FILE\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}AKI_STATUSLINE_CLAUDE_EOF\n\
+                 chmod +x \"$FILE\"\n\
+                 SETTINGS=\"$HOME/.claude/settings.json\"\n\
+                 [ -f \"$SETTINGS\" ] || echo '{{}}' > \"$SETTINGS\"\n\
+                 tmp=$(mktemp)\n\
+                 jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS\"\n"
+            )
+        },
+    },
+    Target {
+        aliases: &["ag", "cli"],
+        installer: |body| {
+            format!(
+                "mkdir -p \"$HOME/.gemini/antigravity-cli\"\n\
+                 FILE_AGY=\"$HOME/.gemini/antigravity-cli/statusline.sh\"\n\
+                 if [ -f \"$FILE_AGY\" ] && [ ! -f \"$FILE_AGY.aki-bak\" ]; then cp \"$FILE_AGY\" \"$FILE_AGY.aki-bak\"; fi\n\
+                 cat > \"$FILE_AGY\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}AKI_STATUSLINE_AGY_EOF\n\
+                 chmod +x \"$FILE_AGY\"\n\
+                 SETTINGS_AGY=\"$HOME/.gemini/antigravity-cli/settings.json\"\n\
+                 [ -f \"$SETTINGS_AGY\" ] || echo '{{}}' > \"$SETTINGS_AGY\"\n\
+                 tmp=$(mktemp)\n\
+                 jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS_AGY\"\n"
+            )
+        },
+    },
+];
+
+/// Writes only the targets the caller actually asked for. An empty selection is an error, never an
+/// implicit "AGY anyway" - a silent fallback here is exactly how Apply ended up writing a file the
+/// user never ticked.
+fn build_installer_script(
+    config: &StatuslineConfig,
+    selected_targets: &[String],
+) -> Result<String, String> {
+    let chosen: Vec<&Target> = TARGETS
+        .iter()
+        .filter(|t| {
+            selected_targets
+                .iter()
+                .any(|s| t.aliases.contains(&s.as_str()))
+        })
+        .collect();
+    if chosen.is_empty() {
+        return Err("No statusline target selected (tick agy and/or claude).".to_string());
+    }
+    let body = generate_statusline_script(config)?;
+    let mut combined = String::from("set -e\n");
+    for target in chosen {
+        combined.push_str(&(target.installer)(&body));
+        combined.push('\n');
+    }
+    Ok(combined)
+}
+
+/// Per CLI, because a host can have one, both or neither. Reporting a single "configured" flag made
+/// the indicator lie the moment AGY was the target: applying for AGY left the flag false forever.
+/// `present` = that CLI exists on the host at all; `configured` = its statusline is installed AND
+/// its settings point at it, which is the only state that actually renders a line.
 #[derive(Serialize, Clone)]
 pub struct StatuslineHostStatus {
     pub host: String,
-    pub claude_installed: bool,
-    pub statusline_configured: bool,
+    pub cc_present: bool,
+    pub cc_configured: bool,
+    pub ag_present: bool,
+    pub ag_configured: bool,
 }
 
-/// Detects, per host, whether Claude Code is present and whether our statusline script is
-/// already wired into `settings.json`. Reuses the same `$CLAUDE_BIN` resolver preamble every
-/// other remote script gets (see `agent_usage::run_remote_script`), so detection isn't racing
-/// the same PATH-sourcing timing issue described in CLAUDE.md.
-///
-/// `run_remote_script` is fully synchronous (blocking `Command`/poll loop, one host after
-/// another). Per CLAUDE.md's blocking-UI rule, that must never run on the command-dispatch
-/// thread directly - `spawn_blocking` offloads it to Tauri's blocking thread-pool.
+impl StatuslineHostStatus {
+    fn unreachable(host: String) -> Self {
+        Self { host, cc_present: false, cc_configured: false, ag_present: false, ag_configured: false }
+    }
+}
+
+/// Both halves of an install are checked: the script file, and the settings key naming it. A host
+/// with the file but an empty `statusLine.command` renders nothing, so it is not "configured".
+const PROBE: &str = r#"
+if command -v "$CLAUDE_BIN" >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then echo "CC_PRESENT=1"; else echo "CC_PRESENT=0"; fi
+if [ -f "$HOME/.claude/statusline-command.sh" ] && grep -q "statusline-command.sh" "$HOME/.claude/settings.json" 2>/dev/null; then echo "CC_SL=1"; else echo "CC_SL=0"; fi
+if [ -d "$HOME/.gemini/antigravity-cli" ]; then echo "AG_PRESENT=1"; else echo "AG_PRESENT=0"; fi
+if [ -f "$HOME/.gemini/antigravity-cli/statusline.sh" ] && grep -q "statusline.sh" "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; then echo "AG_SL=1"; else echo "AG_SL=0"; fi
+"#;
+
 #[tauri::command]
 pub async fn check_statusline_status(hosts: Vec<String>) -> Vec<StatuslineHostStatus> {
-    const PROBE: &str = r#"
-if command -v "$CLAUDE_BIN" >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then echo "CLAUDE=1"; else echo "CLAUDE=0"; fi
-if [ -f "$HOME/.claude/statusline-command.sh" ] && [ -f "$HOME/.claude/settings.json" ] && grep -q "statusline-command.sh" "$HOME/.claude/settings.json" 2>/dev/null; then echo "SL=1"; else echo "SL=0"; fi
-"#;
     tauri::async_runtime::spawn_blocking(move || {
-        hosts
+        // One OS thread per host - hosts are independent, so none should wait on another (the
+        // per-host lock inside run_remote_script_bounded only serializes a host against ITSELF,
+        // i.e. against other features touching that same host; it never blocks one host on a
+        // different one). Mirrors the fan-out in apply_statusline_config below.
+        let handles: Vec<(String, std::thread::JoinHandle<StatuslineHostStatus>)> = hosts
             .into_iter()
             .map(|host| {
-                let (claude_installed, statusline_configured) = match run_remote_script(&host, PROBE) {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        (stdout.contains("CLAUDE=1"), stdout.contains("SL=1"))
+                let host_for_thread = host.clone();
+                let handle = std::thread::spawn(move || {
+                    match run_remote_script_bounded(&host_for_thread, PROBE) {
+                        Ok(out) => {
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            StatuslineHostStatus {
+                                host: host_for_thread,
+                                cc_present: stdout.contains("CC_PRESENT=1"),
+                                cc_configured: stdout.contains("CC_SL=1"),
+                                ag_present: stdout.contains("AG_PRESENT=1"),
+                                ag_configured: stdout.contains("AG_SL=1"),
+                            }
+                        }
+                        Err(_) => StatuslineHostStatus::unreachable(host_for_thread),
                     }
-                    Err(_) => (false, false),
-                };
-                StatuslineHostStatus { host, claude_installed, statusline_configured }
+                });
+                (host, handle)
             })
+            .collect();
+        handles
+            .into_iter()
+            .map(|(host, h)| h.join().unwrap_or_else(|_| StatuslineHostStatus::unreachable(host)))
             .collect()
     })
     .await
     .unwrap_or_default()
 }
 
-/// Pushes the generated statusline script + settings.json patch to every host in `target_hosts`
-/// ("local" for this machine, otherwise an ssh host string - same convention as the rest of the
-/// app's remote infra). Each host is applied independently; one failing host doesn't block others.
-///
-/// `spawn_blocking`-wrapped for the same reason as `check_statusline_status` above - see
-/// CLAUDE.md's blocking-UI rule. This was the actual bug behind the Statusline Customizer
-/// freezing the whole app on open: the auto-install path calls this immediately, and it used to
-/// run its blocking SSH loop straight on the async executor thread.
 #[tauri::command]
 pub async fn apply_statusline_config(
     config: StatuslineConfig,
     target_hosts: Vec<String>,
+    selected_targets: Option<Vec<String>>,
 ) -> Result<Vec<HostApplyResult>, String> {
-    let body = generate_statusline_script(&config);
-    let installer = build_installer_script(&body);
+    let targets = selected_targets.unwrap_or_default();
+    let installer = std::sync::Arc::new(build_installer_script(&config, &targets)?);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut results = Vec::new();
-        for host in target_hosts {
-            let outcome = run_remote_script(&host, &installer);
-            let result = match outcome {
-                Ok(output) => {
-                    let ok = output.status.success();
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    HostApplyResult {
-                        host: host.clone(),
-                        ok,
-                        message: if ok { "Applied".to_string() } else { stderr },
-                    }
-                }
-                Err(e) => HostApplyResult { host: host.clone(), ok: false, message: e },
-            };
-            crate::logger::info(
-                "STATUSLINE",
-                &format!("apply host={} ok={} msg={}", result.host, result.ok, preview(&result.message, 200)),
-            );
-            results.push(result);
-        }
-        results
+        // One OS thread per host, run concurrently - see the matching comment in
+        // check_statusline_status. Applying to host A must never wait on host B; the per-host
+        // lock in run_remote_script_bounded still keeps this app's OWN calls to any one host
+        // (this apply, the auto-install probe, usage polling, ...) from overlapping each other.
+        let handles: Vec<(String, std::thread::JoinHandle<HostApplyResult>)> = target_hosts
+            .into_iter()
+            .map(|host| {
+                let installer = installer.clone();
+                let host_for_thread = host.clone();
+                let handle = std::thread::spawn(move || {
+                    let outcome = run_remote_script_bounded(&host_for_thread, &installer);
+                    let result = match outcome {
+                        Ok(output) => {
+                            let ok = output.status.success();
+                            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                            HostApplyResult {
+                                host: host_for_thread.clone(),
+                                ok,
+                                message: if ok { "Applied".to_string() } else { stderr },
+                            }
+                        }
+                        Err(e) => HostApplyResult { host: host_for_thread.clone(), ok: false, message: e },
+                    };
+                    crate::logger::info(
+                        "STATUSLINE",
+                        &format!("apply host={} ok={} msg={}", result.host, result.ok, preview(&result.message, 200)),
+                    );
+                    result
+                });
+                (host, handle)
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|(host, h)| {
+                h.join().unwrap_or(HostApplyResult {
+                    host,
+                    ok: false,
+                    message: "apply thread panicked".to_string(),
+                })
+            })
+            .collect()
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
@@ -656,48 +502,290 @@ fn preview(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
-    /// The generated script is a string built from fragments, so a bad edit produces broken shell
-    /// that no compiler catches - `bash -n` is the only thing that does.
+    /// Test fixture ONLY - the product's defaults live in the Vue component. This is a transcript
+    /// of them so the tests have something to generate from; `generated_defaults_match_template`
+    /// below is what proves the transcript is still accurate.
+    fn test_config() -> StatuslineConfig {
+        let f = |key: &str, enabled: bool, color: &str| StatuslineField {
+            key: key.to_string(),
+            enabled,
+            color: color.to_string(),
+        };
+        StatuslineConfig {
+            fields: vec![
+                f("cli_tag", true, ""),
+                f("account", true, "grey"),
+                f("identity_user", true, "white"),
+                f("identity_host", true, "white"),
+                f("cwd", true, "magenta"),
+                f("model", true, "cyan"),
+                f("effort", true, "grey"),
+                f("context", true, "white"),
+                f("cache", true, ""),
+                f("cache_pct", true, "grey"),
+                f("cache_tokens", false, "grey"),
+                f("rate_limits_5h", true, "white"),
+                f("rate_reset_5h", true, "grey"),
+                f("rate_limits_7d", true, "white"),
+                f("rate_reset_7d", true, "grey"),
+                f("session", true, "grey"),
+                f("git_branch", true, "magenta"),
+                f("ram", true, "grey"),
+            ],
+            thresholds: StatuslineThresholds { green: 20, yellow: 51, orange: 75, red: 90 },
+            trunc: StatuslineTrunc { account: 4, user: 5, host: 6, cwd: 12, branch: 10 },
+            zebra: StatuslineZebra { a: 16, b: 235 },
+            separate: true,
+        }
+    }
+
+    fn gen(config: &StatuslineConfig) -> String {
+        generate_statusline_script(config).expect("generate")
+    }
+
+    /// True if the line prints a negative percentage - the old AGY bug rendered a remaining
+    /// fraction as `-2400%`. Checked by shape, not by looking for a bare '-': hostnames and model
+    /// ids legitimately contain dashes.
+    fn has_negative_percent(s: &str) -> bool {
+        let c: Vec<char> = s.chars().collect();
+        (0..c.len()).any(|i| {
+            if c[i] != '-' {
+                return false;
+            }
+            let mut j = i + 1;
+            while j < c.len() && c[j].is_ascii_digit() {
+                j += 1;
+            }
+            j > i + 1 && j < c.len() && c[j] == '%'
+        })
+    }
+
+    /// A rendered line with its ANSI escapes removed. Assertions are about the text the user reads;
+    /// against the raw line even `"Sonnet5med"` fails, because a color change sits between the two
+    /// halves. Anything asserting on the escapes themselves uses the raw line instead.
+    fn plain(line: &str) -> String {
+        let mut out = String::with_capacity(line.len());
+        let mut chars = line.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for e in chars.by_ref() {
+                    if e.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// The anti-drift test. Generating from the UI's defaults must reproduce the checked-in
+    /// template byte for byte - if it does not, the file people read and the file Apply writes
+    /// have diverged, which is the whole class of bug Phase 2 existed to end.
+    #[test]
+    fn generated_defaults_match_template() {
+        assert_eq!(gen(&test_config()), TEMPLATE);
+    }
+
     #[test]
     fn generated_script_is_valid_shell() {
-        let script = generate_statusline_script(&default_config());
-        let mut child = std::process::Command::new("bash")
-            .arg("-n")
-            .stdin(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("spawn bash");
-        use std::io::Write;
-        child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
-        let out = child.wait_with_output().unwrap();
-        assert!(out.status.success(), "bash -n failed:\n{}", String::from_utf8_lossy(&out.stderr));
+        let mut cfg = test_config();
+        // Not the default config: an all-off config is the shape most likely to emit a dangling
+        // gate or an empty BLOCK_ORDER, so that is what gets syntax-checked.
+        for f in cfg.fields.iter_mut() {
+            f.enabled = false;
+        }
+        for script in [gen(&test_config()), gen(&cfg)] {
+            let mut child = std::process::Command::new("bash")
+                .arg("-n")
+                .stdin(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("spawn bash");
+            use std::io::Write;
+            child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+            let out = child.wait_with_output().unwrap();
+            assert!(out.status.success(), "bash -n failed:\n{}", String::from_utf8_lossy(&out.stderr));
+        }
     }
 
-    /// Group members must join with their own separator instead of the ` | ` one, and a grouped
-    /// field must not also be emitted standalone.
     #[test]
-    fn groups_join_without_separator() {
-        let script = generate_statusline_script(&default_config());
-        assert!(script.contains(r#"g_group_quota=$(join_with " " "$g_rate_limits_5h" "$g_rate_limits_7d")"#));
-        assert!(script.contains(r#"g_group_model=$(join_with " " "$g_model" "$g_effort")"#));
-        // identity is the one group whose members are glued by something other than a space
-        assert!(script.contains(r#"g_group_identity=$(join_with "$(colored "$WHITE" "@")" "$g_identity_user" "$g_identity_host")"#));
-        let join_line = script.lines().find(|l| l.starts_with("for g in ")).expect("join line");
-        assert!(join_line.contains("$g_group_quota") && !join_line.contains("$g_rate_limits_5h"));
+    fn every_gate_the_template_reads_is_generated() {
+        let script = gen(&test_config());
+        for key in EN_KEYS {
+            assert!(
+                script.contains(&format!("EN_{}=", key)),
+                "EN_{} declared in EN_KEYS but never emitted",
+                key
+            );
+        }
+        // And the reverse: a gate the body reads but the generator never writes would be an
+        // always-empty variable, i.e. a silently invisible block.
+        for line in TEMPLATE.lines() {
+            for token in line.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
+                // A bare `EN_` with nothing after it is prose in the template's comments, not a
+                // variable reference - only a real name is a claim about a generated flag.
+                if let Some(key) = token.strip_prefix("EN_").filter(|k| !k.is_empty()) {
+                    assert!(
+                        EN_KEYS.contains(&key),
+                        "template reads EN_{} but the generator never emits it",
+                        key
+                    );
+                }
+            }
+        }
+        // Same contract for the color variables - a COLOR_ the body reads but nobody writes is a
+        // dead picker in the UI (the exact bug COLOR_cwd shipped with).
+        for line in TEMPLATE.lines() {
+            for token in line.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
+                if let Some(key) = token.strip_prefix("COLOR_").filter(|k| !k.is_empty()) {
+                    assert!(
+                        COLOR_KEYS.contains(&key),
+                        "template reads COLOR_{} but the generator never emits it",
+                        key
+                    );
+                }
+            }
+        }
     }
 
-    /// End-to-end: run the generated script against a realistic Claude Code payload and print the
-    /// line it produces, so a rendering change is visible instead of merely compiling.
+    #[test]
+    fn a_disabled_parent_switches_its_children_off() {
+        let mut cfg = test_config();
+        for f in cfg.fields.iter_mut() {
+            if f.key == "cache" {
+                f.enabled = false;
+            }
+        }
+        let script = gen(&cfg);
+        // The children keep their own stored state (non-destructive gate) but must arrive as 0.
+        assert!(script.contains("EN_cache=0"));
+        assert!(script.contains("EN_cache_pct=0"), "cache_pct survived its parent being off");
+        assert!(
+            cfg.fields.iter().any(|f| f.key == "cache_pct" && f.enabled),
+            "the config itself must not be mutated - the gate is non-destructive"
+        );
+    }
+
+    #[test]
+    fn block_order_follows_the_field_order() {
+        let mut cfg = test_config();
+        // Drag RAM to the front.
+        let ram = cfg.fields.iter().position(|f| f.key == "ram").unwrap();
+        let ram = cfg.fields.remove(ram);
+        cfg.fields.insert(0, ram);
+        let script = gen(&cfg);
+        assert!(
+            script.contains(r#"BLOCK_ORDER="ram identity cwd model context cache quota session git_branch""#),
+            "BLOCK_ORDER did not follow the row order"
+        );
+    }
+
+    #[test]
+    fn out_of_range_values_are_clamped_not_defaulted() {
+        let mut cfg = test_config();
+        cfg.zebra = StatuslineZebra { a: 100, b: 255 };
+        cfg.thresholds = StatuslineThresholds { green: 90, yellow: 20, orange: 75, red: 51 };
+        let script = gen(&cfg);
+        assert!(script.contains("BG_ZEBRA_A=232"), "a shade outside the neutral ramp was not clamped");
+        assert!(script.contains("BG_ZEBRA_B=255"));
+        // Sorted ascending, so the ladder can never come out inverted.
+        assert!(script.contains("THRESH_GREEN=20") && script.contains("THRESH_RED=90"));
+    }
+
     #[test]
     fn renders_a_line() {
-        let script = generate_statusline_script(&default_config());
-        let dir = std::env::temp_dir().join("aki-statusline-smoke");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("sl.sh");
-        std::fs::write(&path, &script).unwrap();
-        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"cost":{"total_cost_usd":8.4,"total_duration_ms":720000,"total_lines_added":122,"total_lines_removed":52},"context_window":{"total_input_tokens":120000,"total_output_tokens":14400,"context_window_size":1000000,"used_percentage":72,"current_usage":{"cache_read_input_tokens":12400,"cache_creation_input_tokens":800,"input_tokens":32000}},"effort":{"level":"medium"},"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":92,"resets_at":0}},"workspace":{"git_branch":"master"}}"#;
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"cost":{"total_cost_usd":8.4,"total_duration_ms":720000,"total_lines_added":122,"total_lines_removed":52},"context_window":{"total_input_tokens":120000,"total_output_tokens":14400,"context_window_size":1000000,"current_usage":{"cache_read_input_tokens":12400,"cache_creation_input_tokens":800,"input_tokens":32000}},"effort":{"level":"medium"},"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":92,"resets_at":0}},"workspace":{"git_branch":"master"}}"#;
+        let (line, _) = run_script("sl.sh", &gen(&test_config()), payload, &[]);
+        println!("RENDERED>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(p.contains("Sonnet5med"), "model+effort not glued: {}", p);
+        assert!(p.contains("42%") && p.contains("92%"), "quota missing: {}", p);
+        assert!(p.contains("master"), "branch missing: {}", p);
+    }
+
+    #[test]
+    fn agy_renders_a_line() {
+        // $0 decides the CLI, so the AGY case is the same script under a ~/.gemini/ path.
+        let payload = r#"{"cwd":"/tmp/demo","account":{"email":"user-a@example.com"},"model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.25},"gemini-weekly":{"remaining_fraction":0.5}}}"#;
+        let (line, _) = run_script(".gemini/antigravity-cli/statusline.sh", &gen(&test_config()), payload, &[]);
+        println!("AGY RENDERED>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(p.starts_with("AG"), "AGY path did not identify as AG: {}", p);
+        assert!(p.contains("user"), "account not rendered: {}", p);
+        // A remaining fraction of 0.25 is 75% used - never -2400%.
+        assert!(!has_negative_percent(&p), "negative percentage in agy line: {}", p);
+        assert!(p.contains("75%"), "5h used% wrong (want 75%): {}", p);
+        assert!(p.contains("50%"), "7d used% wrong (want 50%): {}", p);
+    }
+
+    /// Dropping the vendor word out of a raw model id leaves its separators behind. Whatever a CLI
+    /// reports - display name, raw id, snake_case, a trailing "(...)" note - what reaches the line
+    /// must be one token with no stray punctuation at either edge.
+    #[test]
+    fn the_vendor_word_leaves_no_stray_punctuation_behind() {
+        let cases = [
+            ("gemini-2.5-flash", "2.5-flash"),
+            ("claude-sonnet-4-5", "sonnet-4-5"),
+            ("Claude Opus 4.8 (medium)", "Opus4.8"),
+            ("claude_opus_4_8", "opus_4_8"),
+            ("gpt-5.1-codex", "gpt-5.1-codex"),
+        ];
+        for (raw, want) in cases {
+            let payload = format!(r#"{{"cwd":"/tmp/demo","model":"{}"}}"#, raw);
+            let (line, _) = run_script("model.sh", &gen(&test_config()), &payload, &[]);
+            let p = plain(&line);
+            assert!(p.contains(want), "{:?} should render as {:?}: {}", raw, want, p);
+            assert!(
+                !p.contains(&format!("-{}", want)) && !p.contains(&format!("{}-", want)),
+                "{:?} rendered with a leftover separator: {}",
+                raw,
+                p
+            );
+        }
+    }
+
+    #[test]
+    fn agy_never_touches_the_claude_rate_limit_cache() {
+        let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.25}}}"#;
+        let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0}}}"#;
+        let (line, home) = run_script(
+            ".gemini/antigravity-cli/agy_rlcache.sh",
+            &gen(&test_config()),
+            payload,
+            &[(".claude/rate-limits-cache.json", cache)],
+        );
+        assert!(!plain(&line).contains("42%"), "AGY read Claude Code's rate-limit cache: {}", plain(&line));
+        let after = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
+        assert_eq!(after, cache, "AGY rewrote Claude Code's rate-limit cache");
+    }
+
+    // ---- helpers -------------------------------------------------------------------------
+
+    /// Runs a generated script against a payload inside a private $HOME, so tests that exercise the
+    /// on-disk fallbacks (~/.claude.json, the rlcache) never read or write the real home dir.
+    /// `name` doubles as the path the script is invoked by, which is what decides CC vs AG.
+    /// `files` are (path-relative-to-HOME, contents) written before the run.
+    fn run_script(name: &str, script: &str, payload: &str, files: &[(&str, &str)]) -> (String, std::path::PathBuf) {
+        let home = std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        for (rel, contents) in files {
+            let p = home.join(rel);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&p, contents).unwrap();
+        }
+        let path = home.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&path, script).unwrap();
         let out = std::process::Command::new("bash")
             .arg(&path)
+            .env("HOME", &home)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .spawn()
@@ -707,8 +795,500 @@ mod tests {
                 c.wait_with_output()
             })
             .unwrap();
-        let line = String::from_utf8_lossy(&out.stdout).to_string();
-        println!("RENDERED>>>{}<<<", line);
-        assert!(!line.trim().is_empty(), "statusline rendered empty");
+        (String::from_utf8_lossy(&out.stdout).to_string(), home)
+    }
+
+    // ---- behavioural tests, per docs/plan/1.18.0-statusline-apply-correctness.md §P2-4 ------
+
+    #[test]
+    fn cc_account_falls_back_to_claude_json() {
+        // Payload deliberately carries no email - Claude Code never sends one.
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#;
+        let (line, _) = run_script(
+            "cc_account.sh",
+            &gen(&test_config()),
+            payload,
+            &[(".claude.json", r#"{"oauthAccount":{"emailAddress":"disk-user@example.com"}}"#)],
+        );
+        println!("CC ACCOUNT>>>{}<<<", line);
+        // Truncated to TRUNC_ACCOUNT after the domain is dropped: "disk-user@..." -> "disk".
+        let p = plain(&line);
+        assert!(p.contains("disk"), "account fallback to ~/.claude.json did not render: {}", p);
+        assert!(!p.contains("example.com"), "the domain was printed instead of stripped: {}", p);
+    }
+
+    #[test]
+    fn cc_rate_limits_survive_a_payload_that_omits_them() {
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#;
+        let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":92,"resets_at":0}}}"#;
+        let (line, _) = run_script(
+            "cc_rlcache.sh",
+            &gen(&test_config()),
+            payload,
+            &[(".claude/rate-limits-cache.json", cache)],
+        );
+        println!("CC RLCACHE>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(p.contains("42%"), "5h not restored from cache: {}", p);
+        assert!(p.contains("92%"), "7d not restored from cache: {}", p);
+    }
+
+    #[test]
+    fn cc_rate_limits_merge_instead_of_overwrite() {
+        // Payload has only five_hour; seven_day must survive from the cache, and the rewritten
+        // cache must still hold both.
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"rate_limits":{"five_hour":{"used_percentage":10,"resets_at":0}}}"#;
+        let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":92,"resets_at":0}}}"#;
+        let (line, home) = run_script(
+            "cc_rlmerge.sh",
+            &gen(&test_config()),
+            payload,
+            &[(".claude/rate-limits-cache.json", cache)],
+        );
+        println!("CC RLMERGE>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(p.contains("10%"), "fresh 5h value not used: {}", p);
+        assert!(p.contains("92%"), "cached 7d lost on merge: {}", p);
+        let written = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
+        assert!(written.contains("seven_day"), "rewritten cache dropped seven_day: {}", written);
+    }
+
+    fn now_epoch() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    #[test]
+    fn cc_drops_a_cached_quota_whose_reset_has_passed() {
+        // The 1.10.0-1.17.0 bug: an entry the account no longer has (here: seven_day, already
+        // past its reset) stayed in the cache forever and rendered as a phantom "7d 45%".
+        let now = now_epoch();
+        let payload = format!(
+            r#"{{"cwd":"/tmp/demo","rate_limits":{{"five_hour":{{"used_percentage":50,"resets_at":{}}}}}}}"#,
+            now + 7200
+        );
+        let cache = format!(
+            r#"{{"account":"","rate_limits":{{"five_hour":{{"used_percentage":42,"resets_at":{}}},"seven_day":{{"used_percentage":45,"resets_at":{}}}}}}}"#,
+            now + 7200,
+            now - 3600
+        );
+        let (line, home) = run_script(
+            "cc_rlexpired.sh",
+            &gen(&test_config()),
+            &payload,
+            &[(".claude/rate-limits-cache.json", cache.as_str())],
+        );
+        println!("CC RLEXPIRED>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(p.contains("50%"), "live 5h lost: {}", p);
+        assert!(!p.contains("45%"), "expired 7d still rendered: {}", p);
+        let written = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
+        assert!(!written.contains("seven_day"), "expired entry kept in cache: {}", written);
+    }
+
+    #[test]
+    fn cc_ignores_a_cache_written_by_another_account() {
+        let now = now_epoch();
+        let cache = format!(
+            r#"{{"account":"other@example.com","rate_limits":{{"seven_day":{{"used_percentage":45,"resets_at":{}}}}}}}"#,
+            now + 7200
+        );
+        let (line, _) = run_script(
+            "cc_rlforeign.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#,
+            &[
+                (".claude.json", r#"{"oauthAccount":{"emailAddress":"me@example.com"}}"#),
+                (".claude/rate-limits-cache.json", cache.as_str()),
+            ],
+        );
+        println!("CC RLFOREIGN>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(!p.contains("45%"), "another account's cached quota leaked into this line: {}", p);
+        assert!(p.contains("Sonnet5"), "rest of the line lost: {}", p);
+    }
+
+    #[test]
+    fn cc_survives_a_corrupt_rate_limits_cache() {
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"context_window":{"total_input_tokens":100,"total_output_tokens":20,"context_window_size":1000}}"#;
+        let (line, _) = run_script(
+            "cc_rlcorrupt.sh",
+            &gen(&test_config()),
+            payload,
+            &[(".claude/rate-limits-cache.json", "{not json at all")],
+        );
+        println!("CC RLCORRUPT>>>{}<<<", line);
+        assert!(!line.trim().is_empty(), "corrupt cache blanked the whole statusline");
+        assert!(plain(&line).contains("Sonnet5"), "corrupt cache lost the rest of the line: {}", plain(&line));
+    }
+
+    #[test]
+    fn agy_account_falls_back_to_google_accounts_object() {
+        let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash"}"#;
+        let (line, _) = run_script(
+            ".gemini/antigravity-cli/agy_account.sh",
+            &gen(&test_config()),
+            payload,
+            &[(
+                ".gemini/google_accounts.json",
+                r#"{"active":"agy-user@example.com","old":["someone@example.com"]}"#,
+            )],
+        );
+        println!("AGY ACCOUNT>>>{}<<<", line);
+        assert!(plain(&line).contains("agy-"), "agy account fallback did not render: {}", plain(&line));
+    }
+
+    #[test]
+    fn agy_reset_eta_includes_minutes() {
+        // 5400s = 1h30m - the old `printf '%dh%dm' "$h"` printed 1h0m.
+        let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.4,"reset_in_seconds":5400}}}"#;
+        let (line, _) = run_script(".gemini/antigravity-cli/agy_eta.sh", &gen(&test_config()), payload, &[]);
+        println!("AGY ETA>>>{}<<<", line);
+        assert!(plain(&line).contains("1h30m"), "reset ETA lost its minutes: {}", plain(&line));
+    }
+
+    #[test]
+    fn a_disabled_reset_hides_only_the_eta() {
+        let mut cfg = test_config();
+        for f in cfg.fields.iter_mut() {
+            if f.key == "rate_reset_5h" {
+                f.enabled = false;
+            }
+        }
+        let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.4,"reset_in_seconds":5400}}}"#;
+        let (line, _) = run_script(".gemini/antigravity-cli/agy_noeta.sh", &gen(&cfg), payload, &[]);
+        let p = plain(&line);
+        assert!(p.contains("60%"), "the 5h reading itself disappeared: {}", p);
+        assert!(!p.contains("1h30m"), "reset ETA rendered while switched off: {}", p);
+    }
+
+    // ---- the Vue payload, deserialized exactly as the IPC call delivers it ------------------
+    //
+    // Everything above builds a StatuslineConfig in Rust. These build it from the JSON the
+    // customizer actually posts, which is the only way to catch a shape mismatch between the two
+    // sides - the tests above would keep passing even if serde could no longer read the real thing.
+
+    /// Verbatim `JSON.stringify(defaultLocalConfig())` from ClaudeSettingModal.vue, `version` and
+    /// all. If the UI's defaults change, this string changes with them - that is the point.
+    const VUE_DEFAULT_JSON: &str = r#"{
+      "fields": [
+        {"key":"cli_tag","enabled":true,"color":""},
+        {"key":"account","enabled":true,"color":"grey"},
+        {"key":"identity_user","enabled":true,"color":"white"},
+        {"key":"identity_host","enabled":true,"color":"white"},
+        {"key":"cwd","enabled":true,"color":"magenta"},
+        {"key":"model","enabled":true,"color":"cyan"},
+        {"key":"effort","enabled":true,"color":"grey"},
+        {"key":"context","enabled":true,"color":"white"},
+        {"key":"cache","enabled":true,"color":""},
+        {"key":"cache_pct","enabled":true,"color":"grey"},
+        {"key":"cache_tokens","enabled":false,"color":"grey"},
+        {"key":"rate_limits_5h","enabled":true,"color":"white"},
+        {"key":"rate_reset_5h","enabled":true,"color":"grey"},
+        {"key":"rate_limits_7d","enabled":true,"color":"white"},
+        {"key":"rate_reset_7d","enabled":true,"color":"grey"},
+        {"key":"session","enabled":true,"color":"grey"},
+        {"key":"git_branch","enabled":true,"color":"magenta"},
+        {"key":"ram","enabled":true,"color":"grey"}
+      ],
+      "thresholds": {"green":20,"yellow":51,"orange":75,"red":90},
+      "trunc": {"account":4,"user":5,"host":6,"cwd":12,"branch":10},
+      "zebra": {"a":16,"b":235},
+      "separate": true,
+      "version": 3
+    }"#;
+
+    fn from_json(json: &str) -> StatuslineConfig {
+        serde_json::from_str(json).expect("the UI payload must deserialize")
+    }
+
+    /// The end-to-end anti-drift check: what the UI posts, unmodified, must rebuild the checked-in
+    /// script byte-for-byte. Together with `generated_defaults_match_template` this pins both ends -
+    /// the Rust fixture and the real JSON - to the same file.
+    #[test]
+    fn the_ui_payload_reproduces_the_template() {
+        assert_eq!(gen(&from_json(VUE_DEFAULT_JSON)), TEMPLATE);
+    }
+
+    #[test]
+    fn a_field_the_backend_does_not_know_is_ignored_not_fatal() {
+        // `version` is UI-only bookkeeping, and a future UI may add more. Unknown keys must not
+        // break Apply for everyone on an older build.
+        let with_extra = VUE_DEFAULT_JSON.replace(
+            r#""version": 3"#,
+            r#""version": 4, "somethingTheUiAddedLater": {"x": 1}"#,
+        );
+        assert_eq!(gen(&from_json(&with_extra)), TEMPLATE);
+    }
+
+    #[test]
+    fn a_missing_section_is_rejected_rather_than_silently_defaulted() {
+        // The deliberate absence of #[serde(default)] - see the comment on StatuslineConfig. A
+        // half-written payload must fail the Apply, not produce a script from values nobody chose.
+        let without_trunc = VUE_DEFAULT_JSON
+            .replace(r#""trunc": {"account":4,"user":5,"host":6,"cwd":12,"branch":10},"#, "");
+        assert!(
+            serde_json::from_str::<StatuslineConfig>(&without_trunc).is_err(),
+            "a payload with no trunc section was accepted"
+        );
+    }
+
+    /// Every toggle in the UI, flipped one at a time against one realistic payload: the marker it
+    /// owns must appear exactly while the switch is on, and flipping it must change the line. A
+    /// toggle that quietly does nothing is the bug class this table exists to catch (it is how the
+    /// CWD color picker shipped dead), and it is exactly what a human clicking through the modal
+    /// would check by eye - all 18 gates, which is the part doing it by hand never gets right.
+    #[test]
+    fn every_toggle_flips_its_own_output_and_nothing_else() {
+        // Carries a branch, both rate limits, cache traffic and an account on disk, so no case is a
+        // no-op. The two resets are stamped relative to now, which is the scale the ETA is cut from.
+        let now = now_epoch();
+        let payload = format!(
+            r#"{{"cwd":"/tmp/Aki-Dev-Sync","model":{{"display_name":"Opus 4.8"}},"effort":{{"level":"medium"}},
+            "cost":{{"total_cost_usd":8.4,"total_duration_ms":720000,"total_lines_added":12,"total_lines_removed":5}},
+            "context_window":{{"total_input_tokens":120000,"total_output_tokens":14400,"context_window_size":1000000,
+              "current_usage":{{"cache_read_input_tokens":44400,"cache_creation_input_tokens":800,"input_tokens":32000}}}},
+            "rate_limits":{{"five_hour":{{"used_percentage":19,"resets_at":{}}},
+                           "seven_day":{{"used_percentage":56,"resets_at":{}}}}},
+            "workspace":{{"git_branch":"master"}}}}"#,
+            now + 5_400,
+            now + 90_000
+        );
+        let payload = payload.as_str();
+        let files = [(
+            ".claude.json",
+            r#"{"oauthAccount":{"emailAddress":"ntu-gen@example.com"}}"#,
+        )];
+        // The host half of the identity block is whatever this machine is called, cut to TRUNC_HOST.
+        let host = String::from_utf8(
+            std::process::Command::new("hostname")
+                .arg("-s")
+                .output()
+                .expect("hostname")
+                .stdout,
+        )
+        .expect("hostname is utf-8");
+        let host: String = host.trim().chars().take(6).collect();
+        assert!(!host.is_empty(), "this machine reports no hostname");
+
+        let cfg = from_json(VUE_DEFAULT_JSON);
+        let (base, _) = run_script("toggles_base.sh", &gen(&cfg), payload, &files);
+        let base = plain(&base);
+
+        // (field key, the text it owns, whether the UI ships it on). Off-by-default rows are driven
+        // the other way round - on must ADD the marker - so a dead switch cannot hide behind a
+        // default that never renders it in the first place.
+        let cases: &[(&str, &str, bool)] = &[
+            ("cli_tag", "CC", true),
+            ("account", "ntu-", true),
+            ("identity_user", "@", true),
+            ("identity_host", host.as_str(), true),
+            ("cwd", "Aki-D", true),
+            ("model", "Opus", true),
+            ("effort", "med", true),
+            ("context", "ctx", true),
+            ("cache", "\u{21ac}", true),
+            ("cache_pct", "\u{21ac}", true),
+            ("cache_tokens", "44k", false),
+            ("rate_limits_5h", "5h:", true),
+            ("rate_reset_5h", "1h30m", true),
+            ("rate_limits_7d", "7d:", true),
+            ("rate_reset_7d", "1d1h", true),
+            ("session", "ss", true),
+            ("git_branch", "master", true),
+            ("ram", "\u{2685}", true),
+        ];
+        // A gate added to the template without a row here would otherwise ship untested.
+        for key in EN_KEYS {
+            assert!(
+                cases.iter().any(|(k, _, _)| k == key),
+                "{} has no row in the toggle sweep",
+                key
+            );
+        }
+
+        for (key, marker, on_by_default) in cases {
+            let mut flipped = from_json(VUE_DEFAULT_JSON);
+            for f in flipped.fields.iter_mut() {
+                if &f.key == key {
+                    f.enabled = !*on_by_default;
+                }
+            }
+            let (line, _) = run_script(&format!("flip_{}.sh", key), &gen(&flipped), payload, &files);
+            let line = plain(&line);
+            let (with, without) = if *on_by_default {
+                (&base, &line)
+            } else {
+                (&line, &base)
+            };
+            assert!(with.contains(marker), "{} is on but {:?} is missing: {}", key, marker, with);
+            assert!(
+                !without.contains(marker),
+                "{} is off but {:?} is still rendered: {}",
+                key,
+                marker,
+                without
+            );
+            assert_ne!(line, base, "flipping {} changed nothing", key);
+        }
+    }
+
+    /// The same sweep for the settings that are not on/off. Each one is checked against the escape
+    /// codes, since that is where a width, a shade or a color actually lands.
+    #[test]
+    fn the_numeric_and_color_settings_reach_the_rendered_line() {
+        let payload = r#"{"cwd":"/tmp/Aki-Dev-Sync","model":{"display_name":"Opus 4.8"},"workspace":{"git_branch":"master"}}"#;
+
+        let mut cfg = from_json(VUE_DEFAULT_JSON);
+        cfg.trunc.cwd = 4;
+        cfg.trunc.branch = 3;
+        let (line, _) = run_script("trunc.sh", &gen(&cfg), payload, &[]);
+        let p = plain(&line);
+        assert!(p.contains("Aki-") && !p.contains("Aki-Dev"), "cwd not cut to 4: {}", p);
+        assert!(p.contains("mas") && !p.contains("master"), "branch not cut to 3: {}", p);
+
+        let mut cfg = from_json(VUE_DEFAULT_JSON);
+        for f in cfg.fields.iter_mut() {
+            if f.key == "git_branch" {
+                f.color = "green".to_string();
+            }
+        }
+        let (line, _) = run_script("color.sh", &gen(&cfg), payload, &[]);
+        assert!(
+            line.contains("\u{1b}[01;32mmaster"),
+            "the branch color picker did not reach the line: {:?}",
+            line
+        );
+
+        let mut cfg = from_json(VUE_DEFAULT_JSON);
+        cfg.zebra = StatuslineZebra { a: 233, b: 240 };
+        cfg.separate = false;
+        let (line, _) = run_script("zebra.sh", &gen(&cfg), payload, &[]);
+        assert!(
+            line.contains("\u{1b}[48;5;233m") && line.contains("\u{1b}[48;5;240m"),
+            "custom zebra shades not applied: {:?}",
+            line
+        );
+        assert!(
+            !line.contains("\u{1b}[48;5;233m "),
+            "separate is off but the block is still padded: {:?}",
+            line
+        );
+
+        // A tighter ladder must repaint the same reading - here 19% goes from the calm tier to red.
+        let quota = r#"{"cwd":"/tmp/demo","rate_limits":{"five_hour":{"used_percentage":19,"resets_at":0}}}"#;
+        let (calm, _) = run_script("ladder_calm.sh", &gen(&from_json(VUE_DEFAULT_JSON)), quota, &[]);
+        assert!(calm.contains("\u{1b}[01;34m19%"), "19% should be the blue tier: {:?}", calm);
+        let mut cfg = from_json(VUE_DEFAULT_JSON);
+        cfg.thresholds = StatuslineThresholds { green: 5, yellow: 10, orange: 15, red: 18 };
+        let (hot, _) = run_script("ladder_hot.sh", &gen(&cfg), quota, &[]);
+        assert!(hot.contains("\u{1b}[01;31m19%"), "19% should be red now: {:?}", hot);
+    }
+
+    /// Dragging a row in the UI is just a reorder of `fields`; the printed order must follow it.
+    #[test]
+    fn dragging_a_row_reorders_the_rendered_line() {
+        let payload = r#"{"cwd":"/tmp/demo","context_window":{"total_input_tokens":1000,"total_output_tokens":0,"context_window_size":200000}}"#;
+        let mut cfg = from_json(VUE_DEFAULT_JSON);
+        let ram = cfg.fields.iter().position(|f| f.key == "ram").unwrap();
+        let ram = cfg.fields.remove(ram);
+        cfg.fields.insert(1, ram);
+        let (line, _) = run_script("drag.sh", &gen(&cfg), payload, &[]);
+        let p = plain(&line);
+        assert!(
+            p.find('\u{2685}').unwrap() < p.find("ctx").unwrap(),
+            "RAM dragged to the front but still prints after context: {}",
+            p
+        );
+    }
+
+    #[test]
+    fn no_target_selected_is_an_error_not_a_silent_agy_write() {
+        let err = build_installer_script(&test_config(), &[]).unwrap_err();
+        assert!(err.to_lowercase().contains("target"), "unexpected error text: {}", err);
+        let cc = build_installer_script(&test_config(), &["cc".to_string()]).unwrap();
+        assert!(cc.contains("AKI_STATUSLINE_CLAUDE_EOF"));
+        assert!(!cc.contains("AKI_STATUSLINE_AGY_EOF"), "cc-only apply wrote the AGY file too");
+        let both = build_installer_script(&test_config(), &["cc".to_string(), "ag".to_string()]).unwrap();
+        assert!(both.contains("AKI_STATUSLINE_CLAUDE_EOF") && both.contains("AKI_STATUSLINE_AGY_EOF"));
+    }
+
+    /// Writing the script is only half an install: a CLI runs nothing until its settings point at
+    /// the file. Skipping this half for AGY is why an Apply ticked for AGY produced a statusline
+    /// that never appeared - the file was there, `statusLine.command` was still "".
+    #[test]
+    fn each_target_registers_its_script_in_the_cli_settings() {
+        for (alias, settings, script) in [
+            ("cc", ".claude/settings.json", ".claude/statusline-command.sh"),
+            (
+                "ag",
+                ".gemini/antigravity-cli/settings.json",
+                ".gemini/antigravity-cli/statusline.sh",
+            ),
+        ] {
+            let sh = build_installer_script(&test_config(), &[alias.to_string()]).unwrap();
+            assert!(sh.contains(settings), "{} never touches {}", alias, settings);
+            assert!(
+                sh.contains(r#".statusLine.type = "command""#),
+                "{} does not set statusLine.type",
+                alias
+            );
+            assert!(
+                sh.contains(".statusLine.command = "),
+                "{} does not set statusLine.command",
+                alias
+            );
+            assert!(sh.contains(script), "{} does not name its script path", alias);
+        }
+    }
+
+    /// The per-host indicator reads this probe, so it must answer per CLI and must treat "script on
+    /// disk but nothing pointing at it" as NOT configured - the exact state an AGY Apply used to
+    /// leave behind, which the old single-flag probe reported as fine.
+    #[test]
+    fn the_probe_reports_each_cli_separately_and_needs_both_halves() {
+        let cc_sh = ".claude/statusline-command.sh";
+        let cc_json = ".claude/settings.json";
+        let ag_sh = ".gemini/antigravity-cli/statusline.sh";
+        let ag_json = ".gemini/antigravity-cli/settings.json";
+        let wired = r#"{"statusLine":{"type":"command","command":"statusline.sh"}}"#;
+        let empty = r#"{"statusLine":{"type":"","command":""}}"#;
+
+        let cases: &[(&str, &[(&str, &str)], &[&str])] = &[
+            ("nothing", &[], &["CC_SL=0", "AG_PRESENT=0", "AG_SL=0"]),
+            // Script written, settings never patched - the bug this test exists for.
+            (
+                "ag_half",
+                &[(ag_sh, "#!/bin/bash"), (ag_json, empty)],
+                &["AG_PRESENT=1", "AG_SL=0", "CC_SL=0"],
+            ),
+            (
+                "ag_full",
+                &[(ag_sh, "#!/bin/bash"), (ag_json, wired)],
+                &["AG_PRESENT=1", "AG_SL=1", "CC_SL=0"],
+            ),
+            (
+                "cc_full",
+                &[(cc_sh, "#!/bin/bash"), (cc_json, r#"{"statusLine":{"command":"statusline-command.sh"}}"#)],
+                &["CC_PRESENT=1", "CC_SL=1", "AG_SL=0"],
+            ),
+        ];
+        for (name, files, want) in cases {
+            let (out, _) = run_script(&format!("probe_{}.sh", name), PROBE, "", files);
+            for token in *want {
+                assert!(out.contains(token), "{}: probe did not report {}: {}", name, token, out);
+            }
+        }
+    }
+
+    #[test]
+    fn both_targets_receive_the_same_body() {
+        // One physical script, installed at two paths - if these ever differ, the "$0 decides the
+        // CLI" contract is broken and each CLI is back to having its own dialect.
+        let both = build_installer_script(&test_config(), &["cc".to_string(), "ag".to_string()]).unwrap();
+        let body = gen(&test_config());
+        assert_eq!(both.matches(body.as_str()).count(), 2, "the two targets got different bodies");
     }
 }
