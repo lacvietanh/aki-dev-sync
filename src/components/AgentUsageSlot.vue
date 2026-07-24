@@ -44,7 +44,7 @@
             @click.stop="ccRemote.toggle()"
             :title="ccRemote.enabled ? 'Claude Code remote monitoring ON - click to turn off' : 'Claude Code remote monitoring OFF - click to turn on'"
           ></i>
-          <select v-model="selectedSshHost" class="host-select-mini" :disabled="!ccRemote.enabled" title="Remote host to monitor">
+          <select :value="selectedSshHost" @change="setSelectedSshHost($event.target.value)" class="host-select-mini" :disabled="!ccRemote.enabled" title="Remote host to monitor">
             <option value="" disabled>Select Host</option>
             <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
           </select>
@@ -96,7 +96,7 @@ const props = defineProps({
   ccRemote: { type: Object, required: true },
 });
 
-const { sshHosts, selectedSshHost } = useSsh();
+const { sshHosts, selectedSshHost, setSelectedSshHost } = useSsh();
 
 const topTabKey = `aki-usage-slot-${props.slotId}-top`;
 const localSubKey = `aki-usage-slot-${props.slotId}-sub`;

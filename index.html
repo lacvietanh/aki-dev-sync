@@ -2,8 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- App icon everywhere: browser tab favicon, iOS "Add to Home Screen", and the PWA manifest
+         below — so a Chrome "Install as shortcut" uses the Aki DevSync icon, not Vite's default. -->
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#131317" />
+    <!-- Standalone (no browser chrome) when installed to the home screen. iOS honours the apple-*
+         tags over plain http; Android Chrome needs HTTPS (e.g. a Tailscale funnel) for a true
+         standalone WebAPK, otherwise it stays a plain shortcut. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Aki DevSync" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Aki Dev Sync</title>
   </head>
 

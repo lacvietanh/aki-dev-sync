@@ -4,7 +4,8 @@
 // @docs docs/research/claudecode-usage-FINAL.md
 // @docs docs/arch/logger.md
 import { ref, watch, onUnmounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../utils/tauri';
+import { hostInterval, onHostBoot } from '../utils/scheduler';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
@@ -249,7 +250,7 @@ function installWakeListenersOnce() {
   });
   window.addEventListener('focus', () => fireWake('focus'));
 
-  setInterval(() => {
+  hostInterval(() => {
     const s = refreshSettings.value.usage_interval_s;
     if (!(s > 0)) return;
     const now = Date.now();
@@ -609,7 +610,7 @@ export function useAgentUsage(agentName, hostRef) {
       ulog('poll halted - not restarting', { fails: consecutiveFailCount }, 'info');
       return;
     }
-    pollTimer = setInterval(() => {
+    pollTimer = hostInterval(() => {
       ulog('poll tick', { poll: pollCount + 1 }, 'debug');
       checkUsage();
     }, s * 1000);
@@ -649,6 +650,8 @@ export function useAgentUsage(agentName, hostRef) {
   };
   _wakeSubscribers.add(_wakeSub);
 
+  // false only during the watch's synchronous `{ immediate: true }` run — see below.
+  let watchBooted = false;
   watch(() => hostRef.value, (newHost) => {
     // A source can be toggled off/on (host -> null -> same host again) without ever
     // actually changing which machine it points at. Only wipe data on a REAL host
@@ -675,10 +678,18 @@ export function useAgentUsage(agentName, hostRef) {
 
     if (newHost) {
       lastNonNullHost = newHost;
-      checkUsage();
+      // Seam P (§5): the `{ immediate: true }` first run is a BOOT fetch. On a companion its
+      // socket is not open yet, so it can only produce a failed RPC — and the real numbers arrive
+      // mirrored from the host anyway. Every later run is a genuine user-driven host change and
+      // stays unconditional on both sides.
+      if (watchBooted) checkUsage();
+      else onHostBoot(() => checkUsage());
     }
     restartPollTimer();
   }, { immediate: true });
+  // `{ immediate: true }` fires synchronously inside the watch() call above, so this assignment
+  // lands strictly after the boot run and before any reactive one.
+  watchBooted = true;
 
   watch(() => refreshSettings.value.usage_interval_s, (newVal) => {
     ulog('interval changed', { interval_s: newVal }, 'debug');

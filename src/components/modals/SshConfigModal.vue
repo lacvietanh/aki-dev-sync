@@ -38,7 +38,6 @@
 <script setup>
 import BaseModal from './BaseModal.vue'
 import { useSsh } from '../../composables/useSsh'
-import { useProjects } from '../../composables/useProjects'
 
 const {
   sshHosts, selectedSshHost,
@@ -46,11 +45,11 @@ const {
   closeSshModal, handleEditorTab, saveSshConfig, undoSshConfig, redoSshConfig
 } = useSsh()
 
-const { saveProjectsList } = useProjects()
-
-function save() { saveSshConfig(saveProjectsList) }
-function undo() { undoSshConfig(saveProjectsList) }
-function redo() { redoSshConfig(saveProjectsList) }
+// The host-side project migration now lives in the saveSshConfig/undo/redo action path
+// (remoteActions.applySshHostsChange), so the modal no longer forwards saveProjectsList.
+function save() { saveSshConfig() }
+function undo() { undoSshConfig() }
+function redo() { redoSshConfig() }
 </script>
 
 <style scoped>

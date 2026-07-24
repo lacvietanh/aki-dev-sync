@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../utils/tauri'
 import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from '../store/projectStore'
 
 // Third per-project status check, alongside fetchGitStatus and checkProjectSyncStatus. It reads

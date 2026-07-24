@@ -267,7 +267,7 @@
 // @docs docs/arch/usage-antigravity.md
 // @docs docs/plan/done/1.16.1-ag-usage.md
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../utils/tauri';
 import Swal from 'sweetalert2';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';

@@ -3,8 +3,8 @@
     <template #title>
       <div style="display: flex; align-items: center; gap: 8px;">
         <img
-          v-if="projectId && !failedIcons[projectId]"
-          :src="`aki-devsync-icon://${projectId}?t=${iconTimestamp}`"
+          v-if="projectId && !failedIcons[projectId] && projectIconSrc(projectId, iconTimestamp)"
+          :src="projectIconSrc(projectId, iconTimestamp)"
           style="width: 18px; height: 18px; border-radius: 3px; object-fit: contain;"
           alt=""
           @error="failedIcons[projectId] = true"
@@ -20,6 +20,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { iconTimestamp } from '../../store/projectStore';
+import { projectIconSrc } from '../../utils/projectIcon';
 import BaseModal from './BaseModal.vue';
 import changelogText from '../../../CHANGELOG.md?raw';
 import { renderMarkdown, runMermaid } from '../../utils/markdown';

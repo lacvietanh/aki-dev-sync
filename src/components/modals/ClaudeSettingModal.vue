@@ -214,7 +214,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../utils/tauri';
 import { projects } from '../../store/projectStore';
 import BaseModal from './BaseModal.vue';
 import { STATUSLINE_COLORS } from '../../utils/statuslineColors';

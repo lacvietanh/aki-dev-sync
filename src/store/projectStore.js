@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import Swal from 'sweetalert2'
+import { invoke } from '../utils/tauri'
 
 export const Toast = Swal.mixin({
   toast: true,
@@ -27,6 +28,22 @@ export const isReloading = ref(false)
 // Preloaded IDE availability and cache-busting timestamp for icons
 export const ideAvailability = ref(null)
 export const iconTimestamp = ref(Date.now())
+
+// ICON-1 (docs/plan/remote-control.md §7.0): { [projectId]: dataUri | null }, a COMPLETE map —
+// every project id is present, with an explicit null when it has no icon, so a companion never
+// retries or 404s on a missing key. Lives in the store precisely so the mirror carries it to the
+// phone for free: the `aki-devsync-icon://` custom protocol the host `<img>`s use exists only
+// inside the Tauri webview and resolves to nothing in a phone browser.
+export const projectIcons = ref({})
+
+/** Host-side fill. Companion never calls this — its copy arrives through the state mirror. */
+export async function refreshProjectIcons() {
+  try {
+    projectIcons.value = await invoke('get_project_icons_map')
+  } catch (e) {
+    console.error('[projectStore] failed to load project icons', e)
+  }
+}
 
 // True when any project is currently syncing - used by header/console
 export const anySyncing = computed(() =>

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../utils/tauri'
 
 // Whether Claude Code (this machine) is in 'native' or 'proxy' mode. Native-account usage
 // monitoring (rate-limit %, email/org, session cost) reads straight from Anthropic's own

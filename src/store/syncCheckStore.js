@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { projectRuntime, bumpEpoch } from './projectStore'
+import { action } from '../services/action'
 
 // Kill switch for project sync/diff: SSH-based project sync (pull/push/select/open-remote)
 // and background remote-diff checks. Claude Code remote usage monitoring has its own
@@ -21,7 +22,11 @@ function initialEnabled() {
 
 export const syncCheckEnabled = ref(initialEnabled())
 
-export function toggleSyncCheck() {
+// Wrapped as a seam-A action (R-2): a companion's power-button click is relayed to the host and
+// run there, so `syncCheckEnabled` and the epoch bumps only ever mutate on the host and mirror
+// back. On the host `action(fn) === fn` — unchanged behaviour. localStorage here is the host's,
+// which is correct: the toggle is a host setting, not a per-device one.
+export const toggleSyncCheck = action('syncCheckStore.toggleSyncCheck', () => {
   syncCheckEnabled.value = !syncCheckEnabled.value
   localStorage.setItem(KEY, String(syncCheckEnabled.value))
   if (!syncCheckEnabled.value) {
@@ -32,4 +37,4 @@ export function toggleSyncCheck() {
     // rsync push/pull in progress, only the read-only diff check.
     for (const id of Object.keys(projectRuntime.value)) bumpEpoch(id)
   }
-}
+})

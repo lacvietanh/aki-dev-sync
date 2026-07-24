@@ -20,12 +20,13 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import AgentUsageSlot from './AgentUsageSlot.vue';
 import { useSsh } from '../composables/useSsh';
 import { useAgentUsage } from '../composables/useAgentUsage';
 import { claudeMode } from '../store/claudeModeStore';
 import { tierCount } from '../store/usageTierStore';
+import { agEnabled, ccLocalEnabled, ccRemoteEnabled, setSourceEnabled } from '../store/usageSourcesStore';
 
 const { selectedSshHost } = useSsh();
 
@@ -54,16 +55,6 @@ const sectionHeight = computed(() => {
   return `${Math.min(count * 161 + (count - 1) * 10, 335)}px`;
 });
 
-// One-time seed: the ccRemote monitor used to piggyback on the single `aki-remote-mode-enabled`
-// flag. Now it has its own key - copy the old value across on first run after the split so a user
-// who had remote mode OFF doesn't get the monitor silently re-enabled.
-for (const [newKey, legacy] of [['aki-src-ccremote-enabled', 'aki-remote-mode-enabled']]) {
-  if (localStorage.getItem(newKey) === null) {
-    const old = localStorage.getItem(legacy);
-    if (old !== null) localStorage.setItem(newKey, old);
-  }
-}
-
 // Three independent, toggleable usage sources shared by both display slots. Polling is
 // driven purely by each source's own `enabled` flag (persisted), not by which slot (if
 // any) currently has it selected for display - so a slot can show a source that's off
@@ -73,44 +64,37 @@ for (const [newKey, legacy] of [['aki-src-ccremote-enabled', 'aki-remote-mode-en
 // in AgentUsageSlot.vue) - used for Claude Code local monitoring, which reads straight from
 // the native Anthropic account API/pricing and is meaningless once Proxy mode reroutes
 // traffic elsewhere (see claudeModeStore.js).
-function useToggleableSource(agentKey, resolveHost, storageKey, defaultEnabled, lockedRef = null) {
-  const enabled = ref(
-    localStorage.getItem(storageKey) !== null
-      ? localStorage.getItem(storageKey) === 'true'
-      : defaultEnabled
-  );
+function useToggleableSource(agentKey, resolveHost, enabledRef, srcKey, lockedRef = null) {
+  // `enabledRef` is now a MIRRORED store ref (usageSourcesStore) and `toggle` routes through the
+  // `setSourceEnabled` ACTION — so a companion's power-button click runs on the host and mirrors
+  // back; the monitor on/off is one shared Mac setting, not a per-device flag. localStorage is
+  // written only on the host (inside the action); the companion never writes its own copy.
   function toggle() {
     if (lockedRef?.value) return;
-    enabled.value = !enabled.value;
-    localStorage.setItem(storageKey, String(enabled.value));
+    setSourceEnabled(srcKey, !enabledRef.value);
   }
-  const hostRef = computed(() => (enabled.value ? resolveHost() : null));
+  const hostRef = computed(() => (enabledRef.value ? resolveHost() : null));
   const hook = useAgentUsage(agentKey, hostRef);
-  return reactive({ enabled, toggle, locked: lockedRef || computed(() => false), ...hook });
+  return reactive({ enabled: enabledRef, toggle, locked: lockedRef || computed(() => false), ...hook });
 }
 
-// Local sources cost nothing (no SSH round trip) - on by default, each with its own
-// independent power switch inside the LOCAL tab.
-const ag = useToggleableSource('antigravity', () => 'local', 'aki-src-ag-enabled', true);
+// Local sources cost nothing (no SSH round trip) - on by default, each with its own independent
+// power switch inside the LOCAL tab. Enabled flags live in usageSourcesStore (mirrored + actionable).
+const ag = useToggleableSource('antigravity', () => 'local', agEnabled, 'ag');
 const ccLocalLocked = computed(() => claudeMode.value === 'proxy');
-const ccLocal = useToggleableSource('claudecode', () => 'local', 'aki-src-cclocal-enabled', true, ccLocalLocked);
+const ccLocal = useToggleableSource('claudecode', () => 'local', ccLocalEnabled, 'ccLocal', ccLocalLocked);
 
 // Proxy mode ON forces monitoring off (locked, can't be manually re-enabled - see toggle()
-// above). Proxy mode OFF just unlocks the switch; it does NOT auto-restore a prior enabled
-// state, by design, to keep this behavior simple and predictable - the user turns it back
-// on themselves, same as any other fresh "off" state.
+// above). Proxy mode OFF just unlocks the switch; it does NOT auto-restore a prior enabled state,
+// by design. Set the mirrored ref directly (not persisted, matching the original): on the host this
+// mirrors to companions; on a companion the host's own watch drives the same value, so both agree.
 watch(claudeMode, (mode) => {
-  if (mode === 'proxy') ccLocal.enabled = false;
+  if (mode === 'proxy') ccLocalEnabled.value = false;
 });
 
 // Remote costs an SSH round trip, so it gets its own switch like the two local sources
 // (the power icon in the REMOTE tab) - independent of whether project sync/diff is on.
-const ccRemote = useToggleableSource(
-  'claudecode',
-  () => selectedSshHost.value,
-  'aki-src-ccremote-enabled',
-  true
-);
+const ccRemote = useToggleableSource('claudecode', () => selectedSshHost.value, ccRemoteEnabled, 'ccRemote');
 </script>
 
 <style scoped>

@@ -3,8 +3,8 @@
     <template #title>
       <div style="display: flex; align-items: center; gap: 8px;">
         <img
-          v-if="gitProject && !failedIcons[gitProject.id]"
-          :src="`aki-devsync-icon://${gitProject.id}?t=${iconTimestamp}`"
+          v-if="gitProject && !failedIcons[gitProject.id] && projectIconSrc(gitProject.id, iconTimestamp)"
+          :src="projectIconSrc(gitProject.id, iconTimestamp)"
           style="width: 18px; height: 18px; border-radius: 3px; object-fit: contain;"
           alt=""
           @error="failedIcons[gitProject.id] = true"
@@ -83,8 +83,9 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../utils/tauri'
 import { iconTimestamp } from '../../store/projectStore'
+import { projectIconSrc } from '../../utils/projectIcon'
 import BaseModal from './BaseModal.vue'
 import ChangelogModal from './ChangelogModal.vue'
 import { useProjects } from '../../composables/useProjects'

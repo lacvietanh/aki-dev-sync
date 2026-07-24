@@ -7,6 +7,9 @@ import {
   primaryMonitor,
   currentMonitor,
 } from "@tauri-apps/api/window";
+// Boundary module (ENV-1, docs/plan/remote-control.md §9): native *window* control has no meaning
+// on a companion — a phone browser cannot resize or close the Mac's window, and it must not try.
+import { isHost } from "../services/bridge";
 
 const PIN_STORAGE_KEY = "aki-devsync-pin-all-spaces";
 const VIEW_REMEMBER_KEY = "aki-devsync-remember-view";
@@ -51,7 +54,43 @@ function measureRequiredContentHeight() {
   return topHeader + usageSection + gridHeader + gridBody + dashboardBottom + 4;
 }
 
+/**
+ * Companion (phone-browser) shape of this composable. Same 12 keys as the host return below —
+ * AppHeader destructures all of them, so a missing key is a crash, not a degraded feature.
+ *
+ * The three async ones MUST return a Promise: the call sites are `restoreView().catch(...)` and
+ * `applyView(...).catch(...)` (AppHeader `onMounted` / `applyViewSafe`), so returning `undefined`
+ * would swap this crash for a `.catch of undefined` one.
+ *
+ * `nativeWindow: false` lets AppHeader hide the controls entirely rather than show titlebar
+ * buttons and window presets that silently do nothing on a phone.
+ */
+function companionWindow() {
+  const noop = () => {};
+  const noopAsync = () => Promise.resolve();
+  return {
+    startDragging: noop,
+    minimize: noop,
+    closeWin: noop,
+    isPinned,
+    togglePin: noop,
+    restorePin: noop,
+    applyView: noopAsync,
+    applyViewCombo: noopAsync,
+    savedView,
+    rememberView,
+    toggleRememberView: noop,
+    restoreView: noopAsync,
+    nativeWindow: false,
+  };
+}
+
 export function useAppWindow() {
+  // `getCurrentWindow()` reads `window.__TAURI_INTERNALS__.metadata` — undefined in a plain
+  // browser, so on a companion this throws inside setup() and takes the whole component (and with
+  // AppHeader, the whole app) down. Bail out BEFORE that call, not after.
+  if (!isHost) return companionWindow();
+
   const appWindow = getCurrentWindow();
 
   function minimize() {
@@ -228,5 +267,6 @@ export function useAppWindow() {
     rememberView,
     toggleRememberView,
     restoreView,
+    nativeWindow: true,
   };
 }

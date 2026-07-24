@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../utils/tauri'
 import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from '../store/projectStore'
 import { useLogs } from './useLogs'
 

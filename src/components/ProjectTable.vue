@@ -77,7 +77,7 @@
                    class="project-drag-handle icon-glow"
                    title="Kéo để sắp xếp"
                    @mousedown="isHandleMouseDown = true">
-                <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" @error="failedIcons[p.id] = true" />
+                <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" @error="failedIcons[p.id] = true" />
                 <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
               </div>
 
@@ -141,7 +141,7 @@
                 <!-- Open Popup (Native CSS Hover with fixed positioning) -->
                 <div class="open-popup" :style="projectRuntime[p.id]?.popupStyle">
                   <div class="popup-header" :title="p.name" style="display: flex; align-items: center;">
-                    <img v-if="!failedIcons[p.id]" :src="`aki-devsync-icon://${p.id}?t=${iconTimestamp}`" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
+                    <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                     <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 18px;"></i>
                     <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
                     <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
@@ -214,7 +214,7 @@
               </div>
 
               <button class="btn-tech btn-tech-secondary"
-                      @click="refreshProject(p)"
+                      @click="requestRefresh(p.id)"
                       :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
                       :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only - git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
                 <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isRefreshing(p.id) }"></i>
@@ -236,7 +236,7 @@
                                 'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
                                 'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
                               }"
-                              @click="startSync(p, 'push')"
+                              @click="requestSync(p.id, 'push')"
                               :title="!syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
                         <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text u-narrow-hide">PUSH</span>
                       </button>
@@ -246,7 +246,10 @@
                   <div class="dry-toggle-center" title="Toggle Dry Run">
                     <span class="dry-label">DRY</span>
                     <label class="switch switch-sm">
-                      <input type="checkbox" v-model="p.dry_run" @change="saveProjectsList()" />
+                      <!-- :checked + @change (NOT v-model): a companion must not mutate its own
+                           mirrored `p.dry_run` — the host flips it via setDryRun and the new value
+                           mirrors back. On the host this is identical to the old v-model+save. -->
+                      <input type="checkbox" :checked="p.dry_run" @change="setDryRun(p.id, $event.target.checked)" />
                       <span class="slider"></span>
                     </label>
                   </div>
@@ -260,7 +263,7 @@
                                 'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
                                 'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
                               }"
-                              @click="startSync(p, 'pull')"
+                              @click="requestSync(p.id, 'pull')"
                               :title="!syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
                         <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text u-narrow-hide">PULL</span>
                       </button>
@@ -287,14 +290,18 @@
 
 <script setup>
 import { ref, watch, onUnmounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../utils/tauri';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
 import { gitRefreshKey, diffRefreshKey, refreshProject } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
 import { Toast, ideAvailability, iconTimestamp, isRefreshing } from '../store/projectStore';
+import { projectIconSrc } from '../utils/projectIcon';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
+// R-2 write side: these run the real action on the host whether clicked on the Mac or relayed
+// from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
+import { requestSync, setDryRun, requestRefresh } from '../store/remoteActions';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';

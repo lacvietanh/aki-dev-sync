@@ -1,7 +1,7 @@
 import { ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../utils/tauri'
 import Swal from 'sweetalert2'
-import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp, bumpEpoch } from '../store/projectStore'
+import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp } from '../store/projectStore'
 import { useLogs } from './useLogs'
 import { refreshAllProjects, refreshProject, startBackgroundRefresh } from './useBackgroundRefresh'
 
@@ -163,50 +163,19 @@ export async function saveConfig() {
     }
   }
 
-  const index = projects.value.findIndex(p => p.id === editingProject.value.id)
-  const isNew = index === -1
-  const prevProject = !isNew ? projects.value[index] : null
-  const identityChanged = prevProject && (
-    prevProject.remote_host !== editingProject.value.remote_host ||
-    prevProject.local_path !== editingProject.value.local_path
-  )
+  const isNew = !projects.value.some(p => p.id === editingProject.value.id)
 
   try {
-    if (!isNew) {
-      projects.value[index] = { ...editingProject.value }
-      if (identityChanged) {
-        // Host or local path changed - any status check still in flight describes the OLD
-        // identity and must not land here (see bumpEpoch in projectStore.js). This is the
-        // "cancel the check, not a real rsync" boundary: bumping the epoch discards stale
-        // results and clears the busy indicator immediately; it never touches a push/pull in
-        // progress. The push/pull state is blanked to unknown for the same reason - it was
-        // measured against the old host.
-        bumpEpoch(editingProject.value.id)
-        projectRuntime.value[editingProject.value.id] = {
-          ...projectRuntime.value[editingProject.value.id],
-          hasPendingPush: null,
-          hasPendingPull: null,
-        }
-      }
-      appendGlobalLog("CONFIG", `User updated config for project "${editingProject.value.name}".`)
-    } else {
-      projectRuntime.value[editingProject.value.id] = {
-        git_status: "...",
-        git_log: "",
-        remote_url: "",
-        syncing: false,
-        epoch: 0,
-        refreshCount: 0,
-      }
-      projects.value.push({ ...editingProject.value })
-      appendGlobalLog("CONFIG", `User created new project "${editingProject.value.name}".`)
-    }
-
-    await saveProjectsList()
-    // One refresh covers git status, remote diff and stack_info (DEV/BUILD commands) - the last
-    // of which used to be fetched inline here with its own `check_project_stack` call.
-    const savedProject = projects.value.find(p => p.id === editingProject.value.id)
-    if (savedProject) refreshProject(savedProject)
+    // The list mutation + persist + refresh must run on the HOST so its reactive `projects` updates
+    // live and mirrors to every screen (ACT-1 / feat matrix "Config save"). Before this, saving on
+    // a companion mutated only the phone's copy and `invoke('save_projects')`-persisted to disk, so
+    // the Mac UI stayed stale until a reload re-read disk. On the host `applyProjectConfig` is the
+    // real fn; from a companion it ships the edited data as an intent the host applies. Dynamic
+    // import avoids the useProjectConfig ⇄ remoteActions static cycle (remoteActions imports
+    // saveProjectsList from this module).
+    const { applyProjectConfig } = await import('../store/remoteActions')
+    await applyProjectConfig({ ...editingProject.value })
+    appendGlobalLog("CONFIG", `User ${isNew ? 'created new' : 'updated config for'} project "${editingProject.value.name}".`)
     Toast.fire({ icon: 'success', title: isNew ? 'Project created' : 'Config saved' })
     closeConfig()
   } catch (err) {
@@ -269,18 +238,17 @@ export function confirmRemove() {
     confirmButtonText: 'Yes, remove it',
     background: '#131317',
     color: '#F3F4F6'
-  }).then((result) => {
+  }).then(async (result) => {
     if (result.isConfirmed) {
       const id = editingProject.value.id
       const projectName = editingProject.value.name
-      projects.value = projects.value.filter(p => p.id !== id)
-      // Dropping the runtime entry is also what cancels any status check still in flight for this
-      // project: currentEpoch() then reports 0, which can never equal the >= 1 epoch that check
-      // captured, so its result is discarded instead of resurrecting an entry for a project that
-      // no longer exists. Do not "optimize" this into keeping the entry around.
-      delete projectRuntime.value[id]
+      // Removal must mutate the HOST's reactive `projects` (and drop its runtime entry, which also
+      // cancels any in-flight status check for this id) so the Mac UI updates live and mirrors out —
+      // same ACT-1 reason as saveConfig. On a companion this ships an intent; on the host it runs
+      // directly. Dynamic import avoids the useProjectConfig ⇄ remoteActions static cycle.
+      const { removeProject } = await import('../store/remoteActions')
+      await removeProject(id)
       if (activeLogProjectId.value === id) activeLogProjectId.value = null
-      saveProjectsList()
       closeConfig()
       appendGlobalLog("REMOVE", `Project "${projectName}" was removed from the local list.`)
     }

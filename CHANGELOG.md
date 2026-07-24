@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
+### [1.19.0] - 2026-07-25
+
+#### Added
+- **Remote Control (preview): control the Mac from a phone browser** on the same LAN or over Tailscale. Menu ☰ → **Remote Control** → **On** shows a 6-digit pair code and `IP:PORT` rows (click to copy); the phone pairs once, stores a per-device token, and reconnects silently after that - across app restarts on both ends, until revoked. The Mac stays the single source of truth: the phone mirrors host state over one WebSocket and sends gestures back as intents that the host actually runs (push/pull/DRY/refresh/sync-check, project config edits, SSH host edits, global note, usage-source toggles). **Off** cuts every live phone immediately and stops serving anything on that port - not the page, not the dev proxy - until turned back on; 10 wrong pairing codes in a row disable it automatically and wipe the code. Same address in dev and release (`:1421`); a release build serves the embedded frontend directly, dev mode reverse-proxies to Vite on the same port so hot-reload still works. See [Remote Control](docs/feat/remote-control.md).
+- **Minimal PWA install for the companion.** `index.html` carries the favicon, `apple-mobile-web-app` meta tags and `public/manifest.webmanifest`; `public/sw.js` is a network-passthrough service worker (caches nothing - this tool needs the live Mac) registered companion-only, secure-context-only. iOS "Add to Home Screen" and desktop Chrome "Open as window" work over plain LAN http; a true Android standalone WebAPK needs HTTPS.
+- **HTTPS over Tailscale, as an in-app toggle.** `tailscale serve` terminates TLS for `<machine>.<tailnet>.ts.net` on 443 and proxies to the local relay, unlocking the Android standalone PWA and same-origin `wss://`. Menu → Remote Control → **HTTPS (PWA)** row, shown only when Tailscale is present; turning Remote Control off also turns serve off. `scripts/tailscale-serve-https.sh` remains as a CLI fallback.
+
+#### Fixed
+- **Host's own relay connection silently rejected on a dual-stack bind**: the relay listened on `[::]`, so the host's IPv4 loopback dial arrived as `::ffff:127.0.0.1`, which `Ipv6Addr::is_loopback()` doesn't recognize as loopback - every companion connected and paired fine but sat on a permanently empty dashboard (no `init`/`delta` ever sent). Fixed by binding IPv4-only; the host also now reconnects on an unexpected 4001 instead of treating it as an unpaired state.
+- **Config save, remove-project, new-project, SSH host edit/undo/redo, refresh-interval save and the global note previously wrote to the Mac's disk without touching the Mac's live reactive state** when triggered from a companion - the phone saw its own optimistic change, the Mac UI stayed stale until reload. Each is now a host-run `action()` that mutates the real store and mirrors the result back to every connected screen.
+
+#### Security note
+- A paired companion device can invoke any Tauri command on the host - there is no per-command allowlist, the pairing token is the sole gate. This is by design for now (not multi-tenant: every paired device mirrors the one Mac session) and is called out here rather than silently shipped; narrowing this surface is a deliberate future decision, not an oversight.
+
+---
+
 ### [1.18.0] - 2026-07-23
 
 #### Added

@@ -14,6 +14,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 const tauriBin = resolve(root, 'node_modules/.bin/tauri');
 
+// Fixed port the companion relay binds for the whole process lifetime
+// (src-tauri/src/web_server.rs `PORT`, src/constants/protocol.js `REMOTE_PORT`).
+// Neither Vite nor its HMR socket may take it — see findFreePort/hmrPort below.
+const RELAY_PORT = 1421;
+
 // Args passed by npm: `npm run tauri dev` → argv = ['dev', ...]
 const [subcommand, ...rest] = process.argv.slice(2);
 
@@ -47,6 +52,10 @@ if (subcommand !== 'dev') {
 
   async function findFreePort(base, range = 20) {
     for (let p = base; p < base + range; p++) {
+      // RELAY_PORT is free *right now* (the app hasn't started yet) but axum claims it a few
+      // seconds later. Letting Vite take it makes that bind fail with nothing but an eprintln,
+      // silently killing remote control for the whole session — so it is never a candidate.
+      if (p === RELAY_PORT) continue;
       if (await isPortFree(p)) return p;
     }
     throw new Error(`No free port in range ${base}-${base + range - 1}`);
@@ -55,8 +64,13 @@ if (subcommand !== 'dev') {
   // TAURI_FORCE_PORT pins the dev port (e.g. to match an existing SSH port-forward)
   // instead of auto-picking the first free one starting at 1420.
   const forcedPort = process.env.TAURI_FORCE_PORT ? parseInt(process.env.TAURI_FORCE_PORT, 10) : null;
+  if (forcedPort === RELAY_PORT) {
+    console.error(`[tauri-runner] TAURI_FORCE_PORT=${RELAY_PORT} is reserved by the companion relay — pick another port.`);
+    process.exit(1);
+  }
   const devPort = forcedPort || await findFreePort(1420);
-  const hmrPort = devPort + 1;
+  // devPort+1 is 1421 in the normal (devPort=1420) case — i.e. exactly the relay port. Skip it.
+  const hmrPort = devPort + 1 === RELAY_PORT ? devPort + 2 : devPort + 1;
   console.log(`[tauri-runner] dev port=${devPort} hmr=${hmrPort}${forcedPort ? ' (forced)' : ''}`);
 
   // Tauri CLI: override devUrl at runtime so it matches the port Vite will bind.

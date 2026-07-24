@@ -8,12 +8,16 @@ mod ssh;
 mod statusline;
 mod sync;
 mod system;
+mod web_server;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             logger::init(app.handle());
+            // Remote Control relay (docs/plan/remote-control.md §7) — binds the axum server on
+            // Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
+            web_server::init(app.handle());
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -101,6 +105,17 @@ pub fn run() {
             logger::is_debug_mode,
             logger::get_log_path,
             logger::log_frontend,
+            // remote control relay (docs/plan/remote-control.md §7)
+            web_server::start_companion_server,
+            web_server::stop_companion_server,
+            web_server::get_companion_url,
+            web_server::get_companion_status,
+            web_server::get_tailscale_https,
+            web_server::set_tailscale_https,
+            web_server::list_paired_devices,
+            web_server::revoke_device,
+            web_server::get_project_icons_map,
+            web_server::read_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

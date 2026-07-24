@@ -1,0 +1,14 @@
+{
+  "name": "Aki Dev Sync",
+  "short_name": "Aki DevSync",
+  "description": "Remote companion for the Aki Dev Sync Mac app",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#131317",
+  "theme_color": "#131317",
+  "icons": [
+    { "src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

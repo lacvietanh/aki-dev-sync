@@ -3,7 +3,7 @@
     <template #title>
       <div class="tasks-modal-header-title" v-if="tasksProject">
         <img
-          :src="`aki-devsync-icon://${tasksProject.id}?t=${iconTimestamp}`"
+          :src="projectIconSrc(tasksProject.id, iconTimestamp)"
           class="project-header-icon"
           alt=""
           @error="handleIconError"
@@ -156,6 +156,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { iconTimestamp } from '../../store/projectStore'
+import { projectIconSrc } from '../../utils/projectIcon'
 import { saveProjectsList } from '../../composables/useProjectConfig'
 import {
   showTasksModal, tasksProject, closeTasksModal,

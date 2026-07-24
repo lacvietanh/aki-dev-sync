@@ -23,7 +23,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../utils/tauri';
 import BaseModal from './BaseModal.vue';
 import { renderMarkdown } from '../../utils/markdown';
 

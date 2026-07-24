@@ -63,7 +63,7 @@
 <script setup>
 import { reactive, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
-import { refreshSettings } from '../../store/refreshStore'
+import { refreshSettings, setRefreshSettings } from '../../store/refreshStore'
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['close'])
@@ -75,7 +75,9 @@ watch(() => props.show, (v) => {
 })
 
 function save() {
-  refreshSettings.value = { ...local }
+  // Route through the action so a companion's edit reaches the Mac (C→H); on the host it is the
+  // plain reactive write. `local` is reactive — spread to a plain object for the intent wire.
+  setRefreshSettings({ ...local })
   emit('close')
 }
 </script>

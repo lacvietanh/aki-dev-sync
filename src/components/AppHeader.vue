@@ -55,6 +55,64 @@
             <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) - Native / Proxy settings for ~/.claude/settings.json on this machine">
               <i class="fa-solid fa-sliders"></i> Claude Code Profile (Local)
             </a>
+            <template v-if="remoteAvailable">
+              <div class="icon-dropdown-separator"></div>
+              <div class="icon-dropdown-ac-section">
+                <span class="ac-title"><i class="fa-solid fa-tower-broadcast"></i> Remote Control:</span>
+                <label
+                  class="remember-view remote-toggle"
+                  :class="{ on: remoteRunning }"
+                  :title="remoteRunning ? 'Remote control is ON - phones with the code can mirror & control this Mac' : 'Turn on to control this Mac from your phone over LAN / Tailscale'">
+                  <input type="checkbox" :checked="remoteRunning" :disabled="remoteBusy" @change="toggleRemote" />
+                  {{ remoteRunning ? 'On' : 'Off' }}
+                </label>
+              </div>
+              <template v-if="remoteRunning">
+                <div class="remote-code-row" title="Enter this 6-digit code on the phone the first time it connects">
+                  <span class="remote-code-label"><i class="fa-solid fa-key"></i> Pair code</span>
+                  <span class="remote-code">{{ remotePairingCode }}</span>
+                </div>
+                <a
+                  v-for="u in remoteUrls"
+                  :key="u.url"
+                  href="#"
+                  @click.prevent="copyRemoteUrl(u.url)"
+                  class="icon-dropdown-item remote-url-item"
+                  :title="'Open this on the phone, then enter the code — click to copy: ' + u.url">
+                  <i class="fa-solid" :class="u.kind === 'tailscale' ? 'fa-globe' : 'fa-wifi'"></i>
+                  <span class="remote-url-kind">{{ u.kind }}</span>
+                  <span class="remote-url">{{ u.url }}</span>
+                  <i class="fa-regular fa-copy remote-copy-ic"></i>
+                </a>
+                <div v-if="remoteUrls.length === 0" class="remote-hint remote-hint-warn">
+                  No LAN / Tailscale address found — check wifi.
+                </div>
+                <div v-else class="remote-hint">Open a URL on your phone → enter the code.</div>
+
+                <div
+                  v-if="remoteHttpsAvailable"
+                  class="remote-code-row remote-https-row"
+                  :title="remoteHttpsEnabled ? 'HTTPS is ON over Tailscale — the phone can Install this as a standalone app (PWA). Click the https URL to copy.' : 'Turn ON to serve over HTTPS via Tailscale so the phone can Install as a standalone app (PWA). Needs HTTPS certs enabled once in the Tailscale admin console.'">
+                  <span class="remote-code-label"><i class="fa-solid fa-lock"></i> HTTPS (PWA)</span>
+                  <label class="remember-view remote-toggle" :class="{ on: remoteHttpsEnabled }">
+                    <input type="checkbox" :checked="remoteHttpsEnabled" :disabled="remoteHttpsBusy" @change="onToggleRemoteHttps" />
+                    {{ remoteHttpsEnabled ? 'On' : 'Off' }}
+                  </label>
+                </div>
+                <a
+                  v-if="remoteHttpsAvailable && remoteHttpsEnabled && remoteHttpsUrl"
+                  href="#"
+                  @click.prevent="copyRemoteUrl(remoteHttpsUrl)"
+                  class="icon-dropdown-item remote-url-item"
+                  :title="'Open on the phone → Install as app (standalone PWA) — click to copy: ' + remoteHttpsUrl">
+                  <i class="fa-solid fa-lock"></i>
+                  <span class="remote-url-kind">https</span>
+                  <span class="remote-url">{{ remoteHttpsUrl }}</span>
+                  <i class="fa-regular fa-copy remote-copy-ic"></i>
+                </a>
+              </template>
+              <div v-if="remoteError" class="remote-hint remote-hint-warn" :title="remoteError">{{ remoteError }}</div>
+            </template>
             <div class="icon-dropdown-separator"></div>
             <div class="icon-dropdown-ac-section">
               <span class="ac-title"><i class="fa-solid fa-book"></i> AkiClaudeDoc:</span>
@@ -97,6 +155,9 @@
                 </button>
               </div>
             </div>
+            <!-- Window presets are native-window only — hidden on a phone companion, which has no
+                 window to resize or place. -->
+            <template v-if="nativeWindow">
             <div class="icon-dropdown-separator"></div>
             <div class="icon-dropdown-ac-section">
               <span class="ac-title"><i class="fa-solid fa-window-maximize"></i> AppWindow:</span>
@@ -156,6 +217,7 @@
                 @click="applyViewComboSafe(2)"
                 title="⌘2 - Wide + Center Primary">⌘2</span>
             </div>
+            </template>
             <div class="icon-dropdown-separator"></div>
             <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
               <i class="fa-brands fa-github"></i> GitHub Repository
@@ -212,7 +274,9 @@
         <ClaudeSettingModal :show="showStatuslineModal" @close="showStatuslineModal = false" />
         <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
 
-        <!-- Custom Traffic Lights -->
+        <!-- Custom Traffic Lights — native-window only: on a phone companion these would be dead
+             buttons (it cannot pin/minimize/close the Mac's window), so they are not rendered. -->
+        <template v-if="nativeWindow">
         <div
              class="titlebar-button pin-btn"
              :class="{ active: isPinned }"
@@ -226,6 +290,7 @@
         <div class="titlebar-button close-btn" @click="closeWin" title="Close">
           <i class="fa-solid fa-xmark fa-lg"></i>
         </div>
+        </template>
       </div>
     </header>
   </div>
@@ -233,14 +298,17 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../utils/tauri';
+import { onHostBoot } from '../utils/scheduler';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
 import { openGlobalNote, noteContent } from '../composables/useGlobalNote';
+import { useRemoteControl } from '../composables/useRemoteControl';
 import { STATUSLINE_COLORS } from '../utils/statuslineColors';
 import { tierCount, setTierCount } from '../store/usageTierStore';
+import { requestRefreshAll } from '../store/remoteActions';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
 import UpdateModal from './modals/UpdateModal.vue';
@@ -296,10 +364,56 @@ const {
   rememberView,
   toggleRememberView,
   restoreView,
+  nativeWindow,
 } = useAppWindow();
 const { openSshConfig } = useSsh();
 const { refreshAllProjects, anySyncing, anyRefreshing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
+
+// Remote Control section (host-only — hidden on a companion via remoteAvailable). See
+// src/composables/useRemoteControl.js and docs/plan/remote-control.md §7.1.
+const {
+  available: remoteAvailable,
+  running: remoteRunning,
+  pairingCode: remotePairingCode,
+  urls: remoteUrls,
+  busy: remoteBusy,
+  error: remoteError,
+  start: startRemote,
+  stop: stopRemote,
+  httpsAvailable: remoteHttpsAvailable,
+  httpsEnabled: remoteHttpsEnabled,
+  httpsUrl: remoteHttpsUrl,
+  httpsBusy: remoteHttpsBusy,
+  toggleHttps: toggleRemoteHttps,
+} = useRemoteControl();
+
+async function toggleRemote(e) {
+  if (e.target.checked) await startRemote();
+  else await stopRemote();
+  // Re-sync the DOM checkbox with the real state: if start() failed, `remoteRunning` never left
+  // false, so Vue sees no change to patch and the box would stay visibly checked while remote
+  // control is actually off.
+  e.target.checked = remoteRunning.value;
+}
+
+async function onToggleRemoteHttps(e) {
+  await toggleRemoteHttps();
+  // Re-sync the DOM checkbox with the real state: if the toggle failed (e.g. HTTPS certs not enabled
+  // in the tailnet), remoteHttpsEnabled never changed, so Vue sees no patch and the box would stay
+  // visibly flipped while serve is actually still off. remoteError already carries tailscale's hint.
+  e.target.checked = remoteHttpsEnabled.value;
+}
+
+async function copyRemoteUrl(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    Toast.fire({ icon: 'success', title: 'Copied', text: url });
+  } catch {
+    // Clipboard blocked (rare in the webview) — still surface the address so it can be read/typed.
+    Toast.fire({ icon: 'info', title: url });
+  }
+}
 
 const cleanVer = (v) => v.replace(/^v/, '').trim();
 const hasUpdate = (current, latest) => {
@@ -322,23 +436,28 @@ function applyLatestRelease(latest) {
   latestReleaseUrl.value = latest.html_url || RELEASE_URL;
 }
 
-onMounted(async () => {
+onMounted(() => {
   restorePin();
   restoreView().catch((e) => console.error('Failed to restore window view:', e));
   window.addEventListener('keydown', onViewShortcut);
-  try {
-    const raw = await invoke('check_for_updates');
-    const latest = JSON.parse(raw);
-    if (latest && latest.tag_name && hasUpdate(appVersion, latest.tag_name)) {
-      applyLatestRelease(latest);
-      const dismissedVersion = localStorage.getItem(UPDATE_DISMISS_KEY);
-      if (dismissedVersion !== latest.tag_name) {
-        showUpdateModal.value = true;
+  // Update check is a host-only concern (§5): a companion mirrors nothing from it and cannot act on
+  // it, and asking the phone to RPC the Mac for the Mac's own update state is pointless. onHostBoot
+  // runs this immediately on the host, never on a companion.
+  onHostBoot(async () => {
+    try {
+      const raw = await invoke('check_for_updates');
+      const latest = JSON.parse(raw);
+      if (latest && latest.tag_name && hasUpdate(appVersion, latest.tag_name)) {
+        applyLatestRelease(latest);
+        const dismissedVersion = localStorage.getItem(UPDATE_DISMISS_KEY);
+        if (dismissedVersion !== latest.tag_name) {
+          showUpdateModal.value = true;
+        }
       }
+    } catch (e) {
+      console.error('Failed to check for updates:', e);
     }
-  } catch (e) {
-    console.error('Failed to check for updates:', e);
-  }
+  });
 });
 
 onUnmounted(() => {
@@ -422,7 +541,10 @@ async function installAkiClaudeDoc() {
 // instead of from the projects themselves - making the global and per-project buttons two
 // unrelated mechanisms that only looked like one feature.
 function handleRefresh() {
-  refreshAllProjects();
+  // R-2: routed through the seam-A action so the header's global refresh works when clicked from a
+  // phone too (host runs the real refreshAllProjects; on the Mac this is identical to calling it
+  // directly). `refreshAllProjects` stays imported for other callers/typing.
+  requestRefreshAll();
 }
 
 function applyViewSafe(axis, name) {
@@ -800,6 +922,83 @@ function onViewShortcut(e) {
   border: solid #0f172a;
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
+}
+
+/* Remote Control — reuses the .remember-view toggle look; the extra rows only appear while ON. */
+.remote-toggle.on {
+  color: #34d399;
+}
+
+.remote-toggle.on input:checked {
+  background: #34d399;
+  border-color: #34d399;
+}
+
+.remote-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 2px;
+  font-size: 11px;
+}
+
+.remote-code-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #64748b;
+}
+
+.remote-code-label i {
+  color: #64748b;
+}
+
+.remote-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #a5f3fc;
+}
+
+.remote-url-item {
+  font-size: 11px;
+  gap: 6px;
+}
+
+.remote-url-kind {
+  text-transform: uppercase;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  min-width: 62px;
+}
+
+.remote-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #cbd5e1;
+}
+
+.remote-copy-ic {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.remote-url-item:hover .remote-copy-ic {
+  opacity: 0.7;
+}
+
+.remote-hint {
+  padding: 2px 10px 4px;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.remote-hint-warn {
+  color: #fbbf24;
 }
 
 .btn-intro {

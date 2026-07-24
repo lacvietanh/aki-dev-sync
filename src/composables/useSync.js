@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../utils/tauri'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import Swal from 'sweetalert2'
 import { projectRuntime, Toast } from '../store/projectStore'

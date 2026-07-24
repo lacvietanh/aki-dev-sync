@@ -52,7 +52,7 @@
 
 <script setup>
 import { ref, reactive, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../utils/tauri';
 import { claudeMode as currentMode, refreshClaudeMode } from '../../store/claudeModeStore';
 import BaseModal from './BaseModal.vue';
 
