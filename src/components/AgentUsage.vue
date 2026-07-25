@@ -11,11 +11,14 @@
           <span v-if="data && claudeTierDisplay" class="agent-plan-badge claude">
             {{ claudeTierDisplay }}
           </span>
-          <span v-if="data?.email" class="agent-account" :class="{ 'email-blurred': !showEmail }">{{ truncEmail(data.email) }}</span>
+          <!-- u-select-text (main.css): an account address is copy-worthy, so it opts out of the
+               app-wide no-selection default - but `.email-blurred` is scoped, so it still outranks
+               this class and a hidden address stays unselectable as well as unreadable. -->
+          <span v-if="data?.email" class="agent-account u-select-text" :class="{ 'email-blurred': !showEmail }">{{ truncEmail(data.email) }}</span>
           <button v-if="data?.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
             <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
           </button>
-          <span v-if="ccOrgName" class="agent-org" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
+          <span v-if="ccOrgName" class="agent-org u-select-text" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
         </div>
       </div>
       <div class="agent-status-badges">
@@ -90,7 +93,7 @@
                     <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="CLI"></i>
                     <img v-else-if="acc.sourceType === 'desktop' || acc.sourceType === 'desktop_cli'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG" />
                     <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="IDE" />
-                    <span v-if="showEmail" class="ag-account-email">{{ acc.email }}</span>
+                    <span v-if="showEmail" class="ag-account-email u-select-text">{{ acc.email }}</span>
                     <span v-else class="ag-account-email-masked">
                       <span class="email-prefix">{{ getEmailPrefix(acc.email) }}</span><span class="email-blurred-fixed">••••••••</span>
                     </span>
@@ -104,7 +107,10 @@
                     <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
                   </span>
                 </button>
-                <button class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" :title="getLogoutTitle()">
+                <!-- Log Out acts on THIS Mac's Antigravity (logout_antigravity* are local-only
+                     Tauri commands), so it is not offered while the card is showing a remote
+                     host's probe - clicking it there would sign out the wrong machine. -->
+                <button v-if="!remote" class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" :title="getLogoutTitle()">
                   <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : (currentSourceType === 'ide' ? 'fa-right-from-bracket' : (currentSourceType === 'cli' ? 'fa-terminal' : 'fa-desktop'))"></i>
                   <span>{{ loggingOut ? 'Logging out…' : getLogoutBtnText() }}</span>
                 </button>
@@ -181,7 +187,11 @@
         <!-- Render Claude Code specific circular progress (2 circles) -->
         <template v-if="agentId === 'claudecode'">
           <div class="cc-bars-block">
-            <div class="cc-usage-bar">
+            <div
+              class="cc-usage-bar"
+              :class="{ 'is-muted': cc5hMutedBy7d }"
+              :title="cc5hMutedBy7d ? 'Dimmed - the 7-day pool is full (100%), so this reading no longer changes anything' : null"
+            >
               <div class="cc-bar-header">
                 <span class="cc-bar-label">5-Hour</span>
                 <span class="cc-bar-pct" :class="cc5hColorClass">{{ cc5hPct !== null ? cc5hPct + '%' : 'N/A' }}</span>
@@ -228,11 +238,13 @@
                              subLabel="5H"
                              :percentage="gemini5hData ? gemini5hData.percentage : null"
                              :resetsAt="gemini5hData ? gemini5hData.resetsAt : null"
+                             :muted="gemini5hMutedByWeekly"
+                             :muted-reason="MUTED_BY_WEEKLY_REASON"
                              @timeout="$emit('retry')" />
                 <UsageCircle
                              label="Gemini Weekly Limit"
                              subLabel="7D"
-                             :percentage="geminiWeeklyBucket?.remainingFraction !== undefined ? Math.round((1 - geminiWeeklyBucket.remainingFraction) * 100) : null"
+                             :percentage="geminiWeeklyPct"
                              :resetsAt="geminiWeeklyBucket?.resetTime ? Math.floor(new Date(geminiWeeklyBucket.resetTime).getTime() / 1000) : null"
                              @timeout="$emit('retry')" />
               </div>
@@ -246,11 +258,13 @@
                              subLabel="5H"
                              :percentage="claude5hData ? claude5hData.percentage : null"
                              :resetsAt="claude5hData ? claude5hData.resetsAt : null"
+                             :muted="claude5hMutedByWeekly"
+                             :muted-reason="MUTED_BY_WEEKLY_REASON"
                              @timeout="$emit('retry')" />
                 <UsageCircle
                              label="Claude & GPT Weekly Limit"
                              subLabel="7D"
-                             :percentage="claudeWeeklyBucket?.remainingFraction !== undefined ? Math.round((1 - claudeWeeklyBucket.remainingFraction) * 100) : null"
+                             :percentage="claudeWeeklyPct"
                              :resetsAt="claudeWeeklyBucket?.resetTime ? Math.floor(new Date(claudeWeeklyBucket.resetTime).getTime() / 1000) : null"
                              @timeout="$emit('retry')" />
               </div>
@@ -287,6 +301,10 @@ const props = defineProps({
   // True when sourceOff is forced (not user-toggled) - e.g. Claude Code local monitoring
   // locked off while Proxy mode is active. Swaps the off-state message to explain why.
   locked: { type: Boolean, default: false },
+  // True when this card is showing a remote host's probe rather than this Mac's. Only used to
+  // withhold controls that act on the LOCAL machine (AG Log Out); the readings themselves are
+  // rendered identically either way.
+  remote: { type: Boolean, default: false },
   // AG-only multi-account view (unused for Claude Code)
   accounts: { type: Array, default: () => [] },
   viewingEmail: { default: null },
@@ -467,6 +485,27 @@ const claudeWeeklyBucket = computed(() => {
   return claudeGroup.value.buckets.find(b => b.window === 'weekly' || b.bucketId.includes('weekly')) || null;
 });
 
+// ── A pool's own full 7d dims that same pool's 5h ────────────────────────────
+// Once a pool's weekly quota reads 100% the pool is exhausted whatever its 5-hour figure says,
+// so the 5h reading is noise competing for attention. Each flag is derived STRICTLY from its own
+// group's weekly bucket and is handed only to that group's own 5H circle, so a full Gemini week
+// can never dim the Claude/OSS pool (or the reverse) - the multi-entity blast-radius rule in
+// CLAUDE.md. A null/absent weekly reading (old `models`-shaped payload, bucket missing) dims
+// nothing: `null >= 100` must never be treated as "full".
+const geminiWeeklyPct = computed(() =>
+  geminiWeeklyBucket.value?.remainingFraction !== undefined
+    ? Math.round((1 - geminiWeeklyBucket.value.remainingFraction) * 100)
+    : null);
+const claudeWeeklyPct = computed(() =>
+  claudeWeeklyBucket.value?.remainingFraction !== undefined
+    ? Math.round((1 - claudeWeeklyBucket.value.remainingFraction) * 100)
+    : null);
+
+const gemini5hMutedByWeekly = computed(() => geminiWeeklyPct.value !== null && geminiWeeklyPct.value >= 100);
+const claude5hMutedByWeekly = computed(() => claudeWeeklyPct.value !== null && claudeWeeklyPct.value >= 100);
+
+const MUTED_BY_WEEKLY_REASON = '7D pool full';
+
 // Backward compatibility fallbacks
 const geminiPool = computed(() => {
   if (props.agentId !== 'antigravity' || !props.data || !props.data.models) return null;
@@ -596,7 +635,11 @@ const cc5hResetsAt = computed(() => {
   if (r5 && r7 && r5 === r7) return null;
   return r5;
 });
-const cc5hColorClass = computed(() => pctColorClass(cc5hPct.value));
+// Same rule as AG's per-pool dimming above, for Claude Code's single pool: its own 7d at 100%
+// makes its own 5h reading noise. Read the AG block for the full rationale; here there is only
+// one pool, so "its own" is trivially satisfied - and a null 7d still dims nothing.
+const cc5hMutedBy7d = computed(() => cc7dPct.value !== null && cc7dPct.value >= 100);
+const cc5hColorClass = computed(() => (cc5hMutedBy7d.value ? 'color-muted' : pctColorClass(cc5hPct.value)));
 const cc5hResetLine = computed(() => formatResetLine(cc5hResetsAt.value, ccNow.value));
 
 // P4 boundary trigger: CC had no client-side equivalent of AG's UsageCircle @timeout - the
@@ -1229,6 +1272,17 @@ async function handleIconClick() {
   color: var(--text-darker);
 }
 
+/* 5h reading dimmed because this pool's own 7d is full - colour ladder dropped, opacity reduced,
+   explanation carried by the bar's title tooltip. No extra row/label (extreme-narrow principle). */
+.cc-bar-pct.color-muted {
+  color: var(--text-darker);
+}
+
+.cc-usage-bar.is-muted {
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
+}
+
 .cc-progress-track {
   height: 5px;
   background: rgba(255, 255, 255, 0.07);
@@ -1256,6 +1310,10 @@ async function handleIconClick() {
 
 .cc-progress-fill.color-na {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.cc-progress-fill.color-muted {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .cc-reset-line {

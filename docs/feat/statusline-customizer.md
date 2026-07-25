@@ -173,21 +173,31 @@ away by HTML layout, which once made the checkbox look like it did nothing.
 
 ## The dynamic-color ladder
 
-Five tiers. `blue` is everything below the `green` threshold - it has no threshold of its own.
-Defaults are uneven on purpose: a wide calm band at the bottom, narrower urgent ones at the top, so
-the range that matters gets the resolution.
+Five tiers. `calm` is everything below the `green` threshold - it has no threshold of its own, which
+is why it is named for its role rather than a hue. Defaults are uneven on purpose: a wide calm band
+at the bottom, narrower urgent ones at the top, so the range that matters gets the resolution.
 
-| Tier | Default | Meaning |
-|---|---|---|
-| blue | < 20% | plenty left |
-| green | 20-50% | comfortable |
-| yellow | 51-74% | worth noticing |
-| orange | 75-89% | getting tight |
-| red | ≥ 90% | act now |
+| Tier | Default | ANSI | Hex | Meaning |
+|---|---|---|---|---|
+| calm (aqua) | < 20% | `01;38;5;86` | `#5FFFD7` | plenty left |
+| green | 20-50% | `01;32` | `#00FF00` | comfortable |
+| yellow | 51-74% | `01;33` | `#FFFF00` | worth noticing |
+| orange | 75-89% | `01;38;5;208` | `#FF8700` | getting tight |
+| red | ≥ 90% | `01;31` | `#FF0000` | act now |
 
 `color_for_pct()` in the script and `tierHex()` in the Vue preview implement the same ladder against
 the same stored thresholds. `sanitized_thresholds()` clamps and sorts before emitting, so typing the
 tiers out of order still yields a monotonic ladder instead of an unreachable tier.
+
+**One colour table, three consumers (1.19.0).** Until 1.19.0 the app drew the ladder with Tailwind
+hexes while the script printed ANSI codes, so the swatch in the modal and the line in the terminal
+disagreed at *every* tier - the bottom one visibly, because bold blue (`01;34`) is nearly unreadable
+on a dark background. Both sides now derive from `src/utils/statuslineColors.js`, where each colour is
+one `{ key, ansi, hex }` record and `hex` is that ANSI code's real xterm rendering rather than an
+approximation. `statusline.rs` (`ansi_for()`) and the script's `BOLD_*` block are mirrors of it -
+shell and Rust cannot import JS, so the JS file changes first. Every swatch in the dynamic-colour
+area carries the code in its `title` (e.g. `aqua - ANSI 01;38;5;86 (#5FFFD7)`) so the app can be
+checked against the terminal instead of trusted.
 
 Two values are not percentages and are mapped onto the ladder before coloring:
 

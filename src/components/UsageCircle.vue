@@ -1,7 +1,7 @@
 <template>
   <div class="usage-circle-wrapper">
     <!-- Premium Tooltip Container -->
-    <div class="usage-circle-container" @mouseenter="updateTime">
+    <div class="usage-circle-container" :class="{ 'is-muted': muted }" @mouseenter="updateTime">
       <div class="circle-main-row">
         <!-- Wide layout: label sits beside the ring. At the narrow breakpoint (<=700px) this
              same span gets absolutely repositioned over the ring's top interior instead  - 
@@ -70,6 +70,10 @@
             <span class="tooltip-label">Status:</span>
             <span class="tooltip-val-dim">Not Available (N/A)</span>
           </div>
+          <div class="tooltip-row" v-if="muted && mutedReason">
+            <span class="tooltip-label">Dimmed:</span>
+            <span class="tooltip-val-dim">{{ mutedReason }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -89,6 +93,19 @@ const props = defineProps({
   resetsAt: {
     type: Number,
     default: null
+  },
+  // This reading is still correct but no longer decision-relevant, so it is drawn dimmed and
+  // without the colour ladder - the eye should land on the reading that still matters. Set by the
+  // caller for ONE pool at a time (AgentUsage.vue passes its own pool's weekly state); this
+  // component never infers it, so it can't leak across pools.
+  muted: {
+    type: Boolean,
+    default: false
+  },
+  // Why it is dimmed, shown as an extra tooltip line. No effect unless `muted`.
+  mutedReason: {
+    type: String,
+    default: ''
   }
 });
 
@@ -140,6 +157,7 @@ const strokeDashOffset = computed(() => {
 });
 
 const colorClass = computed(() => {
+  if (props.muted) return 'color-muted';
   if (!hasPercentage.value) return 'color-na';
   if (props.percentage <= 70) return 'color-safe';
   if (props.percentage <= 90) return 'color-warning';
@@ -329,6 +347,20 @@ export default {
 .color-na {
   stroke: rgba(255, 255, 255, 0.15);
   color: var(--text-darker);
+}
+
+/* `muted`: no colour ladder, just a dim reading (see the prop's comment). Dimming is applied to
+   the ring + time line only, never to the tooltip that explains why - and it adds no element of
+   its own, per the extreme-narrow UI principle. */
+.color-muted {
+  stroke: rgba(255, 255, 255, 0.22);
+  color: var(--text-darker);
+}
+
+.is-muted .circle-main-row,
+.is-muted .circle-time-line {
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
 }
 
 /* Tooltip implementation - opens upward (not below-right) and sized down. The usage panel

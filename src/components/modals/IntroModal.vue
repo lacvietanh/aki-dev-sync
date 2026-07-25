@@ -4,7 +4,7 @@
       <i class="fa-solid fa-book-open mr-1" style="color: #6ee7b7;"></i> Hướng Dẫn Sử Dụng - Aki Dev Sync
     </template>
 
-    <div class="modal-body scrollable intro-content">
+    <div class="modal-body scrollable intro-content u-select-text">
       <div class="intro-header mb-3">
         <h3>🚀 Aki Dev Sync</h3>
         <p>
@@ -141,15 +141,15 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) - cục bộ trên Mac này hoặc trên SSH host đang chọn - hiển thị plan tier, email, org name. <strong>Antigravity</strong> hỗ trợ trọn vẹn 3 môi trường: <code>AG</code> (Desktop App bản trắng), <code>IDE</code> (bản VS Code extension), và <code>CLI</code> (bản CLI Terminal) với cơ chế Smart Deduplicate gộp 1-pass gọn nhẹ (~40ms). Tách bạch 2 Domain Auth (IDE SQLite vs Gemini Core shared <code>~/.gemini/</code>) cùng nút Log Out theo ngữ cảnh. Hai panel hiển thị độc lập, tự khóa không cho hiện trùng nguồn. Đồng hồ đếm ngược reset real-time.</span>
+            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) - cục bộ trên Mac này hoặc trên SSH host đang chọn - hiển thị plan tier, email, org name. <strong>Antigravity</strong> hỗ trợ trọn vẹn 3 môi trường: <code>AG</code> (Desktop App bản trắng), <code>IDE</code> (bản VS Code extension), và <code>CLI</code> (bản CLI Terminal) với cơ chế Smart Deduplicate gộp 1-pass gọn nhẹ (~40ms). Tách bạch 2 Domain Auth (IDE SQLite vs Gemini Core shared <code>~/.gemini/</code>) cùng nút Log Out theo ngữ cảnh. Cả hai agent đều xem được ở <strong>Local hoặc trên SSH host đang chọn</strong>. Hai panel hiển thị độc lập, tự khóa không cho hiện trùng nguồn. Đồng hồ đếm ngược reset real-time. Pool nào có quota 7 ngày chạm 100% thì con số 5 giờ của <em>chính pool đó</em> bị làm xám và bỏ khỏi thang màu - pool đã cạn thì số 5h không còn nói lên điều gì, để mắt nhìn thẳng vào con số còn ý nghĩa.</span>
           </div>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-cloud"></i></div>
           <div class="feature-text">
-            <strong>Sync Check & CC Remote - 2 công tắc độc lập</strong>
-            <span>Icon nguồn ở cột SYNC bật/tắt riêng PUSH/PULL/SELECT + mục IDE Remote trong popup Open + check sync diff (nền + thủ công). Icon nguồn cạnh ô chọn host (tab REMOTE của Agent Usage) bật/tắt riêng monitor Claude Code Remote. Tắt một công tắc không còn tắt luôn công tắc kia.</span>
+            <strong>Sync Check & monitor Remote - các công tắc độc lập</strong>
+            <span>Icon nguồn ở cột SYNC bật/tắt riêng PUSH/PULL/SELECT + mục IDE Remote trong popup Open + check sync diff (nền + thủ công). Trong tab REMOTE của Agent Usage, mỗi tab <code>AG</code> / <code>CC</code> có icon nguồn riêng, bật/tắt độc lập monitor Antigravity và Claude Code trên host đang chọn. Tắt một công tắc không tắt lây công tắc nào khác. Cả bốn nguồn đều mặc định bật; mỗi nguồn remote đang bật tốn một lượt SSH mỗi chu kỳ refresh, tắt icon nguồn là ngưng hẳn.</span>
           </div>
         </div>
 
@@ -398,4 +398,34 @@ const { showIntroModal, closeIntroModal } = useIntro();
   color: var(--text-muted);
 }
 .mb-1 { margin-bottom: 4px; }
+
+/* Long inline <code> spans (file paths, shell snippets) are the only unbreakable runs in this
+   guide - let them break instead of widening the modal. */
+.intro-content code {
+  overflow-wrap: anywhere;
+}
+
+/* Narrow mode (SSoT 700px, main.css). Two feature columns leave ~135px of text each at 420px,
+   which turns every card into a ragged column of 2-3 words. One column instead. */
+@media (max-width: 700px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-flow {
+    flex-wrap: wrap;
+  }
+
+  .model-arrows {
+    flex-direction: row;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    order: 3;
+  }
+
+  .alert-box {
+    padding: 10px;
+  }
+}
 </style>

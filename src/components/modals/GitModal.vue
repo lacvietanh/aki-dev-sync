@@ -16,7 +16,7 @@
     <div class="modal-body scrollable">
       <div v-if="gitProject && projectRuntime[gitProject.id]?.remote_url" class="form-group full-width mb-2">
         <label>Remote Git URL</label>
-        <a @click.prevent="openUrl(projectRuntime[gitProject.id].remote_url)" class="git-url-link">
+        <a @click.prevent="openUrl(projectRuntime[gitProject.id].remote_url)" class="git-url-link u-select-text">
           <i class="fa-brands fa-git-alt mr-1"></i>{{ projectRuntime[gitProject.id].remote_url }}
         </a>
       </div>
@@ -52,22 +52,22 @@
             <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isGitLoading }"></i>
           </button>
         </label>
-        <pre class="git-status-log" v-html="formattedGitLog"></pre>
+        <pre class="git-status-log u-select-text" v-html="formattedGitLog"></pre>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn-tech btn-tech-secondary" @click="closeGitModal" :disabled="isGitLoading">CLOSE</button>
-      <button v-if="projectChangelogText" class="btn-tech btn-tech-secondary" @click="showChangelog = true" :disabled="isGitLoading">
-        <i class="fa-solid fa-scroll"></i> CHANGELOG
+      <button class="btn-tech btn-tech-secondary" @click="closeGitModal" :disabled="isGitLoading" title="Close">CLOSE</button>
+      <button v-if="projectChangelogText" class="btn-tech btn-tech-secondary" @click="showChangelog = true" :disabled="isGitLoading" title="Changelog">
+        <i class="fa-solid fa-scroll"></i> <span class="u-narrow-hide">CHANGELOG</span>
       </button>
-      <button class="btn-tech btn-tech-secondary" @click="handleFetch" :disabled="isGitLoading">
-        <i class="fa-solid fa-download"></i> FETCH
+      <button class="btn-tech btn-tech-secondary" @click="handleFetch" :disabled="isGitLoading" title="Fetch">
+        <i class="fa-solid fa-download"></i> <span class="u-narrow-hide">FETCH</span>
       </button>
-      <button class="btn-tech btn-tech-secondary" @click="handlePull" :disabled="isGitLoading">
-        <i class="fa-solid fa-cloud-arrow-down"></i> PULL
+      <button class="btn-tech btn-tech-secondary" @click="handlePull" :disabled="isGitLoading" title="Pull">
+        <i class="fa-solid fa-cloud-arrow-down"></i> <span class="u-narrow-hide">PULL</span>
       </button>
-      <button class="btn-tech btn-tech-secondary" @click="handlePush" :disabled="isGitLoading">
-        <i class="fa-solid fa-upload"></i> PUSH
+      <button class="btn-tech btn-tech-secondary" @click="handlePush" :disabled="isGitLoading" title="Push">
+        <i class="fa-solid fa-upload"></i> <span class="u-narrow-hide">PUSH</span>
       </button>
     </div>
     <!-- Project Changelog Preview -->
@@ -207,8 +207,11 @@ async function handleCommit() {
   gap: 8px;
   width: 100%;
 }
+/* min-width:0 - an <input> has an intrinsic width (~200px) and flex:1 alone will not shrink past
+   it, so the COMMIT button was pushed out of the row at 420px. */
 .commit-input-wrapper .large-input {
   flex: 1;
+  min-width: 0;
 }
 
 .git-status-header {

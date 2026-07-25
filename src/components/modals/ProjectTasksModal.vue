@@ -268,6 +268,8 @@ function timeAgo(ts) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   border-bottom: 1px solid var(--border-color);
   padding-bottom: 10px;
 }
@@ -285,7 +287,6 @@ function timeAgo(ts) {
   font-size: 11px;
   color: var(--text-muted);
   cursor: pointer;
-  user-select: none;
 }
 
 .toggle-hide-done input {
@@ -320,6 +321,7 @@ function timeAgo(ts) {
 
 .task-add-input {
   flex: 1;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -443,8 +445,11 @@ function timeAgo(ts) {
   color: var(--text-darker) !important;
 }
 
+/* min-width:0 - the title <input> has a ~200px intrinsic width and a flex item defaults to
+   min-width:auto, so the row refused to shrink and overflowed the modal body at 420px. */
 .task-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -608,5 +613,16 @@ function timeAgo(ts) {
 
 .project-notes-textarea:focus {
   border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Narrow mode (SSoT 700px, main.css). A task row carries seven fixed-width items around one
+   flexible title; at 420px the 10px gaps alone ate 50px and squeezed the title to a few
+   characters. Tightening the gaps and the row padding buys back ~60px without dropping a
+   control - the project rule forbids hiding state, and every icon here is a state. */
+@media (max-width: 700px) {
+  .task-item-row {
+    gap: 5px;
+    padding: 6px;
+  }
 }
 </style>

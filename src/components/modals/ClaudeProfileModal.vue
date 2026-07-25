@@ -21,7 +21,7 @@
               <input v-model="cfg.modelHaiku" class="field-input" type="text" :placeholder="DEFAULTS.haiku" title="env.ANTHROPIC_DEFAULT_HAIKU_MODEL - leave blank to use default" spellcheck="false" />
             </div>
 
-            <div v-if="status.msg" class="status-msg" :class="status.err ? 'err' : 'ok'">
+            <div v-if="status.msg" class="status-msg u-select-text" :class="status.err ? 'err' : 'ok'">
               <i class="fa-solid" :class="status.err ? 'fa-triangle-exclamation' : 'fa-check-circle'"></i>
               {{ status.msg }}
             </div>
@@ -184,6 +184,7 @@ async function applyMode(mode) {
 
 .key-input {
   flex: 1;
+  min-width: 0;
 }
 
 .btn-eye {
@@ -210,6 +211,8 @@ async function applyMode(mode) {
   align-items: flex-start;
   gap: 7px;
   line-height: 1.4;
+  /* Rust errors come through here verbatim - a long unbroken path must not widen the 360px modal. */
+  overflow-wrap: anywhere;
 }
 
 .status-msg i {

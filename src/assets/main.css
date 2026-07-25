@@ -44,12 +44,33 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #F3F4F6;
   overflow: hidden;
-  user-select: text;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* Prevent text-selection on interactive elements - buttons everywhere in the app. The body
-   default stays user-select: text so form inputs and console output remain selectable. */
-button { user-select: none; -webkit-user-select: none; }
+/* Selection is OFF by default for the whole app shell and ON only where copying is the point.
+   This is the inverse of the old default (body: text + a `user-select: none` sprinkled per
+   component): chrome text - labels, tab captions, table headers, badges, section titles - is never
+   copied, and an accidental drag over it just paints an ugly highlight.
+   Two rules, no per-component class. Opt back in with `.u-select-text` on any element whose text
+   the user genuinely copies (console/log output, git status & diff, changelog and release notes,
+   paths, emails, pair codes); form controls are opted in here so they never need the class. */
+input,
+textarea,
+[contenteditable],
+.u-select-text,
+.u-select-text * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Nothing in the chrome is a drag source - generalised from the old `.top-header *` rule.
+   ProjectTable's row drag-and-drop sets `-webkit-user-drag: element !important` on `.grid-row`
+   (a div) and is unaffected. */
+img,
+a {
+  -webkit-user-drag: none;
+}
 
 .mr-1 {
   margin-right: 4px;
@@ -87,35 +108,11 @@ button { user-select: none; -webkit-user-select: none; }
   color: var(--accent-red);
 }
 
-/* Narrow-mode utilities (SSoT: 700px is the single narrow breakpoint for the whole app  - 
-   see docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so they work
-   from inside any component's <style scoped>. */
-@media (max-width: 700px) {
-  .u-narrow-hide {
-    display: none !important;
-  }
-
-  /* Pin/minimize/close were overflowing the titlebar at narrow widths - shrink a little, not
-     to icon-only, just enough to fit. */
-  .titlebar-button {
-    width: 19px;
-    height: 19px;
-    margin-left: 0;
-    font-size: 11px;
-  }
-
-  /* Modal chrome eats a large share of a narrow window - trim the padding, keep the structure. */
-  .modal-overlay { padding: 8px; }
-  .modal-header  { padding: 8px 10px; }
-  .modal-body    { padding: 10px; }
-  .modal-footer  { padding: 8px 10px; }
-}
-
-@media (min-width: 701px) {
-  .u-wide-hide {
-    display: none !important;
-  }
-}
+/* Narrow-mode utilities live at the BOTTOM of this file - see the block after `.update-modal`.
+   They must come after every base rule they override: `.modal-body { padding: 16px }` and
+   `.titlebar-button` are declared further down at the same specificity, so a media query placed
+   here would lose the cascade and silently do nothing (which is exactly what happened between
+   1.14.0 and 1.19.0 - only `.u-narrow-hide`, which carries !important, ever took effect). */
 
 .dashboard-layout {
   display: flex;
@@ -160,13 +157,6 @@ button { user-select: none; -webkit-user-select: none; }
   border-bottom: 1px solid rgba(0, 210, 255, 0.4);
   -webkit-app-region: drag;
   box-shadow: 0 4px 15px rgba(0, 210, 255, 0.1);
-}
-
-.top-header,
-.top-header * {
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-user-drag: none;
 }
 
 .logo-section {
@@ -1238,4 +1228,69 @@ input:checked+.slider:before {
   max-width: 640px;
   width: 90%;
   max-height: 70vh;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   NARROW MODE - SSoT: 700px is the single narrow breakpoint for the whole app
+   (see docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so the
+   utilities work from inside any component's <style scoped>.
+   MUST stay last in this file: every rule below overrides a base rule declared above it at the
+   same specificity, so moving this block up silently disables it.
+   A component's own <style scoped> still outranks everything here (the data-v attribute adds
+   specificity) - a modal that restyles `.modal-body`/`.modal-footer` under a scoped name has to
+   repeat its own narrow override locally (ChangelogModal, ClaudeProfileModal, SshConfigModal,
+   UpdateModal do).
+   --------------------------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .u-narrow-hide {
+    display: none !important;
+  }
+
+  /* Pin/minimize/close were overflowing the titlebar at narrow widths - shrink a little, not
+     to icon-only, just enough to fit. */
+  .titlebar-button {
+    width: 19px;
+    height: 19px;
+    margin-left: 0;
+    font-size: 11px;
+  }
+
+  /* Modal chrome eats a large share of a narrow window - trim the padding, keep the structure. */
+  .modal-overlay { padding: 8px; }
+  .modal-header  { padding: 8px 10px; }
+  .modal-body    { padding: 10px; }
+  .modal-footer  { padding: 8px 10px; }
+
+  /* A long project name in a modal title is a flex item with min-width:auto, so it pushed the
+     close button off the right edge. Let it shrink and ellipsize instead. Titles are either bare
+     text in the h2 (Config, Intro, Refresh) or a <span> inside an icon+text flex row (Git,
+     Changelog, Tasks, Update) - both shapes covered here rather than four times over. */
+  .modal-header h2,
+  .modal-header h2 > *,
+  .modal-header h2 span {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .btn-close-modal { flex: 0 0 auto; }
+
+  /* Footer button rows are wider than a 420px window (GitModal alone carries five). Let them wrap
+     and tighten the button padding rather than letting the row overflow. */
+  .modal-footer {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .modal-footer .btn-tech { padding: 0 10px; }
+
+  /* Two form columns leave ~180px each at 420px - not enough for a path input. Stack them. */
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 701px) {
+  .u-wide-hide {
+    display: none !important;
+  }
 }

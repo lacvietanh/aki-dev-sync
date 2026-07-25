@@ -62,6 +62,7 @@ function redo() { redoSshConfig() }
 .host-selector-wrapper {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -99,5 +100,23 @@ function redo() { redoSshConfig() }
 .host-select:focus {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 0 2px rgba(0, 210, 255, 0.2);
+}
+
+/* Narrow mode (SSoT 700px, main.css). This body also carries `.ssh-editor-container`, whose 20px
+   padding lives in main.css at the same specificity as the global `.modal-body` trim - which of
+   the two wins depends on source order. Restating it here (scoped, so it carries a data-v
+   attribute and outranks both) makes the result deterministic instead of order-dependent. */
+@media (max-width: 700px) {
+  .ssh-editor-container {
+    padding: 10px;
+  }
+
+  .active-host-row {
+    padding: 8px 10px 0 10px;
+  }
+
+  .host-selector-wrapper {
+    padding: 6px 8px;
+  }
 }
 </style>

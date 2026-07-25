@@ -34,6 +34,5 @@ defineProps({
   text-align: center;
   color: #fff;
   pointer-events: none;
-  user-select: none;
 }
 </style>

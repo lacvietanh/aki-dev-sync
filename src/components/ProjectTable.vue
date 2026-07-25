@@ -89,8 +89,10 @@
                   </a>
                 </div>
                 <div class="project-paths">
-                  <span class="path-local" :title="p.local_path"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
-                  <span v-if="p.remote_host" class="path-remote" :title="`${p.remote_host}:${p.remote_path}`"><i class="fa-solid fa-cloud text-amber mr-1"></i> {{ p.remote_host }}:{{ p.remote_path }}</span>
+                  <!-- u-select-text (main.css): paths are copied by hand often enough that the
+                       app-wide no-selection default has to be lifted here. -->
+                  <span class="path-local u-select-text" :title="p.local_path"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
+                  <span v-if="p.remote_host" class="path-remote u-select-text" :title="`${p.remote_host}:${p.remote_path}`"><i class="fa-solid fa-cloud text-amber mr-1"></i> {{ p.remote_host }}:{{ p.remote_path }}</span>
                 </div>
               </div>
             </div>
@@ -914,7 +916,6 @@ fieldset:disabled .switch {
   letter-spacing: 0.1em;
   color: rgba(255, 255, 255, 0.35);
   padding: 4px 12px 2px;
-  user-select: none;
 }
 
 .popup-copy-btn {
@@ -941,7 +942,6 @@ fieldset:disabled .switch {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.8);
   transition: background 0.12s;
-  user-select: none;
 }
 
 .popup-item:hover {

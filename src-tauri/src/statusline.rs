@@ -137,6 +137,10 @@ fn block_of(key: &str) -> Option<&'static str> {
     })
 }
 
+/// MIRROR of STATUSLINE_COLORS in src/utils/statuslineColors.js, which is the source of truth for
+/// the key -> ANSI mapping AND for the hex the app draws each code with. Rust cannot import that
+/// file, so this table is a copy: change it there first. The ladder's five tier codes are mirrored
+/// in the template's BOLD_* block (src-tauri/src/statusline-unified.sh) from the same file.
 fn ansi_for(name: &str) -> &'static str {
     match name {
         "white" => r"\033[97m",
@@ -227,7 +231,7 @@ fn config_block(config: &StatuslineConfig) -> String {
     }
 
     s.push_str(&format!(
-        "\n# Dynamic-color ladder, ascending. Below THRESH_GREEN is the calm blue tier.\n\
+        "\n# Dynamic-color ladder, ascending. Below THRESH_GREEN is the calm aqua tier.\n\
          THRESH_GREEN={green}\n\
          THRESH_YELLOW={yellow}\n\
          THRESH_ORANGE={orange}\n\
@@ -1178,9 +1182,12 @@ mod tests {
         );
 
         // A tighter ladder must repaint the same reading - here 19% goes from the calm tier to red.
+        // The calm tier's code is xterm 86 (aquamarine), not the old bold blue 01;34 - the ladder's
+        // five codes live in STATUSLINE_TIERS (src/utils/statuslineColors.js) and are mirrored into
+        // the template's BOLD_* block.
         let quota = r#"{"cwd":"/tmp/demo","rate_limits":{"five_hour":{"used_percentage":19,"resets_at":0}}}"#;
         let (calm, _) = run_script("ladder_calm.sh", &gen(&from_json(VUE_DEFAULT_JSON)), quota, &[]);
-        assert!(calm.contains("\u{1b}[01;34m19%"), "19% should be the blue tier: {:?}", calm);
+        assert!(calm.contains("\u{1b}[01;38;5;86m19%"), "19% should be the calm tier: {:?}", calm);
         let mut cfg = from_json(VUE_DEFAULT_JSON);
         cfg.thresholds = StatuslineThresholds { green: 5, yellow: 10, orange: 15, red: 18 };
         let (hot, _) = run_script("ladder_hot.sh", &gen(&cfg), quota, &[]);

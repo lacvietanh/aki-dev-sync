@@ -30,7 +30,9 @@
           </button>
         </div>
       </div>
-      <div class="console-output" ref="consoleRef">
+      <!-- u-select-text (main.css): log output is the single most copy-worthy surface in the app,
+           so it opts out of the app-wide no-selection default. -->
+      <div class="console-output u-select-text" ref="consoleRef">
         <div v-if="displayedLogs.length === 0" class="empty-logs">
           <i class="fa-solid fa-ghost mb-2"></i><br>
           {{ activeLogProjectId ? "No raw logs yet. Trigger a sync action." : "No global events recorded yet." }}

@@ -239,15 +239,6 @@ function applyPreset(stack) {
   margin-top: 0 !important;
 }
 
-/* Stack below ~560px (typical when modal is narrowed by viewport) */
-@media (max-width: 560px) {
-  .excludes-split {
-    flex-direction: column;
-  }
-  .excludes-split > .config-group {
-    width: 100%;
-  }
-}
 
 .commands-group {
   border: 1px solid rgba(16, 185, 129, 0.2);
@@ -335,5 +326,31 @@ function applyPreset(stack) {
 
 .code-input:focus {
   border-color: #10b981;
+}
+
+/* Narrow mode - SSoT breakpoint is 700px (main.css). This file used to carry a rogue 560px block
+   for .excludes-split; folded in here. Checked at the wider trigger: at 700px the modal body is
+   ~660px wide, so two exclude columns are ~325px each - a textarea of `.gitignore` lines still
+   reads fine there, but the PUSH/PULL pair plus their Pre/Post script textareas is already the
+   tightest thing in this modal, and stacking at 700 costs only vertical scroll in a modal that
+   already scrolls. Same reasoning for the DEV/BUILD command pair. */
+@media (max-width: 700px) {
+  .excludes-split {
+    flex-direction: column;
+  }
+
+  .excludes-split > .config-group {
+    width: 100%;
+  }
+
+  .commands-row {
+    flex-direction: column;
+  }
+
+  /* Stacked, the label owns the full row - let the default-command hint use it instead of
+     truncating at a fixed 160px. */
+  .default-hint {
+    max-width: 100%;
+  }
 }
 </style>

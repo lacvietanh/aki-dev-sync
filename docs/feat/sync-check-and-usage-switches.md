@@ -13,10 +13,25 @@ This was split into two independent switches, each with its own `localStorage` k
 
 - **`syncCheckEnabled`** (`src/store/syncCheckStore.js`, `aki-sync-check-enabled`, default ON)  - 
   gates project sync/diff only.
-- **`ccRemote`** (`src/components/AgentUsageSection.vue`, `aki-src-ccremote-enabled`, default ON)  - 
-  gates Claude Code remote usage monitoring only, using the same `useToggleableSource()` pattern
-  as the two local usage sources (`ag`, `ccLocal`), so all three sources are now symmetric instead
-  of the remote source being a special case that borrowed someone else's flag.
+- **`ccRemote`** (`aki-src-ccremote-enabled`, default ON) - gates Claude Code remote usage
+  monitoring only, using the same `useToggleableSource()` pattern as the two local usage sources
+  (`ag`, `ccLocal`), so all sources are symmetric instead of the remote one being a special case
+  that borrowed someone else's flag.
+
+Two later changes extended the same shape rather than adding new mechanisms:
+
+- **The flags moved to `src/store/usageSourcesStore.js` (1.19.0).** They used to be component-local
+  refs inside `AgentUsageSection.vue`, which the remote-control mirror (it globs `store/*.js`)
+  could not see - a companion phone's power toggle only flipped the phone's own copy. Living in a
+  store makes them mirror host→companion, and `setSourceEnabled()` is an `action()` so a phone's
+  toggle runs on the Mac and comes back through the mirror. See `docs/feat/remote-control.md`.
+- **`agRemote`** (`aki-src-agremote-enabled`, default ON) - added in 1.19.0, gates Antigravity
+  remote usage monitoring. All four sources default on, deliberately: polling follows a source's
+  own `enabled` flag rather than what a slot displays, so this does start one `ssh <host> node`
+  probe per refresh interval on upgrade for anyone with a host selected — the same cost `ccRemote`
+  has always had. Defaulting it off would have avoided a one-time SSH round trip at the price of
+  two identical features behaving differently forever. An unreachable host is handled by the
+  consecutive-failure breaker in `useAgentUsage.js`, not by the default.
 
 ## What `syncCheckEnabled` gates
 
@@ -30,20 +45,31 @@ This was split into two independent switches, each with its own `localStorage` k
 **UI**: a power icon in the SYNC column header (`src/components/ProjectTable.vue`), next to
 `RefreshRing`.
 
-## What `ccRemote`'s switch gates
+## What the two remote-usage switches gate
 
-Claude Code remote usage monitoring only - nothing else. Lives in `AgentUsageSection.vue` exactly
-like the two local sources (`ag`, `ccLocal`); see `src/composables/useAgentUsage.js` and the
-`useToggleableSource()` helper.
+`ccRemote` gates Claude Code remote usage monitoring, `agRemote` gates Antigravity remote usage
+monitoring - nothing else, and nothing about each other. Both are created by the same
+`useToggleableSource()` call shape as the two local sources in `AgentUsageSection.vue`; see
+`src/composables/useAgentUsage.js`.
 
-**UI**: the power icon in the usage widget's REMOTE tab (`src/components/AgentUsageSlot.vue`),
-left of the SSH host-select dropdown - unchanged in position from before the split, just now wired
-to its own dedicated flag instead of the old master switch.
+Remote AG needed no Rust at all: `get_agent_usage('antigravity', host)` already routes a non-empty
+host through `run_remote_node_timeout` → `ssh <host> node` (`src-tauri/src/agent_usage.rs`), and
+`provision_agent_usage` is a no-op for Antigravity.
 
-## What neither gates
+**UI (1.19.0)**: the REMOTE tab now carries the same `AG | CC` tab pair as LOCAL, each tab with its
+own power icon doubling as that source's on/off state - one shared `v-for` in
+`src/components/AgentUsageSlot.vue`, not two hand-copied templates. The SSH host picker sits beside
+them, deliberately narrow, and is disabled only when *both* remote sources are off. Both remote
+sources watch the same `selectedSshHost`: one host choice, two monitors of it.
+
+**Log Out is withheld on a remote card.** `logout_antigravity` / `logout_antigravity_cli` act on
+this Mac, so offering them while the card shows a remote host's probe would sign out the wrong
+machine (`AgentUsage.vue`, `remote` prop).
+
+## What none of them gate
 
 Local usage sources (Antigravity, Claude Code local) have their own independent per-source power
-switches (`ag`/`ccLocal` in `AgentUsageSection.vue`) - neither switch above touches them.
+switches (`ag`/`ccLocal`) - no switch above touches them.
 
 ## The refresh controller (added post-split, same investigation)
 
@@ -115,8 +141,9 @@ the two concerns while keeping each switch as simple as the single one used to b
 ## Related source files
 
 - `src/store/syncCheckStore.js` - the sync/diff switch
-- `src/components/AgentUsageSection.vue` - the ccRemote switch (`useToggleableSource` call) + migration seed
-- `src/components/AgentUsageSlot.vue` - ccRemote switch UI
+- `src/store/usageSourcesStore.js` - all four usage-source flags + `setSourceEnabled` (the mirrored action)
+- `src/components/AgentUsageSection.vue` - the four `useToggleableSource` calls + the ccRemote migration seed
+- `src/components/AgentUsageSlot.vue` - the LOCAL/REMOTE tab UI and the shared AG|CC tab loop
 - `src/components/ProjectTable.vue`, `src/composables/useSync.js`, `src/composables/useSyncStatus.js` - the sync-check gates
 - `src/store/projectStore.js` - refresh counter (`beginRefresh`/`endRefresh`/`isRefreshing`/`anyRefreshing`) and cancellation primitive (`bumpEpoch`/`currentEpoch`)
 - `src/composables/useBackgroundRefresh.js` - the refresh controller: `refreshProject`, `refreshAllProjects`, the git/diff timers and ring keys

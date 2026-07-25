@@ -1,4 +1,4 @@
-// Mirrored on/off state for the three usage monitors (AG local, CC local, CC remote).
+// Mirrored on/off state for the four usage monitors (AG local, CC local, AG remote, CC remote).
 //
 // These flags used to live as component-local refs inside AgentUsageSection's useToggleableSource,
 // so the mirror (which globs store/*.js) never saw them and a companion's power toggle only flipped
@@ -18,6 +18,7 @@ if (localStorage.getItem('aki-src-ccremote-enabled') === null) {
 const KEYS = {
   ag: 'aki-src-ag-enabled',
   ccLocal: 'aki-src-cclocal-enabled',
+  agRemote: 'aki-src-agremote-enabled',
   ccRemote: 'aki-src-ccremote-enabled',
 }
 
@@ -28,9 +29,17 @@ function seed(key, dflt) {
 
 export const agEnabled = ref(seed(KEYS.ag, true))
 export const ccLocalEnabled = ref(seed(KEYS.ccLocal, true))
+// agRemote is new in 1.19.0 - no legacy key ever existed for it, so it is seeded from its own
+// key only (never from `aki-remote-mode-enabled`, which predates it and meant something else).
+// On by default like the other three. It does mean an upgrade starts one `ssh <host> node` probe
+// per refresh interval for anyone with a host selected, but that is the same cost ccRemote has
+// always had, and splitting the defaults would leave two identical features behaving differently
+// forever to avoid a one-time cost measured in one SSH round trip. An unreachable host is handled
+// by the existing consecutive-failure breaker in useAgentUsage.js, not by the default.
+export const agRemoteEnabled = ref(seed(KEYS.agRemote, true))
 export const ccRemoteEnabled = ref(seed(KEYS.ccRemote, true))
 
-const REFS = { ag: agEnabled, ccLocal: ccLocalEnabled, ccRemote: ccRemoteEnabled }
+const REFS = { ag: agEnabled, ccLocal: ccLocalEnabled, agRemote: agRemoteEnabled, ccRemote: ccRemoteEnabled }
 
 /** Set one monitor's enabled flag. On the host: mutate the mirrored ref + persist the host's
  *  localStorage (→ mirrors to every screen). From a companion: ships an intent; the host runs this

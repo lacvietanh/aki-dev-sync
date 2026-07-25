@@ -180,7 +180,7 @@ Thứ tự khối: `tag` → `identity` → `cwd` → `model` → `context` → 
 
 | Thang | Ngưỡng | Màu |
 |---|---|---|
-| `color_for_pct` | `< 20` | `BOLD_BLUE` `\033[01;34m` |
+| `color_for_pct` | `< 20` | `BOLD_CALM` `\033[01;38;5;86m` (aquamarine — **1.19.0**, trước là `BOLD_BLUE` `\033[01;34m`) |
 | | `20-50` | `BOLD_GREEN` `\033[01;32m` |
 | | `51-74` | `BOLD_YELLOW` `\033[01;33m` |
 | | `75-89` | `BOLD_ORANGE` `\033[01;38;5;208m` |
@@ -204,8 +204,18 @@ do chính chỗ đổi sắc độ vẽ ra — không `|`, không khoảng trắ
 
 Chọn từ **dải xám trung tính 232-255**: xám không có hue nên không bao giờ chọi hue với màu chữ người
 dùng tự đặt; chỉ còn phải canh độ sáng, tức việc kiểm tra rút về **một chiều** thay vì phải duyệt mọi
-cặp nền×chữ. Lưu ý `BOLD_BLUE` (`01;34`, nấc thấp nhất của ladder) khá tối — nếu sau này nâng nền lên
-sáng hơn `237` thì phải đổi nấc đó sang `38;5;33`.
+cặp nền×chữ.
+
+Cảnh báo "`BOLD_BLUE` (`01;34`) khá tối" ở bản trước đã thành hiện thực và **được xử lý ở 1.19.0**:
+nấc đáy đổi sang `BOLD_CALM` = `\033[01;38;5;86m` (xterm 86, aquamarine). Sáng hơn hẳn trên nền tối
+nhưng vẫn lạnh hơn nấc `green` kế trên, nên ladder vẫn đọc được như một thang nhiệt độ. Vì `38;5;N`
+trỏ thẳng vào bảng 256 màu nên nấc này không còn phụ thuộc palette của từng terminal.
+
+Nguồn sự thật cho toàn bộ mã màu (cả ladder lẫn 8 màu người dùng chọn được) là
+`src/utils/statuslineColors.js` — mỗi màu một bản ghi `{ key, ansi, hex }`, trong đó `hex` là màu
+xterm thật của đúng mã ANSI đó. `ansi_for()` trong `statusline.rs` và khối `BOLD_*`/`WHITE`/`GREY`
+trong `statusline-unified.sh` là **bản sao** (Rust/shell không import được JS): sửa file JS trước,
+rồi mới sửa hai chỗ kia.
 
 Mốc thang: context tô màu theo **200k = 100%** (không hiện %), cost theo `COST_FULL_USD=30`.
 

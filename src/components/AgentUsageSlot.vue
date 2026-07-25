@@ -16,39 +16,36 @@
         </button>
       </div>
 
-      <!-- Right: LOCAL mode picks which local agent (each with its own power button,
-           colored to double as the on/off status). REMOTE mode shows the global Remote Mode
-           power icon (left of the host picker - only reachable/visible from this REMOTE tab,
-           native contextual placement) followed by the SSH host it's monitoring. There's only
-           one source in REMOTE, so the space freed by not needing a tab-per-agent goes here. -->
+      <!-- Right: which agent within the selected category. LOCAL and REMOTE both offer the same
+           AG | CC pair, so they share ONE loop over `srcTabs` (the local/remote list is picked by
+           the computed) instead of two hand-copied templates - each tab carries its own power icon,
+           colored to double as that source's on/off status. REMOTE additionally carries the SSH
+           host picker, kept deliberately narrow so the two tabs fit beside it. -->
       <div class="tab-group">
-        <template v-if="topTab === 'local'">
-          <button
-            v-for="src in localTabs"
-            :key="src.key"
-            class="tab src-tab"
-            :class="{ 'is-active': localSub === src.key }"
-            :title="src.source.locked ? `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.source.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`"
-            @click="localSub = src.key"
-          >
-            <i class="fa-solid fa-power-off src-power" :class="[src.source.enabled ? 'is-on' : 'is-off', { 'is-locked': src.source.locked }]"
-               @click.stop="!src.source.locked && src.source.toggle()"></i>
-            <img :src="src.icon" class="src-icon" alt="" />
-            <span class="u-narrow-hide">{{ src.label }}</span>
-          </button>
-        </template>
-        <template v-else>
-          <i
-            class="fa-solid fa-power-off src-power"
-            :class="ccRemote.enabled ? 'is-on' : 'is-off'"
-            @click.stop="ccRemote.toggle()"
-            :title="ccRemote.enabled ? 'Claude Code remote monitoring ON - click to turn off' : 'Claude Code remote monitoring OFF - click to turn on'"
-          ></i>
-          <select :value="selectedSshHost" @change="setSelectedSshHost($event.target.value)" class="host-select-mini" :disabled="!ccRemote.enabled" title="Remote host to monitor">
-            <option value="" disabled>Select Host</option>
-            <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
-          </select>
-        </template>
+        <button
+          v-for="src in srcTabs"
+          :key="src.key"
+          class="tab src-tab"
+          :class="{ 'is-active': activeSub === src.key }"
+          :title="src.source.locked ? `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.source.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`"
+          @click="activeSub = src.key"
+        >
+          <i class="fa-solid fa-power-off src-power" :class="[src.source.enabled ? 'is-on' : 'is-off', { 'is-locked': src.source.locked }]"
+             @click.stop="!src.source.locked && src.source.toggle()"></i>
+          <img :src="src.icon" class="src-icon" alt="" />
+          <span class="u-narrow-hide">{{ src.label }}</span>
+        </button>
+        <select
+          v-if="topTab === 'remote'"
+          :value="selectedSshHost"
+          @change="setSelectedSshHost($event.target.value)"
+          class="host-select-mini"
+          :disabled="!agRemote.enabled && !ccRemote.enabled"
+          :title="selectedSshHost ? `Remote host being monitored: ${selectedSshHost}` : 'Pick the remote host to monitor'"
+        >
+          <option value="" disabled>Select Host</option>
+          <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
+        </select>
       </div>
     </div>
 
@@ -62,6 +59,7 @@
       :isCached="slotAccountInfo.isCached"
       :cachedAt="slotAccountInfo.cachedAt"
       :showEmail="showEmail"
+      :remote="topTab === 'remote'"
       :sourceOff="!activeSource.enabled"
       :locked="!!activeSource.locked"
       :accounts="activeSource.accounts"
@@ -83,8 +81,8 @@ import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
 
 // Each slot owns its own display selection (which source it shows) and email-visibility
-// preference, persisted per slot-id. The underlying sources (ag / ccLocal / ccRemote) are
-// shared reactive bundles owned by the parent - both slots can point at the same source
+// preference, persisted per slot-id. The underlying sources (ag / ccLocal / agRemote / ccRemote)
+// are shared reactive bundles owned by the parent - both slots can point at the same source
 // simultaneously without double-polling, since polling is driven by the source's own
 // `enabled` flag, not by which slot currently displays it.
 const props = defineProps({
@@ -93,6 +91,7 @@ const props = defineProps({
   defaultLocalSub: { type: String, default: 'ag' },     // 'ag' | 'cc'
   ag: { type: Object, required: true },
   ccLocal: { type: Object, required: true },
+  agRemote: { type: Object, required: true },
   ccRemote: { type: Object, required: true },
 });
 
@@ -100,29 +99,52 @@ const { sshHosts, selectedSshHost, setSelectedSshHost } = useSsh();
 
 const topTabKey = `aki-usage-slot-${props.slotId}-top`;
 const localSubKey = `aki-usage-slot-${props.slotId}-sub`;
+// REMOTE gets its own key rather than sharing `-sub` with LOCAL: they are two independent
+// choices ("which agent do I watch on this machine" vs "...on the remote host"), and one shared
+// key would make picking AG under REMOTE silently re-point the LOCAL tab too. Default is 'cc'
+// for every slot, which is exactly what the REMOTE tab showed before it had a second source -
+// so an existing user's slots keep showing the same thing after the upgrade.
+const remoteSubKey = `aki-usage-slot-${props.slotId}-remote-sub`;
 const showEmailKey = `aki-usage-slot-${props.slotId}-show-email`;
 
 const topTab = ref(localStorage.getItem(topTabKey) || props.defaultTopTab);
 const localSub = ref(localStorage.getItem(localSubKey) || props.defaultLocalSub);
+const remoteSub = ref(localStorage.getItem(remoteSubKey) || 'cc');
 const showEmail = ref(localStorage.getItem(showEmailKey) !== 'false');
 
 watch(topTab, (v) => { localStorage.setItem(topTabKey, v); });
 watch(localSub, (v) => { localStorage.setItem(localSubKey, v); });
+watch(remoteSub, (v) => { localStorage.setItem(remoteSubKey, v); });
 
 function toggleEmail() {
   showEmail.value = !showEmail.value;
   localStorage.setItem(showEmailKey, String(showEmail.value));
 }
 
+// The two categories offer the same AG | CC pair, so they are described as two lists of the same
+// shape and rendered by one loop (see the template) - the only difference is which source bundle
+// each tab points at and how its tooltip names it.
 const localTabs = computed(() => [
   { key: 'ag', label: 'AG', title: 'Antigravity', icon: '/antigravity-icon.png', source: props.ag },
   { key: 'cc', label: 'CC', title: 'Claude Code (local)', icon: '/claude-icon.png', source: props.ccLocal },
 ]);
+const remoteTabs = computed(() => [
+  { key: 'ag', label: 'AG', title: 'Antigravity (remote)', icon: '/antigravity-icon.png', source: props.agRemote },
+  { key: 'cc', label: 'CC', title: 'Claude Code (remote)', icon: '/claude-icon.png', source: props.ccRemote },
+]);
+const srcTabs = computed(() => (topTab.value === 'local' ? localTabs.value : remoteTabs.value));
+
+// One selection handle over the two persisted sub-choices, so the template never branches on
+// which category is active - reading and writing both go to the key that category owns.
+const activeSub = computed({
+  get: () => (topTab.value === 'local' ? localSub.value : remoteSub.value),
+  set: (v) => { if (topTab.value === 'local') localSub.value = v; else remoteSub.value = v; },
+});
 
 // useAgentUsage() returns the same shape for every agent (accounts/viewingEmail/etc. are
 // always present, just no-ops for Claude Code), so a single computed can drive one
-// <AgentUsage> binding instead of three near-identical blocks.
-const activeAgentId = computed(() => (topTab.value === 'local' && localSub.value === 'ag') ? 'antigravity' : 'claudecode');
+// <AgentUsage> binding instead of four near-identical blocks.
+const activeAgentId = computed(() => (activeSub.value === 'ag' ? 'antigravity' : 'claudecode'));
 const activeAgentName = computed(() => (activeAgentId.value === 'antigravity') ? 'Antigravity' : 'Claude Code');
 const popupPosition = computed(() => {
   switch (props.slotId) {
@@ -134,8 +156,8 @@ const popupPosition = computed(() => {
   }
 });
 const activeSource = computed(() => {
-  if (topTab.value === 'local') return localSub.value === 'ag' ? props.ag : props.ccLocal;
-  return props.ccRemote;
+  const tab = srcTabs.value.find(t => t.key === activeSub.value);
+  return (tab || srcTabs.value[0]).source;
 });
 
 // Per-slot viewing email/key state: lets Slot A and Slot B independently select and display
@@ -268,15 +290,18 @@ watch(slotAccountInfo, (info) => {
   object-fit: contain;
 }
 
+/* Deliberately small: since 1.19.0 the REMOTE tab carries the same AG | CC pair as LOCAL, so the
+   host picker no longer owns the whole right-hand group - it gives up the width those two tabs
+   need. The full host name still shows in the open dropdown and in the title tooltip. */
 .host-select-mini {
   background-color: var(--bg-tertiary);
   color: var(--text-light);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
-  padding: 2px 4px;
-  height: 21px;
-  max-width: 110px;
-  font-size: 10px;
+  padding: 1px 2px;
+  height: 19px;
+  max-width: 70px;
+  font-size: 9px;
   font-family: inherit;
   outline: none;
   cursor: pointer;
@@ -297,6 +322,11 @@ watch(slotAccountInfo, (info) => {
   .tab {
     padding: 3px 5px;
     gap: 2px;
+  }
+
+  /* Icon-only tabs still need their share of the row here, so the picker shrinks again. */
+  .host-select-mini {
+    max-width: 46px;
   }
 }
 </style>

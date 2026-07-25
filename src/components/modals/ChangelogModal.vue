@@ -13,7 +13,7 @@
         <span>{{ title || 'Changelog' }}</span>
       </div>
     </template>
-    <div class="modal-body changelog-body" v-html="renderedChangelog" ref="bodyRef" />
+    <div class="modal-body changelog-body u-select-text" v-html="renderedChangelog" ref="bodyRef" />
   </BaseModal>
 </template>
 
@@ -101,5 +101,26 @@ watch(() => bodyRef.value, (el) => {
 }
 .changelog-body :deep(a:hover) {
   text-decoration: underline;
+}
+
+/* Code fences, tables and mermaid diagrams are the only fixed-width things in rendered markdown -
+   let each scroll inside itself instead of widening the modal. */
+.changelog-body :deep(pre),
+.changelog-body :deep(table),
+.changelog-body :deep(.mermaid) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.changelog-body :deep(code) {
+  overflow-wrap: anywhere;
+}
+
+/* Narrow mode (SSoT 700px, main.css) - this file's scoped .changelog-body padding outranks the
+   global `.modal-body { padding: 10px }` trim, so it has to be repeated here. */
+@media (max-width: 700px) {
+  .changelog-body {
+    padding: 12px 12px;
+  }
 }
 </style>

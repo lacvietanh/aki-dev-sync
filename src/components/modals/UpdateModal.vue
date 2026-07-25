@@ -7,7 +7,7 @@
       </div>
     </template>
     <div class="modal-body update-body">
-      <div class="update-body-content" v-html="renderedNotes" />
+      <div class="update-body-content u-select-text" v-html="renderedNotes" />
     </div>
     <div class="update-footer">
       <button class="btn-tech btn-tech-secondary" @click="$emit('close')">Later</button>
@@ -116,11 +116,36 @@ async function download() {
 .update-body-content :deep(a:hover) {
   text-decoration: underline;
 }
+.update-body-content :deep(pre),
+.update-body-content :deep(table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.update-body-content :deep(code) {
+  overflow-wrap: anywhere;
+}
+
 .update-footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 24px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Narrow mode (SSoT 700px, main.css). `.update-body` / `.update-footer` are scoped names, so the
+   global `.modal-body` / `.modal-footer` trim never reached them. Three buttons ("Later",
+   "Release Page", "Download DMG") plus 48px of horizontal padding overflowed a 420px window. */
+@media (max-width: 700px) {
+  .update-body {
+    padding: 12px;
+  }
+
+  .update-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+  }
 }
 </style>

@@ -150,13 +150,18 @@ fi
 # ANSI Colors. Fixed palette - these are the script's own vocabulary (a label is WHITE, a
 # secondary reading is GREY, the ladder owns the five BOLD_* tiers) and are deliberately NOT
 # user-configurable. Only the six COLOR_* variables in the generated region below are.
+# MIRROR: the codes come from src/utils/statuslineColors.js (STATUSLINE_TIERS for the ladder,
+# STATUSLINE_COLORS for the rest) - that file is the source of truth and also holds the hex the
+# app draws each code with. Shell cannot import it, so change it there first, then here.
 RESET_ALL='\033[00m'
 RESET_FG='\033[22;39m'  # reset bold+fg, keep bg
 BOLD_GREEN='\033[01;32m'
 BOLD_YELLOW='\033[01;33m'
 BOLD_ORANGE='\033[01;38;5;208m'
 BOLD_RED='\033[01;31m'
-BOLD_BLUE='\033[01;34m'
+# The bottom tier, named for its role rather than a hue: it was bold blue (01;34), too dark to read
+# on a dark terminal. xterm 86 aquamarine is brighter and still colder than the green tier above it.
+BOLD_CALM='\033[01;38;5;86m'
 WHITE='\033[97m'
 GREY='\033[90m'
 COST_FULL_USD=30
@@ -190,7 +195,7 @@ COLOR_model='\033[36m'
 COLOR_git_branch='\033[35m'
 COLOR_account='\033[90m'
 
-# Dynamic-color ladder, ascending. Below THRESH_GREEN is the calm blue tier.
+# Dynamic-color ladder, ascending. Below THRESH_GREEN is the calm aqua tier.
 THRESH_GREEN=20
 THRESH_YELLOW=51
 THRESH_ORANGE=75
@@ -236,7 +241,7 @@ color_for_pct() {
   elif [ "$p" -ge "$THRESH_ORANGE" ]; then printf '%s' "$BOLD_ORANGE"
   elif [ "$p" -ge "$THRESH_YELLOW" ]; then printf '%s' "$BOLD_YELLOW"
   elif [ "$p" -ge "$THRESH_GREEN" ]; then printf '%s' "$BOLD_GREEN"
-  else printf '%s' "$BOLD_BLUE"; fi
+  else printf '%s' "$BOLD_CALM"; fi
 }
 
 fmt_k() {

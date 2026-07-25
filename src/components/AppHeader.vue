@@ -70,7 +70,9 @@
               <template v-if="remoteRunning">
                 <div class="remote-code-row" title="Enter this 6-digit code on the phone the first time it connects">
                   <span class="remote-code-label"><i class="fa-solid fa-key"></i> Pair code</span>
-                  <span class="remote-code">{{ remotePairingCode }}</span>
+                  <!-- u-select-text (main.css): unlike the IP:PORT rows below, this one is not
+                       click-to-copy, so selecting it by hand has to stay possible. -->
+                  <span class="remote-code u-select-text">{{ remotePairingCode }}</span>
                 </div>
                 <a
                   v-for="u in remoteUrls"
@@ -884,7 +886,6 @@ function onViewShortcut(e) {
   font-size: 10px;
   color: #64748b;
   cursor: pointer;
-  user-select: none;
   white-space: nowrap;
 }
 

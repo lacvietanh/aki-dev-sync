@@ -21,7 +21,9 @@
 
     <div class="modal-body">
             <div class="preview-box">
-              <pre class="preview-line" v-html="previewHtml"></pre>
+              <!-- u-select-text (main.css): the rendered line is worth copying into a terminal or
+                   an issue, so it opts out of the app-wide no-selection default. -->
+              <pre class="preview-line u-select-text" v-html="previewHtml"></pre>
             </div>
 
             <div class="section-label fields-header">
@@ -71,7 +73,9 @@
                             <input type="checkbox" :disabled="controlBlocked(control)" :checked="fieldEnabled(control.key)" @change="setFieldEnabled(control.key, $event.target.checked)" />
                             <span class="ctl-label">{{ control.label }}</span>
                           </label>
-                          <span v-else-if="control.type === 'parts'" class="ctl-parts">
+                          <!-- Hint text, not a control: at narrow widths its room is better spent on
+                               the toggles and inputs beside it (u-narrow-hide, main.css). -->
+                          <span v-else-if="control.type === 'parts'" class="ctl-parts u-narrow-hide">
                             <span v-for="(p, pi) in control.items" :key="pi" class="ctl-part">{{ p }}</span>
                           </span>
                           <label v-else-if="control.type === 'master'" class="ctl-toggle ctl-master" :title="`Enable/disable the whole ${control.label} group`">
@@ -83,7 +87,7 @@
                               type="button"
                               class="swatch swatch-current"
                               :style="{ background: HEX[fieldByKey(control.key).color] }"
-                              :title="`Color: ${fieldByKey(control.key).color} - click to change`"
+                              :title="colorTitle(control.key)"
                               @click.stop="togglePicker(control.key)"
                             ></button>
                             <span v-if="pickerFor === control.key" class="swatch-pop" @click.stop>
@@ -94,13 +98,13 @@
                                 class="swatch"
                                 :class="{ sel: fieldByKey(control.key).color === c.key }"
                                 :style="{ background: c.hex }"
-                                :title="c.label"
+                                :title="swatchTitle(c)"
                                 @click="pickColor(control.key, c.key)"
                               ></button>
                             </span>
                           </span>
                           <span v-else-if="control.type === 'color'" class="color-dynamic" :title="ladderTitle">
-                            <span v-for="t in ladder" :key="t.key" class="tier-dot" :style="{ background: t.hex }"></span>
+                            <span v-for="t in ladder" :key="t.key" class="tier-dot" :style="{ background: t.hex }" :title="swatchTitle(t)"></span>
                           </span>
                           <label v-else-if="control.type === 'trunc'" class="ctl-trunc" :title="truncTitle(control.name)">
                             <i class="fa-solid fa-scissors"></i>
@@ -124,9 +128,9 @@
                  </≥ symbols to decode. -->
             <div class="ladder-bar">
               <div v-for="t in ladder" :key="t.key" class="ladder-cell" :style="{ flexGrow: Math.max(1, t.to - t.from) }">
-                <span class="ladder-seg" :style="{ background: t.hex }"></span>
+                <span class="ladder-seg" :style="{ background: t.hex }" :title="swatchTitle(t)"></span>
                 <input
-                  v-if="t.key !== 'blue'"
+                  v-if="t.key !== CALM.key"
                   type="number" min="0" max="100"
                   v-model.number="cfg.thresholds[t.key]"
                   :title="`${t.key} starts at this %`"
@@ -217,7 +221,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { invoke } from '../../utils/tauri';
 import { projects } from '../../store/projectStore';
 import BaseModal from './BaseModal.vue';
-import { STATUSLINE_COLORS } from '../../utils/statuslineColors';
+import { STATUSLINE_COLORS, STATUSLINE_TIERS, swatchTitle } from '../../utils/statuslineColors';
 
 const props = defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
@@ -253,10 +257,14 @@ const CATALOG = {
   ram:         { label: 'System RAM',           desc: 'Whole-machine memory in use (⚅ NN%) - read from the OS, not from the CLI payload' },
 };
 
-// The dynamic-color ladder, lowest tier first. `blue` has no threshold of its own - it is
-// everything below `green`, i.e. "plenty left". Mirrors color_for_pct() in
-// src-tauri/src/statusline.rs; the hexes are the terminal palette's rendering of those ANSI codes.
-const TIER_HEX = { blue: '#60a5fa', green: '#34d399', yellow: '#fbbf24', orange: '#fb923c', red: '#f87171' };
+// The dynamic-color ladder, lowest tier first, straight from the shared table - one record per
+// tier carrying the ANSI code the script prints and that code's real hex, so the swatch, the
+// preview and the terminal cannot disagree. `calm` has no threshold of its own: it is everything
+// below `green`, i.e. "plenty left". Mirrors color_for_pct() in the script template.
+const TIERS = STATUSLINE_TIERS;
+const TIER_BY_KEY = Object.fromEntries(TIERS.map(t => [t.key, t]));
+// The four upper tiers are exactly the stored threshold keys; the bottom one is not stored.
+const CALM = TIERS[0];
 const TIER_KEYS = ['green', 'yellow', 'orange', 'red'];
 
 // The dollar spend a session's cost is scaled against before being run through the ladder.
@@ -313,6 +321,16 @@ function truncTitle(name) {
 
 const COLORS = STATUSLINE_COLORS;
 const HEX = Object.fromEntries(COLORS.map(c => [c.key, c.hex]));
+const COLOR_BY_KEY = Object.fromEntries(COLORS.map(c => [c.key, c]));
+// The two colors the script hardwires for anything the user cannot pick: WHITE for a label, GREY
+// for a secondary reading. Same records as the picker's white/grey, so they stay one value.
+const WHITE_HEX = HEX.white;
+const GREY_HEX = HEX.grey;
+// Tooltip for the current-color button: the code the terminal will print, plus what clicking does.
+function colorTitle(key) {
+  const c = COLOR_BY_KEY[fieldByKey(key)?.color];
+  return c ? `${swatchTitle(c)} - click to change` : 'Pick a color';
+}
 // The only fields with a real picker; everything else is colored by the ladder or by a fixed label
 // color. Must name the same six keys as COLOR_KEYS in statusline.rs and the COLOR_* block in the
 // script template, or the UI grows a picker that changes nothing.
@@ -348,9 +366,9 @@ const GROUPS = [
     id: 'identity',
     keys: ['identity_user', 'identity_host'],
     sep: '@',
-    // Grey, not white: the '@' is glue between two names, not a label of its own (matches script).
-    // Literal rather than GREY_HEX - GROUPS is evaluated at module load, before that const exists.
-    sepColor: '#64748b',
+    // Grey, not white: the '@' is glue between two names, not a label of its own (matches script,
+    // which prints it with $GREY).
+    sepColor: GREY_HEX,
     lines: [
       { segments: [
         { controls: [{ type: 'master', keys: ['identity_user', 'identity_host'], label: 'id' }] },
@@ -740,10 +758,9 @@ onBeforeUnmount(() => window.removeEventListener('click', closePicker));
 // computed rather than chosen, so "auto" says which colors and at what point instead of just
 // asserting that something happens.
 const ladder = computed(() => [
-  { key: 'blue', hex: TIER_HEX.blue, from: 0, to: cfg.thresholds.green },
+  { ...CALM, from: 0, to: cfg.thresholds.green },
   ...TIER_KEYS.map((key, i) => ({
-    key,
-    hex: TIER_HEX[key],
+    ...TIER_BY_KEY[key],
     from: cfg.thresholds[key],
     to: i + 1 < TIER_KEYS.length ? cfg.thresholds[TIER_KEYS[i + 1]] : 100,
   })),
@@ -902,15 +919,14 @@ function span(text, hex, bold) { return `<span style="color:${hex}${bold ? ';fon
 // Only the CLI tag has a background - it's a fixed brand color, not a value-driven foreground -
 // so it gets its own tiny helper rather than overloading `span`'s (hex, bold) signature.
 function bgSpan(text, bgHex, fgHex) { return `<span style="background:${bgHex};color:${fgHex};padding:0 3px">${esc(text)}</span>`; }
+// Same walk as color_for_pct() in the script, against the same thresholds and now the same colors.
 function tierHex(pct) {
   const t = cfg.thresholds;
-  if (pct >= t.red) return TIER_HEX.red;
-  if (pct >= t.orange) return TIER_HEX.orange;
-  if (pct >= t.yellow) return TIER_HEX.yellow;
-  if (pct >= t.green) return TIER_HEX.green;
-  return TIER_HEX.blue;
+  for (let i = TIER_KEYS.length - 1; i >= 0; i--) {
+    if (pct >= t[TIER_KEYS[i]]) return TIER_BY_KEY[TIER_KEYS[i]].hex;
+  }
+  return CALM.hex;
 }
-const GREY_HEX = '#64748b';
 // The preview truncates exactly where the script does, so the number the user types is visibly
 // the number that lands on the terminal.
 function cut(text, name) { return String(text).slice(0, cfg.trunc[name]); }
@@ -925,37 +941,37 @@ function renderField(key) {
       const acct = fieldEnabled('account')
         // Domain first, width second - the same order the script uses. Cutting the raw address
         // instead would show "user@" and teach the wrong lesson about what the number does.
-        ? bgSpan(' ' + cut(SAMPLE.account.split('@')[0], 'account'), '#d0d0d0', HEX[fieldByKey('account')?.color] || '#626262')
+        ? bgSpan(' ' + cut(SAMPLE.account.split('@')[0], 'account'), '#d0d0d0', HEX[fieldByKey('account')?.color] || GREY_HEX)
         : '';
-      return bgSpan('CC', '#eeeeee', '#d78700') + acct + ' ' + bgSpan('AG', '#eeeeee', '#0087ff') + acct;
+      return bgSpan('CC', '#EEEEEE', '#FF8700') + acct + ' ' + bgSpan('AG', '#EEEEEE', '#0087FF') + acct;
     }
     case 'identity_user':
-      return span(cut(SAMPLE.user, 'user'), color('identity_user', '#e2e8f0'));
+      return span(cut(SAMPLE.user, 'user'), color('identity_user', WHITE_HEX));
     case 'identity_host':
-      return span(cut(SAMPLE.host, 'host'), color('identity_host', '#e2e8f0'));
+      return span(cut(SAMPLE.host, 'host'), color('identity_host', WHITE_HEX));
     case 'account':
       // Printed by the cli_tag case above, never as a block of its own.
       return '';
     case 'cwd':
-      return span(cut(SAMPLE.cwd, 'cwd'), color('cwd', '#e879f9'));
+      return span(cut(SAMPLE.cwd, 'cwd'), color('cwd', HEX.magenta));
     case 'model':
-      return span(SAMPLE.model, color('model', '#22d3ee'));
+      return span(SAMPLE.model, color('model', HEX.cyan));
     case 'effort':
       return span(SAMPLE.effort, GREY_HEX);
     case 'context':
       // No percentage: the script dropped it and colors the token count itself against a fixed
       // 200k scale, because that number is what starts to hurt regardless of the window size.
-      return span('ctx', '#e2e8f0') + span(SAMPLE.ctxUsed, tierHex(SAMPLE.ctxPct)) +
+      return span('ctx', WHITE_HEX) + span(SAMPLE.ctxUsed, tierHex(SAMPLE.ctxPct)) +
         span('/', GREY_HEX) + span(SAMPLE.ctxMax, GREY_HEX);
     case 'rate_limits_5h': {
       const resetOn = fieldEnabled('rate_reset_5h');
       const eta = resetOn ? span(SAMPLE.rate5hEta, GREY_HEX) : '';
-      return span('5h:', '#e2e8f0') + span(`${SAMPLE.rate5h}%`, tierHex(SAMPLE.rate5h)) + eta;
+      return span('5h:', WHITE_HEX) + span(`${SAMPLE.rate5h}%`, tierHex(SAMPLE.rate5h)) + eta;
     }
     case 'rate_limits_7d': {
       const resetOn = fieldEnabled('rate_reset_7d');
       const eta = resetOn ? span(SAMPLE.rate7dEta, GREY_HEX) : '';
-      return span('7d:', '#e2e8f0') + span(`${SAMPLE.rate7d}%`, tierHex(SAMPLE.rate7d)) + eta;
+      return span('7d:', WHITE_HEX) + span(`${SAMPLE.rate7d}%`, tierHex(SAMPLE.rate7d)) + eta;
     }
     case 'rate_reset_5h':
     case 'rate_reset_7d':
@@ -963,23 +979,23 @@ function renderField(key) {
     case 'cache_pct':
       // Static grey in the script, not on the ladder - a high cache hit rate is good news and
       // must not shout in red.
-      return span('↬', '#e2e8f0') + span(`${SAMPLE.cachePct}%`, GREY_HEX);
+      return span('↬', WHITE_HEX) + span(`${SAMPLE.cachePct}%`, GREY_HEX);
     case 'cache_tokens':
       return span(SAMPLE.cacheRead, GREY_HEX);
     case 'session': {
-      let out = span('ss', '#e2e8f0') + span(SAMPLE.duration, color('session', GREY_HEX));
+      let out = span('ss', WHITE_HEX) + span(SAMPLE.duration, color('session', GREY_HEX));
       if (SAMPLE.linesAdded || SAMPLE.linesRemoved) {
-        out += ' ' + span(`+${SAMPLE.linesAdded}`, '#34d399', true) + span('/', GREY_HEX) + span(`-${SAMPLE.linesRemoved}`, '#f87171', true);
+        out += ' ' + span(`+${SAMPLE.linesAdded}`, TIER_BY_KEY.green.hex, true) + span('/', GREY_HEX) + span(`-${SAMPLE.linesRemoved}`, TIER_BY_KEY.red.hex, true);
       }
       out += ' ' + span(SAMPLE.cost, tierHex(Math.min(100, SAMPLE.costUsd / COST_FULL_USD * 100)));
       return out;
     }
     case 'git_branch':
-      return span(cut(SAMPLE.gitBranch, 'branch'), color('git_branch', '#e879f9'));
+      return span(cut(SAMPLE.gitBranch, 'branch'), color('git_branch', HEX.magenta));
     case 'ram':
       // Static grey like the script: whole-machine RAM is context, not something the ladder
       // should escalate about mid-session.
-      return span('⚅', '#e2e8f0') + span(`${SAMPLE.ramPct}%`, color('ram', GREY_HEX));
+      return span('⚅', WHITE_HEX) + span(`${SAMPLE.ramPct}%`, color('ram', GREY_HEX));
     default:
       return '';
   }
@@ -1007,7 +1023,7 @@ const previewHtml = computed(() => {
     // the `=== undefined` test rather than a truthiness one. A non-space separator is printed
     // white, like a label, since it is punctuation the user reads.
     const raw = group.sep === undefined ? ' ' : group.sep;
-    const sep = raw && raw !== ' ' ? span(raw, group.sepColor || '#e2e8f0') : raw;
+    const sep = raw && raw !== ' ' ? span(raw, group.sepColor || WHITE_HEX) : raw;
     if (inner.length) {
       const joined = inner.join(sep);
       blocks.push({ html: joined, tag: false });
@@ -1053,6 +1069,9 @@ const previewHtml = computed(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 8px 10px;
+  /* A block never breaks internally (see .pv-block), so one long block in a narrow window has to
+     scroll inside this box rather than widening the modal. */
+  overflow-x: auto;
 }
 
 .preview-line {
@@ -1203,21 +1222,17 @@ const previewHtml = computed(() => {
 
 .ctl-toggle input[type="checkbox"]:checked,
 .host-chip input[type="checkbox"]:checked,
-.sep-toggle input[type="checkbox"]:checked {
+.sep-toggle input[type="checkbox"]:checked,
+.target-check-item input[type="checkbox"]:checked {
   background: #d97757;
   border-color: #d97757;
-}
-
-/* Same shape, the violet the "Apply to" pair already used - it marks scope, not a field. */
-.target-check-item input[type="checkbox"]:checked {
-  background: #a78bfa;
-  border-color: #a78bfa;
 }
 
 /* The check itself: two borders rotated into a tick, so it needs no font or icon file. */
 .ctl-toggle input[type="checkbox"]:checked::after,
 .host-chip input[type="checkbox"]:checked::after,
-.sep-toggle input[type="checkbox"]:checked::after {
+.sep-toggle input[type="checkbox"]:checked::after,
+.target-check-item input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
   left: 3px;
@@ -1625,7 +1640,6 @@ const previewHtml = computed(() => {
   font-weight: 600;
   color: #cbd5e1;
   cursor: pointer;
-  user-select: none;
 }
 
 /* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global
@@ -1633,5 +1647,19 @@ const previewHtml = computed(() => {
 @media (max-width: 700px) {
   .modal-body   { padding: 10px 10px 8px; }
   .modal-footer { padding: 8px 10px 10px; }
+
+  /* main.css clamps every direct child of a modal <h2> to one ellipsized line so a long project
+     name cannot push the close button off screen. This title is a wrapping flex row instead, so it
+     has to opt back out or the "Apply to" pair gets clipped rather than dropping to a second line. */
+  .modal-title-wrap {
+    white-space: normal;
+    overflow: visible;
+    gap: 8px;
+  }
+  .header-target-selector { margin-left: 0; gap: 8px; }
+
+  /* Rows carry a toggle, a swatch and a number input; the flexible gap is the only part that can
+     give without something being cut off. */
+  .ctl-spacer { flex-basis: 6px; }
 }
 </style>
