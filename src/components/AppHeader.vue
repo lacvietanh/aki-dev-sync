@@ -422,12 +422,19 @@ async function onToggleRemoteHttps(e) {
 }
 
 async function copyRemoteUrl(url) {
+  // Copying an address is the moment it is about to be used on a phone, which is the only moment
+  // saying this is useful - the amber toggle states it, this names the consequence. Warn, never
+  // block: on a home LAN this address is the whole point of the feature.
+  const plain = url.startsWith('http://');
+  const warn = 'Not encrypted - anyone on this network can read the pairing code.';
   try {
     await navigator.clipboard.writeText(url);
-    Toast.fire({ icon: 'success', title: 'Copied', text: url });
+    Toast.fire(plain
+      ? { icon: 'warning', title: 'Copied', text: `${url}\n${warn}` }
+      : { icon: 'success', title: 'Copied', text: url });
   } catch {
     // Clipboard blocked (rare in the webview) — still surface the address so it can be read/typed.
-    Toast.fire({ icon: 'info', title: url });
+    Toast.fire(plain ? { icon: 'warning', title: url, text: warn } : { icon: 'info', title: url });
   }
 }
 
