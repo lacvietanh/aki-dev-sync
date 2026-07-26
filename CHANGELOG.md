@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-### [1.20.0] - 2026-07-26
+### [1.20.0] - 2026-07-27
 
 #### Added
 - **A real terminal inside the app, usable from your phone.** A `TERMINAL` tab now sits next to the event log in the console panel and runs a genuine interactive shell on the Mac (a real PTY, not a piped command runner), so history recall, `Ctrl+C` on a runaway build, interactive prompts and full-screen programs like `vim` all work. This is the point of the feature: `Terminal.app` renders nowhere but the Mac, so a paired phone could never drive it; this one it can. See [the 1.20.0 plan](docs/plan/1.20.0-terminal-and-remote-sync.md) §4.
