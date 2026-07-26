@@ -45,10 +45,29 @@ Invariants:
   keep at least one tab (`terminalTabsStore.js`'s `closeTerminalTab` guard). A **project** scope may
   go to zero — the group simply stops existing until its TERM cell is clicked again, at which point
   `openProjectTerminal` creates a fresh tab in that project's directory.
-- `MAX_TABS = 8` is **global across all scopes** — it mirrors `src-tauri/src/pty.rs`'s `MAX_TABS`
-  by comment, not by a shared constant (the Rust and JS build graphs do not share one), because the
-  Rust side has no notion of groups; it only ever sees a flat set of `tab_id`s.
-  `terminalTabsStore.js`'s Toast on hitting the cap says "in any group" for exactly this reason.
+- **Two caps, not one (1.21.1).** `MAX_TABS_PER_SCOPE = 5` is the user-facing rule: a group (a
+  project, or the global group) refuses its 6th tab, and the refusal names that number. `MAX_TABS =
+  16` is a separate, **global**, machine guard underneath it — it mirrors `src-tauri/src/pty.rs`'s
+  `MAX_TABS` by comment, not a shared constant (the Rust and JS build graphs do not share one),
+  because the Rust side has no notion of groups; it only ever sees a flat set of `tab_id`s, so the
+  per-scope cap is a pure frontend rule layered above a backend that stays scope-blind.
+  `addTerminalTab`/`capReached()` both check **scope first, then global** — a user in a 1-tab group
+  who hits the global ceiling is told about the *other* groups, not told their own group is full.
+- `MAX_TABS` is **derived**, not picked: `16 = 1 + 3 × MAX_TABS_PER_SCOPE` — the one global tab
+  `closeTerminalTab` guarantees can never be closed, plus three project groups each at their full
+  per-scope cap. The binding requirement is that a project group's *first* tab must never be
+  refused; a lower ceiling (e.g. one that only fits two full groups) refuses on an empty group's
+  first tap, for a reason living in a group the screen is not showing — the worst possible shape for
+  a refusal.
+- `MAX_TABS` also binds `web_server.rs`'s `COMPANION_QUEUE_LIMIT_BYTES` via **INVARIANT R**
+  (`MAX_TABS × (base64_len(SCROLLBACK_CAP) + ~128) ≤ COMPANION_QUEUE_LIMIT_BYTES / 2`), asserted by a
+  Rust unit test rather than left to a comment: the two-file mirroring that sufficed when the caps
+  were the same number cannot check arithmetic between four constants that are now deliberately
+  different. Raising `MAX_TABS` without re-deriving the other two re-breaks a joining phone's
+  scrollback replay; the test exists to catch exactly that.
+- The three refusal strings (per-project, global-group, global-ceiling) each interpolate their own
+  constant and never hardcode a digit; only the global-ceiling one says "in any group", because it is
+  the one refusal whose cause genuinely lives somewhere off-screen — see `terminalTabsStore.js`.
 - **Scope-empty ⇒ fall back to global.** Closing a project scope's last tab forgets that scope's
   remembered tab (`forgetScopeTab`, multi-entity guard: scoped to the ONE scope, never clears the
   whole map), resets `activeTerminalScope` to `GLOBAL_SCOPE`, and activates the global group's
@@ -70,8 +89,8 @@ never on the mirror (there is deliberately no `alive` field on the `terminalTabs
 mirroring one would be a second, competing source of truth for a fact the PTY events already carry
 with lower latency); `pty_close_tab` requires its `tab_id` argument (a defaultable "close" is
 exactly the accidental-blast-radius shape the multi-entity regression guard forbids); each live tab
-costs roughly three raw OS threads, bounded by `MAX_TABS`; the app-exit hook kills every tab's
-process group.
+costs roughly three raw OS threads, bounded by `MAX_TABS` (1.21.1: 16, i.e. 48 raw threads and 2 MiB
+of resident ring buffer at the absolute ceiling); the app-exit hook kills every tab's process group.
 
 **Terminal v2 required zero Rust changes.** The backend was already tab-keyed and knows nothing
 about "projects" or "groups" — scope is a pure frontend grouping over `projectId`, a field the tab
@@ -87,9 +106,17 @@ when the visible tab or the visible scope changes. Filtering the mount loop by s
 and re-spawn xterms on every group switch — the tab strip (`TerminalTabStrip.vue`) is what is scope-
 filtered (`scopedTabs`), not the mount loop.
 
-A stack **collapse** still unmounts everything (`DockStack.vue`'s default slot is `v-if`, not
-`v-show`) — accepted as-is, unrelated to scope: `pty_spawn` is idempotent and scrollback rehydrates
-on remount, so a collapse→expand round-trip costs re-mounting N xterms, never lost session state.
+A stack **collapse** no longer unmounts anything either (1.21.1). `DockStack.vue` takes a
+`bodyPersist` prop that only `TerminalStack.vue` passes: with it the default slot is wrapped in
+`.dock-stack-body` and hidden with `v-show` instead of removed with `v-if`, so a collapse→expand
+round-trip disposes and re-spawns nothing, and scroll position and a full-screen program's painted
+screen survive it. `LogStack.vue` does not pass the prop and keeps the old destroy-on-collapse path.
+The re-fit on expand is not a new code path: `TerminalStack.vue` passes `active` as
+`t.id === activeTabId && !collapsed`, and `TerminalView.vue`'s existing `watch(() => props.active)`
+re-fits and refocuses on the false→true edge. While hidden the container measures 0 and `doFit()`'s
+`width < 40 || height < 24` floor discards the measurement, so nothing resizes the live PTY.
+The cost is retention: every mounted xterm keeps its 5000-line scrollback while the panel is closed,
+which is what `MAX_TABS` bounds.
 
 ## External `Terminal.app` count — derived, never remembered
 

@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Changed
+- **The terminal tab limit is now per project instead of one shared number.** Each project's group (and the global group) allows up to 5 tabs before it asks you to close one; a separate ceiling of 16 tabs total still exists underneath as a resource guard and is not shown ahead of time, since normal use should essentially never reach it. The TERM cell's tooltip and the tab strip's + button now show the live count against the 5 tab limit, so the cap is visible before you hit it, not only after. **Preserved**: a refusal in one project's group leaves every other group's tabs completely untouched.
+- **Collapsing the terminal panel no longer throws away your open shells.** It hides the panel instead of tearing down and rebuilding every terminal on reopen, so scroll position and whatever a full-screen program (vim, a running TUI) had drawn survive the round trip. **Preserved**: the event log panel's own collapse is unchanged and still works the old way.
+
+#### Fixed
+- **A phone joining the remote terminal no longer wipes the screen of a phone already using it.** Reconnecting or pairing a second device used to send its own catch-up data to every paired phone, clearing and resizing terminals that were mid-command elsewhere. That catch-up now goes only to the screen that needs it, which also covers two browser tabs open on the same phone.
+- **Two screens issuing terminal or remote commands at the same time could silently swap results.** Each page counted its own requests starting from 1, so an in-flight call from one could resolve with another's answer instead of its own, a wrong result that looked correct rather than failing visibly. Replies are now addressed back to the one screen that asked, so two browser tabs on a single phone stay separate too.
+- **A phone joining when every terminal group was full used to never fully catch up**, only ever receiving a partial history that kept being retried and never completed. The per-tab history size and the amount a phone can be sent at once are now sized so a full catch-up fits with room to spare.
+- **Tapping a project's terminal button when that project's group was already full no longer strands you looking at an empty group.** The view now stays on the group you were already in when the new tab is refused.
+- **A dead terminal's message no longer points at a RESTART button that was removed in an earlier release.** It now just tells you to press any key to start a new shell.
+- **A terminal tab refused on a paired phone now tells you so**, instead of the tap silently doing nothing while the phone waits on a claim that used to expire without saying why.
+
 ### [1.21.0] - 2026-07-27
 
 #### Security

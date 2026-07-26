@@ -18,10 +18,10 @@ It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a r
 | **Echo** | Neither screen echoes a keystroke locally. The PTY is the single source of truth for what is displayed, exactly like every other piece of state in this app. |
 | **Resize** | The **Mac is the sole resize authority.** A PTY has one `(cols, rows)`; if a phone could set it, a 40-column phone viewport would reshape the Mac's build output mid-stream. The phone fits its own rendering box locally, but its terminal is resized only by the authoritative size echoed from the host. |
 | **Spawn** | Lazy and idempotent. The first screen to open the tab spawns the shell; every later call from either screen is a no-op. That is how "one shared PTY" is enforced without an ownership handshake. |
-| **Scrollback** | A ~256KB ring buffer on the Mac, replayed to a device when it opens the tab or reconnects — so locking your phone mid-build does not cost you the context. |
+| **Scrollback** | A 128KB ring buffer per tab on the Mac (1.21.1, down from 256KB — see "Tab and byte caps" below), replayed to a device when it opens the tab or reconnects — so locking your phone mid-build does not cost you the context. Nothing shrinks on the Mac itself: each mounted xterm keeps its own 5,000-line scrollback regardless: this ring only feeds a fresh mount, a companion join, or a congestion rehydrate. |
 | **Tab state** | Which panel tab you are on is **per-screen** and not mirrored: it is navigation, not data (SYNC-1). |
 | **Shell** | A **login shell** (`$SHELL -l`, `TERM=xterm-256color`). Without `-l` the shell skips `.zprofile`/`.bash_profile`, so nvm/rbenv/`path_helper` never run and this terminal would have a different `PATH` from every `Terminal.app` window on the machine — a silent difference that costs an hour to diagnose the first time it bites. |
-| **Death** | Real state, not an absence of state. When the shell exits — by `exit`, by crashing, by KILL — the host retires the session, prints `[process exited]` into the scrollback and emits `pty-exit`; every screen turns the tab header red and lights RESTART. Typing anything into a dead terminal respawns it. |
+| **Death** | Real state, not an absence of state. When the shell exits — by `exit`, by crashing, by KILL — the host retires the session, prints `[process exited. Press any key to start a new shell]` into the scrollback (1.21.1: the message no longer names a RESTART button, which was removed a release earlier) and emits `pty-exit`; every screen turns the tab header red. Typing anything into a dead terminal respawns it. |
 
 ## Groups
 
@@ -44,9 +44,13 @@ a shell already `cd`'d into that project, ⌘⇧[ / ⌘⇧] cycle only that grou
 the active tab of the group you are looking at.
 
 **CLOSE** (the panel header's one right-side button, replacing the old chevron-only affordance)
-hides the whole panel — every shell keeps running untouched. Re-open it via the same button (now
-reading EXPAND), any project's `TERM` cell, the header terminal icon, or the OPEN popup's **In-App
-Terminal** item.
+hides the whole panel — every shell keeps running untouched, and (1.21.1) so does every mounted
+terminal view itself: collapsing no longer disposes and re-spawns each xterm, it only hides them, so
+scroll position and whatever a full-screen program (`vim`, a TUI) had painted survive a collapse and
+re-expand instead of being reconstructed from the scrollback ring. Re-open it via the same button
+(now reading EXPAND), any project's `TERM` cell, the header terminal icon, or the OPEN popup's
+**In-App Terminal** item. The event log stack's own collapse is unchanged — it still hides by
+unmounting.
 
 **The `TERM` cell's two badges**, honestly labelled by what they can and cannot know:
 
@@ -81,6 +85,35 @@ Terminal** item.
 | The old external-terminal button on the `TERM` cell | Same OPEN popup item. |
 | `< 2 tabs` plain "TERMINAL" / "TERMINAL - EXITED" title | Group identity (icon + name), always shown, plus each chip's own exited tint. |
 
+## Tab and byte caps (1.21.1)
+
+Two caps, checked in this order, and both reachable from a paired phone as well as the Mac:
+
+- **Per group: 5 tabs.** The number a user is meant to have in their head — five shells is a working
+  set, and wanting a sixth genuinely means closing one. Hitting it in a project's group shows *"This
+  project already has 5 terminal tabs. Close one to open another."*; hitting it in the global group
+  shows the same wording for *"The global group"*. The `TERM` cell's tooltip and the tab strip's `+`
+  button both show the live count against this number, and the `+` dims (never hides) once the group
+  is full.
+- **Global ceiling: 16 tabs, across every group.** A resource guard, not a budget — it is never shown
+  ahead of time, and the app is built so it should essentially never fire in normal use: it is derived
+  from the per-group cap (`1 + 3 × 5`, the one tab the global group can never drop below, plus three
+  full project groups) so that a *third* project's terminal never refuses on its very first tap. Hit
+  it anyway and the message is *"All 16 terminal tabs are in use. Close one in any group first."* —
+  the only refusal that says "in any group", because it is the only one whose cause can genuinely be
+  sitting in a group the screen is not showing.
+
+A refusal in one group never touches any other group's tabs. Opening a project's `TERM` cell that
+turns out to be full also no longer strands you looking at that empty group: the screen returns to
+whichever group you were in before the tap.
+
+Raising the global ceiling costs real resources rather than being a UI preference: each live tab is a
+shell process plus three raw OS threads and up to 128KB of scrollback ring buffer, so 16 tabs is
+roughly 48 threads and 2MB of resident buffer at the absolute ceiling — see
+`docs/arch/terminal-stack.md` for the full derivation, including why the per-tab scrollback ring was
+halved (256KB to 128KB) alongside the phone's replay budget being raised, and why a phone joining with
+every group full used to never fully catch up rather than simply disconnecting.
+
 ## In-App Terminal from the OPEN popup
 
 Each project's OPEN popup carries **In-App Terminal**, which switches to that project's group and reuses/creates its tab exactly like clicking the `TERM` cell — it sits above the existing `Terminal.app` item because it is the only one of the two that does anything from a phone. The path is single-quote escaped (`'\''`), so a directory containing spaces, quotes or `$` cannot break out into command execution.
@@ -89,11 +122,13 @@ Each project's OPEN popup carries **In-App Terminal**, which switches to that pr
 
 The dock is now two independently collapsible stacks — `TerminalStack` above `LogStack` (`src/components/DockStack.vue`) — rather than one panel with LOG/TERMINAL tabs. Each stack owns its own collapse ref and hands it to `DockStack`. Collapsing the log stack shrinks it to one live line (the latest log message); collapsing the terminal stack shows only its header. Each stack's collapse state is per-screen, matching every other dock decision above.
 
-**Backend.** `src-tauri/src/pty.rs` keys every piece of session state by a `TabId` (`u32`): `sessions`, `inputs`, `scrollbacks` are each a `HashMap<TabId, _>` instead of a singleton, and `min_accepted` (the generation-fencing floor) is a **per-tab** map — a single global floor would let retiring one tab's generation fence off a still-live generation in another tab. Every command takes an `Option<u32> tab_id` defaulting to tab 0, which is the backward-compatibility seam: a companion running an older frontend build that never sends `tab_id` keeps landing on exactly the session it always drove. The one exception is `pty_close_tab`, whose `tab_id` is **required** — a defaultable "close" is exactly the accidental-blast-radius shape the multi-entity regression guard forbids. `pty_list_tabs()` returns `{id, alive}` per tab so a reloaded frontend can re-adopt shells the backend kept running. A `MAX_TABS = 8` cap bounds the real resource cost (each live tab is a shell process plus three raw threads).
+**Backend.** `src-tauri/src/pty.rs` keys every piece of session state by a `TabId` (`u32`): `sessions`, `inputs`, `scrollbacks` are each a `HashMap<TabId, _>` instead of a singleton, and `min_accepted` (the generation-fencing floor) is a **per-tab** map — a single global floor would let retiring one tab's generation fence off a still-live generation in another tab. Every command takes an `Option<u32> tab_id` defaulting to tab 0, which is the backward-compatibility seam: a companion running an older frontend build that never sends `tab_id` keeps landing on exactly the session it always drove. The one exception is `pty_close_tab`, whose `tab_id` is **required** — a defaultable "close" is exactly the accidental-blast-radius shape the multi-entity regression guard forbids. `pty_list_tabs()` returns `{id, alive}` per tab so a reloaded frontend can re-adopt shells the backend kept running. A `MAX_TABS = 16` global cap (1.21.1, up from 8) bounds the real resource cost — each live tab is a shell process plus three raw threads — and is derived from the frontend's per-group cap of 5; see "Tab and byte caps" above and `docs/arch/terminal-stack.md` for the full derivation.
 
-**Wire format.** No new frame types — `pty_output` / `pty_input` / `pty_resize` / `pty_exit` all now carry `tab_id` (default 0). This matters because the relay (`web_server.rs`) coalesces `pty_output` frames under congestion by tag alone, content-blind — without `tab_id` on every frame, a coalesce could silently land tab A's bytes in tab B's xterm. The relay itself needed no change; it only ever read `t`, not the payload shape.
+**Wire format.** No new frame types — `pty_output` / `pty_input` / `pty_resize` / `pty_exit` all now carry `tab_id` (default 0). This matters because the relay (`web_server.rs`) coalesces `pty_output` frames under congestion by tag alone, content-blind — without `tab_id` on every frame, a coalesce could silently land tab A's bytes in tab B's xterm.
 
-**Resync.** `pushScrollback()` became `pushAllScrollbacks()` in `src/services/ptyBridge.js`: on a fresh companion connect or a scheduled resync, it calls `pty_list_tabs()` then replays every tab's scrollback, not just tab 0's — the same congestion that forces a resync would otherwise leave every tab past the first silently un-replayed on the device that just reconnected.
+**Per-companion addressing (1.21.1).** A scrollback replay (a `pty_output` with `reset: true`) and an `invoke_result` are now addressed to the one companion they are for, via an optional `to` field the relay routes on and an optional `from` field the relay stamps on the way in — see `docs/feat/remote-control.md` for the wire-level detail. Before this, both were broadcast: a second phone joining wiped and rebuilt the screen of a phone already mid-command, and two phones with an overlapping `invoke` call in flight (each numbering requests from 1 on its own page) could resolve each other's replies. Live `pty_output`, `pty_exit`, `pty_resize`, `delta` and `init` all still broadcast, unchanged, because every screen genuinely needs the same bytes.
+
+**Resync.** `pushScrollback()` became `pushAllScrollbacks(to)` in `src/services/ptyBridge.js`: on a fresh companion connect or a scheduled resync, it calls `pty_list_tabs()` then replays every tab's scrollback, not just tab 0's — the same congestion that forces a resync would otherwise leave every tab past the first silently un-replayed on the device that just reconnected. The companion-join path passes the joining device's id so only that phone receives the replay; the host's own congestion-recovery path still broadcasts, because that hole exists in every companion's byte stream at once and there is no single device to address it to.
 
 **Frontend.** `usePtyTerminal(term, tabId)` takes a tab id and filters both its Tauri-event and companion-frame listeners by it (`if ((payload.tab_id ?? 0) !== tabId) return`) — one listener is wired per mounted `TerminalView`, and every one of them otherwise receives every tab's bytes. Liveness is now three-state (`'unknown' | true | false`): a fresh mount or a failed invoke sets `'unknown'`, never `false`, so a terminal never paints its header red before a real exit is confirmed — the "TERMINAL - EXITED" false-positive flash this replaced. `terminalTabsStore.js` holds the shared tab list (mirrored, since which tabs exist is genuinely cross-screen state); `useTerminalTabs.js` holds the per-screen liveness map and "has this tab ever been shown" bookkeeping locally, never mirrored, since each screen's PTY event stream is its own. Closing a tab (`closeTerminalTab`) splices exactly one entry and tells the backend to drop that one tab's session + scrollback (`drop_tab_state`) — every other tab's shell and scrollback survive untouched. The floor is now **scope-aware** (see "Groups" above): the global group never drops below one tab, but a project's group may empty out entirely — it simply stops existing until its `TERM` cell is clicked again.
 

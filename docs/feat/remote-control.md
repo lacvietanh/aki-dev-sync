@@ -146,7 +146,10 @@ it would stall the PTY reader and, through it, the shell itself.
 
 The rule is therefore **bounded, and drop by kind rather than by age**:
 
-- Each companion has a **2 MB outbox**. Enqueue never blocks and never awaits.
+- Each companion has an **8 MB outbox** (1.21.1, up from 2 MB — sized against the terminal's own caps
+  via INVARIANT R in `web_server.rs`, so a companion joining with every terminal group at its tab
+  limit can receive a full scrollback replay without the replay itself tripping the budget it needs
+  to arrive through). Enqueue never blocks and never awaits.
 - Over budget → the **coalescible** backlog is dropped and the phone is flagged for re-sync. Once its
   queue has genuinely drained, the host re-issues the existing `companion-connected` frame for that
   device, which the normal join path answers with a full `init` plus a `reset` scrollback replay. No
@@ -166,10 +169,41 @@ The rule is therefore **bounded, and drop by kind rather than by age**:
 `bufferedAmount` is congested (1 MB high water, 128 KB low, latched so it cannot alternate).
 
 **Note the deliberate departure from content-blindness.** The relay otherwise forwards
-`Message::Text` verbatim. It now reads exactly one field — the top-level `t` — and only on frames
-already queued for a companion whose budget is blown, i.e. roughly one parse per 2 MB of overflow,
-never on the hot path. Recorded in the `web_server.rs` module header alongside the pre-existing
-`companion-connected` departure.
+`Message::Text` verbatim. It reads the top-level `t` — and only on frames already queued for a
+companion whose budget is blown, i.e. roughly one parse per 8 MB of overflow, never on the hot path.
+Recorded in the `web_server.rs` module header alongside the pre-existing `companion-connected`
+departure.
+
+## Per-connection addressing — `to` / `from` (1.21.1)
+
+A second, unrelated departure from content-blindness, also recorded in the `web_server.rs` module
+header: the relay additionally reads an optional top-level `to` on frames leaving the host, and
+stamps an optional top-level `from` (the relay's own key for the connection the frame arrived on — a
+companion cannot set, forge, or even see this) onto frames arriving from a companion. **No new frame
+type** — `docs/plan/done/remote-control.md` §13's frozen contract holds, because a frame carrying
+neither field routes exactly as it did before, and an older companion bundle that never sets or reads
+either field is unaffected in both directions.
+
+| Frame kind | Routing | Why |
+| :-- | :-- | :-- |
+| `pty_output` with `reset: true` (scrollback replay) | **Addressed to one connection** | Only the joining or resyncing screen asked for it; broadcasting it used to reset the terminal of every other connected screen mid-command. |
+| `invoke_result` | **Addressed to one connection** | It answers one request id on one page's own counter (which starts at 1 on every page); broadcasting it let two screens with an overlapping call resolve each other's replies, silent wrong data rather than a timeout. |
+| `pty_output` live chunks | Broadcast | One shared PTY — every screen shows the same bytes. |
+| `pty_exit` / `pty_resize` | Broadcast | Shared liveness and shared size; addressing either would reintroduce the 1.20.0 terminal-desync bug. |
+| `delta` (incl. mirrored confirm dialogs) | Broadcast | Mirror state; a confirm dialog answerable from any screen is a designed property. |
+| `init` | Broadcast | Idempotent (same snapshot each time), so a spurious one is waste, not damage — addressing it is a future optimization, not a fix. |
+| `ping` / `pong` | Broadcast | Liveness only. |
+
+`to`/`from` carry an **opaque per-connection key** minted by the relay, not the persistent device id.
+That unit is what makes the two bugs above actually fixed rather than fixed only between devices: two
+browser tabs open on one paired phone are two connections with two independent request counters that
+both start at 1, so a device-level address still crosses their replies. It also keeps the relay's byte
+budget honest — the relay emits its `companion-connected` frame per connection and the host answers
+each with a full scrollback replay, so a device-level address would put N copies of that replay in
+every one of that device's outboxes (see INVARIANT R in `src-tauri/src/web_server.rs`).
+
+Device grouping still exists where it is the actual intent: revoking a paired device closes every one
+of its live connections.
 
 **Logs are capped separately, at the store.** `logStore` keeps the last 2,000 lines per project and
 2,000 global, dropping from the head, and the mirror sends only newly appended lines with a cursor

@@ -841,6 +841,13 @@ guess:
 This is the single contract the Rust relay and the JS seams both implement. Parallel work must not
 invent variants. **All frames are JSON text over WS.** Envelope: `{ t: <type>, ... }`.
 
+> **Amended by `docs/plan/1.21.1-terminal-limits-and-structure.md` §4.2** (per-connection addressing):
+> two *optional* fields, `to` and `from`, were added to existing frames so a scrollback replay and an
+> `invoke_result` can be routed to one companion CONNECTION instead of broadcast. No new frame tag, so
+> this freeze holds — a frame carrying neither field behaves exactly as documented below. One field
+> below did change meaning: `companion-connected`'s `id` now carries that connection key rather than
+> the device id. See `docs/feat/remote-control.md` for the routing table.
+
 ### 13.1 Connection & pairing
 * WS URL: `ws://<host>:1421/ws?role=host|companion&token=<deviceToken>`.
 * **Host** connects with `role=host` from `127.0.0.1`; no token required for a loopback host socket.
