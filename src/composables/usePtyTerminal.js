@@ -38,13 +38,29 @@ function encodeBytesToBase64(bytes) {
  * Wires an already-created xterm.js `Terminal` instance to the shared PTY.
  *
  * @param {import('@xterm/xterm').Terminal} term
- * @returns {{ start, hostResize, sendRaw, armCtrl, ctrlArmed, alive, restart, clear, kill,
- *             openExternal, cd }}
+ * @returns {{ start, ownsPtySize, hostResize, sendRaw, armCtrl, ctrlArmed, alive, restart, clear,
+ *             kill, openExternal, cd }}
  */
 export function usePtyTerminal(term) {
   let unlistenHostOutput = null
   let unlistenHostExit = null
   let unsubscribeFrame = null
+  // Set by onBeforeUnmount. `listen()` is async, so a tab switch (TERMINAL → LOG) that happens
+  // before its promise resolves used to leave the listener alive forever with nowhere to store its
+  // unlisten handle — and that orphan then wrote every subsequent PTY chunk into a disposed
+  // Terminal for the rest of the session. Every async subscription is adopted through
+  // `adoptSubscription`, which either stores the handle or immediately undoes it.
+  let disposed = false
+
+  /** Takes ownership of a subscription that arrived asynchronously, or cancels it outright if this
+   *  composable has already been torn down while the subscribe was in flight. */
+  function adoptSubscription(unlisten, assign) {
+    if (disposed) {
+      unlisten()
+      return
+    }
+    assign(unlisten)
+  }
   // §4.5 mobile key row: "Ctrl (sticky modifier — tap Ctrl, then tap C)". Armed by TerminalView's
   // Ctrl button; consumed by the very next onData chunk (see wireInput), then auto-disarmed.
   // Exposed as a ref (not a plain bool) so the key row's active-state styling stays reactive.
@@ -174,6 +190,8 @@ export function usePtyTerminal(term) {
   async function hydrateScrollback() {
     try {
       const { data, cols, rows, alive: isAlive } = await invoke('pty_get_scrollback')
+      // The tab can be switched away mid-call; the Terminal is disposed by then.
+      if (disposed) return
       if (cols && rows) term.resize(cols, rows)
       writeChunk(data, true)
       alive.value = !!isAlive
@@ -188,23 +206,23 @@ export function usePtyTerminal(term) {
       // emits this Tauri event directly — no WS round-trip. services/ptyBridge.js separately
       // relays the same event to companions.
       listen('pty-output', (event) => {
+        // An event delivered in the gap between subscribing and unsubscribing would otherwise
+        // write into a Terminal the component has already disposed.
+        if (disposed) return
         const payload = (event && event.payload) || {}
         if (payload.data || payload.reset) writeChunk(payload.data, !!payload.reset)
         // A liveness-only payload carries neither bytes nor `reset` (that is how the host says
         // "the shell came back" without touching the screen), so this must sit OUTSIDE the write
         // condition above.
         applyAlive(payload.alive)
-      }).then((un) => {
-        unlistenHostOutput = un
-      })
+      }).then((un) => adoptSubscription(un, (h) => { unlistenHostOutput = h }))
       listen('pty-exit', () => {
+        if (disposed) return
         alive.value = false
-      }).then((un) => {
-        unlistenHostExit = un
-      })
+      }).then((un) => adoptSubscription(un, (h) => { unlistenHostExit = h }))
     } else {
       unsubscribeFrame = onFrame((frame) => {
-        if (!frame) return
+        if (disposed || !frame) return
         if (frame.t === FRAME_PTY_OUTPUT) {
           if (frame.data || frame.reset) writeChunk(frame.data, !!frame.reset)
           if (frame.reset && frame.cols && frame.rows) term.resize(frame.cols, frame.rows)
@@ -276,10 +294,16 @@ export function usePtyTerminal(term) {
     ctrlArmed.value = true
   }
 
-  /** T-4: call ONLY from the host's own fit-on-resize handler (TerminalView.vue calls this
-   *  unconditionally on every fit; it is a no-op on a companion, so the component never needs to
-   *  know which screen it is running on). Resizes the real PTY, then echoes the authoritative
-   *  size to every companion so their xterm matches without ever asking for it. */
+  /** T-4 as a CAPABILITY rather than a role: "does this screen decide the shared PTY's cols/rows?"
+   *  Only the host does. TerminalView.vue reads this to choose between fitting the grid and scaling
+   *  the font — it must never import `isHost` itself (ENV-1), so every role fact the component
+   *  needs is published here in terms of what the component actually decides with it. */
+  const ownsPtySize = isHost
+
+  /** T-4: call ONLY from the host's own fit-on-resize handler, i.e. behind `ownsPtySize`. Resizes
+   *  the real PTY, then echoes the authoritative size to every companion so their xterm matches
+   *  without ever asking for it. (The `isHost` guard below stays as the backstop that makes a
+   *  mistaken call harmless rather than a shared-shell re-wrap.) */
   async function hostResize(cols, rows) {
     if (!isHost || !cols || !rows) return
     // Refuse absurd sizes. FitAddon measures a container that is momentarily 0px — the panel is
@@ -305,10 +329,14 @@ export function usePtyTerminal(term) {
   }
 
   onBeforeUnmount(() => {
+    // Set FIRST: a `listen()` still in flight resolves after this and unlistens itself via
+    // `adoptSubscription`, which is the whole point — the handle no longer has to exist yet for the
+    // teardown to be complete.
+    disposed = true
     if (unlistenHostOutput) unlistenHostOutput()
     if (unlistenHostExit) unlistenHostExit()
     if (unsubscribeFrame) unsubscribeFrame()
   })
 
-  return { start, hostResize, sendRaw, armCtrl, ctrlArmed, alive, restart, clear, kill, openExternal, cd }
+  return { start, ownsPtySize, hostResize, sendRaw, armCtrl, ctrlArmed, alive, restart, clear, kill, openExternal, cd }
 }

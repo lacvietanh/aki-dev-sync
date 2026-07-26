@@ -10,17 +10,28 @@
 <template>
   <div class="pty-terminal">
     <div ref="mountEl" class="pty-terminal-mount"></div>
+    <!--
+      `@mousedown.prevent` + `@touchstart.prevent` are the fix for "every tap closes the soft
+      keyboard": the default action of both is to move focus to the button, which blurs xterm's
+      hidden textarea and dismisses the phone's keyboard — making sticky-Ctrl a three-gesture
+      operation (tap Ctrl, re-open the keyboard, tap C). Preventing touchstart also suppresses the
+      synthetic click on iOS, which is why the touch path FIRES the key itself and `onKeyClick`
+      ignores a click that follows a touch it already served.
+    -->
     <div class="pty-key-row">
-      <button class="pty-key" title="Esc" @click="ptyApi?.sendRaw('\x1b')"><span class="pty-key-label">Esc</span></button>
-      <button class="pty-key" title="Tab" @click="ptyApi?.sendRaw('\t')"><span class="pty-key-label">Tab</span></button>
-      <button class="pty-key" title="Ctrl (tap, then type a letter)" :class="{ 'is-armed': ptyApi?.ctrlArmed?.value }" @click="ptyApi?.armCtrl()">
-        <span class="pty-key-label">Ctrl</span>
+      <button
+        v-for="k in KEY_ROW"
+        :key="k.title"
+        class="pty-key"
+        :title="k.title"
+        :class="{ 'is-armed': k.arms && ptyApi?.ctrlArmed?.value }"
+        @mousedown.prevent
+        @touchstart.prevent="onKeyTouch(k)"
+        @click="onKeyClick(k)"
+      >
+        <span v-if="k.label" class="pty-key-label">{{ k.label }}</span>
+        <i v-else class="fa-solid" :class="k.icon"></i>
       </button>
-      <button class="pty-key" title="Up" @click="ptyApi?.sendRaw('\x1b[A')"><i class="fa-solid fa-arrow-up"></i></button>
-      <button class="pty-key" title="Down" @click="ptyApi?.sendRaw('\x1b[B')"><i class="fa-solid fa-arrow-down"></i></button>
-      <button class="pty-key" title="Left" @click="ptyApi?.sendRaw('\x1b[D')"><i class="fa-solid fa-arrow-left"></i></button>
-      <button class="pty-key" title="Right" @click="ptyApi?.sendRaw('\x1b[C')"><i class="fa-solid fa-arrow-right"></i></button>
-      <button class="pty-key" title="Enter" @click="ptyApi?.sendRaw('\r')"><span class="pty-key-label">Enter</span></button>
     </div>
   </div>
 </template>
@@ -42,6 +53,40 @@ let term = null
 let fitAddon = null
 let resizeObserver = null
 const ptyApi = ref(null)
+
+// §4.5 mobile key row, as data rather than eight near-identical buttons — each one carries three
+// event bindings now (see the template comment), and hand-copying those is exactly the duplication
+// a v-for exists to prevent. `arms` marks the sticky modifier; everything else sends a sequence.
+const KEY_ROW = [
+  { title: 'Esc', label: 'Esc', seq: '\x1b' },
+  { title: 'Tab', label: 'Tab', seq: '\t' },
+  { title: 'Ctrl (tap, then type a letter)', label: 'Ctrl', arms: true },
+  { title: 'Up', icon: 'fa-arrow-up', seq: '\x1b[A' },
+  { title: 'Down', icon: 'fa-arrow-down', seq: '\x1b[B' },
+  { title: 'Left', icon: 'fa-arrow-left', seq: '\x1b[D' },
+  { title: 'Right', icon: 'fa-arrow-right', seq: '\x1b[C' },
+  { title: 'Enter', label: 'Enter', seq: '\r' },
+]
+
+// When the touch path last served a key. A browser that still synthesises a click after a
+// prevented touchstart would otherwise send the key twice.
+let lastKeyTouchAt = 0
+
+function fireKey(k) {
+  if (!ptyApi.value) return
+  if (k.arms) ptyApi.value.armCtrl()
+  else ptyApi.value.sendRaw(k.seq)
+}
+
+function onKeyTouch(k) {
+  lastKeyTouchAt = Date.now()
+  fireKey(k)
+}
+
+function onKeyClick(k) {
+  if (Date.now() - lastKeyTouchAt < 700) return
+  fireKey(k)
+}
 
 // Hardcoded to the app's existing dark palette (src/assets/main.css :root tokens) — no theme
 // config UI, per the task brief.
@@ -81,6 +126,13 @@ function scheduleFit() {
   })
 }
 
+// Bounds for the companion's font scaling. The floor is deliberately tiny — on a phone held in
+// portrait, an 80-column shared terminal genuinely needs ~5px text, and rendering it small is the
+// decided trade (see doFit).
+const MIN_FONT_SIZE = 4
+const MAX_FONT_SIZE = 18
+const BASE_FONT_SIZE = 12
+
 function doFit() {
   if (!fitAddon || !term || !mountEl.value) return
   // A container that is not laid out yet (tab just switched, panel collapsed, window minimised)
@@ -90,12 +142,53 @@ function doFit() {
   // numbers the moment the layout settles.
   const { width, height } = mountEl.value.getBoundingClientRect()
   if (width < 40 || height < 24) return
+
+  // T-4: THE HOST ALONE DECIDES cols/rows. A companion that fitted its own container re-wrapped
+  // the shared shell's output to phone width, which destroys exactly what someone opens the phone
+  // to read — progress bars, tables, `git status` alignment — and no amount of zooming brings that
+  // back, whereas small text can at least be zoomed. So the companion keeps the host's grid and
+  // scales the FONT until that grid fills its viewport. `ownsPtySize` is asked instead of `isHost`
+  // because this component must stay role-agnostic (ENV-1); the role lives in the composable.
+  if (!ptyApi.value?.ownsPtySize) {
+    scaleFontToFit()
+    return
+  }
   try {
     fitAddon.fit()
   } catch {
     return // fit() throws if the renderer is not ready yet; the next observer tick retries.
   }
-  ptyApi.value?.hostResize(term.cols, term.rows)
+  ptyApi.value.hostResize(term.cols, term.rows)
+}
+
+/** Companion-only: pick the font size at which the host's cols × rows grid just fits this screen.
+ *
+ *  Measured, not calculated: cell width is a font-metric no formula predicts reliably across
+ *  fonts and DPRs, so the current render is used as the ruler — `.xterm-screen` is exactly
+ *  cols × rows cells wide/high, so the ratio between the space available and the space it
+ *  currently occupies is the ratio to apply to the font size. Converges in one or two frames. */
+function scaleFontToFit() {
+  const screen = mountEl.value.querySelector('.xterm-screen')
+  if (!screen) return
+  const w = screen.offsetWidth
+  const h = screen.offsetHeight
+  if (!w || !h) return
+
+  const cs = getComputedStyle(mountEl.value)
+  // Content box, minus a gutter for the viewport scrollbar — overshooting width is what would
+  // force xterm's own soft wrap back in, which is the damage this whole branch exists to avoid.
+  const availWidth = mountEl.value.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 10
+  const availHeight = mountEl.value.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+  if (availWidth <= 0 || availHeight <= 0) return
+
+  const ratio = Math.min(availWidth / w, availHeight / h)
+  if (!Number.isFinite(ratio) || ratio <= 0) return
+
+  const current = term.options.fontSize || BASE_FONT_SIZE
+  const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, current * ratio))
+  // Sub-pixel churn would re-render the whole terminal on every observer tick for no visible gain.
+  if (Math.abs(next - current) < 0.2) return
+  term.options.fontSize = next
 }
 
 // Consume the queued "open project in the in-app terminal" gesture (useTerminalPanel.js). Watched
@@ -110,7 +203,7 @@ onMounted(async () => {
   term = new Terminal({
     theme: THEME,
     fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace',
-    fontSize: 12,
+    fontSize: BASE_FONT_SIZE,
     lineHeight: 1.4,
     cursorBlink: true,
     scrollback: 5000,
@@ -122,6 +215,11 @@ onMounted(async () => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(mountEl.value)
+  // A companion's grid changes without its container changing (the host echoes a new cols/rows, or
+  // a scrollback hydrate applies one), and a ResizeObserver on the container cannot see that — so
+  // the font has to be re-scaled off the grid change itself. On the host this is a no-op loop:
+  // fit() emits the event, the follow-up fit finds the same size and emits nothing further.
+  term.onResize(scheduleFit)
 
   ptyApi.value = usePtyTerminal(term)
 
