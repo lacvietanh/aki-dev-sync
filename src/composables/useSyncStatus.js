@@ -18,8 +18,13 @@ export async function checkProjectSyncStatus(project) {
     const result = await invoke('check_sync_status', { project })
     if (currentEpoch(project.id) !== epoch) return // stale - superseded mid-flight, discard silently
     const current = projectRuntime.value[project.id]
+    // The runtime entry IS the project's liveness record (projectStore: a missing entry reports
+    // epoch 0 = removed). Writing one back for a project that no longer has one resurrects it -
+    // §3.2's bug, whose other half was new projects starting at epoch 0. beginRefresh guarantees
+    // this entry exists for a live project, so `undefined` here means exactly one thing.
+    if (!current) return
 
-    if (current) {
+    { // (block kept so the logging below stays where it was - `current` is now always defined here)
       const wasPushNull = current.hasPendingPush === null
       const wasPullNull = current.hasPendingPull === null
       

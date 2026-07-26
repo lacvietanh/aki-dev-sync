@@ -37,6 +37,9 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       git_log: info.log,
       remote_url: info.remote_url || "",
       git_changed_count: info.changed_count || 0,
+      // Distinct from "No Git": the directory itself is gone (unmounted volume). ProjectTable renders
+      // its own badge state for this, because "mount the drive" and "run git init" are different fixes.
+      local_path_missing: !!info.local_path_missing,
     }
     if (!silent) appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`)
     if (updateModalLog && gitProject.value && gitProject.value.id === projectId) {

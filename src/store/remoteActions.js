@@ -18,9 +18,18 @@
 // the same live object the component was already passing.
 import { action } from '../services/action'
 import { invoke } from '../utils/tauri'
-import { projects, projectRuntime, bumpEpoch, Toast } from './projectStore'
+import {
+  projects,
+  projectRuntime,
+  bumpEpoch,
+  Toast,
+  refreshProjectIcons,
+  iconTimestamp,
+  markProjectRemoved,
+  isProjectRemoved,
+} from './projectStore'
 import { sshHosts, hasSshUndo, hasSshRedo } from './sshStore'
-import { globalLogs } from './logStore'
+import { appendGlobalLogLines } from './logStore'
 import { askConfirm } from './dialogStore'
 import { startSync, openSelectDialog } from '../composables/useSync'
 import { refreshProject, refreshAllProjects } from '../composables/useBackgroundRefresh'
@@ -31,9 +40,19 @@ function byId(id) {
 }
 
 // Matches useLogs().appendGlobalLog's line format without dragging the (Tauri-listener-owning)
-// useLogs composable into this eagerly-globbed store module — globalLogs is a leaf store ref.
+// useLogs composable into this eagerly-globbed store module. Goes through logStore's append funnel
+// rather than pushing into the ref directly, so these lines are counted against LOG_CAP and ride the
+// mirror's append-delta path instead of forcing a full-map resend.
 function logSsh(message) {
-  globalLogs.value.push(`[${new Date().toLocaleTimeString()}] [SSH] ${message}`)
+  appendGlobalLogLines([`[${new Date().toLocaleTimeString()}] [SSH] ${message}`])
+}
+
+// Dialog bodies below are rendered as HTML, and host/project names are user-authored free text
+// (`~/.ssh/config` entries, the project name field) - escape before interpolating.
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ))
 }
 
 /** PUSH / PULL a project. `startSync` owns every guard (sync-check off, already-syncing, the
@@ -46,7 +65,38 @@ export const requestSync = action('remoteActions.requestSync', (id, direction) =
     console.warn('[remoteActions] requestSync: no project for id', id)
     return
   }
+  rememberSyncDirection(id, direction)
   return startSync(project, direction)
+})
+
+/** Which direction the row's running sync is going, recorded BEFORE `startSync` flips `syncing`
+ *  (docs/plan/1.20.1-flow-audit-fixes.md §3.6). The row turns exactly that one button into STOP, so
+ *  the control sits where the user's eyes already are; without this the UI cannot tell which of
+ *  PUSH/PULL is the live one. Written at the two funnels every sync passes through (here and
+ *  `requestSelectPush`), on the host, so it mirrors to the phone with the rest of the runtime.
+ *  Touches ONLY this project's runtime entry. */
+function rememberSyncDirection(id, direction) {
+  projectRuntime.value[id] = { ...projectRuntime.value[id], syncDirection: direction }
+}
+
+/** Stop the rsync/ssh process group of ONE running sync (§3.6). Host-side: the process lives on the
+ *  Mac, so a phone's STOP is an intent like every other button here.
+ *
+ *  Failure is LOUD by design — a user who hit STOP on a `--delete` mirror must never be left
+ *  believing it stopped when it did not, so an unavailable/failing command surfaces through the
+ *  existing Toast (UI Extreme Narrow: no new element) instead of a silent console line. */
+export const requestCancelSync = action('remoteActions.requestCancelSync', async (id) => {
+  const project = byId(id)
+  if (!project) return
+  try {
+    // `cancel_sync` returns whether it actually killed anything: false means the transfer finished
+    // between the render and the click. Say so - a silent STOP on a row that keeps spinning would
+    // leave the user unsure whether a `--delete` mirror is still running.
+    const killed = await invoke('cancel_sync', { projectId: id })
+    if (killed === false) Toast.fire({ icon: 'info', title: `Nothing left to stop for "${project.name}"` })
+  } catch (e) {
+    Toast.fire({ icon: 'error', title: `Could not stop sync: ${String(e).replace('Error: ', '')}` })
+  }
 })
 
 /** SELECT → push specific files. Same reason as requestSync: everything `openSelectDialog` does is
@@ -60,6 +110,7 @@ export const requestSelectPush = action('remoteActions.requestSelectPush', (id) 
     console.warn('[remoteActions] requestSelectPush: no project for id', id)
     return
   }
+  rememberSyncDirection(id, 'push')
   return openSelectDialog(project)
 })
 
@@ -163,10 +214,20 @@ export const reorderProjects = action('remoteActions.reorderProjects', (orderedI
  *  a reload re-read disk (the reported bug). UI-only bits (Toast, closeModal, url-normalise) stay in
  *  `saveConfig` on the clicker. Returns the persist promise so the host caller can await it.
  *  On the host `action(fn) === fn`, so this is byte-identical to the old inline mutation. */
-export const applyProjectConfig = action('remoteActions.applyProjectConfig', (plain) => {
+export const applyProjectConfig = action('remoteActions.applyProjectConfig', async (plain) => {
   if (!plain || !plain.id) return
   const index = projects.value.findIndex((p) => p.id === plain.id)
   const isNew = index === -1
+
+  // §3.3 — the project this modal is editing was REMOVED while the modal stayed open (the removal
+  // does not close another screen's modal). Saving would land in the "new project" branch below and
+  // resurrect it. Reject instead, and say which of the two things happened: someone who just
+  // deleted a project and sees it come back cannot tell whether the delete failed or the save
+  // worked. Nothing is written and no other project is touched.
+  if (isNew && isProjectRemoved(plain.id)) {
+    Toast.fire({ icon: 'error', title: `"${plain.name}" was removed - not saved` })
+    return { rejected: 'removed' }
+  }
 
   if (!isNew) {
     const prev = projects.value[index]
@@ -190,16 +251,31 @@ export const applyProjectConfig = action('remoteActions.applyProjectConfig', (pl
       git_log: '',
       remote_url: '',
       syncing: false,
-      epoch: 0,
+      // §3.2 — a LIVE project's epoch is always >= 1 (projectStore.beginRefresh/currentEpoch): 0 is
+      // reserved for "this project has no runtime state, it was removed". Starting a new project at
+      // 0 broke that invariant, so a status check that captured epoch 0 and finished after the
+      // project was deleted still matched, and re-created `projectRuntime[id]` for a project that
+      // no longer exists. Advancing from whatever is there (rather than assigning 1) matches
+      // `loadData` and keeps the epoch monotonic per id, so a check in flight from an earlier
+      // incarnation of the same id can never coincidentally match either.
+      epoch: (projectRuntime.value[plain.id]?.epoch ?? 0) + 1,
       refreshCount: 0,
     }
     projects.value.push({ ...plain })
   }
 
-  const persist = saveProjectsList()
+  await saveProjectsList()
   const saved = projects.value.find((p) => p.id === plain.id)
   if (saved) refreshProject(saved)
-  return persist
+  // §3.1 — the Rust icon cache is (re)built only while `load_projects` runs, which `save_projects`
+  // does not do: without this a project added mid-session never gets an icon until the next app
+  // start, and one whose `local_path` was edited keeps the OLD path's icon under the same id.
+  // `get_project_icons_map` goes through `load_projects`, so it rescans — hence after the persist,
+  // never before it, or it would rescan the pre-save list. The timestamp bump is what makes the
+  // host's `aki-devsync-icon://<id>?t=` URL change, so an edited project's stale icon is actually
+  // re-fetched instead of served from the webview cache.
+  await refreshProjectIcons()
+  iconTimestamp.value = Date.now()
 })
 
 /** Remove a project from the list (matrix "Remove project"). Same reason as applyProjectConfig:
@@ -208,6 +284,9 @@ export const applyProjectConfig = action('remoteActions.applyProjectConfig', (pl
 export const removeProject = action('remoteActions.removeProject', (id) => {
   if (!id) return
   projects.value = projects.value.filter((p) => p.id !== id)
+  // Records THIS id only (§3.3) - a config modal still open for it on any screen must not be able
+  // to save it back into existence. See projectStore.markProjectRemoved.
+  markProjectRemoved(id)
   // Dropping the runtime entry also cancels any in-flight status check for this id (currentEpoch
   // then reports 0, which never matches the >=1 epoch a check captured) — see projectStore.
   delete projectRuntime.value[id]
@@ -276,10 +355,37 @@ export const applySshHostsChange = action('remoteActions.applySshHostsChange', a
     const newHost = addedHosts[0]
     const affected = projects.value.filter((p) => p.remote_host === missingHost)
     if (affected.length > 0) {
-      affected.forEach((p) => { p.remote_host = newHost })
-      needsSave = true
-      logSsh(`Auto-migrated ${affected.length} projects from '${missingHost}' to '${newHost}'.`)
-      Toast.fire({ icon: 'info', title: `Auto-migrated projects to '${newHost}'` })
+      // §3.4 — "1 host gone + 1 host new" is only a GUESS that the host was renamed; it matches
+      // "deleted host A and added an unrelated host B in the same edit" exactly as well. Acting on
+      // that guess silently repointed every affected project, and the next `--delete` PUSH then
+      // mirrored onto the wrong server with no undo. So: ask, list the projects by name, and do
+      // nothing unless the user explicitly confirms. Editing an SSH config is a config-file task -
+      // the user is not thinking about projects at that moment - and repointing by hand afterwards
+      // costs a minute, while discovering it by mirroring onto the wrong server costs the tree.
+      const list = affected.map((p) => `<li>${escHtml(p.name)}</li>`).join('')
+      const answer = await askConfirm({
+        kind: 'confirm',
+        title: 'SSH host renamed?',
+        html:
+          `Host <b>${escHtml(missingHost)}</b> is gone and <b>${escHtml(newHost)}</b> is new. ` +
+          `Repoint these <b>${affected.length} project(s)</b> to <b>${escHtml(newHost)}</b>?` +
+          `<ul style="text-align:left; margin: 8px auto 0; max-width: 320px;">${list}</ul>` +
+          `<br>If it was not a rename, keep them as they are - a wrong host makes the next ` +
+          `<b>--delete</b> PUSH mirror onto the wrong server.`,
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+        cancelButtonColor: '#374151',
+        confirmButtonText: `Repoint ${affected.length} project(s)`,
+        cancelButtonText: `Keep '${missingHost}'`,
+      })
+      if (answer && answer.confirmed) {
+        affected.forEach((p) => { p.remote_host = newHost })
+        needsSave = true
+        logSsh(`Repointed ${affected.length} projects from '${missingHost}' to '${newHost}' (user confirmed).`)
+        Toast.fire({ icon: 'info', title: `Repointed projects to '${newHost}'` })
+      } else {
+        logSsh(`Kept ${affected.length} projects on '${missingHost}' - repoint to '${newHost}' declined.`)
+      }
     }
   } else {
     for (const missingHost of missingHosts) {
@@ -296,7 +402,7 @@ export const applySshHostsChange = action('remoteActions.applySshHostsChange', a
       const answer = await askConfirm({
         kind: 'select',
         title: '⚠️ SSH Host Missing',
-        html: `Host <b>${missingHost}</b> no longer exists in SSH config, but is used by <b>${affected.length} project(s)</b>.<br><br>Select a replacement host to update them automatically:`,
+        html: `Host <b>${escHtml(missingHost)}</b> no longer exists in SSH config, but is used by <b>${affected.length} project(s)</b>.<br><br>Select a replacement host to update them automatically:`,
         icon: 'warning',
         inputOptions,
         inputPlaceholder: '--- Select replacement host ---',

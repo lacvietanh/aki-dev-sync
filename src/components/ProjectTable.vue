@@ -110,11 +110,12 @@
                 <button
                         class="btn-action-git"
                         :class="{
-                          'git-no-repo': ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
+                          'git-no-repo': !isPathMissing(p) && ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
                           'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
+                          'git-path-missing': isPathMissing(p),
                         }"
                         @click="openGitModal(p)"
-                        :title="projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
+                        :title="isPathMissing(p) ? `Local path not found - volume not mounted?\n${p.local_path}` : projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
                         aria-label="Git Actions">
                   <i class="fa-brands fa-git-alt"></i>
                 </button>
@@ -232,20 +233,26 @@
           <!-- Cell 6: Sync (PUSH/DRY/PULL, LOG, config) -->
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
-              <fieldset :disabled="projectRuntime[p.id]?.syncing || !syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
+              <!-- Only the sync-check switch disables the whole group now: while a sync is running
+                   one of PUSH/PULL turns into STOP (§3.6) and must stay clickable, and a disabled
+                   <fieldset> disables every control inside it regardless of the button's own
+                   :disabled. Everything that was disabled-while-syncing still is, per control. -->
+              <fieldset :disabled="!syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
                 <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                   <div class="dry-group-left">
                     <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
                       <button
                               class="btn-tech btn-tech-push"
                               :class="{
-                                'btn-sync-clean': projectRuntime[p.id]?.hasPendingPush === false,
-                                'btn-sync-checking': projectRuntime[p.id]?.hasPendingPush === null,
-                                'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                                'btn-sync-clean': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === false,
+                                'btn-sync-checking': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === null,
+                                'btn-sync-diverged': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
+                                'btn-sync-stop': isStop(p, 'push')
                               }"
-                              @click="requestSync(p.id, 'push')"
-                              :title="!syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
-                        <i class="fa-solid fa-cloud-arrow-up"></i> <span class="btn-text u-narrow-hide">PUSH</span>
+                              :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'push')"
+                              @click="isStop(p, 'push') ? requestCancelSync(p.id) : requestSync(p.id, 'push')"
+                              :title="isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
+                        <i class="fa-solid" :class="isStop(p, 'push') ? 'fa-stop' : 'fa-cloud-arrow-up'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'push') ? 'STOP' : 'PUSH' }}</span>
                       </button>
                     </CountBadgeWrap>
                   </div>
@@ -256,7 +263,7 @@
                       <!-- :checked + @change (NOT v-model): a companion must not mutate its own
                            mirrored `p.dry_run` — the host flips it via setDryRun and the new value
                            mirrors back. On the host this is identical to the old v-model+save. -->
-                      <input type="checkbox" :checked="p.dry_run" @change="setDryRun(p.id, $event.target.checked)" />
+                      <input type="checkbox" :checked="p.dry_run" :disabled="projectRuntime[p.id]?.syncing" @change="setDryRun(p.id, $event.target.checked)" />
                       <span class="slider"></span>
                     </label>
                   </div>
@@ -266,13 +273,15 @@
                       <button
                               class="btn-tech btn-tech-pull"
                               :class="{
-                                'btn-sync-clean': projectRuntime[p.id]?.hasPendingPull === false,
-                                'btn-sync-checking': projectRuntime[p.id]?.hasPendingPull === null,
-                                'btn-sync-diverged': projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull
+                                'btn-sync-clean': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === false,
+                                'btn-sync-checking': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === null,
+                                'btn-sync-diverged': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
+                                'btn-sync-stop': isStop(p, 'pull')
                               }"
-                              @click="requestSync(p.id, 'pull')"
-                              :title="!syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> <span class="btn-text u-narrow-hide">PULL</span>
+                              :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'pull')"
+                              @click="isStop(p, 'pull') ? requestCancelSync(p.id) : requestSync(p.id, 'pull')"
+                              :title="isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
+                        <i class="fa-solid" :class="isStop(p, 'pull') ? 'fa-stop' : 'fa-cloud-arrow-down'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'pull') ? 'STOP' : 'PULL' }}</span>
                       </button>
                     </CountBadgeWrap>
                   </div>
@@ -309,7 +318,7 @@ import { projectIconSrc } from '../utils/projectIcon';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
 // R-2 write side: these run the real action on the host whether clicked on the Mac or relayed
 // from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
-import { requestSync, requestSelectPush, setDryRun, requestRefresh, reorderProjects } from '../store/remoteActions';
+import { requestSync, requestSelectPush, setDryRun, requestRefresh, reorderProjects, requestCancelSync } from '../store/remoteActions';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
@@ -321,6 +330,25 @@ const { openInAppTerminal } = useTerminalPanel();
 
 function handleCreateNew() {
   createNewProject(sshHosts);
+}
+
+// §3.6 — while a sync runs, the button for THAT direction is the STOP button: same button, changed
+// label + colour, no new element (UI Extreme Narrow). The direction is recorded by remoteActions
+// at the moment the sync is requested; without it (older runtime state, or a sync started before
+// this shipped) PUSH is assumed, since it is the direction every specific-file upload takes and the
+// one a mistaken `--delete` mirror is most feared on — better a STOP that is present than none.
+function isStop(p, direction) {
+  const rt = projectRuntime.value[p.id];
+  if (!rt?.syncing) return false;
+  return (rt.syncDirection || 'push') === direction;
+}
+
+// C-4 (§3.22) — an unmounted volume is NOT "not a git repo": the user's next move is to mount the
+// drive, not to run `git init`, so it gets its own colour + tooltip on the SAME badge. The flag is
+// produced by get_git_info (WS-2) and defaults false, so this renders exactly as before until it
+// lands.
+function isPathMissing(p) {
+  return projectRuntime.value[p.id]?.local_path_missing === true;
 }
 
 const failedIcons = ref({});
@@ -1002,6 +1030,32 @@ fieldset:disabled .switch {
   object-fit: contain;
   margin-right: 6px;
   vertical-align: middle;
+}
+
+/* STOP state (§3.6) - the SAME PUSH/PULL button while that project is syncing, just red and
+   relabelled. No new element: the one control the user needs mid-panic is already under their
+   cursor. Two classes + scoped attribute, so it wins over .btn-tech-push/-pull in main.css. */
+.btn-tech.btn-sync-stop {
+  background-color: #ef4444;
+  border-color: #7f1d1d;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+.btn-tech.btn-sync-stop:hover:not(:disabled) {
+  background-color: #f87171;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.75);
+}
+
+/* C-4 (§3.22) - "local path not found" on the EXISTING git badge. Deliberately NOT the greyed-out
+   .git-no-repo look: the two states demand different actions (mount the drive vs. git init), so
+   they must not read the same. Amber = something is wrong and it is not git's fault. */
+.btn-action-git.git-path-missing {
+  filter: none;
+  background: linear-gradient(135deg, #b45309, #78350f);
+  border-color: rgba(245, 158, 11, 0.9);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
 }
 
 /* DIVERGED state - orange outline only, zero extra space */

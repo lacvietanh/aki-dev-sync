@@ -210,6 +210,20 @@ export async function saveConfig() {
 
   const isNew = !projects.value.some(p => p.id === editingProject.value.id)
 
+  // §3.3: this modal may have been open when the project was removed from the other screen. Without
+  // this check the `isNew` branch below re-creates it, and on a companion the host's rejection is
+  // invisible (applyProjectConfig is fire-and-forget there) so the phone would report "Project
+  // created" for a project that no longer exists. `removedProjectIds` is mirrored, so this is true on
+  // both screens.
+  if (isNew) {
+    const { isProjectRemoved } = await import('../store/projectStore')
+    if (isProjectRemoved(editingProject.value.id)) {
+      Toast.fire({ icon: 'error', title: `"${editingProject.value.name}" was removed - not saved` })
+      closeConfig()
+      return
+    }
+  }
+
   try {
     // The list mutation + persist + refresh must run on the HOST so its reactive `projects` updates
     // live and mirrors to every screen (ACT-1 / feat matrix "Config save"). Before this, saving on

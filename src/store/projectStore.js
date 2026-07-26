@@ -25,6 +25,30 @@ export const projectRuntime = ref({})
 
 export const isReloading = ref(false)
 
+// Ids of projects removed during this session (docs/plan/1.20.1-flow-audit-fixes.md §3.3). A
+// config modal that was already open when its project was removed — typically on the OTHER screen —
+// still holds a full copy of it, and Save would re-enter `applyProjectConfig`'s "new project"
+// branch and silently resurrect it. This is the record that lets that write be REJECTED instead:
+// "id I have never seen" and "id the user just deleted" are otherwise indistinguishable.
+//
+// A ref export of a `src/store/*.js` module, so the mirror carries it to every companion for free
+// (services/mirror.js encodes Set natively) — the phone can therefore make the same judgement its
+// own modal needs without an extra round-trip. Ids are `project-<epoch-ms>`, never reused, and
+// removals are hand gestures, so the set stays tiny; it is deliberately session-only (not
+// persisted) — after a restart no modal is open, so nothing can resurrect anything.
+export const removedProjectIds = ref(new Set())
+
+/** Record that ONE project id was removed. Scoped to that id — never clears the set (multi-entity
+ *  regression guard, CLAUDE.md): another project's removal record is not this removal's business. */
+export function markProjectRemoved(id) {
+  if (!id) return
+  removedProjectIds.value.add(id)
+}
+
+export function isProjectRemoved(id) {
+  return !!id && removedProjectIds.value.has(id)
+}
+
 // Preloaded IDE availability and cache-busting timestamp for icons
 export const ideAvailability = ref(null)
 export const iconTimestamp = ref(Date.now())
@@ -72,9 +96,13 @@ export function beginRefresh(id) {
   }
 }
 
+// A decrement must never CREATE a runtime entry: no entry means the project was removed while this
+// check was in flight, and writing one back resurrects a project that no longer exists (§3.2 - the
+// same shape as the result-write guard in useSyncStatus, fixed here so every caller inherits it).
 export function endRefresh(id) {
   const current = projectRuntime.value[id]
-  projectRuntime.value[id] = { ...current, refreshCount: Math.max(0, (current?.refreshCount || 1) - 1) }
+  if (!current) return
+  projectRuntime.value[id] = { ...current, refreshCount: Math.max(0, (current.refreshCount || 1) - 1) }
 }
 
 export function isRefreshing(id) {
