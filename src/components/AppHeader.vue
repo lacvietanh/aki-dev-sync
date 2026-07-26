@@ -61,8 +61,12 @@
                 <span class="ac-title"><i class="fa-solid fa-tower-broadcast"></i> Remote Control:</span>
                 <label
                   class="remember-view remote-toggle"
-                  :class="{ on: remoteRunning }"
-                  :title="remoteRunning ? 'Remote control is ON - phones with the code can mirror & control this Mac' : 'Turn on to control this Mac from your phone over LAN / Tailscale'">
+                  :class="{ on: remoteRunning, 'plain-http': remotePlainHttp }"
+                  :title="remoteRunning
+                    ? (remotePlainHttp
+                        ? 'Remote control is ON - phones with the code can mirror & control this Mac.\nThe LAN address is plain HTTP: the pairing token travels unencrypted, so anyone on this network can read it. Prefer the Tailscale address, or only turn this on where you trust the network.'
+                        : 'Remote control is ON - phones with the code can mirror & control this Mac')
+                    : 'Turn on to control this Mac from your phone over LAN / Tailscale'">
                   <input type="checkbox" :checked="remoteRunning" :disabled="remoteBusy" @change="toggleRemote" />
                   {{ remoteRunning ? 'On' : 'Off' }}
                 </label>
@@ -299,7 +303,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
 import { onHostBoot } from '../utils/scheduler';
 import { useAppWindow } from '../composables/useAppWindow';
@@ -389,6 +393,16 @@ const {
   httpsBusy: remoteHttpsBusy,
   toggleHttps: toggleRemoteHttps,
 } = useRemoteControl();
+
+// The relay always serves plain HTTP on its port; `tailscale serve` only puts HTTPS in front of the
+// tailnet address, so every LAN address stays unencrypted and the pairing token travels in the clear
+// on it (it is a WebSocket query parameter). Anyone on the same wifi can read it. That is a real risk
+// the user is entitled to know about and to weigh themselves - a home LAN and a cafe are not the same
+// bet - so the state rides the existing On toggle as an amber outline plus a tooltip, never a new row
+// (CLAUDE.md UI Extreme Narrow). Decided in docs/plan/1.20.1-flow-audit-fixes.md §4.
+const remotePlainHttp = computed(
+  () => remoteRunning.value && remoteUrls.value.some((u) => u.kind !== 'tailscale')
+);
 
 async function toggleRemote(e) {
   if (e.target.checked) await startRemote();
@@ -933,6 +947,17 @@ function onViewShortcut(e) {
 .remote-toggle.on input:checked {
   background: #34d399;
   border-color: #34d399;
+}
+
+/* On, but reachable over unencrypted HTTP - amber, not red: this is a risk to weigh, not a fault.
+   The tooltip on the label says what is exposed. No extra row (UI Extreme Narrow). */
+.remote-toggle.on.plain-http {
+  color: #f59e0b;
+}
+
+.remote-toggle.on.plain-http input:checked {
+  background: #f59e0b;
+  border-color: #f59e0b;
 }
 
 .remote-code-row {
