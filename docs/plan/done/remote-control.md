@@ -1,8 +1,7 @@
 # Plan — Remote Control (Companion browser drives the Mac app)
 
-> **Status: DESIGN ONLY (phase 1). No code until every open question in §11 is answered.**
-> Baseline: exactly `1.18.0` (working tree restored; the earlier patchwork attempt is parked in
-> `git stash@{0}` — "WIP remote-companion (patchwork)").
+> **Status: DONE — shipped in `1.19.0` (2026-07-25), commit `20de7cb`.** This document started as design-only and is kept as the architecture record of what was built: the four seams, SYNC-1/SSOT-1/ENV-1, and the frozen wire protocol in §13 are all live in the code and are still the contract source-of-truth referenced from `src/services/*`, `src/store/*` and `src-tauri/src/web_server.rs`. §3.4 (dialogs as mirrored state) was the one part deferred past 1.19.0 and was built in `1.20.0` — see `docs/plan/1.20.0-terminal-and-remote-sync.md` §3.
+> Current-state feature doc: `docs/feat/remote-control.md`. Original baseline when this was written: exactly `1.18.0` (working tree restored; the earlier patchwork attempt was parked in `git stash@{0}` — "WIP remote-companion (patchwork)").
 
 ---
 

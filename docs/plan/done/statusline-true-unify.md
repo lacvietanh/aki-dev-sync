@@ -4,14 +4,13 @@
 Phase 2.2 (generator Rust). Bản chuẩn `src-tauri/src/statusline-unified.sh` giờ **chính là template** mà
 `statusline.rs` nhúng bằng `include_str!`; hợp đồng generator ở spec §8.3b. **Đã nghiệm thu trên Mac
 (2026-07-23):** `npm run test:statusline` pass 29/29, Apply thật (AGY → host `bien`) ra statusline
-đúng sau khi khởi động lại `agy`. Còn lại đúng một việc: bump version + chốt mục `[Unreleased]` khi
-phát hành. Phase 1 chạy trên máy remote khác (không phải máy Mac dev đang chứa
+đúng sau khi khởi động lại `agy`. Việc cuối cùng còn treo lúc viết plan này — bump version + chốt mục `[Unreleased]` — đã hoàn tất khi `1.18.0` phát hành, nên plan đã đóng hoàn toàn. Phase 1 chạy trên máy remote khác (không phải máy Mac dev đang chứa
 `src-tauri`), **không đụng code Rust** — mục tiêu là tự tay hoàn thiện 1 script chuẩn (nội dung +
 default color) bằng cách thử nghiệm trực tiếp với payload thật của cả 2 CLI, làm chuẩn để sau này
 đối chiếu khi port vào generator. Phase 2 (port vào `statusline.rs`) là việc **riêng, sau này**, chỉ
 bắt đầu khi Phase 1 đã chốt và người dùng xác nhận.
 **Background:** `docs/ref/statusline-unified-spec.md` §7-8 (điều tra thực địa 2026-07-23),
-`docs/plan/1.18.0-statusline-apply-correctness.md` (ma trận bug gốc của kiến trúc generator hiện tại).
+`docs/plan/done/1.18.0-statusline-apply-correctness.md` (ma trận bug gốc của kiến trúc generator hiện tại).
 
 ---
 

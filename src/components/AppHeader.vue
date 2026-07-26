@@ -373,7 +373,7 @@ const { refreshAllProjects, anySyncing, anyRefreshing, isReloading, Toast } = us
 const { openIntroModal } = useIntro();
 
 // Remote Control section (host-only — hidden on a companion via remoteAvailable). See
-// src/composables/useRemoteControl.js and docs/plan/remote-control.md §7.1.
+// src/composables/useRemoteControl.js and docs/plan/done/remote-control.md §7.1.
 const {
   available: remoteAvailable,
   running: remoteRunning,

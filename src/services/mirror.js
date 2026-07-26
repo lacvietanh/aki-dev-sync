@@ -1,4 +1,4 @@
-// Seam S — state mirror (docs/plan/remote-control.md §2, §13.3, §13.4).
+// Seam S — state mirror (docs/plan/done/remote-control.md §2, §13.3, §13.4).
 //
 // Zero per-key wiring: every `isRef` export of every `src/store/*.js` module is discovered by
 // `import.meta.glob` and registered under `"<storeFile>.<exportName>"`. Both host and companion

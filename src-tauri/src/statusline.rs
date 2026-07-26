@@ -802,7 +802,7 @@ mod tests {
         (String::from_utf8_lossy(&out.stdout).to_string(), home)
     }
 
-    // ---- behavioural tests, per docs/plan/1.18.0-statusline-apply-correctness.md §P2-4 ------
+    // ---- behavioural tests, per docs/plan/done/1.18.0-statusline-apply-correctness.md §P2-4 ------
 
     #[test]
     fn cc_account_falls_back_to_claude_json() {
@@ -1046,8 +1046,9 @@ mod tests {
     /// would check by eye - all 18 gates, which is the part doing it by hand never gets right.
     #[test]
     fn every_toggle_flips_its_own_output_and_nothing_else() {
-        // Carries a branch, both rate limits, cache traffic and an account on disk, so no case is a
-        // no-op. The two resets are stamped relative to now, which is the scale the ETA is cut from.
+        // Carries a branch, both rate limits, cache traffic and an account on disk, so no case is a no-op. The two resets are stamped relative to now, which is the scale the ETA is cut from.
+        //
+        // THE `+ 45` AND `+ 1_800` ARE THE FIX FOR A REAL FLAKE, NOT PADDING. `now` is read once here, but the script is then re-run once per toggle over a couple of seconds, and each run recomputes the remaining time against ITS OWN clock and truncates. Stamped at exactly `now + 5_400` the ETA sits precisely on the 1h30m boundary, so the very first second of drift turns it into `1h29m` and the `"1h30m"` assertion fails — intermittently, depending only on how loaded the machine was (observed failing roughly one full-suite run in four). Offsetting into the middle of the minute (and, for the 7d window, the middle of the hour) leaves the truncated value stable for 45s / 30min respectively, comfortably longer than the sweep takes. Do not "simplify" these back to round numbers.
         let now = now_epoch();
         let payload = format!(
             r#"{{"cwd":"/tmp/Aki-Dev-Sync","model":{{"display_name":"Opus 4.8"}},"effort":{{"level":"medium"}},
@@ -1057,8 +1058,8 @@ mod tests {
             "rate_limits":{{"five_hour":{{"used_percentage":19,"resets_at":{}}},
                            "seven_day":{{"used_percentage":56,"resets_at":{}}}}},
             "workspace":{{"git_branch":"master"}}}}"#,
-            now + 5_400,
-            now + 90_000
+            now + 5_400 + 45,
+            now + 90_000 + 1_800
         );
         let payload = payload.as_str();
         let files = [(

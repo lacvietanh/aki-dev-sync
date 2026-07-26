@@ -7,7 +7,7 @@ import {
   primaryMonitor,
   currentMonitor,
 } from "@tauri-apps/api/window";
-// Boundary module (ENV-1, docs/plan/remote-control.md §9): native *window* control has no meaning
+// Boundary module (ENV-1, docs/plan/done/remote-control.md §9): native *window* control has no meaning
 // on a companion — a phone browser cannot resize or close the Mac's window, and it must not try.
 import { isHost } from "../services/bridge";
 

@@ -1,4 +1,4 @@
-// Seam A — host-side intent dispatch (docs/plan/remote-control.md §3, §13.2 `intent`).
+// Seam A — host-side intent dispatch (docs/plan/done/remote-control.md §3, §13.2 `intent`).
 //
 // An intent is a *gesture*, not a forwarded `invoke` (§3.1): the companion never mutates its own
 // copy of mirrored state, it asks the host to perform the real action in the host's own reactive

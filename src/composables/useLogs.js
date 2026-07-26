@@ -73,7 +73,7 @@ export function useLogs() {
     // Companion has no __TAURI_INTERNALS__, so `listen()` would reject there - and the
     // companion never needs it anyway, since mirrored log lines already arrive via
     // src/store/logStore.js. Gate through the seam-P boundary module (utils/scheduler) instead
-    // of importing `isHost` here, per ENV-1 (docs/plan/remote-control.md §9): on host this is a
+    // of importing `isHost` here, per ENV-1 (docs/plan/done/remote-control.md §9): on host this is a
     // plain `await listen(...)`, on companion `listen()` is never called at all.
     await onHostBoot(async () => {
       setGlobalListener(await listen("sync-log", (event) => {

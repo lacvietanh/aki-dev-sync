@@ -1,4 +1,4 @@
-// Remote Control relay — see docs/plan/remote-control.md §7 (Rust — relay only), §7.0 (ICON-1),
+// Remote Control relay — see docs/plan/done/remote-control.md §7 (Rust — relay only), §7.0 (ICON-1),
 // §7.1 + §7.1a (pairing + Tailscale), §7.5 (FileView / read_text_file / FILE-1), and §13 (the
 // FROZEN wire-protocol contract). This module implements exactly that contract; every protocol
 // decision (what a `delta`/`intent`/`invoke` frame means) lives in the JS seams — this file is
@@ -367,7 +367,7 @@ async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
     // index.html would leave the browser's handshake hanging on a 200; a plain 501 makes the
     // Vite client fail fast and fall back instead of retrying against a lying endpoint.
     if req.headers().contains_key(header::UPGRADE) {
-        return (StatusCode::NOT_IMPLEMENTED, "websocket upgrades are not proxied in dev (see docs/plan/remote-control.md §7.2)")
+        return (StatusCode::NOT_IMPLEMENTED, "websocket upgrades are not proxied in dev (see docs/plan/done/remote-control.md §7.2)")
             .into_response();
     }
 

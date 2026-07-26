@@ -1,4 +1,4 @@
-// ICON-1 (docs/plan/remote-control.md §7.0) — one place that answers "what goes in this <img>'s
+// ICON-1 (docs/plan/done/remote-control.md §7.0) — one place that answers "what goes in this <img>'s
 // src for a project icon", so no component has to know which side it is running on.
 //
 // HOST:      the `aki-devsync-icon://` custom protocol, exactly as before — zero behaviour change.

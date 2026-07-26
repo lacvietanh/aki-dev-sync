@@ -1,6 +1,6 @@
 # Bộ test tự động cho generator statusline
 
-> **Bối cảnh:** Phase 2.2 của [`docs/plan/statusline-true-unify.md`](../plan/statusline-true-unify.md)
+> **Bối cảnh:** Phase 2.2 của [`docs/plan/done/statusline-true-unify.md`](../plan/done/statusline-true-unify.md)
 > **Nằm ở:** `#[cfg(test)]` trong `src-tauri/src/statusline.rs` — không file phụ nào.
 > **Chạy:** `npm run test:statusline`
 
@@ -130,8 +130,8 @@ shell. Chỉ *chạy script với payload thật* mới lộ — nên bộ test 
 
 | Tài liệu | Quan hệ |
 |---|---|
-| [`docs/plan/statusline-true-unify.md`](../plan/statusline-true-unify.md) | Plan sinh ra công việc này; §2.2 là phần bộ test phục vụ |
+| [`docs/plan/done/statusline-true-unify.md`](../plan/done/statusline-true-unify.md) | Plan sinh ra công việc này; §2.2 là phần bộ test phục vụ |
 | [`docs/feat/statusline-customizer.md`](../feat/statusline-customizer.md) | Mô tả tính năng + bảng Verification |
 | [`docs/ref/statusline-unified-spec.md`](../ref/statusline-unified-spec.md) | §8.3b hợp đồng generator — thứ `the_ui_payload_reproduces_the_template` khoá lại |
 | [`docs/arch/usage-claudecode.md`](../arch/usage-claudecode.md) | `aki-rlcache` phía ghi; 2 gate DESIGN LOCK được §2.3 bảo chứng |
-| [`docs/plan/1.18.0-statusline-apply-correctness.md`](../plan/1.18.0-statusline-apply-correctness.md) | Ma trận bug gốc: 4 bug generator mà bộ test này chặn tái diễn |
+| [`docs/plan/done/1.18.0-statusline-apply-correctness.md`](../plan/done/1.18.0-statusline-apply-correctness.md) | Ma trận bug gốc: 4 bug generator mà bộ test này chặn tái diễn |

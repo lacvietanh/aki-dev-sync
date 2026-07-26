@@ -1,4 +1,4 @@
-// Seam A — the `action()` wrapper, split out from services/intents.js (docs/plan/remote-control.md
+// Seam A — the `action()` wrapper, split out from services/intents.js (docs/plan/done/remote-control.md
 // §3, R-2 / REGISTRY-1).
 //
 // WHY ITS OWN MODULE: store modules (syncCheckStore, remoteActions) need `action()` at their

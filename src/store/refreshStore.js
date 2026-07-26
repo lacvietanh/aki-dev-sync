@@ -33,7 +33,7 @@ export const setRefreshSettings = action('refreshStore.setRefreshSettings', (set
   refreshSettings.value = { ...settings }
 })
 
-// Incrementing this triggers an immediate usage check in all useAgentUsage instances
+// Incrementing this triggers an immediate usage check in every registered UsageMonitor
 export const manualRefreshCount = ref(0)
 export function triggerManualRefresh() {
   manualRefreshCount.value++

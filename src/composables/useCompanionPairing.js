@@ -1,4 +1,4 @@
-// Companion pairing state — docs/plan/remote-control.md §7.1 (pairing), §9 (ENV-1).
+// Companion pairing state — docs/plan/done/remote-control.md §7.1 (pairing), §9 (ENV-1).
 //
 // Boundary module: reads `isHost` so `PairingGate.vue` never has to. Without this the phone had no
 // way to submit the 6-digit code at all — `services/bridge.js` set `connectionState = 'unpaired'`

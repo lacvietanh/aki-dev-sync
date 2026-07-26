@@ -1,4 +1,4 @@
-// Seam T host role stamp — docs/plan/remote-control.md §9 (S-1).
+// Seam T host role stamp — docs/plan/done/remote-control.md §9 (S-1).
 //
 // MUST be the FIRST import in main.js, before any import that transitively loads
 // services/bridge.js. ES module imports evaluate depth-first in source order, so a first-position

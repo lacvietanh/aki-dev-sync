@@ -307,7 +307,7 @@ block:
 Without these, a field that landed in the cache once lived there forever, because the merge only
 adds/overwrites keys present in the live payload and never drops absent ones. That shipped in every
 release from 1.10.0 through 1.17.0 and produced a phantom `7d 45%` for an account with no weekly
-limit at all. Background: `docs/plan/1.18.0-statusline-apply-correctness.md` §P0-5.
+limit at all. Background: `docs/plan/done/1.18.0-statusline-apply-correctness.md` §P0-5.
 
 The block also validates the cache with `jq -e` before reading (a corrupt file used to blank the
 whole line), merges instead of replacing (a 5h-only payload no longer erases 7d), and writes via

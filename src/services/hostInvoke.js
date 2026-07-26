@@ -1,4 +1,4 @@
-// Seam N — HOST half (docs/plan/remote-control.md §4, §13.2 `invoke`/`invoke_result`).
+// Seam N — HOST half (docs/plan/done/remote-control.md §4, §13.2 `invoke`/`invoke_result`).
 //
 // The companion half lives in utils/tauri.js: on the companion, invoke() sends `{t:'invoke', cmd,
 // args, id}` over the bridge and awaits a matching `invoke_result`. This module is the ONLY thing

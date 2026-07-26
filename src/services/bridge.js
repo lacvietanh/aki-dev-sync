@@ -1,4 +1,4 @@
-// Seam T — transport + role (docs/plan/remote-control.md §1, §7.1, §9, §13.1).
+// Seam T — transport + role (docs/plan/done/remote-control.md §1, §7.1, §9, §13.1).
 //
 // The ONLY place `window.__AKI_ROLE__` is read (ENV-1, §9). Every other module that needs to
 // know host-vs-companion imports `isHost` from here — never re-derives it.

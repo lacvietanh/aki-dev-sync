@@ -125,7 +125,7 @@ Adapter trong `statusline.rs`) sinh ra:
 | Điểm khác biệt | File đang cài trên máy | Generator hiện tại (theo docs) |
 |---|---|---|
 | Header comment | Cả 2 file đều ghi `(AGY CLI Target)`, kể cả file CC | Mỗi target phải tự ghi đúng tên mình |
-| `aki-rlcache` | `v3` — không có 2 gate account+expiry | `v4` (DESIGN LOCK) — xem `docs/plan/1.18.0-statusline-apply-correctness.md` §P0-5 |
+| `aki-rlcache` | `v3` — không có 2 gate account+expiry | `v4` (DESIGN LOCK) — xem `docs/plan/done/1.18.0-statusline-apply-correctness.md` §P0-5 |
 | Account fallback | **Cả 2 file dùng chung 1 nhánh** `~/.gemini/google_accounts.json` (kể cả file CC) | CC phải fallback `~/.claude.json` → `.oauthAccount.emailAddress` (P0-2); AGY fallback `google_accounts.json` (P0-3) — 2 nhánh khác nhau theo target |
 | `cli_tag` | **Tự nhận diện lúc chạy** (comment tiếng Việt "Nhận diện tự động CLI"): `$JSON_MODEL` chứa `"claude"` hoặc `$JSON_CLAUDE_5H_USED != -1` → `CC`, ngược lại → `AG` | Field pin cứng theo target lúc generate, không tự suy luận từ payload (xem `docs/feat/statusline-customizer.md` §"pinned `cli_tag` field") |
 

@@ -1,4 +1,4 @@
-// Seam P — producer gate (docs/plan/remote-control.md §5).
+// Seam P — producer gate (docs/plan/done/remote-control.md §5).
 //
 // The browser must never *produce* — no polling, no boot sequence, no double-fetching, no
 // tripping a rate limit, no starting a second `listen()` on an event stream that doesn't exist

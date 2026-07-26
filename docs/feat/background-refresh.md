@@ -69,13 +69,13 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 **What it fetches:** Claude Code and Antigravity quota/usage data - locally on this machine and/or from a selected remote host.
 
-**Sources:** three independent, toggleable `useAgentUsage()` instances live in `AgentUsageSection.vue` - `ag` (Antigravity, always `host = 'local'`), `ccLocal` (Claude Code, always `host = 'local'`), `ccRemote` (Claude Code, `host` = selected SSH host). Each polls only while its own `enabled` flag is true; polling is entirely decoupled from which of the two `AgentUsageSlot` display panels (if any) currently shows it. All three now use the same `useToggleableSource()` pattern with their own independent, persisted power switch - `ccRemote`'s (`aki-src-ccremote-enabled`) is no longer tied to the sync-check switch (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)).
+**Sources:** one **UsageMonitor** per `(agent, machine)` pair, created on demand by `usageMonitorRegistry.getMonitor()` and keyed `agentId@host` (`antigravity@local`, `claudecode@devbox`, …). There is no fixed set: pointing a display slot at a second SSH host creates a second monitor for that host, so several remote machines can be watched at once, each with its own account. A monitor's machine is immutable - it is half of its identity - and only its `enabled` flag varies. Polling is decoupled from which `AgentUsageSlot` (if any) currently displays it, and two slots naming the same pair share the one monitor, so the display never doubles the poll rate. Each monitor's switch is persisted per id in `store/usageMonitorStore.js`, independent of the sync-check switch (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)).
 
-**Cost:** Local reads (`ag`, `ccLocal`) run a local shell/`zsh -lc node`, no network. Remote (`ccRemote`) is one SSH `cat`/probe per interval, only while Remote Mode is on and a host is selected.
+**Cost:** Local monitors (`host = 'local'`) run a local shell/`zsh -lc node`, no network. A remote monitor is one SSH `cat`/probe per interval per host, only while it is switched on and its slot has a host selected.
 
-**Trigger:** Local sources start immediately (default ON). `ccRemote` starts once a host is selected AND Remote Mode is on. Polls every 30s. Cleaned up on component unmount.
+**Trigger:** A monitor starts when it is switched on (default ON) and stops when switched off, keeping its last reading on screen as *Cached*. Polls every 30s. Monitors are session-lived - deliberately not torn down on component unmount, since they outlive whichever slot first asked for them.
 
-**Implementation:** `useAgentUsage.js` (composable) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_interpreter_timeout` (renamed from `run_remote_script_timeout` in 1.12.0) via `is_local_host(host)`.
+**Implementation:** `usageMonitor.js` (the entity) + `usageMonitorRegistry.js` (identity) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_interpreter_timeout` (renamed from `run_remote_script_timeout` in 1.12.0) via `is_local_host(host)`. Design rationale: [docs/plan/usage-monitor-entity-refactor.md](../plan/usage-monitor-entity-refactor.md).
 
 **Planned interval:** 30s (current) - acceptable since it's a single lightweight read.
 

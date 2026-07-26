@@ -37,7 +37,7 @@ export default defineConfig(async () => ({
     port: devPort,
     strictPort: true,
     host: host || false,
-    // HMR stays DIRECT to Vite (docs/plan/remote-control.md §7.2): the Mac dev window loads Vite
+    // HMR stays DIRECT to Vite (docs/plan/done/remote-control.md §7.2): the Mac dev window loads Vite
     // on localhost and hot-reloads directly. The phone loads the SPA through axum's proxy on :1421
     // (PORT-1) but does NOT get live HMR in dev — manual refresh — since Vite is localhost-only.
     // An axum HMR websocket bridge was tried and removed: it forced even the Mac window's HMR

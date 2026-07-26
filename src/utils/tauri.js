@@ -1,4 +1,4 @@
-// Seam N — native call (docs/plan/remote-control.md §4).
+// Seam N — native call (docs/plan/done/remote-control.md §4).
 //
 // The ONLY module allowed to import from `@tauri-apps/api/core` (R-3: 19 call sites elsewhere
 // swap their import to this file instead, mechanically, in the Wave-2 refactor pass).

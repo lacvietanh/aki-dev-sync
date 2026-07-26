@@ -1,4 +1,4 @@
-// Host-side control of the companion (remote-control) server — docs/plan/remote-control.md §7.1.
+// Host-side control of the companion (remote-control) server — docs/plan/done/remote-control.md §7.1.
 //
 // This is the HOST entry point: it turns the relay's `enabled` gate on/off and surfaces the
 // pairing code + every reachable address (LAN / Tailscale, §7.1a) so the user knows where to point

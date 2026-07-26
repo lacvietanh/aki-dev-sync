@@ -29,7 +29,7 @@ export const isReloading = ref(false)
 export const ideAvailability = ref(null)
 export const iconTimestamp = ref(Date.now())
 
-// ICON-1 (docs/plan/remote-control.md §7.0): { [projectId]: dataUri | null }, a COMPLETE map —
+// ICON-1 (docs/plan/done/remote-control.md §7.0): { [projectId]: dataUri | null }, a COMPLETE map —
 // every project id is present, with an explicit null when it has no icon, so a companion never
 // retries or 404s on a missing key. Lives in the store precisely so the mirror carries it to the
 // phone for free: the `aki-devsync-icon://` custom protocol the host `<img>`s use exists only

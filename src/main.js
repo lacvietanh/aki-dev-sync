@@ -1,4 +1,4 @@
-import "./boot/roleStamp"; // MUST stay first — stamps window.__AKI_ROLE__ before bridge.js reads it (docs/plan/remote-control.md §9)
+import "./boot/roleStamp"; // MUST stay first — stamps window.__AKI_ROLE__ before bridge.js reads it (docs/plan/done/remote-control.md §9)
 import { createApp } from "vue";
 import { isHost } from "./services/bridge";
 import "@fortawesome/fontawesome-free/css/all.min.css";

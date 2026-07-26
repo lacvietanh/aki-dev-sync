@@ -1,5 +1,5 @@
 <!--
-  Companion pairing screen — docs/plan/remote-control.md §7.1.
+  Companion pairing screen — docs/plan/done/remote-control.md §7.1.
 
   Renders ONLY on a phone/browser companion that has no accepted token (`needsPairing`), and covers
   the app completely: behind it every panel would be empty anyway, since no state can be mirrored

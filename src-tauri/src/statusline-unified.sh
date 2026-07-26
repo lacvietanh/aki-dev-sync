@@ -34,39 +34,68 @@ echo "$input" > /tmp/statusline_stdin_dump.json 2>/dev/null
 # atomic. So: validate before reading, merge instead of replace, write via tmp+mv.
 #
 # DESIGN LOCK - the cache must NEVER be merged or displayed without checking (1) resets_at is
-# still in the future and (2) the entry belongs to the CURRENT account. That bug shipped from
-# 1.10.0 through 1.17.0: an object-merge that only ever adds/overwrites keys present in the live
-# payload (and never drops absent ones) keeps a stale field alive forever, so a host showed a
-# phantom "7d 45%" for an account that has no weekly limit at all. v4 closes both halves.
-# See docs/plan/1.18.0-statusline-apply-correctness.md, section P0-5 (data integrity).
+# still in the future, (2) the entry belongs to the CURRENT account, and (3) the entry was seen
+# recently enough to still be trusted. That bug shipped from 1.10.0 through 1.17.0: an
+# object-merge that only ever adds/overwrites keys present in the live payload (and never drops
+# absent ones) keeps a stale field alive forever, so a host showed a phantom "7d 45%" for an
+# account that has no weekly limit at all. v4 closed the resets_at half and gated identity on
+# email - but email is not a stable account identifier: deleting and recreating a Claude account
+# under the same email address (same organization, new accountUuid, new plan) passes the v4 gate
+# unchanged, so v5 gates on accountUuid instead and falls back to email only when a client is old
+# enough to have never written one. v5 also stamps each surviving entry with the turn it was last
+# actually seen in a live payload, so an entry that stops being sent (weekly quota disappearing
+# because the new plan has none) ages out instead of surviving via resets_at forever - the same
+# blast radius as the resets_at check, just triggered by silence instead of a timestamp.
+# See docs/plan/done/1.18.0-statusline-apply-correctness.md, section P0-5 (data integrity).
 if [ "$CLI" = "CC" ]; then
   RLCACHE="$HOME/.claude/rate-limits-cache.json"
   mkdir -p "$HOME/.claude" 2>/dev/null
   _rl_now=$(date +%s)
   _rl_acct=""
+  _rl_acct_uuid=""
   if [ -f "$HOME/.claude.json" ]; then
       _rl_acct=$(jq -r '.oauthAccount.emailAddress // ""' "$HOME/.claude.json" 2>/dev/null)
+      _rl_acct_uuid=$(jq -r '.oauthAccount.accountUuid // ""' "$HOME/.claude.json" 2>/dev/null)
   fi
-  # Drop every entry that is past its reset. resets_at == 0 means "unknown", not "expired".
+  # Drop every entry that is past its reset (resets_at == 0 means "unknown", not "expired"),
+  # or that has gone unseen in a live payload for too long (the account still owns the cache
+  # file but this specific field stopped being sent, e.g. a plan change removed a limit tier).
   _rl_prune() {
-      jq -c -n --argjson rl "$1" --argjson now "$_rl_now" '
+      jq -c -n --argjson rl "$1" --argjson now "$_rl_now" --argjson maxAge 21600 '
         $rl | with_entries(select(
           ((.value | type) != "object")
-          or ((.value.resets_at // 0) <= 0)
-          or ((.value.resets_at) > $now)
+          or (
+            (((.value.resets_at // 0) <= 0) or ((.value.resets_at) > $now))
+            and (((.value.seen_at // 0) <= 0) or (($now - .value.seen_at) < $maxAge))
+          )
         ))' 2>/dev/null
   }
   rl_input=$(printf '%s' "$input" | jq -c '.rate_limits // empty' 2>/dev/null)
   rl_cached=""
   if [ -f "$RLCACHE" ] && jq -e . "$RLCACHE" >/dev/null 2>&1; then
-      # Account gate: a cache written by another account is not ours to display.
+      # Account gate: a cache written by another account is not ours to display. Prefer the
+      # stable accountUuid; a cache from a pre-v5 write (or a client with no accountUuid yet)
+      # has no account_uuid field, so fall back to the email gate for that one case only.
       _rl_cached_acct=$(jq -r '.account // ""' "$RLCACHE" 2>/dev/null)
-      if [ "$_rl_cached_acct" = "$_rl_acct" ]; then
+      _rl_cached_uuid=$(jq -r '.account_uuid // ""' "$RLCACHE" 2>/dev/null)
+      if [ -n "$_rl_cached_uuid" ] || [ -n "$_rl_acct_uuid" ]; then
+          _rl_acct_match=false
+          [ -n "$_rl_cached_uuid" ] && [ "$_rl_cached_uuid" = "$_rl_acct_uuid" ] && _rl_acct_match=true
+      else
+          _rl_acct_match=false
+          [ "$_rl_cached_acct" = "$_rl_acct" ] && _rl_acct_match=true
+      fi
+      if [ "$_rl_acct_match" = "true" ]; then
           rl_cached=$(jq -c '.rate_limits // empty' "$RLCACHE" 2>/dev/null)
       fi
   fi
   rl_merged="$rl_cached"
   if [ -n "$rl_input" ]; then
+      # Stamp every entry the live payload actually sent this turn, so _rl_prune can tell
+      # "still being sent" from "hasn't been sent in a while".
+      _rl_input_seen=$(jq -c -n --argjson rl "$rl_input" --argjson now "$_rl_now" '
+        $rl | with_entries(if (.value | type) == "object" then .value.seen_at = $now else . end)' 2>/dev/null)
+      [ -n "$_rl_input_seen" ] && rl_input="$_rl_input_seen"
       rl_merged="$rl_input"
       if [ -n "$rl_cached" ]; then
           _merged=$(jq -c -n --argjson old "$rl_cached" --argjson new "$rl_input" '$old * $new' 2>/dev/null)
@@ -83,15 +112,15 @@ if [ "$CLI" = "CC" ]; then
       [ -n "$_with_rl" ] && input="$_with_rl"
       _rl_tmp=$(mktemp "$HOME/.claude/.rate-limits-cache.XXXXXX" 2>/dev/null)
       if [ -n "$_rl_tmp" ]; then
-          if printf '{"account":%s,"rate_limits":%s}\n' "$(jq -n --arg a "$_rl_acct" '$a')" "$rl_merged" > "$_rl_tmp" 2>/dev/null; then
+          if printf '{"account":%s,"account_uuid":%s,"rate_limits":%s}\n' "$(jq -n --arg a "$_rl_acct" '$a')" "$(jq -n --arg u "$_rl_acct_uuid" '$u')" "$rl_merged" > "$_rl_tmp" 2>/dev/null; then
               mv -f "$_rl_tmp" "$RLCACHE" 2>/dev/null || rm -f "$_rl_tmp"
           else
               rm -f "$_rl_tmp"
           fi
       fi
   elif [ -f "$RLCACHE" ]; then
-      # Nothing survived the account/expiry gates - do not leave the stale file behind to be
-      # re-read (and re-trusted) on the next call.
+      # Nothing survived the account/expiry/staleness gates - do not leave the stale file
+      # behind to be re-read (and re-trusted) on the next call.
       rm -f "$RLCACHE" 2>/dev/null
   fi
 fi
