@@ -104,42 +104,82 @@ except Exception as e:
         fi
     fi
 
-    # ── 6. Read subscription metadata ─────────────────────────────────────
-    SUB_TYPE="Unknown"
-    TIER="Unknown"
-    if [ -f "$CREDS" ]; then
-        FOUND=$(grep -o '"subscriptionType"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
-        [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
-        FOUND_TIER=$(grep -o '"rateLimitTier"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
-        [ -n "$FOUND_TIER" ] && TIER="$FOUND_TIER"
-        _log "meta: creds_found=yes subtype=$SUB_TYPE tier=$TIER"
-    else
-        _log "meta: creds_found=no - falling back to auth status"
-    fi
-    if [ "$SUB_TYPE" = "Unknown" ]; then
-        FOUND=$(printf '%s' "$AUTH_INFO" | grep -o '"subscriptionType"\s*:\s*"[^"]*"' | head -n 1 | awk -F'"' '{print $4}')
-        [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
-        _log "meta: auth_status subtype=$SUB_TYPE"
-    fi
-
-    # ── 6b. Read-side sanitizing (v4 gates - mirrors statusline.rs writer) ─
-    # DESIGN LOCK - same two invariants as the `aki-rlcache v4` writer block in
-    # src-tauri/src/statusline.rs: an entry whose resets_at has passed must never be shown, and a
-    # cache written by a different account must never be shown. The writer only protects hosts
-    # that already received the new script; this reader protects the app even against a host still
-    # running an older statusline hook. Read-only: never touches $FILE. See docs/arch/usage-claudecode.md §3.
+    # ── 5b. Live account identity ─────────────────────────────────────────
+    # ~/.claude.json is written by the CLI itself on every login/switch, so unlike
+    # .credentials.json (may live in the OS keychain instead, and even when present is only
+    # touched at login/refresh time - it kept yesterday's account's tier and subscription label
+    # for hours after an account switch) this is never stale for longer than the CLI takes to
+    # write its own config file. accountUuid is the stable identity: two accounts can share an
+    # email (delete-and-recreate under the same address is a real case this was built for), so
+    # email alone is not a safe "same account" test.
     CURRENT_ACCT=""
+    CURRENT_ACCT_UUID=""
+    LIVE_ORG_TIER=""
+    LIVE_USER_TIER=""
     if [ -f "$HOME/.claude.json" ]; then
-        CURRENT_ACCT=$(python3 -c "
+        CLAUDE_JSON_INFO=$(python3 -c "
 import json
 try:
     d = json.load(open('$HOME/.claude.json'))
-    print(d.get('oauthAccount', {}).get('emailAddress', '') or '')
+    a = d.get('oauthAccount', {}) or {}
+    print('{}|{}|{}|{}'.format(
+        a.get('emailAddress', '') or '',
+        a.get('accountUuid', '') or '',
+        a.get('organizationRateLimitTier', '') or '',
+        a.get('userRateLimitTier', '') or ''))
 except Exception:
-    print('')
+    print('|||')
 " 2>/dev/null)
+        CURRENT_ACCT=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $1}')
+        CURRENT_ACCT_UUID=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $2}')
+        LIVE_ORG_TIER=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $3}')
+        LIVE_USER_TIER=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $4}')
     fi
-    _log "sanitize: current_account='$CURRENT_ACCT'"
+    _log "identity: current_account='$CURRENT_ACCT' uuid='$CURRENT_ACCT_UUID' live_org_tier='$LIVE_ORG_TIER' live_user_tier='$LIVE_USER_TIER'"
+
+    # ── 6. Read subscription metadata ─────────────────────────────────────
+    # Priority, most-live-first: ~/.claude.json (this account's own live config) → auth-cache /
+    # `claude auth status` (refreshed at most every AUTH_REFRESH_AGE_S, or forced once on app
+    # open) → .credentials.json (last resort only - see 5b for why it can trail an account
+    # switch by hours). Previously .credentials.json was read FIRST and always won when present,
+    # which is exactly backwards: it is the least current of the three sources whenever one exists.
+    SUB_TYPE="Unknown"
+    TIER="Unknown"
+    if [ -n "$LIVE_ORG_TIER" ] || [ -n "$LIVE_USER_TIER" ]; then
+        TIER="${LIVE_ORG_TIER:-$LIVE_USER_TIER}"
+        _log "meta: tier source=claude.json tier=$TIER"
+    fi
+    FOUND=$(printf '%s' "$AUTH_INFO" | grep -o '"subscriptionType"\s*:\s*"[^"]*"' | head -n 1 | awk -F'"' '{print $4}')
+    [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
+    if [ "$TIER" = "Unknown" ]; then
+        FOUND_TIER=$(printf '%s' "$AUTH_INFO" | grep -o '"rateLimitTier"\s*:\s*"[^"]*"' | head -n 1 | awk -F'"' '{print $4}')
+        [ -n "$FOUND_TIER" ] && TIER="$FOUND_TIER"
+    fi
+    _log "meta: auth_status subtype=$SUB_TYPE tier=$TIER"
+    if [ "$SUB_TYPE" = "Unknown" ] || [ "$TIER" = "Unknown" ]; then
+        if [ -f "$CREDS" ]; then
+            if [ "$SUB_TYPE" = "Unknown" ]; then
+                FOUND=$(grep -o '"subscriptionType"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
+                [ -n "$FOUND" ] && SUB_TYPE="$FOUND"
+            fi
+            if [ "$TIER" = "Unknown" ]; then
+                FOUND_TIER=$(grep -o '"rateLimitTier"\s*:\s*"[^"]*"' "$CREDS" | head -n 1 | awk -F'"' '{print $4}')
+                [ -n "$FOUND_TIER" ] && TIER="$FOUND_TIER"
+            fi
+            _log "meta: creds_fallback subtype=$SUB_TYPE tier=$TIER"
+        else
+            _log "meta: creds_found=no - no fallback left"
+        fi
+    fi
+
+    # ── 6b. Read-side sanitizing (v5 gates - mirrors statusline-unified.sh writer) ─
+    # DESIGN LOCK - same invariants as the `aki-rlcache` writer block in
+    # src-tauri/src/statusline-unified.sh: an entry whose resets_at has passed must never be
+    # shown, and a cache written by a different account must never be shown - gated on
+    # accountUuid (stable) with an email fallback only when neither side has a uuid (pre-v5
+    # cache, or a client old enough to have none). The writer only protects hosts that already
+    # received the new script; this reader protects the app even against a host still running an
+    # older statusline hook. Read-only: never touches $FILE. See docs/arch/usage-claudecode.md §3.
 
     # Sanitizer emits one "LOG:<message>" line per decision, followed by exactly one final
     # "STATUS:<code>[:<json>]" line. Everything goes to stdout (no stray files, no reliance on a
@@ -150,6 +190,7 @@ except Exception:
 import json, sys
 now = $NOW
 current_acct = '''$CURRENT_ACCT'''
+current_uuid = '''$CURRENT_ACCT_UUID'''
 try:
     with open('$FILE') as f:
         d = json.load(f)
@@ -159,7 +200,19 @@ except Exception as e:
     sys.exit(0)
 
 cached_acct = d.get('account', '') or ''
-if cached_acct == '':
+cached_uuid = d.get('account_uuid', '') or ''
+if cached_uuid or current_uuid:
+    if cached_uuid and cached_uuid != current_uuid:
+        print('LOG:account mismatch cached_uuid={} current_uuid={} - cache untrusted, dropping whole cache'.format(cached_uuid, current_uuid))
+        print('STATUS:ACCOUNT_MISMATCH')
+        sys.exit(0)
+    elif not cached_uuid:
+        print('LOG:cache has no account_uuid (pre-v5 write) but a live uuid exists - falling back to email gate for this one cache')
+        if cached_acct != '' and current_acct != '' and cached_acct != current_acct:
+            print('LOG:account mismatch cached={} current={} - cache untrusted, dropping whole cache'.format(cached_acct, current_acct))
+            print('STATUS:ACCOUNT_MISMATCH')
+            sys.exit(0)
+elif cached_acct == '':
     print('LOG:legacy cache has no account field (pre-v4 script) - not dropping, host should be re-applied')
 elif current_acct != '' and cached_acct != current_acct:
     print('LOG:account mismatch cached={} current={} - cache untrusted, dropping whole cache'.format(cached_acct, current_acct))
@@ -174,6 +227,14 @@ kept = {}
 for key, entry in rl.items():
     if not isinstance(entry, dict):
         print('LOG:dropped {} (not an object)'.format(key))
+        continue
+    seen_at = entry.get('seen_at', 0) or 0
+    try:
+        seen_at = int(seen_at)
+    except Exception:
+        seen_at = 0
+    if seen_at and (now - seen_at) >= 21600:
+        print('LOG:dropped {} (unseen for {}s - field stopped being sent)'.format(key, now - seen_at))
         continue
     resets_at = entry.get('resets_at', 0) or 0
     try:

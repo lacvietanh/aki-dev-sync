@@ -72,14 +72,14 @@ logger::info(tag, msg)   // chỉ khi debug
 logger::debug(tag, msg)  // chỉ khi debug
 ```
 
-Bốn IPC command cho frontend:
+Ba IPC command cho frontend:
 - `is_debug_mode()` → `bool`
 - `get_log_path()` → `String`
 - `log_frontend(level, tag, msg)` → forward log từ frontend vào cùng pipeline (usage.log + stderr)
 
 ---
 
-## Frontend Logging (`useAgentUsage.js`)
+## Frontend Logging (`usageMonitor.js`)
 
 Mỗi `ulog(event, fields, level)` thực hiện **hai hành động song song**:
 
@@ -101,7 +101,8 @@ Trong production (không có `--debug`): Webview console im lặng hoàn toàn, 
 ```
 
 Timestamp UTC (Rust), local time (JS). Compact format - ~10 bytes saved per line vs old `YYYY-MM-DD HH:MM:SS.mmm`.
-Tag = `STARTUP` / `GET_USAGE` / `FORCE_SYNC` / `PROVISION` (Rust) or `USAGE:claudecode` / `USAGE:antigravity` (frontend).
+Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của script) or `USAGE:<monitorId>`
+(frontend) - `monitorId` = `<agentId>@<host>`, ví dụ `USAGE:claudecode@local`, `USAGE:antigravity@hostB`.
 
 ---
 
@@ -111,11 +112,6 @@ Tag = `STARTUP` / `GET_USAGE` / `FORCE_SYNC` / `PROVISION` (Rust) or `USAGE:clau
 - `debug`: start, ssh_result, stdout_preview, parse steps, rate_limits summary, done
 - `info`: no cache file (null), STALE_RESET
 - `error`: shell exit≠0, MTIME delimiter missing, json_parse fail, auth_inject fail
-
-**FORCE_SYNC** (chỉ khi data null / STALE_RESET):
-- `debug`: launching, ssh_result, diagnostic_raw, done
-- `info`: start, diagnostic outcome (parsed/written/pct/resets_at), YEAR_FIX, SUCCESS
-- `error`: empty stdout, parse_error, write fail, stdout not valid JSON
 
 **PROVISION** (một lần per host session):
 - `debug`: skip (not claudecode)
@@ -128,5 +124,5 @@ Tag = `STARTUP` / `GET_USAGE` / `FORCE_SYNC` / `PROVISION` (Rust) or `USAGE:clau
 
 - `src-tauri/src/logger.rs` - implementation: `error`, `info`, `debug`, `log_frontend`
 - `src-tauri/src/agent_usage.rs` - caller dọp nhất hiện tại
-- `src/composables/useAgentUsage.js` - frontend logger (`makeLogger`, `ulog`, dual-path)
+- `src/composables/usageMonitor.js` - frontend logger (`makeLogger`, `ulog`, dual-path); the tag carries the monitor's full identity (`USAGE:claudecode@hostB`) so two hosts are separable in one log
 - `docs/arch/usage-claudecode.md` - §“Cách đọc log khi debug”

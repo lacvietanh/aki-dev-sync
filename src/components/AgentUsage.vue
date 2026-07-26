@@ -22,7 +22,9 @@
         </div>
       </div>
       <div class="agent-status-badges">
-        <span v-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
+        <!-- Same trigger as the badge it replaces, same slot, same styling as AG's age note - an age the user can act on instead of the word "Stale". The badge stays as the fallback for the one case where the age is genuinely unknown (host reported no mtime): never print a guessed number. -->
+        <span v-if="stale && dataAgo" class="cached-note" :title="'Data from ' + dataAbsTime">{{ dataAgo }}</span>
+        <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
@@ -282,10 +284,10 @@
 // @docs docs/plan/done/1.16.1-ag-usage.md
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
-import Swal from 'sweetalert2';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
 import { refreshSettings } from '../store/refreshStore';
+import { requestAgLogout } from '../store/remoteActions';
 
 const props = defineProps({
   agentId: String,
@@ -294,6 +296,8 @@ const props = defineProps({
   loading: Boolean,
   error: String,
   stale: Boolean,
+  // Unix seconds the displayed reading was written - the same clock `stale` is derived from, so the header can print the real age instead of the word "Stale". Null when the host reported no mtime.
+  dataAt: { type: Number, default: null },
   isCached: { type: Boolean, default: false },
   cachedAt: { type: Number, default: null },
   showEmail: { type: Boolean, default: true },
@@ -374,44 +378,17 @@ function getLogoutTitle() {
 }
 
 const loggingOut = ref(false);
+// Confirm + the two logout commands both live in `remoteActions.requestAgLogout`, on the host: the
+// confirm is a mirrored dialog (docs/plan/1.20.0-terminal-and-remote-sync.md §3), and a companion
+// cannot ask one - it would render a popup nothing on the host is awaiting. `requestAgLogout`
+// returns true only when a logout really ran, so the stub's `undefined` on a companion never fakes
+// a success here.
 async function logoutAntigravity() {
   if (loggingOut.value) return;
-  const isIde = currentSourceType.value === 'ide';
-  const isCli = currentSourceType.value === 'cli';
-  const isDesktop = currentSourceType.value === 'desktop' || currentSourceType.value === 'desktop_cli';
-
-  let title = 'Đăng xuất IDE?';
-  let html = 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.';
-
-  if (isDesktop) {
-    title = 'Đăng xuất AG?';
-    html = 'Ứng dụng sẽ dừng các tiến trình và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.';
-  } else if (isCli) {
-    title = 'Đăng xuất CLI (Terminal)?';
-    html = 'Ứng dụng sẽ dừng các tiến trình CLI và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.';
-  }
-
-  const { isConfirmed } = await Swal.fire({
-    title,
-    html,
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#ef4444',
-    cancelButtonColor: '#374151',
-    confirmButtonText: 'Đăng xuất',
-    cancelButtonText: 'Hủy',
-    background: '#131317',
-    color: '#F3F4F6',
-  });
-  if (!isConfirmed) return;
   loggingOut.value = true;
   try {
-    if (isIde) {
-      await invoke('logout_antigravity');
-    } else {
-      await invoke('logout_antigravity_cli');
-    }
-    emit('logout-success');
+    const loggedOut = await requestAgLogout(currentSourceType.value);
+    if (loggedOut) emit('logout-success');
   } finally {
     loggingOut.value = false;
   }
@@ -429,7 +406,7 @@ function isAccountLive(acc) {
   const inActive = props.activeEmail === key || props.activeEmail === email ||
     (props.activeEmails && (props.activeEmails.has(key) || props.activeEmails.has(email)));
   if (!inActive) return false;
-  if (acc.fetchedAt && (agCacheNow.value - acc.fetchedAt) > 600) return false;
+  if (acc.fetchedAt && (agoNow.value - acc.fetchedAt) > 600) return false;
   return true;
 }
 
@@ -583,40 +560,18 @@ const ccNow = ref(Math.floor(Date.now() / 1000));
 let ccClockTimer = null;
 onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 
-// AG cached-at display - reactive relative time updated every 10s
-const agCacheNow = ref(Math.floor(Date.now() / 1000));
-let agCacheTimer = null;
+// Clock for every relative age this card renders - AG's cached note and account dropdown, and Claude Code's data age. Ticks for both agents because both now show an age; it is deliberately separate from `ccNow` above, which is a 60s countdown clock for the reset lines and carries a refetch side effect.
+const agoNow = ref(Math.floor(Date.now() / 1000));
+let agoTimer = null;
 onMounted(() => {
-  if (props.agentId === 'antigravity') {
-    agCacheTimer = setInterval(() => { agCacheNow.value = Math.floor(Date.now() / 1000); }, 10000);
-  }
+  agoTimer = setInterval(() => { agoNow.value = Math.floor(Date.now() / 1000); }, 10000);
 });
-onUnmounted(() => { if (agCacheTimer) clearInterval(agCacheTimer); });
+onUnmounted(() => { if (agoTimer) clearInterval(agoTimer); });
 
-const cachedAgo = computed(() => {
-  if (!props.cachedAt) return '';
-  const diffS = agCacheNow.value - props.cachedAt;
-  if (diffS < 60) return '<1m ago';
-  const mins = Math.floor(diffS / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  const rem = mins % 60;
-  return rem > 0 ? `${hrs}h${rem}m ago` : `${hrs}h ago`;
-});
-
-const cachedAbsTime = computed(() => {
-  if (!props.cachedAt) return '';
-  const d = new Date(props.cachedAt * 1000);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
-});
-
-// Relative "cached N ago" for a given Unix-seconds timestamp (used by the account dropdown).
-// Reactive via agCacheNow (ticks every 10s).
+// The one relative-age formatter in this card: `<1m` / `Nm` / `NhNm` / `Nh`, reactive via agoNow. Every age shown anywhere in the header goes through it, so AG and Claude Code cannot drift into two dialects of the same string.
 function formatAgo(sec) {
   if (!sec) return '';
-  const diffS = agCacheNow.value - sec;
+  const diffS = agoNow.value - sec;
   if (diffS < 60) return '<1m';
   const mins = Math.floor(diffS / 60);
   if (mins < 60) return `${mins}m`;
@@ -624,6 +579,22 @@ function formatAgo(sec) {
   const rem = mins % 60;
   return rem > 0 ? `${hrs}h${rem}m` : `${hrs}h`;
 }
+
+// Absolute HH:MM for the tooltips - precision belongs there, not in the visible string.
+function formatAbsTime(sec) {
+  if (!sec) return '';
+  const d = new Date(sec * 1000);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+const cachedAgo = computed(() => (props.cachedAt ? `${formatAgo(props.cachedAt)} ago` : ''));
+const cachedAbsTime = computed(() => formatAbsTime(props.cachedAt));
+
+// Claude Code header age. Renders only where the "Stale" badge used to: the badge was a yes/no with nothing actionable in it, and the age it was hiding is already known exactly (usageMonitor's `dataAt`, the very mtime the stale test compares).
+const dataAgo = computed(() => (props.dataAt ? `${formatAgo(props.dataAt)} ago` : ''));
+const dataAbsTime = computed(() => formatAbsTime(props.dataAt));
 
 const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
 const cc5hResetsAt = computed(() => {
@@ -686,6 +657,10 @@ const claudeTierDisplay = computed(() => {
   if (props.data.rateLimitTier && props.data.rateLimitTier !== 'Unknown') {
     let tier = props.data.rateLimitTier;
     let cleaned = tier.replace(/^(default_)?claude_/, '').replace(/_/g, ' ');
+
+    if (cleaned.toLowerCase() === 'ai' && props.data.subscriptionType && props.data.subscriptionType !== 'Unknown') {
+      return props.data.subscriptionType.charAt(0).toUpperCase() + props.data.subscriptionType.slice(1);
+    }
 
     return cleaned.split(' ').map(word => {
       if (word.toLowerCase() === 'max') return 'Max';
@@ -854,30 +829,45 @@ async function handleIconClick() {
   visibility: visible;
   pointer-events: auto;
 }
-/* Smart 4-position pattern classes */
+/* Smart 4-position pattern classes with transparent bridge to prevent hover loss */
+.ag-account-menu::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
 .ag-account-menu.popup-pos-tl {
-  top: calc(100% + 4px);
+  top: calc(100% + 2px);
   bottom: auto;
   left: 0;
   right: auto;
   transform-origin: top left;
 }
+.ag-account-menu.popup-pos-tl::after,
+.ag-account-menu.popup-pos-tr::after {
+  top: -8px;
+}
 .ag-account-menu.popup-pos-tr {
-  top: calc(100% + 4px);
+  top: calc(100% + 2px);
   bottom: auto;
   right: 0;
   left: auto;
   transform-origin: top right;
 }
 .ag-account-menu.popup-pos-bl {
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + 2px);
   top: auto;
   left: 0;
   right: auto;
   transform-origin: bottom left;
 }
+.ag-account-menu.popup-pos-bl::after,
+.ag-account-menu.popup-pos-br::after {
+  bottom: -8px;
+}
 .ag-account-menu.popup-pos-br {
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + 2px);
   top: auto;
   right: 0;
   left: auto;
@@ -1039,7 +1029,7 @@ async function handleIconClick() {
   border-radius: 4px;
 }
 
-/* Cached indicator: plain amber text, not a badge box (keeps the header narrow) */
+/* Data-age note, shared by AG's cached reading and Claude Code's stale reading: plain amber text, not a badge box (keeps the header narrow - no padding, border or background to pay for) */
 .cached-note {
   font-size: 9px;
   font-weight: 600;

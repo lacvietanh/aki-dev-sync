@@ -3,13 +3,14 @@ import { projectRuntime, bumpEpoch } from './projectStore'
 import { action } from '../services/action'
 
 // Kill switch for project sync/diff: SSH-based project sync (pull/push/select/open-remote)
-// and background remote-diff checks. Claude Code remote usage monitoring has its own
-// independent switch - see AgentUsageSection.vue's `ccRemote` (aki-src-ccremote-enabled).
+// and background remote-diff checks. Usage monitoring has its own independent switches, one per
+// `(agent, host)` monitor - see `usageMonitorStore.monitorEnabled`.
 
 // Migration: this switch used to be `aki-remote-mode-enabled`, a single flag that also governed
-// Claude Code remote usage monitoring. That half now lives in `aki-src-ccremote-enabled`
-// (AgentUsageSection). Seed both new keys from the old value so an existing user's setup keeps
-// behaving exactly as before the split, then let them diverge.
+// Claude Code remote usage monitoring. That half moved to the per-source flag
+// `aki-src-ccremote-enabled`, which the 1.20.0 entity refactor has since folded into
+// `usageMonitorStore`'s per-monitor map. Seed this key from the old value so an existing user's
+// setup keeps behaving exactly as before the split, then let them diverge.
 const LEGACY_KEY = 'aki-remote-mode-enabled'
 const KEY = 'aki-sync-check-enabled'
 

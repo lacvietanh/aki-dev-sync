@@ -85,7 +85,8 @@ stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in
 `agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"`
 / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port
 not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set
-`error.value` in `useAgentUsage.js`, flashing an error banner every poll. AG usage is a best-effort
+`error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là
+`usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort
 monitor and the frontend already has a graceful null path (show the last cached account), so
 `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason
 at debug level. Result: transient/offline/signed-out states show the cached account (or the
@@ -140,21 +141,31 @@ Using a login shell (`-lc`) is mandatory for desktop GUI execution since GUI app
 
 ## Per-Account Cache (localStorage) & Account Dropdown
 
-Antigravity can switch the logged-in account on the same machine, so usage is cached **per email**
-in `localStorage` under `aki-antigravity-usage-cache-v2`:
+Antigravity can switch the logged-in account on the same machine, so usage is cached **per account
+per machine** in `localStorage` under `aki-antigravity-usage-cache-v3`. The whole cache is owned by
+`src/composables/agUsageCache.js` and reached only through its functions - no component parses it:
 
 ```json
 {
   "accounts": {
-    "user@a.com": { "data": { ...usage, "email": "user@a.com" }, "fetchedAt": 1751430000 },
-    "user@b.com": { "data": { ... }, "fetchedAt": 1751420000 }
+    "local|user@a.com:ide":  { "data": { ...usage, "email": "user@a.com" }, "fetchedAt": 1751430000, "host": "local" },
+    "local|user@b.com:cli":  { "data": { ... }, "fetchedAt": 1751420000, "host": "local" },
+    "devbox|user@a.com:ide": { "data": { ... }, "fetchedAt": 1751430500, "host": "devbox" }
   },
-  "lastActiveEmail": "user@a.com"
+  "lastActiveEmailByHost": { "local": "user@a.com", "devbox": "user@a.com" }
 }
 ```
 
-* **Migration:** the old single-blob key `aki-antigravity-usage-cache` is migrated once (keyed by the
-  blob's `data.email`) into the v2 map, then removed. Handled by `loadAgStore()` in `useAgentUsage.js`.
+* **Why the host is in the key** (v3, 1.20.0): the same Google account is routinely signed in on the
+  Mac and on a remote host at once. v2 keyed on `email:sourceType` and carried `host` only as
+  metadata on the value, so both machines wrote the one key - whichever polled last overwrote the
+  other's reading, and the loser's host-scope check then rejected its own former entry and rendered
+  an empty card. Two records that share a key cannot be told apart by metadata; only by the key.
+  `lastActiveEmail` became per-host for the same reason, and the dropdown's dedup pass now runs
+  inside one host's partition instead of `delete`-ing across the whole store.
+* **Migration:** `aki-antigravity-usage-cache` (v1 single blob) → v2 → v3, each step once, old key
+  removed. A v2 entry is re-keyed under its recorded `host`, or `local` when it has none - the only
+  value it can have had, since the remote AG probe did not work before 1.20.0.
 * **Why it also fixes the stale-account bug:** previously the cache was one un-keyed blob. When a live
   fetch returned `null` (the language server restarts right after an account switch - very common),
   the null branch displayed that blob = the *previous* account; whether you saw old or new depended
@@ -165,8 +176,14 @@ in `localStorage` under `aki-antigravity-usage-cache-v2`:
   every cached account with its cached-ago time and a "live" dot on the active one. Selecting a
   non-active account **pins** the view to that account's cache (`isCached` badge shown) while the
   background poll keeps fetching and updating the active account's cache; selecting the live account
-  returns to follow-live. State lives in the composable: `accounts`, `viewingEmail`, `activeEmail`,
-  `selectAccount()`. The email-blur eye-toggle applies to dropdown rows too.
+  returns to follow-live. **The pin lives in the slot, not in the monitor** (1.16.0 → persisted in
+  1.18.0): `AgentUsageSlot.vue` owns `slotViewingEmail` and resolves it in `slotAccountInfo`, because
+  two slots share one monitor and must be able to pin to two different accounts at once - a single
+  selection inside the monitor cannot express that. The monitor exports only what is live -
+  `accounts`, `activeEmail`, `activeEmails` - and always keeps `data` on the active account. Sau
+  refactor 1.20.0 "the composable" **không phải singleton** - mỗi monitor là một entity riêng theo
+  `monitorId(agentId, host)` (`usageMonitorRegistry.js`), nên mỗi `antigravity@<host>` giữ danh sách
+  account của riêng nó. The email-blur eye-toggle applies to dropdown rows too.
 
 > **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account
 > per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
@@ -224,16 +241,25 @@ không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi
 ### Design locks (by design - do not "fix")
 
 - **CC has no multi-account cache.** One account per remote host; do not add an AG-style store to CC.
-- **`viewingEmail` is not persisted.** Pinning the view to a previous account is transient; every
-  reload returns to the follow-live view of the active account.
-- **Header shows the local part only.** The header email is truncated to the part before `@`
-  (`emailLocal()` in `AgentUsage.vue`) so the header width stays stable when the active/cached account
-  changes; the full email is shown in the dropdown rows and the tooltip.
+- **The per-slot account pin IS persisted, and self-heals rather than being cleared at boot.** Each
+  slot stores its pin under `aki-usage-slot-<id>-viewing-account` and restores it on reload (1.18.0,
+  "Persistent slot account selection") - that is what lets a two-slot side-by-side comparison of two
+  Antigravity accounts survive a restart. Do **not** add a boot-time unpin: the failure it would be
+  aimed at (a pin restored onto an account that no longer exists anywhere) is already handled, scoped
+  to the one slot, by the `slotAccountInfo.isMissing` watcher in `AgentUsageSlot.vue`, which clears
+  only that slot's key once the first fetch settles. A pin onto an account that is merely *not live*
+  but still cached deliberately keeps showing that account's last-known state - the whole purpose of
+  the cache.
+- **Header shows a character-truncated email.** `truncEmail()` in `AgentUsage.vue` cắt theo **số ký tự**
+  (12, hoặc 7 ở breakpoint narrow `window.innerWidth <= 700`) rồi thêm `…` - **không** phải lấy phần
+  trước dấu `@`. Mục đích là giữ width header ổn định khi đổi account active/cached; the full email is
+  shown in the dropdown rows and the tooltip. (Ghi chú design lock nằm ngay trên hàm.)
 - **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always
   carries `email`; no empty-email guard is added in the live cache path.
 - **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache
   retention" above - this is a deliberate product decision, not a gap to "fix" later.
-- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted during `loadAgStore()` to prevent indefinite accumulation of obsolete sessions.
+- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted in `prune()`, gọi từ `loadStore()` (cả hai là private trong
+  `agUsageCache.js`), to prevent indefinite accumulation of obsolete sessions.
 
 ---
 
@@ -243,10 +269,14 @@ không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi
   - [get-antigravity-usage.js](../../scripts/get-antigravity-usage.js) - Node.js script to probe and fetch Connect RPC metrics.
   - [agent_usage.rs](../../src-tauri/src/agent_usage.rs) - Tauri Rust backend executor command handlers (`logout_antigravity`, `logout_antigravity_cli`).
 - **Frontend Stores & Composables:**
-  - [useAgentUsage.js](../../src/composables/useAgentUsage.js) - Vue frontend composable managing state and multi-account persistence.
+  - [usageMonitor.js](../../src/composables/usageMonitor.js) - One monitor entity: poll loop, circuit breaker, wake self-heal, multi-account view state. Its agent and machine are immutable identity.
+  - [usageMonitorRegistry.js](../../src/composables/usageMonitorRegistry.js) - Multiton keyed `agentId@host`; two slots naming the same pair share one monitor and one poll.
+  - [agUsageCache.js](../../src/composables/agUsageCache.js) - The per-account, per-host cache above; sole owner of the localStorage key.
+  - [usageMonitorStore.js](../../src/store/usageMonitorStore.js) - Which monitors are switched on, keyed by monitor id (mirrored).
+  - [usageSlotStore.js](../../src/store/usageSlotStore.js) - What each display slot points at, including its own remote host (mirrored).
   - [usageTierStore.js](../../src/store/usageTierStore.js) - Reactive store managing 1 Tier / 2 Tiers layout preference.
 - **UI Components:**
-  - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Owns usage sources and dynamically renders declarative N-Tier slot rows.
+  - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Pure N-Tier slot layout; owns no usage state.
   - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
   - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon, cyan/purple live dots, and environment-aware logout.
   - [UsageCircle.vue](../../src/components/UsageCircle.vue) - SVG radial progress circle used for Gemini and Claude/GPT quota buckets.

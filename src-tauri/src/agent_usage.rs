@@ -10,25 +10,16 @@ use std::process::{Command, Output, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Hard ceiling for any `ssh host sh` call. A hung `claude auth status` (network/API stall)
-/// must never wedge the UI in a permanent "loading" state (see docs/arch/usage-claudecode.md §2).
+/// Hard ceiling for any `ssh host sh` call. A hung `claude auth status` (network/API stall) must never wedge the UI in a permanent "loading" state (see docs/arch/usage-claudecode.md §2).
 const REMOTE_SCRIPT_TIMEOUT_SECS: u64 = 30;
 
-/// Per-`claude` bound enforced ON THE REMOTE (see [`CLAUDE_BIN_RESOLVER_PREAMBLE`]). Only
-/// `claude auth status` still runs through this preamble - the usage-fetch flow no longer
-/// spawns `claude` at all (see docs/arch/usage-claudecode.md §5).
+/// Per-`claude` bound enforced ON THE REMOTE (see [`CLAUDE_BIN_RESOLVER_PREAMBLE`]). Only `claude auth status` still runs through this preamble - the usage-fetch flow no longer spawns `claude` at all (see docs/arch/usage-claudecode.md §5).
 const CLAUDE_CALL_TIMEOUT_SECS: u64 = 45;
 
-/// Hard LOCAL ceiling for the statusline probe/apply calls specifically. That work is a
-/// handful of local file-system calls on the remote (mkdir/cat/chmod/jq) - nothing like the
-/// network/API round-trip `claude auth status` needs 30-45s for - so there is nothing to gain
-/// from waiting anywhere near REMOTE_SCRIPT_TIMEOUT_SECS, and everything to lose: a stuck host
-/// held the whole Customizer "busy" for up to 30s per host before this was split out.
+/// Hard LOCAL ceiling for the statusline probe/apply calls specifically. That work is a handful of local file-system calls on the remote (mkdir/cat/chmod/jq) - nothing like the network/API round-trip `claude auth status` needs 30-45s for - so there is nothing to gain from waiting anywhere near REMOTE_SCRIPT_TIMEOUT_SECS, and everything to lose: a stuck host held the whole Customizer "busy" for up to 30s per host before this was split out.
 const STATUSLINE_TIMEOUT_SECS: u64 = 5;
 
-/// The self-timeout embedded in [`bounded_remote_sh`]'s wrapper - kept under
-/// STATUSLINE_TIMEOUT_SECS so the remote/local shell has already terminated itself by the time
-/// this module's own clock runs out, instead of the two racing each other.
+/// The self-timeout embedded in [`bounded_remote_sh`]'s wrapper - kept under STATUSLINE_TIMEOUT_SECS so the remote/local shell has already terminated itself by the time this module's own clock runs out, instead of the two racing each other.
 const STATUSLINE_REMOTE_BOUND_SECS: u64 = 4;
 
 /// Sends `script` to `ssh host sh` via stdin and returns the combined output.
@@ -36,18 +27,12 @@ pub(crate) fn run_remote_script(host: &str, script: &str) -> Result<Output, Stri
     run_interpreter_timeout(host, Interpreter::Sh, script, REMOTE_SCRIPT_TIMEOUT_SECS)
 }
 
-/// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script
-/// (not POSIX `sh`) piped over the same funnel. Generalizes the timeout/kill/drain machinery
-/// instead of duplicating it - AG's IPC previously
-/// had no timeout at all, so a blackholed SSH/local probe wedged `isChecking` permanently.
+/// Like [`run_remote_script`] but for the Antigravity usage probe, which is a `node` script (not POSIX `sh`) piped over the same funnel. Generalizes the timeout/kill/drain machinery instead of duplicating it - AG's IPC previously had no timeout at all, so a blackholed SSH/local probe wedged `isChecking` permanently.
 pub(crate) fn run_remote_node_timeout(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(host, Interpreter::Node, script, REMOTE_SCRIPT_TIMEOUT_SECS)
 }
 
-/// Like [`run_remote_script`], but for the statusline customizer's probe/apply calls: a much
-/// shorter local ceiling ([`STATUSLINE_TIMEOUT_SECS`]), and the remote/local shell itself is
-/// wrapped in a self-terminating timeout (see [`bounded_remote_sh`]) so a killed local SSH
-/// client can never leave an orphaned remote process running unbounded.
+/// Like [`run_remote_script`], but for the statusline customizer's probe/apply calls: a much shorter local ceiling ([`STATUSLINE_TIMEOUT_SECS`]), and the remote/local shell itself is wrapped in a self-terminating timeout (see [`bounded_remote_sh`]) so a killed local SSH client can never leave an orphaned remote process running unbounded.
 pub(crate) fn run_remote_script_bounded(host: &str, script: &str) -> Result<Output, String> {
     run_interpreter_timeout(
         host,
@@ -57,17 +42,9 @@ pub(crate) fn run_remote_script_bounded(host: &str, script: &str) -> Result<Outp
     )
 }
 
-/// Returns the shared lock for `host`, creating it on first use. Held for the duration of one
-/// [`run_interpreter_timeout`] call so that no two remote-script invocations - regardless of
-/// which feature triggered them (usage polling, git info, statusline probe/apply, ...) - ever
-/// run concurrently against the same host.
+/// Returns the shared lock for `host`, creating it on first use. Held for the duration of one [`run_interpreter_timeout`] call so that no two remote-script invocations - regardless of which feature triggered them (usage polling, git info, statusline probe/apply, ...) - ever run concurrently against the same host.
 ///
-/// WHY: a burst of overlapping SSH connections to one host (e.g. the statusline auto-install
-/// probe firing while the user manually clicks Apply) can, over a constrained network path,
-/// stall *other*, unrelated SSH sessions to that same host for a moment even though nothing is
-/// actually killed - this serializes this app's own traffic to each host so it can never be the
-/// cause of that. Different hosts are unaffected - each gets its own independent lock, so
-/// per-host parallelism (see `apply_statusline_config`) is untouched.
+/// WHY: a burst of overlapping SSH connections to one host (e.g. the statusline auto-install probe firing while the user manually clicks Apply) can, over a constrained network path, stall *other*, unrelated SSH sessions to that same host for a moment even though nothing is actually killed - this serializes this app's own traffic to each host so it can never be the cause of that. Different hosts are unaffected - each gets its own independent lock, so per-host parallelism (see `apply_statusline_config`) is untouched.
 fn host_lock(host: &str) -> Arc<Mutex<()>> {
     static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
     let registry = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
@@ -81,11 +58,7 @@ fn is_local_host(host: &str) -> bool {
     host == "local" || host == "localhost"
 }
 
-/// Every `ssh` this module spawns on a timer goes through here. Without these options an SSH
-/// to a saturated host can burn the entire 30s script budget on the TCP/auth handshake alone
-/// (nothing has run remotely yet, yet we time out, kill, and re-spawn on the next tick), and a
-/// blackholed connection never returns at all because the kernel's default TCP timeout is
-/// minutes long. `BatchMode` additionally guarantees we never block on a password prompt.
+/// Every `ssh` this module spawns on a timer goes through here. Without these options an SSH to a saturated host can burn the entire 30s script budget on the TCP/auth handshake alone (nothing has run remotely yet, yet we time out, kill, and re-spawn on the next tick), and a blackholed connection never returns at all because the kernel's default TCP timeout is minutes long. `BatchMode` additionally guarantees we never block on a password prompt.
 ///
 /// See docs/research/claudecode-usage-FINAL.md §4.
 fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
@@ -101,21 +74,14 @@ fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
     c
 }
 
-/// Which interpreter to invoke for a given probe, and how - each script family needs a
-/// different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid
-/// JS, so it must never be sent ahead of a `node` script).
+/// Which interpreter to invoke for a given probe, and how - each script family needs a different local/remote invocation and prelude (a POSIX-sh CLAUDE_BIN preamble is invalid JS, so it must never be sent ahead of a `node` script).
 #[derive(Clone, Copy)]
 enum Interpreter {
     /// CC: local `sh`, remote `ssh host sh`. Gets [`CLAUDE_BIN_RESOLVER_PREAMBLE`] prepended.
     Sh,
-    /// AG: local `zsh -lc node` (login shell - resolves `node` via nvm/PATH, same rc-sourcing
-    /// race as CLAUDE_BIN, see stack-tauri rule), remote `ssh host node`. No preamble.
+    /// AG: node, local and remote alike, resolved through the single shared [`NODE_BIN_RESOLVER_PREAMBLE`] - baked into the command the shell is handed (`zsh -lc <resolver>` locally, the ssh *remote command itself* remotely) rather than into the stdin preamble mechanism; see that constant's doc comment for why stdin is not usable here. `preamble()` still returns "" for this variant; the resolver is not stdin content.
     Node,
-    /// Like `Sh`, but the local/remote shell invocation itself is wrapped in
-    /// [`bounded_remote_sh`]'s self-timeout (the carried `u64`, in seconds) instead of relying
-    /// solely on this module's own kill-after-timeout on the *local* `ssh`/`sh` process. See
-    /// [`run_remote_script_bounded`] for why. No preamble - statusline scripts never invoke
-    /// `claude`.
+    /// Like `Sh`, but the local/remote shell invocation itself is wrapped in [`bounded_remote_sh`]'s self-timeout (the carried `u64`, in seconds) instead of relying solely on this module's own kill-after-timeout on the *local* `ssh`/`sh` process. See [`run_remote_script_bounded`] for why. No preamble - statusline scripts never invoke `claude`.
     BoundedSh(u64),
 }
 
@@ -131,11 +97,12 @@ impl Interpreter {
             }
             (Interpreter::BoundedSh(secs), false) => polling_ssh(host, &bounded_remote_sh(secs)),
             (Interpreter::Node, true) => {
+                // Same resolver string as the remote branch, run through the local login shell instead of sshd's `$SHELL -c`. `zsh -lc` is kept only as the OUTER shell so the login PATH is still available to the resolver's last-resort `command -v node`; the static `[ -x path ]` candidates inside run first and do not depend on rc-sourcing having finished, which is what removes the cold-start race (stack-tauri A2). Passing the constant verbatim works because it is already a self-contained one-line `sh -c '...'` command string - see its doc comment.
                 let mut c = Command::new("zsh");
-                c.args(["-lc", "node"]);
+                c.args(["-lc", NODE_BIN_RESOLVER_PREAMBLE]);
                 c
             }
-            (Interpreter::Node, false) => polling_ssh(host, "node"),
+            (Interpreter::Node, false) => polling_ssh(host, NODE_BIN_RESOLVER_PREAMBLE),
         };
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -152,24 +119,11 @@ impl Interpreter {
     }
 }
 
-/// A one-liner run in place of a bare `sh`/`ssh host sh` (local or remote respectively) that
-/// picks whichever self-timeout mechanism the shell has available and `exec`s into a bounded
-/// `sh` reading the actual script from the same stdin - mirroring the
-/// timeout/gtimeout/perl-alarm fallback triple already established in
-/// [`CLAUDE_BIN_RESOLVER_PREAMBLE`]'s `AKI_CLAUDE_TMO`, but bounding the ENTIRE invocation
-/// instead of one call inside it.
+/// A one-liner run in place of a bare `sh`/`ssh host sh` (local or remote respectively) that picks whichever self-timeout mechanism the shell has available and `exec`s into a bounded `sh` reading the actual script from the same stdin - mirroring the timeout/gtimeout/perl-alarm fallback triple already established in [`CLAUDE_BIN_RESOLVER_PREAMBLE`]'s `AKI_CLAUDE_TMO`, but bounding the ENTIRE invocation instead of one call inside it.
 ///
-/// WHY: if the local side's own timeout fires first and kills its `ssh`/`sh` client, the
-/// process it was talking to does not reliably die with it (SIGHUP does not dependably reach a
-/// grandchild through a login shell - the same caveat `AKI_CLAUDE_TMO`'s doc comment already
-/// notes for `claude` itself). Left unbounded, that orphan can run indefinitely - holding
-/// memory on the remote host - with nothing left on the local side able to clean it up. Making
-/// the shell bound *itself* means it always exits on its own, independent of what happens to
-/// the connection driving it.
+/// WHY: if the local side's own timeout fires first and kills its `ssh`/`sh` client, the process it was talking to does not reliably die with it (SIGHUP does not dependably reach a grandchild through a login shell - the same caveat `AKI_CLAUDE_TMO`'s doc comment already notes for `claude` itself). Left unbounded, that orphan can run indefinitely - holding memory on the remote host - with nothing left on the local side able to clean it up. Making the shell bound *itself* means it always exits on its own, independent of what happens to the connection driving it.
 ///
-/// The final `else exec sh` (no timeout/gtimeout/perl found at all) is a real, if rare,
-/// residual gap - logged to stderr so it is visible rather than silent, same precedent as
-/// `AKI_CLAUDE_TMO`'s own last-resort branch.
+/// The final `else exec sh` (no timeout/gtimeout/perl found at all) is a real, if rare, residual gap - logged to stderr so it is visible rather than silent, same precedent as `AKI_CLAUDE_TMO`'s own last-resort branch.
 fn bounded_remote_sh(timeout_secs: u64) -> String {
     format!(
         r#"if command -v timeout >/dev/null 2>&1; then exec timeout -k 1 {t} sh
@@ -243,17 +197,28 @@ fi
 export AKI_CLAUDE_TMO
 "#;
 
-/// Kills the remote/local process if it overruns `timeout_secs`, returning an explicit timeout
-/// error instead of blocking forever. One funnel for every interpreter this app spawns a script
-/// through (SSoT - see stack-tauri rule's PATH-race preamble note: one funnel, not per-call-site
-/// patches) - [`Interpreter`] selects the local/remote invocation and preamble.
+/// Resolves a `node` binary on the REMOTE host and `exec`s into it - used as the ssh *remote command itself* for [`Interpreter::Node`] (see `polling_ssh(host, NODE_BIN_RESOLVER_PREAMBLE)` in [`Interpreter::spawn`]), not prepended to stdin the way [`CLAUDE_BIN_RESOLVER_PREAMBLE`] is.
 ///
-/// `host == "local"`/`"localhost"` runs `script` through the interpreter's local invocation
-/// instead of SSH - this is how usage is monitored when the agent runs on the same machine as
-/// this app, no remote involved.
+/// ALSO USED LOCALLY, verbatim: the local branch of [`Interpreter::Node`] runs `zsh -lc <this>` instead of the old bare `zsh -lc node`, which was the same cold-start PATH race on the local machine (stack-tauri A2). One constant, both paths - the candidate list must never be copied to a second site. The local outer shell stays a login shell purely so the resolver's last-resort `command -v node` still sees the user's rc-built PATH; correctness no longer depends on that shell having finished sourcing, because the `[ -x path ]` candidates are tried first.
 ///
-/// Held for the whole call: [`host_lock`], so this and every other feature's calls to the same
-/// host serialize against each other (see that function's doc comment for why).
+/// WHY THE MECHANISM DIFFERS FROM CLAUDE_BIN_RESOLVER_PREAMBLE: that preamble is sh source text prepended ahead of a POSIX-sh SCRIPT sent over the same stdin stream the interpreter (`sh`) reads as its own program, so concatenating text ahead of more shell text is safe. Here the remote interpreter is `node`, and stdin carries pure JavaScript (`scripts/get-antigravity-usage.js`) - prepending shell source ahead of that would hand node a syntax error. Reading a shell preamble off the SAME stdin stream and then `exec`-ing into node partway through is *also* unsafe: a shell running a script fed over stdin (e.g. `ssh host sh`) commonly performs a large buffered read of that fd, so bytes belonging to the JS portion can already be sitting in the shell's own read buffer - unreachable once `exec` replaces the process image - and are silently lost (implementation-defined per shell; a real failure mode with dash-style buffering, not a theoretical one).
+///
+/// Baking the resolution into the *remote command* instead sidesteps this: `ssh host "<this>"` runs via the remote user's non-interactive shell (`$SHELL -c "<this>"`) as one process BEFORE any script bytes are consumed - this script never reads stdin at all (only `[ -x path ]` existence checks and `command -v`), so the stdin pipe is still completely untouched at the moment `exec "$NODE_BIN"` runs, and the resolved node binary receives the JS whole.
+///
+/// Candidates tested with `[ -x "$path" ]` FIRST (zero dependency on rc-sourcing timing, same cold-start race CLAUDE_BIN_RESOLVER_PREAMBLE's doc comment explains), falling back to `command -v node` only if none match.
+///
+/// NOTE: mac-only fixed paths (this app ships macOS-only, see CLAUDE.md) plus the nvm glob, which is host-OS-agnostic (nvm lays itself out the same way on macOS and Linux). Strictly POSIX sh - no bashisms, no `pipefail`, no `[[ ]]`, no arrays.
+///
+/// WHY IT IS WRAPPED IN `sh -c '...'` AND KEPT TO ONE LINE: `ssh host "<cmd>"` does NOT run `<cmd>` under `sh` - sshd runs it under the remote user's *login shell* (`$SHELL -c "<cmd>"`). A remote user whose shell is `fish` or `csh` would hit a syntax error on `[ -x ]`, `&&`, the `$(...)` substitution and the multi-line function body alike - failing non-zero, which `get_antigravity_usage` swallows as `Ok(None)`, i.e. re-creating the exact silent-forever failure this constant exists to fix, just with a different trigger. The bare `node` this replaced was immune to that because a bare command name parses in any shell. `sh -c '...'` restores that immunity: every shell (POSIX, csh, fish) parses a single-quoted single-line argument the same way, and the body then genuinely runs under `sh`. This is also why the script must contain NO single quote of its own - hence `NODE_BIN=$_c` rather than a `printf '%s'` - and why it is one line rather than a readable multi-line block.
+///
+/// `sh -c` also keeps the stdin-safety property intact: the script arrives via argv, never off stdin, so the JS on stdin is still completely unread when `exec "$NODE_BIN"` runs.
+const NODE_BIN_RESOLVER_PREAMBLE: &str = r#"sh -c 'for _c in $HOME/.nvm/versions/node/*/bin/node "$HOME/.local/bin/node" /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do [ -x "$_c" ] && { NODE_BIN=$_c; break; }; done; [ -n "$NODE_BIN" ] || NODE_BIN=$(command -v node 2>/dev/null); [ -n "$NODE_BIN" ] || NODE_BIN=node; export NODE_BIN; exec "$NODE_BIN"'"#;
+
+/// Kills the remote/local process if it overruns `timeout_secs`, returning an explicit timeout error instead of blocking forever. One funnel for every interpreter this app spawns a script through (SSoT - see stack-tauri rule's PATH-race preamble note: one funnel, not per-call-site patches) - [`Interpreter`] selects the local/remote invocation and preamble.
+///
+/// `host == "local"`/`"localhost"` runs `script` through the interpreter's local invocation instead of SSH - this is how usage is monitored when the agent runs on the same machine as this app, no remote involved.
+///
+/// Held for the whole call: [`host_lock`], so this and every other feature's calls to the same host serialize against each other (see that function's doc comment for why).
 fn run_interpreter_timeout(
     host: &str,
     interpreter: Interpreter,
@@ -268,8 +233,7 @@ fn run_interpreter_timeout(
         .spawn(host, local)
         .map_err(|e| format!("Failed to spawn {}: {}", if local { "local process" } else { "SSH" }, e))?;
 
-    // Drain stdout/stderr on dedicated threads BEFORE writing stdin, so a large script
-    // can't deadlock against a full output pipe that ssh isn't draining yet.
+    // Drain stdout/stderr on dedicated threads BEFORE writing stdin, so a large script can't deadlock against a full output pipe that ssh isn't draining yet.
     let mut out_pipe = child.stdout.take().ok_or("stdout pipe missing")?;
     let mut err_pipe = child.stderr.take().ok_or("stderr pipe missing")?;
     let out_handle = std::thread::spawn(move || {
@@ -339,8 +303,7 @@ fn now_secs() -> i64 {
 fn preview(s: &str, max: usize) -> String {
     let s = s.trim();
     let s = if s.len() > max {
-        // Cut at a char boundary at/below `max` so multi-byte UTF-8 (e.g.
-        // Vietnamese session names in the cached JSON) never panics.
+        // Cut at a char boundary at/below `max` so multi-byte UTF-8 (e.g. Vietnamese session names in the cached JSON) never panics.
         let mut end = max;
         while end > 0 && !s.is_char_boundary(end) {
             end -= 1;
@@ -364,11 +327,7 @@ fn ab(agent: &str) -> &str {
 
 #[tauri::command]
 pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
-    // run_remote_script (below) is fully synchronous (wait/poll loop, up to
-    // REMOTE_SCRIPT_TIMEOUT_SECS). Running it directly on the async executor starves a tokio
-    // worker for the same duration - spawn_blocking offloads to the blocking thread-pool, same
-    // pattern as get_agent_usage/logout_antigravity (P5, docs/research/claudecode-usage-FINAL.md;
-    // this pair was the one gap the stack-tauri never-block-the-UI audit had missed).
+    // run_remote_script (below) is fully synchronous (wait/poll loop, up to REMOTE_SCRIPT_TIMEOUT_SECS). Running it directly on the async executor starves a tokio worker for the same duration - spawn_blocking offloads to the blocking thread-pool, same pattern as get_agent_usage/logout_antigravity (P5, docs/research/claudecode-usage-FINAL.md; this pair was the one gap the stack-tauri never-block-the-UI audit had missed).
     tauri::async_runtime::spawn_blocking(move || provision_agent_usage_sync(&agent_name, &host))
         .await
         .map_err(|e| format!("spawn_blocking panicked: {}", e))?
@@ -392,9 +351,7 @@ fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result<bool, Stri
         logger::error("PROVISION", &format!("stderr={}", err_preview));
         return Err(format!("Provision failed: {}", err));
     }
-    // The script now always exits 0 (auth caching is best-effort), but a non-empty stderr still
-    // carries the [SHELL:provision] empty-auth diagnostic - a real signal correlated with Bug B
-    // (empty /usage). Log it at ERROR so it lands in usage.log even in production (no --debug).
+    // The script now always exits 0 (auth caching is best-effort), but a non-empty stderr still carries the [SHELL:provision] empty-auth diagnostic - a real signal correlated with Bug B (empty /usage). Log it at ERROR so it lands in usage.log even in production (no --debug).
     if !err.trim().is_empty() {
         logger::error("PROVISION", &format!("stderr (non-fatal)={}", preview(&err, 200)));
     }
@@ -406,9 +363,7 @@ pub async fn get_agent_usage(
     agent_name: String,
     host: String,
 ) -> Result<Option<AgentUsageResponse>, String> {
-    // Both inner fns are fully synchronous (wait_with_output, thread::sleep).
-    // Running them directly on the async executor starves it and freezes the UI.
-    // spawn_blocking offloads to the Tauri blocking thread-pool.
+    // Both inner fns are fully synchronous (wait_with_output, thread::sleep). Running them directly on the async executor starves it and freezes the UI. spawn_blocking offloads to the Tauri blocking thread-pool.
     tauri::async_runtime::spawn_blocking(move || {
         if agent_name == "claudecode" {
             return get_claudecode_usage(&host);
@@ -435,13 +390,15 @@ fn log_shell_stderr(tag: &str, stderr: &str) {
     }
 }
 
-/// True the first time it's called for a given host in this app process, false after  - 
-/// used to force one bypass of the auth-cache TTL right after app launch (see
-/// `AKI_FORCE_AUTH_REFRESH` in get-claudecode-usage.sh). A CC account switch is rare and
-/// happens outside the app, so there's no reliable in-app event to hook; "app was just
-/// opened" is the one moment a stale cached email is most likely to be noticed and easiest
-/// to guarantee correct, without adding any extra polling.
+/// True the first time it's called for a given host in this app process, false after  - used to force one bypass of the auth-cache TTL right after app launch (see `AKI_FORCE_AUTH_REFRESH` in get-claudecode-usage.sh). A CC account switch is rare and happens outside the app, so there's no reliable in-app event to hook; "app was just opened" is the one moment a stale cached email is most likely to be noticed and easiest to guarantee correct, without adding any extra polling.
 fn cc_auth_force_needed(host: &str) -> bool {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
+    seen.lock().unwrap().insert(host.to_string())
+}
+
+/// True the first time it's called for a given host in this app process, false after - used to promote the AG remote-probe's otherwise-silent Ok(None) swallow (below) to a visible ERROR log line exactly once per host per session when the failure looks like a PATH-resolution miss (exit 127 / "command not found"), instead of leaving a *permanent* condition indistinguishable from the many genuinely transient soft-misses this function also swallows (IDE not running, mid-restart, signed out, one slow RPC). That indistinguishability is exactly what made the original NODE_BIN PATH bug invisible for a full release: every poll logged the identical "soft-miss" debug line whether the cause was permanent or transient, and debug-level never surfaces without --debug. This does not change the Ok(None) return or add any UI element (Extreme Narrow) - it only makes a first-occurrence-per-host case reachable in usage.log without --debug, then falls back to the existing debug-level line on every subsequent tick so a genuinely down host does not spam ERROR forever.
+fn ag_node_missing_once(host: &str) -> bool {
     static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
     seen.lock().unwrap().insert(host.to_string())
@@ -491,8 +448,7 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 
     logger::debug("GET_USAGE", &format!("stdout: {}", preview(&stdout, 300)));
 
-    // ── Parse delimiter chain ─────────────────────────────────────────────
-    // Expected: <json>|||MTIME|||<ts>|||SUBTYPE|||<st>|||TIER|||<tier>|||AUTHINFO|||<json>
+    // ── Parse delimiter chain ───────────────────────────────────────────── Expected: <json>|||MTIME|||<ts>|||SUBTYPE|||<st>|||TIER|||<tier>|||AUTHINFO|||<json>
 
     let parts: Vec<&str> = stdout.split("|||MTIME|||").collect();
     logger::debug("GET_USAGE", &format!("mtime_parts={}", parts.len()));
@@ -601,13 +557,7 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
 
     let script = include_str!("../../scripts/get-antigravity-usage.js");
 
-    // P2 (docs/research/claudecode-usage-FINAL.md): this used to spawn+wait_with_output() with
-    // NO timeout - a blackholed SSH/local probe wedged `isChecking` permanently on the JS side,
-    // freezing every subsequent poll tick for this source. Routed through the same bounded
-    // funnel as CC (run_interpreter_timeout / Interpreter::Node) so it always resolves within
-    // REMOTE_SCRIPT_TIMEOUT_SECS. A timeout is swallowed to Ok(None) - same "transient monitor
-    // condition" policy as the non-zero-exit branch below, so it reads as one more silent
-    // poll-miss instead of a new flickering error state that didn't exist before this fix.
+    // P2 (docs/research/claudecode-usage-FINAL.md): this used to spawn+wait_with_output() with NO timeout - a blackholed SSH/local probe wedged `isChecking` permanently on the JS side, freezing every subsequent poll tick for this source. Routed through the same bounded funnel as CC (run_interpreter_timeout / Interpreter::Node) so it always resolves within REMOTE_SCRIPT_TIMEOUT_SECS. A timeout is swallowed to Ok(None) - same "transient monitor condition" policy as the non-zero-exit branch below, so it reads as one more silent poll-miss instead of a new flickering error state that didn't exist before this fix.
     let output = match run_remote_node_timeout(host, script) {
         Ok(o) => o,
         Err(e) => {
@@ -623,15 +573,18 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
     ));
 
     if !output.status.success() {
-        // Every non-zero exit here is a *transient monitor* condition, never a user-facing
-        // fault: the IDE isn't running, is mid-restart, hasn't opened its Connect port yet,
-        // was just signed out, or a single localhost RPC probe timed out. To the UI they all
-        // mean the same thing - "no live reading this poll" - and the frontend already handles
-        // that (composable null path shows the last cached account). Surfacing any of them as
-        // an IPC Err only produced a flickering error banner every poll: that WAS the usage
-        // instability. So swallow all AG script failures to Ok(None); just log the reason.
+        // Every non-zero exit here is a *transient monitor* condition, never a user-facing fault: the IDE isn't running, is mid-restart, hasn't opened its Connect port yet, was just signed out, or a single localhost RPC probe timed out. To the UI they all mean the same thing - "no live reading this poll" - and the frontend already handles that (composable null path shows the last cached account). Surfacing any of them as an IPC Err only produced a flickering error banner every poll: that WAS the usage instability. So swallow all AG script failures to Ok(None); just log the reason.
         let stderr = String::from_utf8_lossy(&output.stderr);
-        logger::debug("USAGE:antigravity", &format!("soft-miss: {}", stderr.trim()));
+        // A PATH-resolution miss (exit 127, or the shell's own "command not found" text) is a PERMANENT condition on a given host, not a transient one - and unlike the other cases this branch swallows (IDE mid-restart, signed out, etc.), simply retrying on the next poll tick will never fix it. Surface it once per host at ERROR (visible without --debug) so it doesn't silently repeat unnoticed for a whole release the way the original NODE_BIN bug did; every other tick, and every other failure shape, keeps the existing debug-level line - the Ok(None) contract to the frontend is unchanged either way (see docs/arch/usage-antigravity.md's swallow-to-Ok(None) rationale).
+        let looks_like_path_miss = exit_code == 127 || stderr.to_lowercase().contains("command not found");
+        if looks_like_path_miss && ag_node_missing_once(host) {
+            logger::error("USAGE:antigravity", &format!(
+                "node not found host={} exit={} stderr={} - see NODE_BIN_RESOLVER_PREAMBLE in agent_usage.rs",
+                host, exit_code, preview(&stderr, 200)
+            ));
+        } else {
+            logger::debug("USAGE:antigravity", &format!("soft-miss: {}", stderr.trim()));
+        }
         return Ok(None);
     }
 
@@ -650,14 +603,10 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
     }))
 }
 
-/// Must match the actual /Applications/*.app bundle name - used for `osascript quit app`,
-/// `pkill`, the Application Support folder name, and the "<name> Safe Storage" Keychain item.
+/// Must match the actual /Applications/*.app bundle name - used for `osascript quit app`, `pkill`, the Application Support folder name, and the "<name> Safe Storage" Keychain item.
 const ANTIGRAVITY_APP_NAME: &str = "Antigravity IDE";
 
-/// Electron userData files that hold only the logged-in web session (cookies, chromium
-/// local/session storage, network identity state) - deleting these is equivalent to a
-/// browser "sign out", while leaving User/ (settings, keybindings, snippets, extensions,
-/// workspaceStorage) and globalStorage/ (extension state incl. rules/permissions) untouched.
+/// Electron userData files that hold only the logged-in web session (cookies, chromium local/session storage, network identity state) - deleting these is equivalent to a browser "sign out", while leaving User/ (settings, keybindings, snippets, extensions, workspaceStorage) and globalStorage/ (extension state incl. rules/permissions) untouched.
 const ANTIGRAVITY_ACCOUNT_ONLY_PATHS: &[&str] = &[
     "Cookies",
     "Cookies-journal",
@@ -691,16 +640,13 @@ fn antigravity_support_dir() -> Result<std::path::PathBuf, String> {
     }
 }
 
-/// globalState keys that hold the live Antigravity OAuth session. Deleting these forces a
-/// real re-login while leaving every other globalState row (settings, extension state) intact.
+/// globalState keys that hold the live Antigravity OAuth session. Deleting these forces a real re-login while leaving every other globalState row (settings, extension state) intact.
 const ANTIGRAVITY_AUTH_KEYS: &[&str] = &[
     "antigravityUnifiedStateSync.oauthToken",
     "antigravityUnifiedStateSync.userStatus",
 ];
 
-/// Delete the OAuth session rows from `User/globalStorage/state.vscdb` (and `.backup`) via the
-/// system `sqlite3`. Best-effort: any failure (no sqlite3, file absent) is a silent no-op so a
-/// partial logout still wipes cookies + Keychain. Must be called only after the IDE is quit.
+/// Delete the OAuth session rows from `User/globalStorage/state.vscdb` (and `.backup`) via the system `sqlite3`. Best-effort: any failure (no sqlite3, file absent) is a silent no-op so a partial logout still wipes cookies + Keychain. Must be called only after the IDE is quit.
 fn remove_antigravity_auth_rows(base: &std::path::Path) {
     let where_in = ANTIGRAVITY_AUTH_KEYS
         .iter()
@@ -761,25 +707,10 @@ pub async fn logout_antigravity() -> Result<(), String> {
             }
         }
 
-        // THE actual credential. Antigravity keeps its live OAuth session in VS Code's
-        // globalState SQLite store (User/globalStorage/state.vscdb) under the keys
-        // `antigravityUnifiedStateSync.oauthToken` / `.userStatus`. These are NOT Electron
-        // safeStorage ciphertext (they carry no v10/v11 prefix), so wiping cookies and the
-        // Keychain "Safe Storage" key above does NOT invalidate them - the IDE re-reads the
-        // token verbatim on next launch and silently signs back in. That was the "logout does
-        // nothing" bug. We must delete these two rows from state.vscdb (and its .backup, which
-        // Antigravity restores from if the primary is missing). The app is already quit above,
-        // so the SQLite file is unlocked. macOS ships /usr/bin/sqlite3; deleting only these two
-        // keys leaves all other globalState (settings, extension state, rules) untouched.
+        // THE actual credential. Antigravity keeps its live OAuth session in VS Code's globalState SQLite store (User/globalStorage/state.vscdb) under the keys `antigravityUnifiedStateSync.oauthToken` / `.userStatus`. These are NOT Electron safeStorage ciphertext (they carry no v10/v11 prefix), so wiping cookies and the Keychain "Safe Storage" key above does NOT invalidate them - the IDE re-reads the token verbatim on next launch and silently signs back in. That was the "logout does nothing" bug. We must delete these two rows from state.vscdb (and its .backup, which Antigravity restores from if the primary is missing). The app is already quit above, so the SQLite file is unlocked. macOS ships /usr/bin/sqlite3; deleting only these two keys leaves all other globalState (settings, extension state, rules) untouched.
         remove_antigravity_auth_rows(&base);
 
-        // The actual OAuth session survives a plain file wipe: Electron's `safeStorage`
-        // encrypts it and stores only the ciphertext in app files (state.vscdb etc.), while
-        // the AES key itself lives in exactly one macOS Keychain item named
-        // "<AppName> Safe Storage". Deleting that single, precisely-named item - not a
-        // keychain scan/dump - makes the stored ciphertext permanently undecryptable, which
-        // is what actually forces re-login, without touching User/ or globalStorage/ (so
-        // extensions, settings, rules, and permissions all survive untouched).
+        // The actual OAuth session survives a plain file wipe: Electron's `safeStorage` encrypts it and stores only the ciphertext in app files (state.vscdb etc.), while the AES key itself lives in exactly one macOS Keychain item named "<AppName> Safe Storage". Deleting that single, precisely-named item - not a keychain scan/dump - makes the stored ciphertext permanently undecryptable, which is what actually forces re-login, without touching User/ or globalStorage/ (so extensions, settings, rules, and permissions all survive untouched).
         #[cfg(target_os = "macos")]
         {
             let service = format!("{} Safe Storage", ANTIGRAVITY_APP_NAME);

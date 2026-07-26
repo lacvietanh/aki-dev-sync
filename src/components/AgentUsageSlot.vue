@@ -3,14 +3,14 @@
     <div class="column-header">
       <!-- Left: which category - LOCAL or REMOTE. -->
       <div class="tab-group">
-        <button class="tab" :class="{ 'is-active': topTab === 'local' }" title="Local" @click="topTab = 'local'">
+        <button class="tab" :class="{ 'is-active': target.scope === 'local' }" title="Local" @click="setSlotTarget(slotId, { scope: 'local' })">
           <i class="fa-solid fa-laptop-code"></i> <span class="u-narrow-hide">LOCAL</span>
         </button>
         <button
           class="tab"
-          :class="{ 'is-active': topTab === 'remote' }"
+          :class="{ 'is-active': target.scope === 'remote' }"
           title="Remote"
-          @click="topTab = 'remote'"
+          @click="setSlotTarget(slotId, { scope: 'remote' })"
         >
           <i class="fa-solid fa-cloud"></i> <span class="u-narrow-hide">REMOTE</span>
         </button>
@@ -26,22 +26,21 @@
           v-for="src in srcTabs"
           :key="src.key"
           class="tab src-tab"
-          :class="{ 'is-active': activeSub === src.key }"
-          :title="src.source.locked ? `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.source.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`"
-          @click="activeSub = src.key"
+          :class="{ 'is-active': activeAgentKey === src.key }"
+          :title="src.monitor.locked ? `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.monitor.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`"
+          @click="setAgent(src.key)"
         >
-          <i class="fa-solid fa-power-off src-power" :class="[src.source.enabled ? 'is-on' : 'is-off', { 'is-locked': src.source.locked }]"
-             @click.stop="!src.source.locked && src.source.toggle()"></i>
+          <i class="fa-solid fa-power-off src-power" :class="[src.monitor.enabled ? 'is-on' : 'is-off', { 'is-locked': src.monitor.locked }]"
+             @click.stop="src.monitor.toggle()"></i>
           <img :src="src.icon" class="src-icon" alt="" />
           <span class="u-narrow-hide">{{ src.label }}</span>
         </button>
         <select
-          v-if="topTab === 'remote'"
-          :value="selectedSshHost"
-          @change="setSelectedSshHost($event.target.value)"
+          v-if="target.scope === 'remote'"
+          :value="target.host"
+          @change="setSlotTarget(slotId, { remoteHost: $event.target.value })"
           class="host-select-mini"
-          :disabled="!agRemote.enabled && !ccRemote.enabled"
-          :title="selectedSshHost ? `Remote host being monitored: ${selectedSshHost}` : 'Pick the remote host to monitor'"
+          :title="target.host ? `Remote host this slot is monitoring: ${target.host}` : 'Pick the remote host to monitor'"
         >
           <option value="" disabled>Select Host</option>
           <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
@@ -53,99 +52,92 @@
       :agentId="activeAgentId"
       :agentName="activeAgentName"
       :data="slotAccountInfo.data"
-      :loading="activeSource.loading"
-      :error="activeSource.error"
-      :stale="activeSource.stale"
+      :loading="monitor.loading"
+      :error="monitor.error"
+      :stale="monitor.stale"
+      :dataAt="monitor.dataAt"
       :isCached="slotAccountInfo.isCached"
       :cachedAt="slotAccountInfo.cachedAt"
       :showEmail="showEmail"
-      :remote="topTab === 'remote'"
-      :sourceOff="!activeSource.enabled"
-      :locked="!!activeSource.locked"
-      :accounts="activeSource.accounts"
+      :remote="target.scope === 'remote'"
+      :sourceOff="!monitor.enabled"
+      :locked="!!monitor.locked"
+      :accounts="monitor.accounts"
       :viewing-email="slotViewingEmail"
-      :active-email="activeSource.activeEmail"
-      :active-emails="activeSource.activeEmails"
+      :active-email="monitor.activeEmail"
+      :active-emails="monitor.activeEmails"
       :popup-position="popupPosition"
-      @retry="activeSource.refresh"
+      @retry="monitor.refresh"
       @select-account="handleSelectAccount"
-      @logout-success="activeSource.resetAccount"
+      @logout-success="monitor.recheckAfterLogout"
       @toggle-email="toggleEmail"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, shallowRef, computed, watch } from 'vue';
 import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
+import { getMonitor } from '../composables/usageMonitorRegistry';
+import { loadAgAccount } from '../composables/agUsageCache';
+import { slotTarget, setSlotTarget } from '../store/usageSlotStore';
 
-// Each slot owns its own display selection (which source it shows) and email-visibility
-// preference, persisted per slot-id. The underlying sources (ag / ccLocal / agRemote / ccRemote)
-// are shared reactive bundles owned by the parent - both slots can point at the same source
-// simultaneously without double-polling, since polling is driven by the source's own
-// `enabled` flag, not by which slot currently displays it.
+// A slot is a VIEW onto a UsageMonitor, never an owner of one. It holds only which monitor to look
+// at - scope (LOCAL/REMOTE), agent (AG/CC) and, since the entity refactor, WHICH REMOTE HOST - plus
+// its own display preferences. The monitors themselves are session-lived and shared through
+// `usageMonitorRegistry`, so two slots naming the same (agent, host) get one instance and one poll.
+//
+// The per-slot host is the whole point: every slot's REMOTE tab used to read the one global
+// `sshStore.selectedSshHost`, so two hosts could never be on screen together. See
+// docs/plan/usage-monitor-entity-refactor.md.
 const props = defineProps({
   slotId: { type: String, required: true },
-  defaultTopTab: { type: String, default: 'local' },   // 'local' | 'remote'
-  defaultLocalSub: { type: String, default: 'ag' },     // 'ag' | 'cc'
-  ag: { type: Object, required: true },
-  ccLocal: { type: Object, required: true },
-  agRemote: { type: Object, required: true },
-  ccRemote: { type: Object, required: true },
 });
 
-const { sshHosts, selectedSshHost, setSelectedSshHost } = useSsh();
+const { sshHosts } = useSsh();
 
-const topTabKey = `aki-usage-slot-${props.slotId}-top`;
-const localSubKey = `aki-usage-slot-${props.slotId}-sub`;
-// REMOTE gets its own key rather than sharing `-sub` with LOCAL: they are two independent
-// choices ("which agent do I watch on this machine" vs "...on the remote host"), and one shared
-// key would make picking AG under REMOTE silently re-point the LOCAL tab too. Default is 'cc'
-// for every slot, which is exactly what the REMOTE tab showed before it had a second source -
-// so an existing user's slots keep showing the same thing after the upgrade.
-const remoteSubKey = `aki-usage-slot-${props.slotId}-remote-sub`;
+const target = computed(() => slotTarget(props.slotId));
+
+// Resolved in a watcher, not a computed. `getMonitor` CREATES a monitor on first request - it
+// starts a poll and installs watchers - and a computed getter is not a legal place for that; it is
+// supposed to be a pure function of its dependencies. The watcher is the side-effect site.
+const monitors = shallowRef(monitorsFor(target.value));
+function monitorsFor(t) {
+  return { antigravity: getMonitor('antigravity', t.host), claudecode: getMonitor('claudecode', t.host) };
+}
+watch(() => target.value.host, () => { monitors.value = monitorsFor(target.value); });
+
+const monitor = computed(() => monitors.value[target.value.agentId]);
+
+// Which of the AG|CC pair this slot is showing, within whichever scope is active. The two are
+// remembered separately ("which agent do I watch on this machine" vs "...on the remote host") so
+// picking AG under REMOTE does not silently re-point the LOCAL tab too.
+const activeAgentKey = computed(() => (target.value.scope === 'remote' ? target.value.remoteAgent : target.value.localAgent));
+function setAgent(key) {
+  setSlotTarget(props.slotId, target.value.scope === 'remote' ? { remoteAgent: key } : { localAgent: key });
+}
+
+// LOCAL and REMOTE offer the same AG|CC pair, so they are two lists of one shape rendered by one
+// loop (see the template). Each tab carries the monitor for ITS agent on the scope's machine, which
+// is what lets its power icon show and toggle that monitor specifically.
+const srcTabs = computed(() => {
+  const remote = target.value.scope === 'remote';
+  return [
+    { key: 'ag', label: 'AG', title: remote ? 'Antigravity (remote)' : 'Antigravity', icon: '/antigravity-icon.png', monitor: monitors.value.antigravity },
+    { key: 'cc', label: 'CC', title: remote ? 'Claude Code (remote)' : 'Claude Code (local)', icon: '/claude-icon.png', monitor: monitors.value.claudecode },
+  ];
+});
+
+const activeAgentId = computed(() => target.value.agentId);
+const activeAgentName = computed(() => (activeAgentId.value === 'antigravity') ? 'Antigravity' : 'Claude Code');
+
 const showEmailKey = `aki-usage-slot-${props.slotId}-show-email`;
-
-const topTab = ref(localStorage.getItem(topTabKey) || props.defaultTopTab);
-const localSub = ref(localStorage.getItem(localSubKey) || props.defaultLocalSub);
-const remoteSub = ref(localStorage.getItem(remoteSubKey) || 'cc');
 const showEmail = ref(localStorage.getItem(showEmailKey) !== 'false');
-
-watch(topTab, (v) => { localStorage.setItem(topTabKey, v); });
-watch(localSub, (v) => { localStorage.setItem(localSubKey, v); });
-watch(remoteSub, (v) => { localStorage.setItem(remoteSubKey, v); });
-
 function toggleEmail() {
   showEmail.value = !showEmail.value;
   localStorage.setItem(showEmailKey, String(showEmail.value));
 }
-
-// The two categories offer the same AG | CC pair, so they are described as two lists of the same
-// shape and rendered by one loop (see the template) - the only difference is which source bundle
-// each tab points at and how its tooltip names it.
-const localTabs = computed(() => [
-  { key: 'ag', label: 'AG', title: 'Antigravity', icon: '/antigravity-icon.png', source: props.ag },
-  { key: 'cc', label: 'CC', title: 'Claude Code (local)', icon: '/claude-icon.png', source: props.ccLocal },
-]);
-const remoteTabs = computed(() => [
-  { key: 'ag', label: 'AG', title: 'Antigravity (remote)', icon: '/antigravity-icon.png', source: props.agRemote },
-  { key: 'cc', label: 'CC', title: 'Claude Code (remote)', icon: '/claude-icon.png', source: props.ccRemote },
-]);
-const srcTabs = computed(() => (topTab.value === 'local' ? localTabs.value : remoteTabs.value));
-
-// One selection handle over the two persisted sub-choices, so the template never branches on
-// which category is active - reading and writing both go to the key that category owns.
-const activeSub = computed({
-  get: () => (topTab.value === 'local' ? localSub.value : remoteSub.value),
-  set: (v) => { if (topTab.value === 'local') localSub.value = v; else remoteSub.value = v; },
-});
-
-// useAgentUsage() returns the same shape for every agent (accounts/viewingEmail/etc. are
-// always present, just no-ops for Claude Code), so a single computed can drive one
-// <AgentUsage> binding instead of four near-identical blocks.
-const activeAgentId = computed(() => (activeSub.value === 'ag' ? 'antigravity' : 'claudecode'));
-const activeAgentName = computed(() => (activeAgentId.value === 'antigravity') ? 'Antigravity' : 'Claude Code');
 const popupPosition = computed(() => {
   switch (props.slotId) {
     case 'A': return 'popup-pos-tl';
@@ -155,13 +147,8 @@ const popupPosition = computed(() => {
     default: return 'popup-pos-tl';
   }
 });
-const activeSource = computed(() => {
-  const tab = srcTabs.value.find(t => t.key === activeSub.value);
-  return (tab || srcTabs.value[0]).source;
-});
-
 // Per-slot viewing email/key state: lets Slot A and Slot B independently select and display
-// different active or cached accounts from the shared `ag` data source, persisted per slot.
+// different active or cached accounts from the same monitor's data, persisted per slot.
 const slotViewingEmailKey = `aki-usage-slot-${props.slotId}-viewing-account`;
 const slotViewingEmail = ref(localStorage.getItem(slotViewingEmailKey) || null);
 
@@ -176,7 +163,7 @@ function handleSelectAccount(keyOrEmail) {
 }
 
 const slotAccountInfo = computed(() => {
-  const src = activeSource.value;
+  const src = monitor.value;
   if (activeAgentId.value !== 'antigravity' || !src.data) {
     return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: false };
   }
@@ -201,16 +188,12 @@ const slotAccountInfo = computed(() => {
     return { data: src.data, isCached: false, cachedAt: null, isMissing: false };
   }
 
-  // Fallback to offline cache in localStorage:
-  const rawCache = localStorage.getItem('aki-antigravity-usage-cache-v2');
-  if (rawCache) {
-    try {
-      const parsed = JSON.parse(rawCache);
-      const acc = parsed.accounts?.[key] || parsed.accounts?.[emailPart];
-      if (acc) {
-        return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt, isMissing: false };
-      }
-    } catch (_) {}
+  // Fallback to the offline cache, scoped to the machine THIS slot is watching. Asking the cache
+  // module rather than parsing localStorage here is what makes that scoping possible at all: the
+  // old inline read matched on email alone, so a slot on host B could render host A's reading.
+  const acc = loadAgAccount(key, target.value.host);
+  if (acc) {
+    return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt, isMissing: false };
   }
 
   return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: true };
@@ -218,7 +201,7 @@ const slotAccountInfo = computed(() => {
 
 // Defensive fallback watcher: if selected account is missing from live & offline cache once loaded, clear state
 watch(slotAccountInfo, (info) => {
-  if (info.isMissing && slotViewingEmail.value && !activeSource.value.loading) {
+  if (info.isMissing && slotViewingEmail.value && !monitor.value.loading) {
     slotViewingEmail.value = null;
     localStorage.removeItem(slotViewingEmailKey);
   }

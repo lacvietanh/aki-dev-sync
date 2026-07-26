@@ -70,9 +70,12 @@ nên con số này đã bao gồm mọi hoạt động, không riêng CC.
 
 Cùng một script POSIX chạy được cả hai đường vì nó chỉ đụng `$HOME`.
 
-Ở tầng UI, "Claude Code (local)" và "Claude Code (remote)" là hai instance độc lập của
-`useAgentUsage()`. Nguồn remote có công tắc riêng (`aki-src-ccremote-enabled`, độc lập với sync
-check) - xem `docs/feat/sync-check-and-usage-switches.md`.
+Ở tầng UI, mỗi cặp `(agent, máy)` là một **UsageMonitor** riêng, định danh `agentId@host` và tạo
+qua `usageMonitorRegistry.getMonitor()`. Vì máy là một nửa định danh chứ không phải một tham số đổi
+được, "Claude Code trên host A" và "Claude Code trên host B" là hai thực thể tồn tại song song - theo
+dõi hai host cùng lúc, mỗi host một tài khoản. Mỗi monitor có công tắc riêng, lưu theo id trong
+`store/usageMonitorStore.js`, độc lập với sync check - xem `docs/feat/sync-check-and-usage-switches.md`
+và `docs/plan/usage-monitor-entity-refactor.md`.
 
 ### Mọi SSH theo timer đi qua `polling_ssh()`
 
@@ -107,16 +110,24 @@ Preamble này cũng resolve `$CLAUDE_BIN` bằng kiểm tra file tĩnh trước 
 Khi turn của CLI đẩy ra JSON **không có** `rate_limits`, script merge nguyên vẹn cục
 `rate_limits` cũ từ cache vào JSON mới - **không fabricate** giá trị.
 
-Từ 1.18.0 (`aki-rlcache v4`), việc merge đó có hai điều kiện bắt buộc - đánh dấu `DESIGN LOCK`
-ngay trong script `src-tauri/src/statusline-unified.sh` (khối `# aki-rlcache v4`, chỉ chạy khi
+Từ 1.18.0 (`aki-rlcache v4`), việc merge đó có điều kiện bắt buộc - đánh dấu `DESIGN LOCK`
+ngay trong script `src-tauri/src/statusline-unified.sh` (khối `# aki-rlcache v4/v5`, chỉ chạy khi
 `CLI=CC`; xem `docs/feat/statusline-customizer.md`):
 - entry đã qua `resets_at` bị **loại**, không hiển thị (`resets_at: 0` = "không rõ", vẫn giữ);
-- cache ghi kèm account đã ghi nó; cache của account khác (hoặc cache cũ 1.10.0-1.17.0 không có
-  field `account` trong khi máy đang biết account) bị bỏ, không đọc.
+- cache ghi kèm account đã ghi nó; cache của account khác bị bỏ, không đọc.
 
-Thiếu hai điều kiện này, một field lọt vào cache sẽ sống vĩnh viễn (merge chỉ thêm/ghi đè key có
+Thiếu điều kiện này, một field lọt vào cache sẽ sống vĩnh viễn (merge chỉ thêm/ghi đè key có
 trong payload, không bao giờ xoá key vắng mặt) - đúng nguyên nhân của quota ma `7d 45%` cho account
-không hề có weekly limit. Chi tiết: `docs/plan/1.18.0-statusline-apply-correctness.md` §P0-5.
+không hề có weekly limit. Chi tiết: `docs/plan/done/1.18.0-statusline-apply-correctness.md` §P0-5.
+
+Từ v5, gate account không còn so bằng email: một account bị xoá rồi tạo lại **dưới cùng email**
+(cùng tổ chức, `accountUuid` mới, gói khác) vẫn lọt qua gate email nguyên vẹn - đúng cách bug này
+tái xuất hiện sau khi v4 đã đóng nửa `resets_at`. v5 so `account_uuid` trong cache với
+`.oauthAccount.accountUuid` hiện tại (`~/.claude.json`); chỉ fallback về so email khi một trong hai
+bên không có `accountUuid` (cache ghi trước v5, hoặc client cũ chưa từng có field này). v5 cũng
+stamp `seen_at` lên mỗi entry còn sống sau merge - một entry không còn được CLI gửi trong ≥6 giờ
+(`maxAge=21600`) bị loại dù `resets_at` vẫn ở tương lai, để "gói mới không có weekly limit" không
+còn phải chờ tới `resets_at` (có thể là ngày khác) mới hết dính số cũ.
 
 Hai điều kiện này được test khoá lại (`cc_drops_a_cached_quota_whose_reset_has_passed`,
 `cc_ignores_a_cache_written_by_another_account`), cùng với việc **nhánh AGY không bao giờ đọc/ghi
@@ -133,11 +144,13 @@ ra một cache không có field `account`, hoặc một cache có `resets_at` đ
 Vì vậy `scripts/get-claudecode-usage.sh` (phía **đọc**, chạy mỗi ~30s cả local lẫn qua SSH) áp lại
 đúng hai gate đó một lần nữa, ngay trước khi ghi ra stdout - "lọc lúc hiển thị", không đụng tới file:
 
-1. **Account gate**: so `account` trong cache với `.oauthAccount.emailAddress` hiện tại
-   (`~/.claude.json`). Hai bên đều có giá trị và khác nhau → toàn bộ cache bị coi là không đáng
-   tin, script không in gì ra stdout (giống hệt nhánh "thiếu file cache"). Cache cũ (v2/v3, không
-   có field `account`) **không** bị bỏ theo cách này - nếu bỏ, mọi host chưa được vá lại sẽ mất
-   trắng quota hiển thị; script chỉ log cảnh báo là host đó nên được Apply lại.
+1. **Account gate**: so `account_uuid` trong cache với `.oauthAccount.accountUuid` hiện tại
+   (`~/.claude.json`); nếu một trong hai bên thiếu `accountUuid` (cache pre-v5, hoặc client cũ),
+   fallback so `account` (email) như trước. Hai bên đều có giá trị và khác nhau → toàn bộ cache bị
+   coi là không đáng tin, script không in gì ra stdout (giống hệt nhánh "thiếu file cache"). Cache
+   cũ (v2/v3, không có field `account` lẫn `account_uuid`) **không** bị bỏ theo cách này - nếu bỏ,
+   mọi host chưa được vá lại sẽ mất trắng quota hiển thị; script chỉ log cảnh báo là host đó nên
+   được Apply lại.
 2. **Expiry gate**, áp cho từng entry trong `rate_limits`: bỏ entry có `resets_at` đã qua; bỏ luôn
    entry có `resets_at` bằng 0 hoặc thiếu - một cửa sổ không xác minh được chính là hình dạng của
    quota ma `7d` năm xưa, không hiện còn an toàn hơn hiện sai.
@@ -147,9 +160,16 @@ Script đọc **không bao giờ** ghi lại hay xoá `rate-limits-cache.json` -
 statusLine hook. Nếu `python3` lỗi phân tích JSON, coi như "không có dữ liệu đáng tin", không cho
 `set -e` giết cả script và không rơi về in nguyên file thô.
 
-Tier hiển thị (Pro/Max): đọc `.credentials.json` trước; file này không còn trên bản CC mới nên
-fallback sang parse `subscriptionType` từ `claude auth status` (đã cache). `rateLimitTier`
-(5x/20x) không có nguồn thay thế - để `Unknown`, không ảnh hưởng badge chính.
+Tier hiển thị (Pro/Max/20x...): từ v5, thứ tự ưu tiên đảo theo độ sống của nguồn, không còn ưu
+tiên `.credentials.json`. `TIER` đọc `organizationRateLimitTier` (hoặc `userRateLimitTier`) từ
+`~/.claude.json` trước - file này do CLI ghi lại ngay khi đăng nhập/đổi account nên gần như không
+bao giờ trễ; `SUB_TYPE` đọc `subscriptionType` từ `auth-cache.json`/`claude auth status` (đã cache,
+`AUTH_REFRESH_AGE_S`). `.credentials.json` giờ chỉ là **fallback cuối cùng** khi cả hai nguồn trên
+đều rỗng - đây là nguồn cũ nhất trong ba: nó không còn trên bản CC mới (đã chuyển vào OS keychain),
+và khi còn tồn tại chỉ được ghi lúc login/refresh nên có thể mang tier/subscription của account đã
+đổi từ vài giờ trước (đúng nguyên nhân badge "Pro" dính lại sau khi account mới đã là "Max 20x").
+Khi `rateLimitTier` mang giá trị `default_claude_ai` (cắt ra `ai`), UI tự động fallback sang
+`subscriptionType` thay vì hiển thị badge `Ai`.
 
 ## 4. Trạng thái hiển thị
 
@@ -158,7 +178,7 @@ fallback sang parse `subscriptionType` từ `claude auth status` (đã cache). `
 | `data` | Cache đọc được, mốc reset còn ở tương lai | Vòng tròn % + mốc reset |
 | `cached` | Đã qua mốc reset, chưa có turn CC mới | Số đo cuối + nhãn thời điểm + `Waiting for next Claude Code session` |
 | `empty` | Chưa từng đọc được cache | Dòng trạng thái |
-| `off` | Nguồn bị tắt, hoặc Remote Mode tắt | Dòng trạng thái |
+| `off` | Monitor bị tắt (per-monitor, theo `agentId@host`) | Dòng trạng thái |
 
 `get-claudecode-usage.sh` phát hiện `now > resets_at` → trả `|||STALE_RESET|||`. Phía JS **giữ
 nguyên `data`**, bật `isCached`/`cachedAt` - cùng cơ chế Antigravity dùng. Số cũ đứng lại tới
@@ -179,7 +199,8 @@ Lý do dừng hẳn thay vì giãn dần: log sự cố 2026-07-20 cho thấy pr
 ### WKWebView suspend self-heal
 
 WKWebView bóp/treo `setInterval` khi cửa sổ bị che hoàn toàn hoặc máy ngủ. Hai lớp phục hồi,
-cài **một lần** ở module scope, dùng chung cho cả 3 instance:
+cài **một lần** ở module scope, dùng chung cho mọi monitor instance (từ 1.20.0 monitor được tạo theo
+nhu cầu cho từng `agentId@host`, không còn số lượng cố định):
 
 1. `visibilitychange`/`focus` → check ngay.
 2. Nhịp watchdog 7s → nếu khoảng cách giữa hai tick vượt ngưỡng thì coi như vừa resume.
@@ -220,7 +241,7 @@ Bật chi tiết: chạy app với `--debug` hoặc `AKI_DEBUG=1`.
 |---|---|
 | `GET_USAGE`, `PROVISION` | Rust - mỗi điểm quyết định IPC |
 | `SHELL:*` | stderr của script remote, relay từng dòng |
-| `USAGE:claudecode` | JS - chuyển trạng thái, `poll tick`, `halted` |
+| `USAGE:claudecode@<host>` | JS - chuyển trạng thái, `poll tick`, `halted`; hậu tố `@<host>` để tách log của từng monitor |
 
 Format: `[YYYYMMDD.HHMMSS.mmm][TAG] event key=value`.
 
@@ -232,7 +253,8 @@ Format: `[YYYYMMDD.HHMMSS.mmm][TAG] event key=value`.
 | `scripts/get-claudecode-usage.sh` | Đọc cache + auth, phát hiện STALE_RESET |
 | `scripts/provision-claudecode.sh` | Vá statusLine hook |
 | `scripts/lint-remote-scripts.js` | Gác bashism trong script gửi qua SSH |
-| `src/composables/useAgentUsage.js` | Poll, circuit breaker, wake self-heal |
+| `src/composables/usageMonitor.js` | Một monitor: poll, circuit breaker, wake self-heal |
+| `src/composables/usageMonitorRegistry.js` | Multiton `agentId@host` - định danh monitor |
 | `src/components/AgentUsage.vue` | Trạng thái hiển thị |
 
 ## 9. Tham chiếu ngoài

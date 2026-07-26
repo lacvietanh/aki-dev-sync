@@ -2,8 +2,7 @@ use std::process::Command;
 
 use crate::sync::expand_remote_tilde;
 
-/// Creates a Command and injects Homebrew/local paths on macOS to ensure consistent behavior
-/// between dev (terminal PATH) and build (macOS GUI PATH).
+/// Creates a Command and injects Homebrew/local paths on macOS to ensure consistent behavior between dev (terminal PATH) and build (macOS GUI PATH).
 pub fn create_command(cmd: &str) -> Command {
     let mut c = Command::new(cmd);
     #[cfg(target_os = "macos")]
@@ -41,17 +40,9 @@ fn applescript_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Runs `shell_cmd` in Terminal.app via AppleScript, avoiding the double-window bug where a
-/// cold-started Terminal spawns its own default (home-dir) window at launch *and* `do script`
-/// spawns a second one for the command. When Terminal has to be launched from scratch, we reuse
-/// its freshly-created default window (`in window 1`) instead of letting `do script` open another;
-/// when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
+/// Runs `shell_cmd` in Terminal.app via AppleScript, avoiding the double-window bug where a cold-started Terminal spawns its own default (home-dir) window at launch *and* `do script` spawns a second one for the command. When Terminal has to be launched from scratch, we reuse its freshly-created default window (`in window 1`) instead of letting `do script` open another; when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
 ///
-/// The wait for that default window is a poll (up to ~2s, checking every 100ms), not a fixed
-/// `delay` - a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the
-/// window isn't up yet when we check, we'd fall through to `do script` opening a *second* window,
-/// and the slow default window would still appear on its own moments later (the exact "one window
-/// at $HOME + one at the right target" bug this helper exists to prevent).
+/// The wait for that default window is a poll (up to ~2s, checking every 100ms), not a fixed `delay` - a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the window isn't up yet when we check, we'd fall through to `do script` opening a *second* window, and the slow default window would still appear on its own moments later (the exact "one window at $HOME + one at the right target" bug this helper exists to prevent).
 #[cfg(target_os = "macos")]
 fn open_terminal_with_command(shell_cmd: &str) -> Result<(), String> {
     let safe_cmd = applescript_escape(shell_cmd);
@@ -83,27 +74,11 @@ fn open_terminal_with_command(shell_cmd: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Resizes/repositions the Terminal window this call just opened to 124 columns, snapped to the
-/// top-right corner of the main display (below the menu bar, above the Dock), height filling the
-/// available screen height. Fire-and-forget in its own `osascript` process, started right after
-/// the one that opens the window - it sleeps briefly up front so the new window exists and has
-/// settled before being resized, matching every other caller of Terminal in this file (spawn, no
-/// wait).
+/// Resizes/repositions the Terminal window this call just opened to 124 columns, snapped to the top-right corner of the main display (below the menu bar, above the Dock), height filling the available screen height. Fire-and-forget in its own `osascript` process, started right after the one that opens the window - it sleeps briefly up front so the new window exists and has settled before being resized, matching every other caller of Terminal in this file (spawn, no wait).
 ///
-/// Resize (`numberOfColumns`) happens first, at the window's original (cascaded) position where
-/// it has room to grow; only once the true post-resize width is known does the single `bounds`
-/// write move+resize it into the target rectangle - resizing before positioning, not after,
-/// so the width read back is the true 124-column width, not one clipped by an edge the window
-/// was already pinned to.
+/// Resize (`numberOfColumns`) happens first, at the window's original (cascaded) position where it has room to grow; only once the true post-resize width is known does the single `bounds` write move+resize it into the target rectangle - resizing before positioning, not after, so the width read back is the true 124-column width, not one clipped by an edge the window was already pinned to.
 ///
-/// The move+resize itself goes through System Events' Accessibility API (`AXPosition`/`AXSize`
-/// on the window element), not Terminal's own scriptable `bounds` property - `bounds` was
-/// proven (logged bounds at every step, see PR discussion) to silently refuse a cross-screen
-/// jump: X moved correctly but Y stayed within a few px of its original (wrong) value whenever
-/// the target Y belonged to a different display than the one the window opened on. AXPosition/
-/// AXSize apply cleanly to both axes regardless of which screen the window currently occupies.
-/// Requires System Events to have Accessibility permission for whatever process runs `osascript`
-/// - macOS will prompt for this on first use if not already granted.
+/// The move+resize itself goes through System Events' Accessibility API (`AXPosition`/`AXSize` on the window element), not Terminal's own scriptable `bounds` property - `bounds` was proven (logged bounds at every step, see PR discussion) to silently refuse a cross-screen jump: X moved correctly but Y stayed within a few px of its original (wrong) value whenever the target Y belonged to a different display than the one the window opened on. AXPosition/AXSize apply cleanly to both axes regardless of which screen the window currently occupies. Requires System Events to have Accessibility permission for whatever process runs `osascript` - macOS will prompt for this on first use if not already granted.
 #[cfg(target_os = "macos")]
 fn snap_frontmost_terminal_window() {
     let script = r#"
@@ -159,9 +134,7 @@ pub fn macos_open(args: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens a local Terminal window `cd`'d into `local_path`. Routed through
-/// `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it
-/// gets the same cold-start double-window protection as `run_project_command`/SSH terminal.
+/// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as `run_project_command`/SSH terminal.
 #[tauri::command]
 pub fn open_local_terminal(local_path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -171,6 +144,18 @@ pub fn open_local_terminal(local_path: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Resolves the `antigravity-ide` CLI into `$AGY_BIN` via static `[ -x path ]` checks before falling back to PATH lookup, then is prefixed to the command run inside the login shell below. Same cold-start PATH race, same fix pattern, and same reason as `agent_usage.rs`'s `NODE_BIN_RESOLVER_PREAMBLE` (stack-tauri A2): a `[ -x ]` test does not care whether the user's rc files have finished sourcing, whereas `-ilc` PATH resolution alone does. It matters more here than it looks, because the call site only `spawn()`s and never reads the exit code - a 127 from a lost PATH race is completely silent, the user just sees nothing happen.
+///
+/// The two `/Applications` bundle names are the same pair `check_ide_availability` probes; the in-bundle `Contents/Resources/app/bin/antigravity-ide` is what the IDE's own "install command in PATH" action symlinks to, so hitting the bundle directly is strictly more reliable than following the symlink. macOS-only list (this app ships macOS-only, see CLAUDE.md).
+///
+/// Unlike the node resolver this needs no `sh -c '...'` wrapper or single-line/no-single-quote discipline: it is handed to a known POSIX-compatible shell (`$SHELL`/bash) as one argv item by this process, not re-parsed by an arbitrary remote login shell chosen by sshd.
+const AGY_BIN_RESOLVER_PREFIX: &str = r#"for _c in "/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide" "/Applications/Antigravity.app/Contents/Resources/app/bin/antigravity-ide" "$HOME/.antigravity-ide/antigravity-ide/bin/antigravity-ide" "$HOME/.local/bin/antigravity-ide" /opt/homebrew/bin/antigravity-ide /usr/local/bin/antigravity-ide; do
+    [ -x "$_c" ] && { AGY_BIN=$_c; break; }
+done
+[ -n "$AGY_BIN" ] || AGY_BIN=$(command -v antigravity-ide 2>/dev/null)
+[ -n "$AGY_BIN" ] || AGY_BIN=antigravity-ide
+"#;
 
 /// Subprocess-based remote openers that cannot be expressed as a plain `open` call:
 /// - `terminal`: SSH via AppleScript (macOS-only)
@@ -183,8 +168,7 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             #[cfg(target_os = "macos")]
             {
                 let expanded = expand_remote_tilde(&path);
-                // Quotes here are shell quotes inside the ssh command, not AppleScript quotes  - 
-                // open_terminal_with_command applies the AppleScript escaping separately.
+                // Quotes here are shell quotes inside the ssh command, not AppleScript quotes  - open_terminal_with_command applies the AppleScript escaping separately.
                 let shell_cmd = format!(
                     "ssh {} -t 'mkdir -p \"{}\" && cd \"{}\" ; exec bash'",
                     host, expanded, expanded
@@ -195,19 +179,14 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
         }
         "antigravity" => {
             let expanded = expand_remote_tilde(&path);
-            // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox,
-            // custom profile setup, etc.) - not available in macOS GUI app's stripped PATH.
-            // Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
+            // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox, custom profile setup, etc.) - not available in macOS GUI app's stripped PATH. Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
             let safe_path = expanded.replace('\'', "'\\''");
             let shell_cmd = format!(
-                "antigravity-ide --remote 'ssh-remote+{}' '{}'",
-                host, safe_path
+                "{}exec \"$AGY_BIN\" --remote 'ssh-remote+{}' '{}'",
+                AGY_BIN_RESOLVER_PREFIX, host, safe_path
             );
-            // -ilc: interactive (-i) sources ~/.zshrc (not just ~/.zprofile); login (-l) sources
-            // ~/.zprofile. Both needed because antigravity-ide PATH is typically set in ~/.zshrc,
-            // which a non-interactive login shell (-lc) never reads - causing silent failure when
-            // the app launches from Finder vs. from a terminal that already inherited full PATH.
+            // -ilc: interactive (-i) sources ~/.zshrc (not just ~/.zprofile); login (-l) sources ~/.zprofile. Both needed because antigravity-ide PATH is typically set in ~/.zshrc, which a non-interactive login shell (-lc) never reads - causing silent failure when the app launches from Finder vs. from a terminal that already inherited full PATH.
             Command::new(&shell)
                 .args(["-ilc", &shell_cmd])
                 .spawn()
@@ -221,11 +200,7 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
 const SSH_COLOR_MARKER_BEGIN: &str = "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
 const SSH_COLOR_MARKER_END: &str = "# --- Aki SSH remote color END ---";
 
-/// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is
-/// active, then resets on exit - the same OSC 11/111 background-swap trick the user already
-/// hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running
-/// strips any previously-installed block (between the markers) before writing a fresh one, so
-/// repeated installs never duplicate.
+/// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is active, then resets on exit - the same OSC 11/111 background-swap trick the user already hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running strips any previously-installed block (between the markers) before writing a fresh one, so repeated installs never duplicate.
 const SSH_COLOR_SNIPPET: &str = r#"
 ssh() {
   printf '\033]11;#1a0f0f\007'
@@ -234,14 +209,9 @@ ssh() {
 }
 "#;
 
-/// Local-machine-only: the background swap needs to happen in the *local* shell that is
-/// launching `ssh`, so there is nothing to push to remote hosts here (unlike the statusline
-/// customizer, which does need per-host rollout).
+/// Local-machine-only: the background swap needs to happen in the *local* shell that is launching `ssh`, so there is nothing to push to remote hosts here (unlike the statusline customizer, which does need per-host rollout).
 ///
-/// `spawn_blocking`-wrapped per CLAUDE.md's blocking-UI rule: even "just" file I/O is a
-/// synchronous syscall, and the house rule now has zero exceptions for that - every command
-/// touching disk or a subprocess goes through the blocking thread-pool, no case-by-case judgment
-/// calls about whether a given file happens to be small.
+/// `spawn_blocking`-wrapped per CLAUDE.md's blocking-UI rule: even "just" file I/O is a synchronous syscall, and the house rule now has zero exceptions for that - every command touching disk or a subprocess goes through the blocking thread-pool, no case-by-case judgment calls about whether a given file happens to be small.
 #[tauri::command]
 pub async fn install_ssh_terminal_color() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -287,11 +257,7 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Resolves the local AkiClaudeDoc checkout by trying well-known candidate paths first (same
-/// conservative pattern as the CLAUDE_BIN resolver - a file-existence check has no dependency on
-/// where any given machine happens to keep its dev tree), so it's never a guess. Its exact
-/// location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to
-/// pointing the user at the GitHub repo to clone it.
+/// Resolves the local AkiClaudeDoc checkout by trying well-known candidate paths first (same conservative pattern as the CLAUDE_BIN resolver - a file-existence check has no dependency on where any given machine happens to keep its dev tree), so it's never a guess. Its exact location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to pointing the user at the GitHub repo to clone it.
 fn find_akiclaudedoc_install_script(home: &str) -> Option<String> {
     let candidates = [
         "/Volumes/DEV/AkiClaudeDoc/install.sh".to_string(),
@@ -303,9 +269,7 @@ fn find_akiclaudedoc_install_script(home: &str) -> Option<String> {
     candidates.into_iter().find(|c| std::path::Path::new(c).exists())
 }
 
-/// Runs the local AkiClaudeDoc `install.sh` in a visible Terminal window (the script prints
-/// colored progress output the user should see), or errors out pointing at the repo to clone if
-/// no checkout is found on this machine.
+/// Runs the local AkiClaudeDoc `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
 #[tauri::command]
 pub fn install_akiclaudedoc() -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
@@ -434,16 +398,12 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
         return Ok(path);
     }
 
-    // The SSH round-trip is blocking IO. This command used to be a plain `pub fn`, so Tauri
-    // ran it on the main thread and the whole UI froze for the duration of the network call.
-    // Move it onto the blocking pool (CLAUDE.md "async fn + blocking subprocess" pitfall) so
-    // the UI stays responsive while the resolve is in flight.
+    // The SSH round-trip is blocking IO. This command used to be a plain `pub fn`, so Tauri ran it on the main thread and the whole UI froze for the duration of the network call. Move it onto the blocking pool (CLAUDE.md "async fn + blocking subprocess" pitfall) so the UI stays responsive while the resolve is in flight.
     tauri::async_runtime::spawn_blocking(move || {
         let expanded = expand_remote_tilde(&path);
 
         let mut command = create_command("ssh");
-        // Pass the command as a single argument so SSH passes it intact to the remote shell.
-        // Otherwise SSH concatenates multiple args with spaces and `bash -c` gets split.
+        // Pass the command as a single argument so SSH passes it intact to the remote shell. Otherwise SSH concatenates multiple args with spaces and `bash -c` gets split.
         let script = format!("bash -c \"echo {}\"", expanded);
         command.args([&host, &script]);
 
@@ -461,13 +421,9 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
     .map_err(|e| format!("resolve_remote_path task join error: {}", e))?
 }
 
-/// Resolves the local path of a project's `REPORT.html` (produced by the akihtmlreport skill),
-/// pulling it from the remote first if the remote's copy is newer. Local-only projects (no
-/// remote_host/remote_path) just check local. Errors only when neither side has the file.
+/// Resolves the local path of a project's `REPORT.html` (produced by the akihtmlreport skill), pulling it from the remote first if the remote's copy is newer. Local-only projects (no remote_host/remote_path) just check local. Errors only when neither side has the file.
 ///
-/// Deliberately thin: mtime comparison reuses `git::get_file_conflict_info` (the existing
-/// local/remote stat-diff primitive, used by the SELECT conflict check) and the pull reuses
-/// `sync::rsync_pull_file` - no bespoke SSH stat script or rsync invocation here.
+/// Deliberately thin: mtime comparison reuses `git::get_file_conflict_info` (the existing local/remote stat-diff primitive, used by the SELECT conflict check) and the pull reuses `sync::rsync_pull_file` - no bespoke SSH stat script or rsync invocation here.
 #[tauri::command]
 pub async fn resolve_report_html(
     local_path: String,
@@ -502,15 +458,20 @@ pub async fn resolve_report_html(
         return Err("No REPORT.html found locally or on the remote.".to_string());
     }
     if remote_exists && (!local_exists || remote_mtime > local_mtime) {
-        crate::sync::rsync_pull_file(&host, &rpath, "REPORT.html", &local_path)?;
+        // rsync over SSH: a blocking subprocess wait on the network. It must never run on the
+        // command-dispatch thread (CLAUDE.md, never-block-the-UI) - a slow or dead host would
+        // freeze the window for as long as rsync's own timeout.
+        let (h, rp, lp) = (host.clone(), rpath.clone(), local_path.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::sync::rsync_pull_file(&h, &rp, "REPORT.html", &lp)
+        })
+        .await
+        .map_err(|e| format!("resolve_report_html pull task join error: {}", e))??;
     }
     Ok(std::path::Path::new(&local_path).join("REPORT.html").to_string_lossy().to_string())
 }
 
-/// Looks for `filename` in `~/Downloads` so the update modal can offer to open an
-/// already-downloaded installer instead of re-triggering a browser download.
-/// `file_name()` strips any directory components from the (externally-sourced,
-/// GitHub API) filename to prevent escaping the Downloads directory.
+/// Looks for `filename` in `~/Downloads` so the update modal can offer to open an already-downloaded installer instead of re-triggering a browser download. `file_name()` strips any directory components from the (externally-sourced, GitHub API) filename to prevent escaping the Downloads directory.
 #[tauri::command]
 pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
     let safe_name = std::path::Path::new(&filename)
@@ -521,10 +482,7 @@ pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
     Ok(if path.exists() { Some(path.to_string_lossy().to_string()) } else { None })
 }
 
-/// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates"  - 
-/// `curl`'s blocking network wait must never sit on the command-dispatch thread (a slow or dead
-/// network would freeze the whole app on launch). `spawn_blocking` per CLAUDE.md's blocking-UI
-/// rule.
+/// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates"  - `curl`'s blocking network wait must never sit on the command-dispatch thread (a slow or dead network would freeze the whole app on launch). `spawn_blocking` per CLAUDE.md's blocking-UI rule.
 #[tauri::command]
 pub async fn check_for_updates() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -614,8 +572,7 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
     }
 }
 
-/// Opens a Terminal window `cd`'d into `local_path` running `cmd`. Shared by `run_project_command`
-/// (BUILD) and `run_project_dev` (DEV) so the terminal-launch line is not duplicated between them.
+/// Opens a Terminal window `cd`'d into `local_path` running `cmd`. Shared by `run_project_command` (BUILD) and `run_project_dev` (DEV) so the terminal-launch line is not duplicated between them.
 #[cfg(target_os = "macos")]
 fn run_in_project_terminal(local_path: &str, cmd: &str) -> Result<(), String> {
     let shell_cmd = format!("cd \"{}\" && {}", local_path, cmd);
@@ -631,12 +588,7 @@ pub fn run_project_command(local_path: String, cmd: String) -> Result<(), String
     Ok(())
 }
 
-/// DEV button command: opens the dev command in Terminal, exactly like `run_project_command`
-/// (BUILD). An earlier version also polled for the dev server's port to come up and auto-opened
-/// it in a browser; removed - it never reliably worked across the range of real project configs
-/// (custom dev scripts, non-standard ports, monorepo boot times) and the fixed-cost complexity
-/// (port resolution, TCP poll, detached background task) wasn't worth the unreliable payoff. The
-/// user opens the browser themselves once the Terminal shows the server is up.
+/// DEV button command: opens the dev command in Terminal, exactly like `run_project_command` (BUILD). An earlier version also polled for the dev server's port to come up and auto-opened it in a browser; removed - it never reliably worked across the range of real project configs (custom dev scripts, non-standard ports, monorepo boot times) and the fixed-cost complexity (port resolution, TCP poll, detached background task) wasn't worth the unreliable payoff. The user opens the browser themselves once the Terminal shows the server is up.
 #[tauri::command]
 pub fn run_project_dev(local_path: String, cmd: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
