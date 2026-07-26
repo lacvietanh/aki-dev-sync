@@ -53,7 +53,7 @@ adds a second brain: the Mac still executes; the phone still mirrors + sends int
 >   a shell that exits with nothing representing its death reads as a frozen app. A fourth frame
 >   (`pty_exit`) plus CLEAR/RESTART/KILL/OPEN controls were added in the same release. See §4.7.
 >
-> Full design and the deviations: `docs/plan/1.20.0-terminal-and-remote-sync.md` §4, §4.7 and §6a.
+> Full design and the deviations: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4, §4.7 and §6a.
 > Still deferred from here: multiple sessions/tabs, split panes, and redirecting the DEV/BUILD
 > `Terminal.app` launchers into this view (they need per-project cwd + multi-session first).
 

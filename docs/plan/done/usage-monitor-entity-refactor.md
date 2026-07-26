@@ -1,7 +1,14 @@
 # Usage monitors as independent entities — an OOP refactor
 
-> **Status:** planned + built in the same pass, **unverified on a Mac** (this box cannot run the app).
-> Rides inside the untagged `1.20.0`. Base: the four-fixed-sources model shipped in `1.19.0`.
+> **Status: DONE — shipped and tagged in `1.20.0`.** Static checks in §6 items 1-5 are clean
+> (`usageSourcesStore` deleted, cache no longer parsed by hand, retarget-and-wipe path removed,
+> `npm run lint:scripts` / `npx vite build` pass). **Still genuinely open** — this box cannot run the
+> packaged app, and per `CHANGELOG.md`'s `[1.20.0]` "Not yet verified on a Mac" note no live
+> two-machine test has been run: §6 items 6-12 (two hosts under two different Claude accounts
+> rendering simultaneously, retargeting one slot leaving others untouched, the AG same-account
+> collision case, per-monitor power toggle, one-SSH-round-trip-per-interval for co-targeted slots,
+> reload/mirror persistence) remain unverified runtime behavior, not unfinished code. Base: the
+> four-fixed-sources model shipped in `1.19.0`.
 > Trigger: "tôi cần theo dõi cả claude remote host A và claude remote host B, mỗi host mỗi acc claude khác nhau."
 
 ## 0. The report, and what it actually is
@@ -203,7 +210,7 @@ Mac-side, user-triggered, **unverified until then**:
 
 * **Mirroring the readings themselves.** Each screen still fetches its own numbers — usage data lives
   in monitor-owned refs, not in `src/store/*.js`, so the mirror does not carry it (the open R-1 item
-  in `docs/plan/done/remote-control.md` §8a, also listed in `docs/plan/1.20.0-terminal-and-remote-sync.md` §7).
+  in `docs/plan/done/remote-control.md` §8a, also listed in `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §7).
   This refactor does not close it, but it does make it cheap for the first time: with monitors keyed
   by `agentId@host`, the target shape is a keyed `usageStore` map with exactly those keys. Left out
   because nothing in the reported problem depends on it and it is a workstream of its own.

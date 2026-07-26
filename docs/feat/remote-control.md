@@ -14,7 +14,7 @@ sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote
 > confirm triggered from the phone appears and is answerable on both screens; **task/note/reorder
 > edits from a phone now stick** (PERSIST-1); and a shared **in-app terminal** the phone can type
 > into. See "1.20.0 — the two classes that were still broken" below, plus
-> `docs/plan/1.20.0-terminal-and-remote-sync.md`.
+> `docs/plan/done/1.20.0-terminal-and-remote-sync.md`.
 
 ## How a user turns it on and pairs a phone
 
@@ -253,8 +253,8 @@ means exactly this — the host isn't feeding the relay.
 | :-- | :-- | :-- |
 | F1 | Companion clicks PUSH / PULL / DRY / Refresh / global-refresh / sync-check power | sends an `intent` (project **id** + args) → host runs the real action → the resulting state change mirrors back to every screen. |
 | F2 | Host clicks the same buttons | `action(fn) === fn` on the host → byte-identical to before R-2 (the only change is an id→object resolve the host does anyway). |
-| F3 | Companion triggers the native "Upload (select files)" | the file picker and its overwrite confirm (`useSync.js:325`, plain `Swal.fire`) run **on the Mac** — host-only by design, being bound to the native macOS dialog. |
-| F3b | Companion triggers a `--delete` sync | as of 1.20.0 the typed `--delete` confirm is a **mirrored** dialog (`useSync.js:159` `askConfirm` → `dialogStore`/`DialogHost.vue`), answerable from the phone, typed value re-validated on the host. Before 1.20.0 it was host-only like F3. The normal no-dialog push/pull/DRY path is fully phone-usable either way. |
+| F3 | Companion triggers the native "Upload (select files)" | the native file picker itself (`openSelectDialog`, `useSync.js`) stays host-only by design, being bound to the native macOS dialog. Its overwrite confirm is **not** host-only any more — it was itself converted to the same mirrored `askConfirm` dialog as F3b (`useSync.js`, inside `openSelectDialog`), so a phone that triggered SELECT no longer sits on a spinner forever waiting on a Mac-local `Swal.fire`. |
+| F3b | Companion triggers a `--delete` sync | as of 1.20.0 the typed `--delete` confirm is a **mirrored** dialog (`askConfirm` inside `startSync`, `useSync.js` → `dialogStore`/`DialogHost.vue`), answerable from the phone, typed value re-validated on the host. Before 1.20.0 it was host-only like F3 used to be. The normal no-dialog push/pull/DRY path is fully phone-usable either way. |
 | F4 | Companion clicks while the host is mid-sync | the PUSH/PULL fieldset is disabled via the mirrored `syncing` flag; `startSync` also guards host-side, so a racing intent is a no-op. |
 | F5 | Intent with an unknown key reaches the host | logged as a warning, never executed. |
 
@@ -313,61 +313,61 @@ side effect with no shared state to mirror.
 
 ### Project table (`ProjectTable.vue`) + config (`useProjectConfig.js`)
 
-| Control | Handler:line | Mechanism | Verdict |
+| Control | Handler | Mechanism | Verdict |
 | :-- | :-- | :-- | :-- |
-| PUSH / PULL | `requestSync(p.id,dir)` :239/266 | ACTION `remoteActions` | OK |
-| DRY checkbox | `setDryRun(p.id,v)` :252 | ACTION | OK |
-| Per-project refresh | `requestRefresh(p.id)` :217 | ACTION | OK |
-| Sync-check power | `toggleSyncCheck()` :30 | ACTION | OK |
+| PUSH / PULL | `requestSync(p.id,dir)` | ACTION `remoteActions` | OK |
+| DRY checkbox | `setDryRun(p.id,v)` | ACTION | OK |
+| Per-project refresh | `requestRefresh(p.id)` | ACTION | OK |
+| Sync-check power | `toggleSyncCheck()` | ACTION | OK |
 | Edit config → Save | `saveConfig`→`remoteActions.applyProjectConfig` | ACTION (data) + LOCAL Toast/close | **FIXED** — host applies to its reactive `projects`, mirrors to every screen |
 | New project | `createNewProject`→`saveConfig`→`applyProjectConfig` | native folder dialog (Mac) + ACTION save | **FIXED** (save path); folder picker still opens on the Mac (RPC-OK) |
 | Remove project | `confirmRemove`→`remoteActions.requestRemoveProject`→`removeProject` | MIRRORED DIALOG + ACTION | **FIXED (1.20.0)** — the confirm is mirrored state answerable from either screen; the removal mutates the host's `projects` and mirrors out. The companion's own config modal does not self-close afterwards (R-1, `showConfigModal` still per-screen) |
-| Open Git modal | `openGitModal(p)` :114 | RPC (git info) + LOCAL modal | LOCAL-OK |
-| Open config modal | `openConfig(p)` :280 | LOCAL modal-open | LOCAL-OK |
-| Toggle project log | `toggleProjectLog(p.id)` :275 | LOCAL (which log is shown) | LOCAL-OK |
-| Open REPORT.html | `openReportHtml(p)` :147 | RPC (`resolve_report_html`+`macos_open`) | RPC-OK (opens on Mac) |
-| Open IDE local/remote | `openIdeLocal/Remote` :160-202 | RPC | RPC-OK (opens on Mac) |
-| Run DEV / BUILD | `runProjectDev/Command` :176/179 | RPC | RPC-OK (opens a Mac `Terminal.app` window, still not visible to a phone — redirecting these into the 1.20.0 in-app terminal needs per-project cwd + multi-session first, see the 1.20.0 plan T-6) |
-| Upload (select files) | `openSelectDialog(p)` :207 | RPC native dialog (Mac) | RPC-OK (host-only, F3) — its overwrite confirm stays a host-local Swal on purpose, being bound to the native picker |
-| Copy local/remote path | `copyLocalPath/RemotePath` :156/189 | LOCAL clipboard | LOCAL-OK |
-| Open production URL | `openUrl(p.production_url)` :87 | RPC `macos_open` | RPC-OK |
+| Open Git modal | `openGitModal(p)` | RPC (git info) + LOCAL modal | LOCAL-OK |
+| Open config modal | `openConfig(p)` | LOCAL modal-open | LOCAL-OK |
+| Toggle project log | `toggleProjectLog(p.id)` | LOCAL (which log is shown) | LOCAL-OK |
+| Open REPORT.html | `openReportHtml(p)` | RPC (`resolve_report_html`+`macos_open`) | RPC-OK (opens on Mac) |
+| Open IDE local/remote | `openIdeLocal/Remote` | RPC | RPC-OK (opens on Mac) |
+| Run DEV / BUILD | `runProjectDev/Command` | RPC | RPC-OK (opens a Mac `Terminal.app` window, still not visible to a phone — redirecting these into the 1.20.0 in-app terminal needs per-project cwd + multi-session first, see the 1.20.0 plan T-6) |
+| Upload (select files) | `openSelectDialog(p)` | RPC native dialog (Mac) | RPC-OK (host-only, F3) — the native picker itself is Mac-only by design; its overwrite confirm is a **mirrored** `askConfirm` dialog, not a host-local Swal (see F3) |
+| Copy local/remote path | `copyLocalPath/RemotePath` | LOCAL clipboard | LOCAL-OK |
+| Open production URL | `openUrl(p.production_url)` | RPC `macos_open` | RPC-OK |
 
 ### Header (`AppHeader.vue`)
 
-| Control | Handler:line | Mechanism | Verdict |
+| Control | Handler | Mechanism | Verdict |
 | :-- | :-- | :-- | :-- |
-| Refresh all | `handleRefresh`→`requestRefreshAll` :234 | ACTION | OK |
-| Tier count 1 / 2 | `setTierCount(n)` :122/130 | MIRROR + ACTION | **FIXED** — `setTierCount` now an action |
-| **Remote on/off toggle** | `toggleRemote` :66 | host relay control (`useRemoteControl`) | **REVIEW — companion toggling the server it rides on; should be host-only** |
-| Update check | `triggerManualUpdateCheck` :19 | RPC + LOCAL modal | RPC-OK |
-| Window presets width/place | `applyViewSafe/ComboSafe` :158-195 | RPC window API on Mac window | RPC-OK (controls the Mac window) |
-| Pin / Minimize / Close | `togglePin/minimize/closeWin` :261-268 | RPC window API | RPC-OK (controls the Mac window) |
+| Refresh all | `handleRefresh`→`requestRefreshAll` | ACTION | OK |
+| Tier count 1 / 2 | `setTierCount(n)` | MIRROR + ACTION | **FIXED** — `setTierCount` now an action |
+| **Remote on/off toggle** | `toggleRemote` | host relay control (`useRemoteControl`) | **REVIEW — companion toggling the server it rides on; should be host-only** |
+| Update check | `triggerManualUpdateCheck` | RPC + LOCAL modal | RPC-OK |
+| Window presets width/place | `applyViewSafe/ComboSafe` | RPC window API on Mac window | RPC-OK (controls the Mac window) |
+| Pin / Minimize / Close | `togglePin/minimize/closeWin` | RPC window API | RPC-OK (controls the Mac window) |
 | SSH config → Save/Undo/Redo | `saveSshConfig`→`remoteActions.applySshHostsChange` | LOCAL modal/RPC file-write + ACTION (host reconcile) | **FIXED** — host re-reads `sshHosts`/undo-redo flags + migrates affected projects on its reactive state; the missing-host replacement dialog is decided host-side and, since 1.20.0, mirrored to the phone (`askConfirm` `kind: 'select'`) |
-| Refresh-settings modal | `save`→`refreshStore.setRefreshSettings` :237 | LOCAL modal + ACTION (data) | **FIXED** — save routes through an action; host sets `refreshSettings`, re-drives Mac timers, mirrors back |
-| Global note | note save via `noteStore.saveNote` :227 | LOCAL modal + ACTION (persist) | **FIXED** — `noteContent` moved into `store/noteStore.js` (mirrors H→C); save is an action that mutates it + writes disk on the host |
-| Changelog / Update / Intro / Profile / Statusline modals | `show*Modal=true` :11-55 | LOCAL modal-open | LOCAL-OK |
-| Copy remote URL | `copyRemoteUrl` :79 | LOCAL clipboard | LOCAL-OK |
-| Open repo/donate links | `openLink(url)` :101/200/230 | RPC `macos_open` | RPC-OK |
+| Refresh-settings modal | `save`→`refreshStore.setRefreshSettings` | LOCAL modal + ACTION (data) | **FIXED** — save routes through an action; host sets `refreshSettings`, re-drives Mac timers, mirrors back |
+| Global note | note save via `noteStore.applyGlobalNoteEdit` | LOCAL modal + ACTION (persist) | **FIXED** — `noteContent` moved into `store/noteStore.js` (mirrors H→C); save is an action that mutates it + writes disk on the host |
+| Changelog / Update / Intro / Profile / Statusline modals | `show*Modal=true` | LOCAL modal-open | LOCAL-OK |
+| Copy remote URL | `copyRemoteUrl` | LOCAL clipboard | LOCAL-OK |
+| Open repo/donate links | `openLink(url)` | RPC `macos_open` | RPC-OK |
 | Install AkiClaudeDoc / SSH color | `installAkiClaudeDoc`/`enableSshTerminalColor` | RPC | RPC-OK |
-| Remember-view toggle | `toggleRememberView` :146 | `useAppWindow` local pref | REVIEW (window pref of the Mac) |
+| Remember-view toggle | `toggleRememberView` | `useAppWindow` local pref | REVIEW (window pref of the Mac) |
 
 ### Usage (`AgentUsageSection.vue` / `AgentUsageSlot.vue` / `AgentUsage.vue`)
 
-| Control | Handler:line | Mechanism | Verdict |
+| Control | Handler | Mechanism | Verdict |
 | :-- | :-- | :-- | :-- |
 | Power AG / CC (any scope) | `monitor.toggle()`→`setMonitorEnabled(id, …)` (`usageMonitorStore`) | MIRROR + ACTION | **FIXED** — flags moved to store; toggle is an action. Since 1.20.0 one keyed map, one entry per `agentId@host` (`monitorId`), not four fixed source flags — "ccRemote" is no longer a thing |
-| Remote host select | `@change=setSlotTarget(slotId,{remoteHost})` Slot:40-41 | MIRROR (`usageSlotStore`) + ACTION | **FIXED** — `:value`+`@change`→action, not v-model. Per **slot** since 1.20.0; `sshStore.selectedSshHost` is only the fallback |
+| Remote host select | `@change=setSlotTarget(slotId,{remoteHost})` (`AgentUsageSlot.vue`) | MIRROR (`usageSlotStore`) + ACTION | **FIXED** — `:value`+`@change`→action, not v-model. Per **slot** since 1.20.0; `sshStore.selectedSshHost` is only the fallback |
 | Reload / retry | `$emit('retry')`→`checkUsage`→`get_agent_usage` RPC | RPC | RPC-OK (refetches the phone's view) |
 | Logout AG (IDE/CLI) | `logoutAntigravity`→`logout_antigravity*` RPC | Swal on phone + RPC | RPC-OK (logs out on Mac) |
 | Open Antigravity | `handleIconClick`→`macos_open` RPC | RPC | RPC-OK |
-| Tab LOCAL / REMOTE | `setSlotTarget(slotId,{scope})` Slot:6/13 | MIRROR (`usageSlotStore`) + ACTION | **FIXED (1.20.0)** — the slot's target became store state; the old "component-local + localStorage" REVIEW is settled |
-| Source tab AG / CC | `setAgent()`→`setSlotTarget(slotId,{localAgent\|remoteAgent})` Slot:31/116 | MIRROR + ACTION | **FIXED (1.20.0)** — same |
+| Tab LOCAL / REMOTE | `setSlotTarget(slotId,{scope})` (`AgentUsageSlot.vue`) | MIRROR (`usageSlotStore`) + ACTION | **FIXED (1.20.0)** — the slot's target became store state; the old "component-local + localStorage" REVIEW is settled |
+| Source tab AG / CC | `setAgent()`→`setSlotTarget(slotId,{localAgent\|remoteAgent})` (`AgentUsageSlot.vue`) | MIRROR + ACTION | **FIXED (1.20.0)** — same |
 | Account view dropdown | `select-account`→`selectAccount` | composable-local view | **REVIEW — which account is *shown*; currently local** |
-| Email show/hide | `toggle-email`→`showEmail` Slot:112 | slot-local | **REVIEW — same** |
+| Email show/hide | `toggle-email`→`showEmail` (`AgentUsageSlot.vue`) | slot-local | **REVIEW — same** |
 
 ### 1.20.0 — the two classes that were still broken
 
-Both are documented in full in `docs/plan/1.20.0-terminal-and-remote-sync.md` (§2, §3).
+Both are documented in full in `docs/plan/done/1.20.0-terminal-and-remote-sync.md` (§2, §3).
 
 - **PERSIST-1 — a companion must never write the projects array.** `saveProjectsList()` was a bare
   `invoke('save_projects', {projects: projects.value})`, the one mutating persistence path not wrapped
@@ -381,7 +381,7 @@ Both are documented in full in `docs/plan/1.20.0-terminal-and-remote-sync.md` (�
   which emits no events from touch, and `onRowDragStart` additionally requires a `mousedown`. So
   reordering is Mac-only in practice; a reorder performed on the Mac mirrors to the phone correctly.
   Making it work on touch is a pointer-events reimplementation, tracked as deferred debt in
-  `docs/plan/1.20.1-flow-audit-fixes.md` §4. `saveProjectsList` carries
+  `docs/plan/done/1.20.1-flow-audit-fixes.md` §4. `saveProjectsList` carries
   the invariant as a comment at its definition: it is a **host-side persist of the host's own state**
   and may only be reached from inside an action body. No guard was added inside it — by the time it
   runs the wrong array is already in hand, so a guard would police the symptom.
@@ -421,7 +421,8 @@ fetches its own). `projectIcons` is still filled only at boot.
     calls the action instead of writing `refreshSettings.value` directly; the host's existing deep
     `watch` persists to its localStorage and the change mirrors back.
   - **Global note** → `noteContent` moved from the composable into `store/noteStore.js` (so it mirrors
-    H→C); `noteStore.saveNote` is the C→H action that mutates it + `write_global_note` on the host.
+    H→C); `noteStore.applyGlobalNoteEdit` is the C→H action that mutates it + `write_global_note` on
+    the host, patching only the fields present so a content-only save never touches the task list.
     `useGlobalNote` re-exports `noteContent` (importers unchanged) and keeps the transient
     `showGlobalNote`/`noteSaving`/debounce clicker-local.
 - **REVIEW (product call, documented not guessed)** — `toggleRemote` (companion toggling the server

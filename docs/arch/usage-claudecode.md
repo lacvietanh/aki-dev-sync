@@ -36,7 +36,8 @@ Chỉ hoạt động với tài khoản Claude.ai Pro/Max (API key thường kh�
 {
   "rate_limits": {
     "five_hour": { "used_percentage": 42, "resets_at": 1782034800 },
-    "seven_day": { "used_percentage": 18, "resets_at": 1782288000 }
+    "seven_day": { "used_percentage": 18, "resets_at": 1782288000 },
+    "seven_day_opus": { "used_percentage": 61, "resets_at": 1782288000 }
   },
   "cwd": "/home/user/project",
   "transcript_path": "/home/user/.claude/projects/..."
@@ -44,6 +45,13 @@ Chỉ hoạt động với tài khoản Claude.ai Pro/Max (API key thường kh�
 ```
 
 `resets_at`: Unix epoch giây, UTC. `used_percentage`: phần trăm đã dùng trong cửa sổ tương ứng.
+(Từ v5 mỗi entry còn được stamp `seen_at` phía hook - xem §3.)
+
+**`rate_limits` là một map MỞ, không phải một cặp cố định.** Anthropic đã thêm các bucket theo model
+(`seven_day_opus`, `seven_day_sonnet`, `seven_day_oauth_apps`) và có thể thêm nữa bất cứ lúc nào.
+Danh sách bucket cộng đồng biết tới, kèm phần nào là chính thức phần nào không:
+`docs/ref/claude-quota-buckets.md`. Không chỗ nào trong pipeline được hardcode số lượng bucket  - 
+xem §4.1.
 
 Pool quota Pro/Max **dùng chung** cho claude.ai web, Desktop, mobile, Cowork và Claude Code  - 
 nên con số này đã bao gồm mọi hoạt động, không riêng CC.
@@ -75,7 +83,7 @@ qua `usageMonitorRegistry.getMonitor()`. Vì máy là một nửa định danh c
 được, "Claude Code trên host A" và "Claude Code trên host B" là hai thực thể tồn tại song song - theo
 dõi hai host cùng lúc, mỗi host một tài khoản. Mỗi monitor có công tắc riêng, lưu theo id trong
 `store/usageMonitorStore.js`, độc lập với sync check - xem `docs/feat/sync-check-and-usage-switches.md`
-và `docs/plan/usage-monitor-entity-refactor.md`.
+và `docs/plan/done/usage-monitor-entity-refactor.md`.
 
 ### Mọi SSH theo timer đi qua `polling_ssh()`
 
@@ -175,7 +183,7 @@ Khi `rateLimitTier` mang giá trị `default_claude_ai` (cắt ra `ai`), UI tự
 
 | Trạng thái | Khi nào | UI |
 |---|---|---|
-| `data` | Cache đọc được, mốc reset còn ở tương lai | Vòng tròn % + mốc reset |
+| `data` | Cache đọc được, mốc reset còn ở tương lai | Một thanh % + mốc reset **cho mỗi bucket** |
 | `cached` | Đã qua mốc reset, chưa có turn CC mới | Số đo cuối + nhãn thời điểm + `Waiting for next Claude Code session` |
 | `empty` | Chưa từng đọc được cache | Dòng trạng thái |
 | `off` | Monitor bị tắt (per-monitor, theo `agentId@host`) | Dòng trạng thái |
@@ -186,6 +194,57 @@ khi có turn CC mới ghi cache.
 
 Trễ phát hiện reset ≤ một chu kỳ poll (mặc định 30s). Đã cân nhắc đặt timer đúng tại
 `resets_at + 2s` và **chủ động không làm**: thêm phức tạp để tiết kiệm vài giây mỗi 5 giờ.
+
+### 4.1 Vẽ bucket theo kiểu tổng quát (quy tắc bất biến)
+
+`AgentUsage.vue` **không** liệt kê tên bucket trong template. Nó `v-for` qua computed `ccBuckets`,
+dựng từ chính `data.rate_limits`:
+
+- **Lọc**: chỉ nhận entry có `used_percentage` là số hữu hạn. `null`/thiếu/hỏng bị bỏ im lặng - một
+  bucket `null` nghĩa là "gói này không có giới hạn đó", không phải lỗi, nên vẽ một thanh `N/A` cho
+  nó là sai thông tin.
+- **Thứ tự**: `five_hour` → `seven_day` → các weekly theo model đã biết theo đúng thứ tự
+  `seven_day_opus`, `seven_day_sonnet`, `seven_day_fable`, `seven_day_mythos`,
+  `seven_day_oauth_apps` → key lạ, sắp theo alphabet (để một bucket chưa từng thấy luôn rơi xuống
+  đáy một cách tất định, không nhảy chỗ giữa hai lần poll).
+- **Nhãn** (bảng alias `CC_BUCKET_LABELS`):
+
+  | key | nhãn |
+  |---|---|
+  | `five_hour` | `5-Hour` |
+  | `seven_day` | `7-Day` |
+  | `seven_day_opus` | `7-Day Opus` |
+  | `seven_day_sonnet` | `7-Day Sonnet` |
+  | `seven_day_fable` | `7-Day Fable` |
+  | `seven_day_mythos` | `7-Day Mythos` |
+  | `seven_day_oauth_apps` | `7-Day OAuth apps` |
+
+  Key lạ có tiền tố `seven_day_`/`five_hour_` được viết lại thành `7-Day X`/`5-Hour X` (X Title
+  Case); còn lại là Title Case cả key (`foo_bar` → `Foo Bar`). Không bao giờ in key thô.
+- **Hai đặc thù chỉ áp cho `five_hour`, giữ nguyên**:
+  1. `five_hour.resets_at == seven_day.resets_at` → coi mốc reset của **5h** là không rõ (`null`),
+     rơi về trạng thái `N/A` sẵn có. Claude báo trùng khi cửa sổ 5h nằm im ở 0%.
+  2. Pool weekly **dùng chung** (`seven_day`) đạt 100% → làm mờ thanh 5h (bỏ khỏi thang màu, giữ
+     tooltip). Bucket theo model **không** làm mờ ai và **không** bị ai làm mờ: chúng là pool riêng,
+     một tuần Opus cạn không nói gì về cửa sổ 5h. Đây là quy tắc bán kính vụ nổ trong `CLAUDE.md`.
+- **Không thêm DOM nào ngoài cấu trúc thanh sẵn có** (`.cc-bar-label` + `.cc-progress-track`) - với
+  dữ liệu 2 bucket hôm nay, card render y hệt trước refactor (nguyên tắc Extreme Narrow).
+
+Timer dò qua mốc reset (`@retry` mỗi 60s) vẫn chỉ bám `five_hour`: đó là cửa sổ duy nhất quay vòng
+đủ dày để một lần refetch phía client có giá trị, và cũng đúng bucket mà hợp đồng `STALE_RESET`
+phía script được viết theo. `usageMonitor.js` cũng vì vậy chỉ lấy `five_hour` làm mốc stale (log thì
+enumerate mọi bucket).
+
+### 4.2 Quota lớp Fable 5 / Mythos 5 (ảnh chụp 07/2026)
+
+- **Max**: Fable 5 rút từ chính pool `seven_day` **dùng chung**, trần 50% của pool đó. **Chưa có
+  bucket riêng** - không có `seven_day_fable` trong payload hôm nay.
+- **Pro**: chỉ dùng qua credit mua thêm, không nằm trong gói.
+- Nếu/khi `seven_day_fable` xuất hiện, **UI không cần sửa gì** - nhãn đã có sẵn trong bảng alias và
+  §4.1 tự nhận bucket mới. Đó chính là lý do tồn tại của refactor này.
+
+Nguồn: https://support.claude.com/en/articles/15424964-claude-fable-5-on-your-plan ·
+https://www.anthropic.com/news/claude-fable-5-mythos-5
 
 ### Circuit breaker
 
@@ -223,6 +282,9 @@ Vi phạm bất kỳ mục nào là tái diễn một bug đã trả giá. Chi t
    `( set -o pipefail ) 2>/dev/null && set -o pipefail`. Có `scripts/lint-remote-scripts.js` gác.
 5. **Mọi lệnh `claude` chạy xa phải bound tại chỗ**, không dựa vào cắt SSH.
 6. **Thao tác nhanh và chậm không dùng chung ngân sách thời gian.**
+7. **Không hardcode số lượng/tên bucket `rate_limits` ở bất kỳ tầng nào.** Parse như map mở, vẽ như
+   danh sách (§4.1). Schema này đã đổi hình 4 lần trong 7 tuần; mọi chỗ đếm cứng "2 bucket" là một
+   lần mất dữ liệu im lặng đang chờ xảy ra.
 
 ## 6. Điểm mù đã biết, chấp nhận có chủ đích
 
@@ -255,7 +317,8 @@ Format: `[YYYYMMDD.HHMMSS.mmm][TAG] event key=value`.
 | `scripts/lint-remote-scripts.js` | Gác bashism trong script gửi qua SSH |
 | `src/composables/usageMonitor.js` | Một monitor: poll, circuit breaker, wake self-heal |
 | `src/composables/usageMonitorRegistry.js` | Multiton `agentId@host` - định danh monitor |
-| `src/components/AgentUsage.vue` | Trạng thái hiển thị |
+| `src/components/AgentUsage.vue` | Trạng thái hiển thị, `ccBuckets` (§4.1) |
+| `docs/ref/claude-quota-buckets.md` | Danh sách bucket đã biết của schema OAuth usage |
 
 ## 9. Tham chiếu ngoài
 

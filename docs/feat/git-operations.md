@@ -59,18 +59,25 @@ A strict policy is maintained to avoid bloating the global sync log while retain
 To avoid thin Rust command bloat, Git commands run through a single unified execute command with macOS bundle compatibility:
 
 ### 1. Unified Rust Executor
-- Located in `src-tauri/src/git.rs` as `run_git_command(local_path, args)`:
+- Located in `src-tauri/src/git.rs` as `run_git_command(local_path, args)`. It is `async fn`, and the actual `git` subprocess call runs inside `tauri::async_runtime::spawn_blocking` (per CLAUDE.md's never-block-UI rule) — a blocking subprocess wait must never sit on the command-dispatch thread, or a slow/dead remote would freeze the whole window for however long git takes:
   ```rust
   #[tauri::command]
-  pub fn run_git_command(local_path: String, args: Vec<String>) -> Result<String, String> {
-      let path = Path::new(&local_path);
-      let out = create_command("git")
-          .current_dir(path)
-          .args(&args)
-          .output()
-          // ...
+  pub async fn run_git_command(local_path: String, args: Vec<String>) -> Result<String, String> {
+      tauri::async_runtime::spawn_blocking(move || {
+          let path = Path::new(&local_path);
+          if !path.exists() {
+              return Err("Path does not exist".to_string());
+          }
+          let out = create_command("git")
+              .current_dir(path)
+              .args(&args)
+              .output()
+              .map_err(|e| format!("Failed to execute git: {}", e))?;
+          // ... stdout/stderr -> Ok/Err
+      }).await.map_err(|e| format!("Task error: {}", e))?
   }
   ```
+- `get_git_info` and `get_file_conflict_info` (also in `git.rs`) follow the identical `async fn` + `spawn_blocking` pattern — CLAUDE.md names all three as the canonical correct example to copy for any new command that touches a subprocess or the network.
 - Uses `create_command` from `system.rs` to dynamically inject the correct environment `PATH` (such as `/opt/homebrew/bin:/usr/local/bin`), preventing execution failures when running from standalone macOS GUI bundles.
 
 ### 2. Frontend Compositions (JS)

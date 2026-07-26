@@ -37,7 +37,28 @@ sequenceDiagram
 The feature is split into backend extraction and frontend comparison to avoid CORS issues and environment variable inconsistencies in macOS app bundles.
 
 ### 1. Backend Extraction (Rust)
-- The Tauri command `check_for_updates` is registered as a synchronous command so that Tauri executes it in its thread pool, keeping the main JS thread fully responsive.
+- The Tauri command `check_for_updates` is `async fn`, and the blocking `curl` wait runs inside `tauri::async_runtime::spawn_blocking` (per CLAUDE.md's never-block-UI rule) so a hung/slow network on app launch cannot freeze the window:
+  ```rust
+  #[tauri::command]
+  pub async fn check_for_updates() -> Result<String, String> {
+      tauri::async_runtime::spawn_blocking(|| {
+          let out = create_command("curl")
+              .args(&[
+                  "-s",
+                  "--connect-timeout", "5",
+                  "--max-time", "15",
+                  "-H", "User-Agent: aki-dev-sync",
+                  "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest"
+              ])
+              .output()
+              .map_err(|e| format!("Failed to check for updates: {}", e))?;
+          // ... success -> stdout, failure -> stderr (or a generic network-error message)
+      })
+      .await
+      .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+  }
+  ```
+- The `--connect-timeout 5 --max-time 15` flags bound the request on both ends: `spawn_blocking` keeps a hung request off the UI thread, but without a timeout it would still pin one OS thread forever, and this command runs on every app launch.
 - It executes `curl` to fetch release info from GitHub's API:
   `https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest`
 - Uses `create_command` (defined in `system.rs`) to inject correct path environments (e.g. `/opt/homebrew/bin:/usr/local/bin`), preventing `executable not found` errors when running the application as a standalone GUI macOS bundle.

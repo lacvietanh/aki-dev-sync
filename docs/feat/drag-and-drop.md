@@ -12,8 +12,8 @@ Tài liệu chi tiết về tính năng kéo thả trực quan (Live Sorting) đ
 - Khi người dùng thả chuột (kết thúc hành động drag), vị trí mới được ghi đè trực tiếp xuống file cấu hình `projects.json` trên đĩa thông qua Rust Command `save_projects` để lưu lại vĩnh viễn.
 
 ### 2. Thiết kế Spacing Nhất quán và Khoa học (Đồng bộ Grid bằng CSS Variables)
-- **Đồng bộ cột bằng CSS Variables:** Để tránh lệch cột giữa `.grid-header` và các `.grid-row` khi nội dung thay đổi, ứng dụng sử dụng CSS Variables `--grid-cols: 13.5rem 5rem 3.8rem 1fr;` định nghĩa một lần duy nhất tại container cha. Cả header và row đều kế thừa biến này để áp dụng cho `grid-template-columns`, đảm bảo tất cả các cột được xếp thẳng hàng tăm tắp với pixel-perfect.
-- **Dùng Grid Gap theo rem:** Sử dụng `--grid-gap: 0.5rem` (Desktop) và `--grid-gap: 0.25rem` (Dưới 800px) kết hợp với `column-gap` giúp quản lý khoảng cách giữa các cột một cách hệ thống, nhất quán và khoa học mà không cần chắp vá padding hay margin cục bộ.
+- **Đồng bộ cột bằng CSS Variables:** Để tránh lệch cột giữa `.grid-header` và các `.grid-row` khi nội dung thay đổi, ứng dụng sử dụng CSS Variables `--grid-cols: 12rem 2.5rem 2.5rem 2.5rem 7rem 1fr;` định nghĩa một lần duy nhất tại container cha (`.projects-table-container`, `ProjectTable.vue`). Cả header và row đều kế thừa biến này để áp dụng cho `grid-template-columns`, đảm bảo tất cả các cột được xếp thẳng hàng tăm tắp với pixel-perfect.
+- **Dùng Grid Gap theo rem:** Sử dụng `--grid-gap: 0.5rem` (Desktop) và narrow mode (`<=700px`, breakpoint dùng chung toàn app) thu cả `--grid-cols` (`6.5rem 2.1rem 1.9rem 2.5rem 4.2rem 1fr`) lẫn `--grid-gap: 0.4rem` kết hợp với `column-gap` giúp quản lý khoảng cách giữa các cột một cách hệ thống, nhất quán và khoa học mà không cần chắp vá padding hay margin cục bộ.
 - **Căn lề trục dọc nhất quán:** Tất cả tiêu đề cột và nội dung hiển thị đều được căn lề trái (`text-align: left`) tạo nên trục dọc gọn gàng và khoa học.
 
 ---

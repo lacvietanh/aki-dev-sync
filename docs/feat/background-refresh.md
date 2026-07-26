@@ -75,7 +75,7 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 **Trigger:** A monitor starts when it is switched on (default ON) and stops when switched off, keeping its last reading on screen as *Cached*. Polls every 30s. Monitors are session-lived - deliberately not torn down on component unmount, since they outlive whichever slot first asked for them.
 
-**Implementation:** `usageMonitor.js` (the entity) + `usageMonitorRegistry.js` (identity) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_interpreter_timeout` (renamed from `run_remote_script_timeout` in 1.12.0) via `is_local_host(host)`. Design rationale: [docs/plan/usage-monitor-entity-refactor.md](../plan/usage-monitor-entity-refactor.md).
+**Implementation:** `usageMonitor.js` (the entity) + `usageMonitorRegistry.js` (identity) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_interpreter_timeout` (renamed from `run_remote_script_timeout` in 1.12.0) via `is_local_host(host)`. Design rationale: [docs/plan/done/usage-monitor-entity-refactor.md](../plan/done/usage-monitor-entity-refactor.md).
 
 **Planned interval:** 30s (current) - acceptable since it's a single lightweight read.
 

@@ -40,14 +40,14 @@ Later changes extended the same shape rather than adding new mechanisms:
   `aki-src-cclocal-enabled`, `aki-src-ccremote-enabled`, `aki-src-agremote-enabled`) are now only a
   one-time legacy seed (`usageMonitorStore.js`'s `seed()`); the two remote ones resolve against
   whichever host was selected at seed time - the only host they could ever have described. See
-  `docs/plan/usage-monitor-entity-refactor.md`.
+  `docs/plan/done/usage-monitor-entity-refactor.md`.
 
 ## What `syncCheckEnabled` gates
 
 | Area | File | Mechanism |
 |---|---|---|
 | PUSH / PULL / SELECT buttons | `src/components/ProjectTable.vue` | `:disabled="... || !syncCheckEnabled"` |
-| Open popup's remote IDE section | `src/components/ProjectTable.vue` | `v-if="p.remote_host && p.remote_path && syncCheckEnabled"` - the whole "☁️ REMOTE (SSH)" block disappears, not just individual items |
+| Open popup's **Upload (select files)** item only | `src/components/ProjectTable.vue` | `popup-disabled` + a tooltip naming the switch. The "☁️ REMOTE (SSH)" block itself renders on `v-if="p.remote_host && p.remote_path"` alone: SSH Terminal, the VSCode/Antigravity Remote entries and COPY are ways to *reach* the server, not rsync traffic, so the switch no longer hides them (it used to hide the whole block) |
 | Manual + background remote-diff checks | `src/composables/useSyncStatus.js`, `src/composables/useBackgroundRefresh.js` | `checkProjectSyncStatus()` early-returns `if (!syncCheckEnabled.value) return` (covers the Refresh button and any direct call). The background diff timer goes further than a no-op: `restartDiffTimer()` doesn't create its `setInterval` at all while off, and a `watch(syncCheckEnabled, ...)` tears down/rebuilds the timer on every toggle (running one check immediately on re-enable). Turning off also calls `bumpEpoch()` (`src/store/projectStore.js`) for every project, discarding any diff check already in flight and clearing its busy indicator immediately rather than waiting for that now-irrelevant call to resolve - see "Per-project busy state and cancellation" below |
 | Sync mutation boundary | `src/composables/useSync.js` | `startSync()` early-returns with a warning Toast - a defensive guard at the actual mutation boundary, in case some future caller bypasses the UI-level disables |
 

@@ -1,8 +1,8 @@
 # In-app terminal — feature
 
-A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/plan/remote-views-roadmap.md` § Terminal View.
+A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/plan/remote-views-roadmap.md` § Terminal View.
 
-> **Status:** built in 1.20.0. The first build was run on a Mac and hit three defects — a terminal that rendered tiny in a corner, a shell that froze silently when it exited, and no session controls at all; all three are fixed in the same 1.20.0 entry (it was never tagged, so it was not split into a follow-up version). Everything here now compiles and passes the unit suite on this Mac (`cargo check` clean, `cargo test --lib` 77/77); what remains open is live runtime behaviour — see "What is still unverified" at the bottom.
+> **Status:** built in 1.20.0, extended to multiple tabs (per-tab PTY sessions, tab strip, dock split into two collapsible stacks) in a later pass documented in the "Tabs" section below, then to scoped **terminal groups** (this doc's current shape) — see "Groups" below and `docs/arch/terminal-stack.md` for the architecture. The first build was run on a Mac and hit three defects — a terminal that rendered tiny in a corner, a shell that froze silently when it exited, and no session controls at all; all three are fixed in the same 1.20.0 entry (it was never tagged, so it was not split into a follow-up version). Everything here now compiles and passes the unit suite on this Mac (`cargo check` clean, `cargo test --lib` 77/77); what remains open is live runtime behaviour — see "What is still unverified" at the bottom.
 
 ## Why it exists
 
@@ -14,7 +14,7 @@ It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a r
 
 | | |
 | :-- | :-- |
-| **Sessions** | Exactly **one**, shared. Typing on the Mac and typing on the phone both land in the same shell; both screens show identical output. Reaching *the terminal you are already using* was the point — a second shell with its own cwd and history would not have been. |
+| **Sessions** | One PTY **per tab**, all shared across screens. Typing on the Mac and typing on the phone both land in the same shell for a given tab; both screens show identical output for that tab. Reaching *the terminal you are already using* was the point of the single-session design this grew from — tabs add more than one of those shared shells, not a private one per screen. |
 | **Echo** | Neither screen echoes a keystroke locally. The PTY is the single source of truth for what is displayed, exactly like every other piece of state in this app. |
 | **Resize** | The **Mac is the sole resize authority.** A PTY has one `(cols, rows)`; if a phone could set it, a 40-column phone viewport would reshape the Mac's build output mid-stream. The phone fits its own rendering box locally, but its terminal is resized only by the authoritative size echoed from the host. |
 | **Spawn** | Lazy and idempotent. The first screen to open the tab spawns the shell; every later call from either screen is a no-op. That is how "one shared PTY" is enforced without an ownership handshake. |
@@ -23,18 +23,81 @@ It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a r
 | **Shell** | A **login shell** (`$SHELL -l`, `TERM=xterm-256color`). Without `-l` the shell skips `.zprofile`/`.bash_profile`, so nvm/rbenv/`path_helper` never run and this terminal would have a different `PATH` from every `Terminal.app` window on the machine — a silent difference that costs an hour to diagnose the first time it bites. |
 | **Death** | Real state, not an absence of state. When the shell exits — by `exit`, by crashing, by KILL — the host retires the session, prints `[process exited]` into the scrollback and emits `pty-exit`; every screen turns the tab header red and lights RESTART. Typing anything into a dead terminal respawns it. |
 
-## Session controls
+## Groups
 
-They live in the console panel header that already exists, not in a toolbar of their own (Extreme Narrow). All four work identically from the phone, since they route through the `invoke` seam.
+A **group** is a set of tabs that share one identity: either one project, or the **global** group
+(not tied to any project). Two ways to enter one:
 
-| | |
+- A project row's `TERM` cell — switches the stack to that project's group and reuses its
+  last-active tab, or opens a fresh one already `cd`'d into that project's directory if the group
+  is currently empty.
+- The `TERM` column **header** icon — the same entry point for the **global** group.
+
+The stack header always shows which group you are in: a project icon (or a plain terminal glyph for
+global) plus a 4-character name (`TERM` for global). The tab strip next to it is that group's tabs
+only — chips from other groups are not shown, but they still exist and keep running; switching
+groups never re-spawns or loses any shell's scrollback. `+` opens a new tab **in the current group**;
+a chip's ✕ kills that one shell.
+
+`⌘T` / `⌘W` / `⌘⇧[` / `⌘⇧]` all act **within the current group only** — ⌘T in a project's group opens
+a shell already `cd`'d into that project, ⌘⇧[ / ⌘⇧] cycle only that group's tabs, and ⌘W closes only
+the active tab of the group you are looking at.
+
+**CLOSE** (the panel header's one right-side button, replacing the old chevron-only affordance)
+hides the whole panel — every shell keeps running untouched. Re-open it via the same button (now
+reading EXPAND), any project's `TERM` cell, the header terminal icon, or the OPEN popup's **In-App
+Terminal** item.
+
+**The `TERM` cell's two badges**, honestly labelled by what they can and cannot know:
+
+- **Top (cyan, red if one has exited)** — how many in-app tabs exist in that project's group right
+  now. Turns red the moment any one of them has exited; the count itself does not change (a dead
+  shell is still a tab until you close it or a new command respawns it).
+- **Bottom (slate)** — how many **external** `Terminal.app` windows/tabs are standing in that
+  project's directory **right now**. A live count, not a tally: open a window and it rises, close
+  that window and it falls back within a tick.
+
+  *Mechanism.* The host runs `count_external_terminals` (`src-tauri/src/system.rs`) every **5 s**,
+  plus once ~800 ms after the app itself opens a Terminal window so the badge moves immediately.
+  One scan is three short local subprocesses: `pgrep -x Terminal` (absent → every count is 0), one
+  `ps -axo pid=,ppid=` to walk Terminal's whole descendant tree, and one batched
+  `lsof -a -d cwd -p <pids> -F pn` (capped at 200 pids) for their working directories. The counting
+  rule is **roots of matching subtrees**: a process counts only if its cwd is the project directory
+  *and its parent's cwd is not* — so one window running `npm run dev` (shell → npm → node, all
+  sharing the cwd) counts once, not three times, without having to know which executables are
+  shells. Match is **exact** in v1: a shell in `<project>/src` does not count.
+
+  Host-only. The scan needs `Terminal.app`'s process tree, which exists only on the Mac; the
+  companion never polls, it receives the snapshot (`externalTermCounts`) over the state mirror.
+
+**Moved / removed vs. the old single-panel version:**
+
+| Old | Now |
 | :-- | :-- |
-| **CLEAR** | Wipes the **host's** ring buffer, not just the local screen, and broadcasts a reset. A purely local clear looks broken: the output comes straight back on the next reconnect, and the other screen never clears at all. |
-| **RESTART** | Kill + wipe + fresh login shell, as one gesture. Safe to spam — see the generation counter below. |
-| **KILL** | Ends the shell and leaves the terminal in the same exited state a voluntary `exit` produces. Nothing downstream special-cases it. |
-| **OPEN** | Hands the shell's **current** directory (read via `lsof` — macOS has no `/proc`) to `Terminal.app`. The point is to hand off where you are standing, not where you started. Falls back to `$HOME` if the cwd cannot be read. |
+| KILL (active tab) | The tab chip's own ✕. |
+| RESTART (active tab) | ✕ the tab, then `+` a new one — two clicks, same directory. |
+| CLEAR (host scrollback) | Dropped from the UI entirely. A fresh tab starts with empty scrollback; `clear` inside the shell clears the visible screen. |
+| OPEN (active shell → `Terminal.app`) | The OPEN popup's **Terminal** item, per project — the same funnel that pokes the external-window scan. A global-group shell with no project has no replacement for this. |
+| The old external-terminal button on the `TERM` cell | Same OPEN popup item. |
+| `< 2 tabs` plain "TERMINAL" / "TERMINAL - EXITED" title | Group identity (icon + name), always shown, plus each chip's own exited tint. |
 
-Each project's OPEN popup also carries **In-App Terminal**, which opens this tab and `cd`s the shared shell into that project. It sits above the existing `Terminal.app` item because it is the only one of the two that does anything from a phone. The path is single-quote escaped (`'\''`), so a directory containing spaces, quotes or `$` cannot break out into command execution.
+## In-App Terminal from the OPEN popup
+
+Each project's OPEN popup carries **In-App Terminal**, which switches to that project's group and reuses/creates its tab exactly like clicking the `TERM` cell — it sits above the existing `Terminal.app` item because it is the only one of the two that does anything from a phone. The path is single-quote escaped (`'\''`), so a directory containing spaces, quotes or `$` cannot break out into command execution.
+
+## Tabs
+
+The dock is now two independently collapsible stacks — `TerminalStack` above `LogStack` (`src/components/DockStack.vue`) — rather than one panel with LOG/TERMINAL tabs. Each stack owns its own collapse ref and hands it to `DockStack`. Collapsing the log stack shrinks it to one live line (the latest log message); collapsing the terminal stack shows only its header. Each stack's collapse state is per-screen, matching every other dock decision above.
+
+**Backend.** `src-tauri/src/pty.rs` keys every piece of session state by a `TabId` (`u32`): `sessions`, `inputs`, `scrollbacks` are each a `HashMap<TabId, _>` instead of a singleton, and `min_accepted` (the generation-fencing floor) is a **per-tab** map — a single global floor would let retiring one tab's generation fence off a still-live generation in another tab. Every command takes an `Option<u32> tab_id` defaulting to tab 0, which is the backward-compatibility seam: a companion running an older frontend build that never sends `tab_id` keeps landing on exactly the session it always drove. The one exception is `pty_close_tab`, whose `tab_id` is **required** — a defaultable "close" is exactly the accidental-blast-radius shape the multi-entity regression guard forbids. `pty_list_tabs()` returns `{id, alive}` per tab so a reloaded frontend can re-adopt shells the backend kept running. A `MAX_TABS = 8` cap bounds the real resource cost (each live tab is a shell process plus three raw threads).
+
+**Wire format.** No new frame types — `pty_output` / `pty_input` / `pty_resize` / `pty_exit` all now carry `tab_id` (default 0). This matters because the relay (`web_server.rs`) coalesces `pty_output` frames under congestion by tag alone, content-blind — without `tab_id` on every frame, a coalesce could silently land tab A's bytes in tab B's xterm. The relay itself needed no change; it only ever read `t`, not the payload shape.
+
+**Resync.** `pushScrollback()` became `pushAllScrollbacks()` in `src/services/ptyBridge.js`: on a fresh companion connect or a scheduled resync, it calls `pty_list_tabs()` then replays every tab's scrollback, not just tab 0's — the same congestion that forces a resync would otherwise leave every tab past the first silently un-replayed on the device that just reconnected.
+
+**Frontend.** `usePtyTerminal(term, tabId)` takes a tab id and filters both its Tauri-event and companion-frame listeners by it (`if ((payload.tab_id ?? 0) !== tabId) return`) — one listener is wired per mounted `TerminalView`, and every one of them otherwise receives every tab's bytes. Liveness is now three-state (`'unknown' | true | false`): a fresh mount or a failed invoke sets `'unknown'`, never `false`, so a terminal never paints its header red before a real exit is confirmed — the "TERMINAL - EXITED" false-positive flash this replaced. `terminalTabsStore.js` holds the shared tab list (mirrored, since which tabs exist is genuinely cross-screen state); `useTerminalTabs.js` holds the per-screen liveness map and "has this tab ever been shown" bookkeeping locally, never mirrored, since each screen's PTY event stream is its own. Closing a tab (`closeTerminalTab`) splices exactly one entry and tells the backend to drop that one tab's session + scrollback (`drop_tab_state`) — every other tab's shell and scrollback survive untouched. The floor is now **scope-aware** (see "Groups" above): the global group never drops below one tab, but a project's group may empty out entirely — it simply stops existing until its `TERM` cell is clicked again.
+
+**On-screen key row.** Now companion-only (`showKeyRow: !isHost` in `usePtyTerminal.js`) — the Mac has a real keyboard and never needs it; only a paired phone does.
 
 ### Restart cannot orphan or clobber a session
 
@@ -56,7 +119,11 @@ Ordinary typing needs nothing special — xterm.js's hidden textarea turns the o
 
 One slim row of icon buttons covers what a phone keyboard cannot produce:
 
-**Esc · Tab · Ctrl (sticky: tap Ctrl, then tap C) · ↑ ↓ ← → · Enter**
+**Esc · Tab · Shift (sticky) · Ctrl (sticky: tap Ctrl, then tap C) · ↑ ↓ ← → · Enter**
+
+Sticky Shift (`armShift`/`shiftArmed` in `usePtyTerminal.js`, same armed styling as Ctrl) modifies the *next key-row button press*, not the next typed character — unlike Ctrl, which arms the next real keystroke via `term.onData`. Tab becomes `\x1b[Z` (backtab — Claude Code and other AI agents use Shift+Tab constantly for mode cycling); the arrows become CSI modifier-2 sequences (`\x1b[1;2A/B/C/D` for Up/Down/Right/Left). Enter/Esc and anything else pass through unaffected, and Shift disarms after any key-row press regardless of whether that key had a shift variant. Ctrl and Shift are independent: Ctrl still only ever affects a following typed letter, so "Ctrl wins for letters" is unchanged, and arming both before tapping Tab sends Shift+Tab.
+
+Directly under the key row sits a compose input: a plain `<input type="text">` + a send button. Typing (voice dictation, the Telex IME) composes there instead of keystroke-at-a-time into xterm; Enter or the send button does `sendRaw(text + '\r')`, clears the field, and keeps focus in it so consecutive commands can be typed without re-tapping.
 
 Deliberately not there: function keys, Alt/Meta, a configurable key row. None are load-bearing for driving a build or a dev shell.
 
@@ -89,7 +156,7 @@ Opening the terminal from a paired device adds **no extra confirmation step**, a
 
 ## Not in this version
 
-- Multiple tabs or sessions, and split panes.
+- Split panes (multiple tabs within one PTY-per-tab model are covered above — a split pane would be more than one *view* onto one tab, which is a different feature).
 - Font / theme / shell-profile configuration (the theme is hardcoded to the app's own CSS tokens).
 - Search addon, web-links addon, ligatures.
 - SSH-into-a-remote-host inside this view.

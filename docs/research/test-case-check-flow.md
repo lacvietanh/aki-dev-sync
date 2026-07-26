@@ -2,7 +2,7 @@
 
 > **Phương pháp:** 98 use case do người dùng thật sẽ gặp, mỗi case được dóng ngược vào code —
 > UI → composable/store → IPC → Rust → về — chứ không chạy app. Mọi khẳng định kèm `file:line`.
-> Đây là **static trace**, không thay thế kiểm thử runtime trên Mac (xem `docs/plan/1.20.0-terminal-and-remote-sync.md` §6).
+> Đây là **static trace**, không thay thế kiểm thử runtime trên Mac (xem `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §6).
 >
 > **Ngày:** 2026-07-26 · **Base:** commit `f67eaa0` (release 1.20.0, chưa tag)
 > **Phạm vi:** A sync/project (18) · B usage monitor (20) · C remote control (20) · D terminal (20) · E vỏ app (20)

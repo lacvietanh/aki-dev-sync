@@ -5,11 +5,17 @@ Một menu popup tập trung giúp hợp nhất các thao tác mở dự án Loc
 ## Chức năng chính
 
 ### 1. Unified Trigger (Nút OPEN)
-- Menu được kích hoạt khi người dùng **hover** (rê chuột) hoặc **click** vào vùng chứa nút `OPEN` ở cột ACTIONS của danh sách dự án.
-- Sử dụng delay timer 150ms để chống chớp tắt liên tục khi rê chuột, giữ trải nghiệm mượt mà.
-- Popup có logic tính toán vị trí động:
-  - Mặc định thả xuống dưới.
-  - Tự động lật lên trên (bottom-up) nếu vị trí hiện tại gần cạnh dưới màn hình (cách đáy màn hình ít hơn 350px).
+- Visibility is driven by state (`.is-open` on the wrapper), not a CSS `:hover` rule: a phone
+  companion has no hover, so the popup - and everything only reachable through it - used to be
+  unreachable there.
+  - **Hover** opens it (unchanged on the Mac); moving the pointer away closes it again.
+  - **Tap / click** on the `OPEN` button toggles it and *pins* it: it then stays open until an Esc,
+    a pointerdown outside the popup, or another click on the same button.
+  - At most one popup is open app-wide.
+- A 150ms transition delay keeps a fast pointer pass from flickering the menu.
+- Position is computed on open (`position: fixed`, centred on the viewport, clamped to an 8px
+  margin) and stored in a **component-local** ref (`popupStyles`), never in `projectRuntime`: that
+  store is mirrored, so a hover on the Mac used to broadcast its own coordinates over the phone's.
 
 ### 2. Local IDE Targets
 Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
@@ -24,8 +30,17 @@ Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
   - **Tự động cấu hình Package Manager**: Quét lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) để tự chọn `pnpm`/`yarn`/`bun`/`npm`.
   - **Per-project override**: Có thể ghi đè lệnh DEV/BUILD cho từng project trong Project Settings ("RUN COMMANDS - LOCAL ONLY"). Để trống = dùng mặc định theo stack.
 
+**Missing local folder**: when `local_path_missing` is set (unmounted volume - the same flag that
+turns the GIT badge amber), every LOCAL item that consumes the path (Finder, In-App Terminal,
+Terminal, the three IDEs, DEV, BUILD) is dimmed with a "Local folder missing on disk" tooltip.
+**COPY stays enabled** - copying a path you are about to go fix is legitimate. DEV/BUILD are also
+guarded host-side (`ensure_local_dir` in `system.rs`), so they report an error instead of the old
+false "Command started in Terminal!".
+
 ### 3. Remote SSH Targets
-Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa:
+Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa. Cột này chỉ cần
+`remote_host` + `remote_path`; công tắc SYNC **không** ẩn cột nữa - nó chỉ khoá riêng
+**Upload (select files)** (xem `docs/feat/sync-check-and-usage-switches.md`):
 - **SSH Terminal:** Mở Terminal native, tự tạo script `osascript` kết nối SSH thẳng vào Server và cd vào thư mục project (`~` sẽ được tự động resolve thành `/home/user`).
 - **VSCode Remote (và Insiders):** Dùng URL Scheme `vscode://vscode-remote/ssh-remote+...` để điều hướng VSCode mở Remote Extension. Logic JS luôn xử lý ghép chuẩn xác URL (thêm `/` ở đầu absolute path nếu cần).
 - **Antigravity Remote:** Chạy CLI `antigravity-ide --remote` kết nối tới Server.
@@ -33,6 +48,12 @@ Với các project có cấu hình Remote, popup hiển thị thêm cột kết 
 ### 4. Dynamic IDE Availability
 - Bằng cơ chế IPC, ứng dụng tự động kiểm tra sự tồn tại của các app (`.app`) trong thư mục `/Applications` trên macOS (như Visual Studio Code, Antigravity IDE).
 - Các App/IDE chưa được cài đặt trên máy người dùng sẽ tự động bị chuyển sang trạng thái làm mờ (grayscale, độ trong suốt thấp) và khóa click `cursor: not-allowed` mà không báo lỗi câm (silent fail) khi gọi Command.
+- The check re-runs **every time the popup opens** (`refreshIdeAvailability`, three `Path::exists()`
+  probes), not once per `loadData` - installing or removing an IDE while the app runs is picked up
+  without a reload. A not-yet-loaded (`null`) result reads as **unavailable**, so an early click
+  cannot fire at an IDE we have not confirmed.
+- A remote path that cannot be resolved over SSH now raises an error Toast instead of launching a
+  `vscode://…/~/project` URI built from the unresolved path.
 
 ---
 
