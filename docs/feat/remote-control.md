@@ -137,6 +137,46 @@ is on shows it still on, with the same code (`get_companion_status()`).
   defaults to companion. See `docs/plan/done/remote-control.md` §9 (S-1) for why this replaced the
   originally-planned Rust init-script.
 
+## Backpressure — what happens when a phone cannot keep up
+
+A phone on a weak link cannot always drain what the Mac produces. A runaway command (`yes`, a noisy
+build) outruns it easily, and until 1.20.0 the queue toward each companion was unbounded — a real
+way to exhaust memory on a 16 GB machine. The producer must never be made to wait, though: blocking
+it would stall the PTY reader and, through it, the shell itself.
+
+The rule is therefore **bounded, and drop by kind rather than by age**:
+
+- Each companion has a **2 MB outbox**. Enqueue never blocks and never awaits.
+- Over budget → the **coalescible** backlog is dropped and the phone is flagged for re-sync. Once its
+  queue has genuinely drained, the host re-issues the existing `companion-connected` frame for that
+  device, which the normal join path answers with a full `init` plus a `reset` scrollback replay. No
+  new frame type, no timer: re-hydrating only on a drained queue is what keeps it self-limiting.
+- If what remains still exceeds the budget, the socket closes **1013** (case B4c above).
+
+| Frame | Coalescible? | Why |
+| :-- | :-- | :-- |
+| `pty_output` | **yes** — the only one | Its entire content *is* the host's scrollback ring buffer, which `pty_get_scrollback` returns verbatim. Dropping a run leaves a screen **behind**, never **wrong**. |
+| `init` / `delta` | never | A delta is the only record that a value changed. Making that correctness depend on a second thing succeeding is how a "safe" drop becomes a silently stale project list. |
+| dialogs | never | They ride inside `delta`, and are called out separately here because "it is just a delta" is exactly how a delete-confirmation would get dropped. |
+| `invoke_result` | never | Not present in any snapshot — dropping it turns a working call into a 20 s timeout. |
+| `pty_exit` / `pty_resize` | never | A lost liveness edge is the 1.20.0 terminal-`alive` bug. |
+| anything else | never | **Default-deny**, so a frame type added later is safe by construction. |
+
+`bridge.js` applies the same rule one hop earlier, refusing only `pty_output` while the socket's
+`bufferedAmount` is congested (1 MB high water, 128 KB low, latched so it cannot alternate).
+
+**Note the deliberate departure from content-blindness.** The relay otherwise forwards
+`Message::Text` verbatim. It now reads exactly one field — the top-level `t` — and only on frames
+already queued for a companion whose budget is blown, i.e. roughly one parse per 2 MB of overflow,
+never on the hot path. Recorded in the `web_server.rs` module header alongside the pre-existing
+`companion-connected` departure.
+
+**Logs are capped separately, at the store.** `logStore` keeps the last 2,000 lines per project and
+2,000 global, dropping from the head, and the mirror sends only newly appended lines with a cursor
+rather than re-encoding the whole log map per line. Before this, a 5,000-line rsync sent about twelve
+million lines of traffic to deliver five thousand. No "log truncated" row is shown: the panel
+scrolls, and a line count nobody asked for would cost a row (*UI Extreme Narrow*).
+
 ## Companion states — every case
 
 Exhaustive map of what a phone/browser can be doing and what it shows. `ready = isHost ||
@@ -163,6 +203,7 @@ pairing socket (`ws://<ip>:1421/ws?role=companion&token=…`).
 | B3 | Stale / revoked token, remote **on** | relay closes **4001** → token is **cleared** (ROBUST-1) → code-entry form, no reconnect loop on the dead credential. |
 | B4 | Remote control **off** on the Mac | relay closes **4002** → state `host-off` → token is **kept**, reconnect with backoff; the phone heals by itself the moment the Mac is switched back on. Until 1.20.0 this shared 4001 with B3, so switching off — or simply restarting the app — silently revoked every paired phone. The `enabled` check runs **before** the token check, so a switched-off server cannot be used as an oracle for whether a token is still live. |
 | B4b | `role=host` rejected | relay closes **4003**. Only the Mac's own webview can see this; it re-reads its per-process host token and retries. A companion never dials `role=host`. |
+| B4c | Phone fell too far behind to catch up | relay closes **1013** (Try Again Later) — a standard code, not an app one, so the phone takes the generic reconnect path and re-hydrates normally. Only reached when the backlog that remains after coalescing (see *Backpressure* below) still exceeds the budget, i.e. it is made of frames that may never be dropped. |
 | B5 | Relay unreachable (app closed / wrong IP) | WS errors or closes with a non-4001 code → `error`/`closed` → **code form still shown** with "No connection to the Mac — is the app running?"; auto-reconnect with backoff. |
 | B6 | Socket hangs at `connecting` (no TCP response) | **code form still shown** (this was the old trap — a token used to hide it and leave the user stuck on "Connecting…"). |
 | B7 | Was `open`, then dropped | `ready` flips false → dashboard unmounts → gate reappears with the form → backoff reconnect → on `open`, dashboard returns. |

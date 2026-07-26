@@ -56,10 +56,12 @@ Cùng thư mục với `projects.json`. Path chính xác được in vào DevToo
 
 ## Auto-truncate
 
-Khi file vượt **1 MB** lúc startup: giữ lại **512 KB** gần nhất, tìm newline boundary để không cắt giữa dòng, ghi đè file. Không tạo file `.old` - log cũ bị xóa hoàn toàn.
+Khi file vượt **1 MB**: giữ lại **512 KB** gần nhất, tìm newline boundary để không cắt giữa dòng, ghi đè file. Không tạo file `.old` - log cũ bị xóa hoàn toàn.
+
+Kiểm tra chạy **lúc startup và trong khi ghi**, không chỉ startup. Một phiên `--debug` dài không bao giờ restart, nên nếu chỉ kiểm lúc khởi động thì file cứ thế phình ra. Để không phải `stat` mỗi dòng, `append_line` đếm số byte đã ghi và chỉ kiểm khi vượt ngưỡng 64 KB kể từ lần kiểm trước.
 
 ```
-file > 1MB → keep last 512KB → trim to next newline → overwrite
+mỗi lần ghi → cộng dồn byte → qua 64KB thì kiểm → file > 1MB → giữ 512KB cuối → cắt tại newline → ghi đè
 ```
 
 ---
