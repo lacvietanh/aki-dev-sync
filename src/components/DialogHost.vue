@@ -34,6 +34,10 @@ watch(
       openId = null
       return
     }
+    // A *different* id here means either a brand-new dialog or the next one being promoted off
+    // dialogStore's queue after the previous was answered. Both are the same job: show `d`. On the
+    // screen that did NOT answer, its old Swal is still open — Swal.fire supersedes it and settles
+    // its promise as dismissed, which showDialog's stale-id guard below drops as a silent no-op.
     if (d.id === openId) return // already showing this exact dialog
     openId = d.id
     showDialog(d)

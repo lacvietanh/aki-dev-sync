@@ -10,12 +10,20 @@
 //   - `onFrame(cb)`   subscribe to every inbound app frame (mirror.js / intents.js consume this)
 //   - `connectionState` a ref other UI can read (Wave 2 pairing modal, connection dot, etc.)
 import { ref } from 'vue'
+// Deliberate exception to "utils/tauri.js is the only module that imports @tauri-apps/api/core":
+// that wrapper imports THIS module, so using it here would be a cycle at bootstrap — the exact
+// hazard REGISTRY-1 exists to prevent. The transport seam has to be able to ask the host process
+// one question (its relay host token) before the transport exists, so it takes the raw import and
+// never uses it on a companion (`isHost` guards the only call site).
+import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 import {
   REMOTE_PORT,
   FRAME_PING,
   FRAME_PONG,
   FRAME_INVOKE_RESULT,
   CLOSE_UNPAIRED,
+  CLOSE_SERVER_DISABLED,
+  CLOSE_HOST_ROLE_REJECTED,
   DEVICE_TOKEN_STORAGE_KEY,
 } from '../constants/protocol'
 
@@ -25,7 +33,10 @@ import {
 // host is the dangerous one). Nothing stamps the companion: absence of the marker IS the signal.
 export const isHost = typeof window !== 'undefined' && window.__AKI_ROLE__ === 'host'
 
-// 'idle' | 'connecting' | 'open' | 'closed' | 'unpaired' | 'error'
+// 'idle' | 'connecting' | 'open' | 'closed' | 'unpaired' | 'host-off' | 'error'
+//
+// 'unpaired'  — close 4001: this device's token was rejected. Drop it, ask for a code.
+// 'host-off'  — close 4002: remote control is off on the Mac. The token is fine; keep it and wait.
 export const connectionState = ref('idle')
 
 // Native asset scheme vs browser. Per ICON-1 (§7.0) icons now ride mirrored state
@@ -89,8 +100,36 @@ export function clearDeviceToken() {
   }
 }
 
+// The relay's process-local host secret (src-tauri/src/web_server.rs `RelayState::host_token`),
+// read once per page load from `get_companion_status`. `role=host` is refused without it, because
+// the peer address alone proves nothing: `tailscale serve` proxies the whole tailnet in through
+// 127.0.0.1, so a loopback test used to hand any tailnet peer the host role — letting it overwrite
+// the relay's `host_tx`, cut the real Mac's mirror and forge init/delta frames to every phone.
+// Minted per process, so it is never persisted and never valid after a restart.
+let hostRelayToken = ''
+let hostTokenPromise = null
+
+function fetchHostRelayToken() {
+  if (!hostTokenPromise) {
+    hostTokenPromise = tauriInvoke('get_companion_status')
+      .then((s) => {
+        hostRelayToken = (s && s.hostToken) || ''
+        if (!hostRelayToken) console.error('[bridge] host relay token missing from get_companion_status')
+      })
+      .catch((e) => {
+        console.error('[bridge] could not read the host relay token', e)
+      })
+      .finally(() => {
+        hostTokenPromise = null
+      })
+  }
+  return hostTokenPromise
+}
+
 function wsUrl() {
-  if (isHost) return `ws://127.0.0.1:${REMOTE_PORT}/ws?role=host`
+  if (isHost) {
+    return `ws://127.0.0.1:${REMOTE_PORT}/ws?role=host&token=${encodeURIComponent(hostRelayToken)}`
+  }
   const token = getDeviceToken()
   // Origin-relative on purpose: the page, `/ws` and `/pair` are ALWAYS served by the SAME axum
   // origin, so derive the socket from `location` rather than hardcoding a port. This is what makes
@@ -230,13 +269,29 @@ function scheduleReconnect() {
 }
 
 /** Open (or re-open) the one WS connection. Safe to call repeatedly — no-ops while already
- *  open/connecting. Auto-reconnects with backoff on an ordinary drop; does NOT auto-reconnect
- *  after a 4001 (unpaired) close — that needs a fresh token via `pairDevice()` first. */
+ *  open/connecting. Auto-reconnects with backoff on an ordinary drop AND on a 4002 (the Mac's
+ *  remote control is off — the token is still good, so waiting is the right move). The one close
+ *  it does NOT retry is 4001 (unpaired): that token is dead and needs `pairDevice()` first. */
 export function connect() {
   if (typeof window === 'undefined') return
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
 
   connectionState.value = 'connecting'
+
+  // The host needs its relay token before it can dial. One extra IPC round-trip on the very first
+  // connect only; every later reconnect reuses the cached value and takes the synchronous path, so
+  // a relay drop still self-heals at backoff speed.
+  if (isHost && !hostRelayToken) {
+    fetchHostRelayToken().then(() => {
+      if (hostRelayToken) openSocket()
+      else scheduleReconnect() // retry the read with backoff rather than dialing a doomed URL
+    })
+    return
+  }
+  openSocket()
+}
+
+function openSocket() {
   let socket
   try {
     socket = new WebSocket(wsUrl())
@@ -258,16 +313,30 @@ export function connect() {
   socket.addEventListener('close', (evt) => {
     clearPingTimers()
     rejectAllPending(new Error('bridge: connection closed'))
-    if (evt.code === CLOSE_UNPAIRED && !isHost) {
-      // §13.1: bad/absent token on a COMPANION. Surface "needs pairing" and do NOT auto-reconnect
-      // with the same (rejected) token — the pairing gate reads this state.
-      connectionState.value = 'unpaired'
-      return
+    if (!isHost) {
+      if (evt.code === CLOSE_UNPAIRED) {
+        // §13.1: this device's token was actually rejected (never paired, or revoked on the Mac).
+        // Surface "needs pairing" and do NOT auto-reconnect with the same dead credential.
+        connectionState.value = 'unpaired'
+        return
+      }
+      if (evt.code === CLOSE_SERVER_DISABLED) {
+        // Remote control is off on the Mac — an app restart, or the user flipping the toggle. The
+        // token is untouched and will work again the moment the Mac is back, so keep it and keep
+        // retrying. Treating this as "unpaired" is what used to strand every phone on every restart.
+        connectionState.value = 'host-off'
+        scheduleReconnect()
+        return
+      }
+    } else if (evt.code === CLOSE_HOST_ROLE_REJECTED) {
+      // Our host token was stale or missing (a relay that restarted under a reloaded webview mints
+      // a new one). Drop the cached copy so the next connect() re-reads it instead of retrying the
+      // same doomed URL forever — otherwise host_tx stays null and every companion sits empty.
+      hostRelayToken = ''
     }
-    // A 4001 on the HOST is never "unpaired" — the host has no token/pairing at all. It can only
-    // mean the host's own loopback WS was refused (e.g. the is_loopback_ip bug), which must
-    // self-heal, not give up: fall through to reconnect. Otherwise host_tx stays null on the relay
-    // and every companion connects to an empty, un-broadcast session.
+    // Anything else — including a 4001 on the HOST, which has no token/pairing concept at all —
+    // must self-heal rather than give up, or host_tx stays null on the relay and every companion
+    // connects to an empty, un-broadcast session.
     connectionState.value = 'closed'
     scheduleReconnect()
   })

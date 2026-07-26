@@ -26,13 +26,25 @@ const ready = computed(() => isHost || connectionState.value === 'open')
 if (!isHost) {
   watch(connectionState, (s) => {
     if (s === 'unpaired') {
-      // 4001 covers BOTH "this token is not paired" and "remote control is switched off on the
-      // host" — the relay does not distinguish them on the wire, so neither does this text.
-      // ROBUST-1: a rejected token would fail identically on every reconnect, so drop it and fall
-      // back to fresh code entry rather than looping on a dead credential.
+      // Close 4001 — and, since 1.20.0, ONLY the token-rejected case. ROBUST-1 still holds for it:
+      // a rejected token fails identically on every reconnect, so drop it and fall back to fresh
+      // code entry rather than looping on a dead credential.
       clearDeviceToken()
       needsPairing.value = true
-      if (!busy.value) error.value = 'Not paired, or remote control is off on the Mac. Enter the code to pair.'
+      if (!busy.value) error.value = 'This device is not paired with the Mac. Enter the code to pair.'
+    } else if (s === 'host-off') {
+      // Close 4002 — remote control is off on the Mac (it restarted, or the toggle was flipped).
+      // The token is NOT touched: the person holding this phone is usually in another room and
+      // cannot walk over to read a new code, and the Mac restarting is the ordinary case, not a
+      // revocation. Guessing "keep" is also the cheap error — a token that really was revoked just
+      // fails again on the next attempt and clears then, whereas guessing "clear" stranded every
+      // phone on every restart. bridge.js keeps reconnecting, so this heals with no user action.
+      needsPairing.value = !hasDeviceToken()
+      if (!busy.value) {
+        error.value = needsPairing.value
+          ? 'Remote control is off on the Mac. Turn it on there, then enter the code.'
+          : 'Remote control is off on the Mac — waiting for it to come back on.'
+      }
     } else if (s === 'open') {
       needsPairing.value = false
       error.value = ''

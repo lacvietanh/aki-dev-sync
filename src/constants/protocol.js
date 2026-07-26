@@ -56,10 +56,23 @@ export const FRAME_PTY_RESIZE = 'pty_resize'
 // `pty_get_scrollback`'s `alive` field instead.
 export const FRAME_PTY_EXIT = 'pty_exit'
 
-// WS close code the relay uses when a companion connects with a bad/absent pairing token
-// (§13.1). The companion UI must treat exactly this code as "show the pairing screen", not a
-// generic disconnect/retry.
+// ── WS close codes (mirrored in src-tauri/src/web_server.rs — keep the two in step) ───────────
+//
+// These three were one undifferentiated 4001 until 1.20.0, and that ambiguity WAS the bug: a
+// companion could not tell "your token is dead" from "the Mac's relay is not accepting right now",
+// so it took the destructive reading and wiped a perfectly good token on every app restart and
+// every Off — breaking the shipped promise that a phone "reconnects silently across app restarts …
+// until revoked". Each code now has exactly one meaning and exactly one client response.
+
+// The token this device presented is unknown / absent / revoked. The ONLY code that may clear the
+// stored token: it would fail identically on every retry, so retrying is pointless.
 export const CLOSE_UNPAIRED = 4001
+// Remote control is off (or was just switched off) on the Mac. Says NOTHING about the token — keep
+// it and reconnect with backoff; the phone reconnects by itself the moment the Mac comes back on.
+export const CLOSE_SERVER_DISABLED = 4002
+// A `role=host` connection was refused (not loopback, or a stale/absent process host token). Only
+// the Mac's own webview sees this; it re-reads the token and retries.
+export const CLOSE_HOST_ROLE_REJECTED = 4003
 
 // localStorage key the companion persists its paired device token under (§7.1). Read/written
 // only by services/bridge.js.

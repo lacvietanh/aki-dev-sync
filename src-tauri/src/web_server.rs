@@ -47,6 +47,23 @@ const PORT: u16 = 1421;
 /// How many consecutive bad `/pair` codes are tolerated before the relay shuts itself off.
 const MAX_PAIR_FAILURES: u32 = 10;
 
+// ── WS close codes (mirrored in src/constants/protocol.js — keep the two in step) ─────────────
+//
+// These three used to be one undifferentiated `4001`, and that ambiguity was the whole bug: the
+// companion could not tell "your token is dead" from "the Mac's relay is not accepting right now",
+// so it took the destructive reading and wiped a perfectly good token on every app restart and
+// every Off. Splitting them is what lets the client keep a token it has no reason to distrust.
+
+/// The token presented is unknown / absent / revoked. The companion MUST drop it and fall back to
+/// code entry — it will fail identically on every retry otherwise.
+const CLOSE_UNPAIRED: u16 = 4001;
+/// Remote control is switched off (or was just switched off) on the Mac. Says nothing at all about
+/// the token: the companion KEEPS it and reconnects with backoff.
+const CLOSE_SERVER_DISABLED: u16 = 4002;
+/// A `role=host` connection was refused (not loopback, or the process-local host secret did not
+/// match). Only the Mac's own webview ever sees this; it re-reads the secret and retries.
+const CLOSE_HOST_ROLE_REJECTED: u16 = 4003;
+
 // ── Shared state (process-global, mirrors the OnceLock<Mutex<..>> pattern already used by
 // `system::PROJECT_ICONS` — copied deliberately for consistency, not reinvented) ─────────────
 
@@ -66,10 +83,23 @@ struct RelayState {
     pairing_code: StdMutex<String>,
     devices: StdMutex<Vec<PairedDevice>>,
     devices_path: StdMutex<Option<PathBuf>>,
+    server_state_path: StdMutex<Option<PathBuf>>,
+    /// Process-local secret minted fresh at every start, handed ONLY to the Tauri webview (via
+    /// `get_companion_status`) and required on the `role=host` websocket.
+    ///
+    /// Why a secret and not just the peer address: `set_tailscale_https` runs
+    /// `tailscale serve --bg http://127.0.0.1:PORT`, so with HTTPS-over-Tailscale on, EVERY tailnet
+    /// peer's connection arrives at this process from `127.0.0.1`. A loopback test alone therefore
+    /// let any peer on the tailnet claim `role=host` with no token at all — overwriting `host_tx`,
+    /// cutting the real Mac's mirror off and feeding forged `init`/`delta` frames to every paired
+    /// phone. A proxy can forge the source address; it cannot forge a value it was never given.
+    /// Never persisted: a new process means a new secret, so a leaked one dies with the app.
+    host_token: String,
     /// Gate on top of per-device tokens (defence in depth, not the only gate — the plan's R-1
-    /// resolution is "bound 0.0.0.0, but useless without a token"). Starts `false`: a fresh
-    /// install does not expose anything until the user opens the pairing UI, which calls
-    /// `start_companion_server()`.
+    /// resolution is "bound 0.0.0.0, but useless without a token"). A fresh install starts `false`
+    /// and does not expose anything until the user opens the pairing UI, which calls
+    /// `start_companion_server()`; after that the user's own last choice is restored at startup
+    /// from `companion-server.json` (see `init`).
     enabled: AtomicBool,
     /// Consecutive wrong codes submitted to `/pair` since the last successful pairing or
     /// `start_companion_server()`. A 6-digit code is only ~1M combinations — without this an
@@ -87,6 +117,8 @@ impl RelayState {
             pairing_code: StdMutex::new(String::new()),
             devices: StdMutex::new(Vec::new()),
             devices_path: StdMutex::new(None),
+            server_state_path: StdMutex::new(None),
+            host_token: generate_token(),
             enabled: AtomicBool::new(false),
             pair_failures: AtomicU32::new(0),
         }
@@ -125,6 +157,35 @@ impl RelayState {
         let content = serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
     }
+
+    /// Records the user's LAST EXPLICIT on/off choice so a restart resumes it (see `init` for the
+    /// reasoning). Same blocking-write discipline as `persist_devices`: callers on the async
+    /// runtime must route it through `spawn_blocking`. Best-effort by design — failing to write
+    /// this preference must never fail the toggle the user just asked for.
+    fn persist_enabled(&self, enabled: bool) {
+        let Some(path) = self.server_state_path.lock().unwrap().clone() else {
+            return;
+        };
+        let content = serde_json::json!({ "enabled": enabled }).to_string();
+        if let Err(e) = std::fs::write(&path, content) {
+            eprintln!("[web_server] could not persist the remote-control on/off state: {}", e);
+        }
+    }
+
+    /// Flip the gate and remember the choice in one call, so no path can change one without the
+    /// other and leave disk disagreeing with memory.
+    fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::SeqCst);
+        self.persist_enabled(enabled);
+    }
+}
+
+/// `companion-server.json` — the one bit of relay state that outlives the process. `#[serde(default)]`
+/// per CLAUDE.md's serde rule, so an older/partial file degrades to "off" instead of failing the read.
+#[derive(Serialize, Deserialize, Default)]
+struct PersistedServerState {
+    #[serde(default)]
+    enabled: bool,
 }
 
 static RELAY: OnceLock<RelayState> = OnceLock::new();
@@ -220,6 +281,31 @@ pub fn init(app_handle: &AppHandle) {
                 }
             }
             *state.devices_path.lock().unwrap() = Some(path);
+
+            // Restore the user's last explicit on/off choice.
+            //
+            // WHY restore "on" rather than always booting off: the person this feature exists for
+            // is in another room holding the phone. An app restart they did not ask for (an update,
+            // a crash, a reboot) must not turn into "walk back to the Mac and click a toggle" — that
+            // is the single most annoying failure this feature can produce, and it is the same
+            // failure the token fix below is about. "Off means off" is not weakened, because Off is
+            // persisted too: what is restored is always the user's own last decision, never a
+            // default the app chose for them. A fresh install still starts off (the file is absent →
+            // `Default` → false).
+            //
+            // The pairing code is deliberately NOT persisted — a fresh one is minted on restore, so
+            // a code read off the Mac's screen last week is dead, and the 10-strike brute-force
+            // shutdown (MAX_PAIR_FAILURES) still guards the new one while nobody is watching.
+            let server_state_path = dir.join("companion-server.json");
+            let restored = std::fs::read_to_string(&server_state_path)
+                .ok()
+                .and_then(|c| serde_json::from_str::<PersistedServerState>(&c).ok())
+                .unwrap_or_default();
+            *state.server_state_path.lock().unwrap() = Some(server_state_path);
+            if restored.enabled {
+                *state.pairing_code.lock().unwrap() = generate_pairing_code();
+                state.enabled.store(true, Ordering::SeqCst);
+            }
         }
         Err(e) => {
             eprintln!("[web_server] could not resolve app data dir, pairing will not persist: {}", e);
@@ -478,21 +564,32 @@ async fn ws_handler(
 async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
     match q.role.as_deref() {
         Some("host") => {
-            // §13.1: host connects from 127.0.0.1, no token required. Enforced here, not
-            // trusted from the query string — a companion cannot claim role=host to skip auth.
-            // The listener is IPv4-only (see serve_forever), so `addr` is a plain IPv4 address and
-            // `is_loopback()` is correct directly — no IPv4-mapped (`::ffff:127.0.0.1`) case to
-            // unwrap, which is exactly the dual-stack pitfall that IPv4-only binding removes.
-            if !addr.ip().is_loopback() {
-                close_with_code(socket, 4001, "host role requires a loopback connection").await;
+            // Authority for `role=host` is PROVEN, not inferred from the peer address.
+            //
+            // The loopback test stays as the outer, cheap check, but it is no longer sufficient on
+            // its own: `tailscale serve` proxies the tailnet into `http://127.0.0.1:PORT`, so every
+            // tailnet peer's connection also arrives from loopback (see `RelayState::host_token`).
+            // The process-local secret is the real gate — the Mac's webview is the only party ever
+            // handed it, and it is minted per process so it cannot be replayed after a restart.
+            let token = q.token.as_deref().unwrap_or_default();
+            if !addr.ip().is_loopback() || token != relay().host_token {
+                close_with_code(
+                    socket,
+                    CLOSE_HOST_ROLE_REJECTED,
+                    "host role requires a loopback connection and the process host token",
+                )
+                .await;
                 return;
             }
             handle_host_socket(socket).await;
         }
         Some("companion") => {
             let state = relay();
+            // Checked BEFORE the token, and answered with a code that says nothing about the token:
+            // a disabled relay must not double as an oracle for whether a token is still valid, and
+            // the companion must not read "the Mac is off right now" as "you have been revoked".
             if !state.enabled.load(Ordering::SeqCst) {
-                close_with_code(socket, 4001, "remote control is disabled on the host").await;
+                close_with_code(socket, CLOSE_SERVER_DISABLED, "remote control is disabled on the host").await;
                 return;
             }
             let token = q.token.clone().unwrap_or_default();
@@ -501,14 +598,14 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
                 devices.iter().find(|d| d.token == token).map(|d| d.id.clone())
             };
             let Some(device_id) = device_id else {
-                close_with_code(socket, 4001, "invalid or unpaired token").await;
+                close_with_code(socket, CLOSE_UNPAIRED, "invalid or unpaired token").await;
                 return;
             };
             let conn_id = state.next_id.fetch_add(1, Ordering::SeqCst);
             handle_companion_socket(socket, conn_id, device_id).await;
         }
         _ => {
-            close_with_code(socket, 4001, "role must be 'host' or 'companion'").await;
+            close_with_code(socket, CLOSE_UNPAIRED, "role must be 'host' or 'companion'").await;
         }
     }
 }
@@ -615,6 +712,10 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
             // progress through the old code space is worthless too.
             state.enabled.store(false, Ordering::SeqCst);
             state.pairing_code.lock().unwrap().clear();
+            // Persisted, so a brute-force attempt is not undone by the attacker simply waiting for
+            // the app to restart. Blocking write on the async runtime → spawn_blocking, per the
+            // never-block-the-UI rule that governs every other disk write in this file.
+            let _ = tauri::async_runtime::spawn_blocking(|| relay().persist_enabled(false)).await;
             eprintln!(
                 "[web_server] {} consecutive bad pairing codes — remote control disabled, turn it back on to get a new code",
                 failures
@@ -702,7 +803,7 @@ pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
         let code = generate_pairing_code();
         *state.pairing_code.lock().unwrap() = code.clone();
         state.pair_failures.store(0, Ordering::SeqCst);
-        state.enabled.store(true, Ordering::SeqCst);
+        state.set_enabled(true);
         Ok(CompanionServerInfo { pairing_code: code, port: PORT })
     })
     .await
@@ -716,11 +817,13 @@ pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
 pub async fn stop_companion_server() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<(), String> {
         let state = relay();
-        state.enabled.store(false, Ordering::SeqCst);
+        state.set_enabled(false);
         let mut companions = state.companions.lock().unwrap();
         for (_, handle) in companions.drain() {
+            // CLOSE_SERVER_DISABLED, never CLOSE_UNPAIRED: turning the toggle off revokes nothing.
+            // Sending 4001 here is exactly what made every paired phone forget its token on an Off.
             let _ = handle.tx.send(Message::Close(Some(CloseFrame {
-                code: 4001,
+                code: CLOSE_SERVER_DISABLED,
                 reason: "remote control was turned off on the host".into(),
             })));
         }
@@ -747,6 +850,16 @@ pub struct CompanionStatus {
     enabled: bool,
     pairing_code: String,
     port: u16,
+    /// The process-local secret the `role=host` websocket requires (`RelayState::host_token`).
+    ///
+    /// Carried on this EXISTING command rather than a new one on purpose: registering a command
+    /// means editing `lib.rs`, which belongs to another workstream in this release, and the
+    /// audience is identical either way — a Tauri command is reachable only from the Tauri webview
+    /// or from an already-paired companion over the `invoke` RPC, and a paired companion is
+    /// already granted arbitrary `invoke` by the declared security posture. What this closes is the
+    /// *unpaired* tailnet peer, which was never covered by that posture.
+    #[serde(rename = "hostToken")]
+    host_token: String,
 }
 
 #[tauri::command]
@@ -757,6 +870,7 @@ pub async fn get_companion_status() -> Result<CompanionStatus, String> {
             enabled: state.enabled.load(Ordering::SeqCst),
             pairing_code: state.pairing_code.lock().unwrap().clone(),
             port: PORT,
+            host_token: state.host_token.clone(),
         })
     })
     .await
@@ -943,8 +1057,10 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
             .collect();
         for k in dead {
             if let Some(handle) = companions.remove(&k) {
+                // A genuine revocation IS the CLOSE_UNPAIRED case — this is the one place the
+                // companion should drop its stored token, and now the only one that says so.
                 let _ = handle.tx.send(Message::Close(Some(CloseFrame {
-                    code: 4001,
+                    code: CLOSE_UNPAIRED,
                     reason: "this device was revoked on the host".into(),
                 })));
             }
@@ -1003,4 +1119,44 @@ pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, Stri
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The whole point of the fix: "your token is dead" and "the Mac is off right now" must never
+    /// arrive as the same number again. A future edit that collapses them fails here.
+    #[test]
+    fn close_codes_are_distinct() {
+        let codes = [CLOSE_UNPAIRED, CLOSE_SERVER_DISABLED, CLOSE_HOST_ROLE_REJECTED];
+        for (i, a) in codes.iter().enumerate() {
+            for b in codes.iter().skip(i + 1) {
+                assert_ne!(a, b, "close codes must stay distinguishable on the wire");
+            }
+        }
+        // 4001 keeps its shipped meaning (token rejected) so already-installed companions that
+        // only understand 4001 still behave correctly on a real revocation.
+        assert_eq!(CLOSE_UNPAIRED, 4001);
+    }
+
+    /// A guessable or empty host token would leave the loopback-only guard as the real gate, which
+    /// is exactly what `tailscale serve` defeats.
+    #[test]
+    fn host_token_is_a_full_length_random_hex_secret() {
+        let a = RelayState::new();
+        let b = RelayState::new();
+        assert_eq!(a.host_token.len(), 32, "128-bit hex");
+        assert!(a.host_token.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a.host_token, b.host_token, "must not be a constant");
+    }
+
+    /// CLAUDE.md's serde rule: an older or truncated `companion-server.json` must degrade to "off",
+    /// never fail the read and never fall through to "on".
+    #[test]
+    fn persisted_server_state_defaults_to_off() {
+        assert!(!serde_json::from_str::<PersistedServerState>("{}").unwrap().enabled);
+        assert!(serde_json::from_str::<PersistedServerState>(r#"{"enabled":true}"#).unwrap().enabled);
+        assert!(!PersistedServerState::default().enabled);
+    }
 }
