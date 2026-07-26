@@ -20,6 +20,22 @@ import { FRAME_INTENT } from '../constants/protocol'
 // own localStorage, which is where a per-screen preference belongs.
 const PER_SCREEN_ACTION_KEYS = new Set(['usageSlotStore.setSlotTarget'])
 
+// The host's intent registry: key -> the real function, filled by `action()` at wrap time.
+//
+// SECURITY (this is the whole point of the map): it used to be built in intents.js by globbing
+// `src/store/*.js` and registering EVERY function export. That made 16 functions that are not
+// actions — `dialogStore.askConfirm` (its `html` option is written into the dialog with innerHTML),
+// `logStore.setGlobalListener`, `projectStore.markProjectRemoved`/`bumpEpoch` — remotely callable by
+// any paired companion. Registering at wrap time instead means the remotely callable set is exactly
+// the set a developer opted in by writing `action(key, fn)`, and it cannot drift as stores grow.
+const HOST_ACTIONS = new Map()
+
+/** Host-side lookup for services/intents.js. Returns undefined for anything never wrapped in
+ *  `action()` — the caller treats that as "unknown intent" and never executes. */
+export function getHostAction(key) {
+  return HOST_ACTIONS.get(key)
+}
+
 /**
  * Wrap a store action so it behaves identically whether it runs on the host or is invoked from a
  * companion (§3.2, ACT-1).
@@ -43,7 +59,17 @@ export function action(key, fn) {
         `Got (${typeof key}, ${typeof fn}).`
     )
   }
-  if (isHost) return fn
+  if (isHost) {
+    // A per-screen action never travels (the companion runs it locally, see above), so it is
+    // deliberately NOT reachable from an inbound intent frame either.
+    if (!PER_SCREEN_ACTION_KEYS.has(key)) {
+      if (HOST_ACTIONS.has(key)) {
+        console.error(`[action] duplicate intent key "${key}" — the later definition now owns it`)
+      }
+      HOST_ACTIONS.set(key, fn)
+    }
+    return fn
+  }
   if (PER_SCREEN_ACTION_KEYS.has(key)) return fn
   return function actionStub(...args) {
     if (!send({ t: FRAME_INTENT, key, args })) reportUndelivered(key)

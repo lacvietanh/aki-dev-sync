@@ -436,6 +436,15 @@ pub async fn check_statusline_status(hosts: Vec<String>) -> Vec<StatuslineHostSt
             .map(|host| {
                 let host_for_thread = host.clone();
                 let handle = std::thread::spawn(move || {
+                    // A host that `ssh` would read as an option (`-oProxyCommand=…`) runs that
+                    // command on THIS Mac. This list arrives from the frontend (and, over the
+                    // relay, from a companion), so it is validated here like every other
+                    // host→argv boundary. This command has no error channel per host, and a host
+                    // we refuse to contact is, to the UI, exactly a host we could not reach.
+                    if let Err(e) = crate::system::validate_remote_host(&host_for_thread) {
+                        crate::logger::error("STATUSLINE", &format!("rejected host: {}", e));
+                        return StatuslineHostStatus::unreachable(host_for_thread);
+                    }
                     match run_remote_script_bounded(&host_for_thread, PROBE) {
                         Ok(out) => {
                             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -469,6 +478,13 @@ pub async fn apply_statusline_config(
     selected_targets: Option<Vec<String>>,
 ) -> Result<Vec<HostApplyResult>, String> {
     let targets = selected_targets.unwrap_or_default();
+    // Validated before any script is built or any thread spawned: a host that `ssh` would read as
+    // an option (`-oProxyCommand=…`) executes locally, and this list is frontend/companion-supplied.
+    // Unlike check_statusline_status, this command HAS an error channel, so it says so outright
+    // rather than disguising a refusal as an unreachable host.
+    for host in &target_hosts {
+        crate::system::validate_remote_host(host)?;
+    }
     let installers = std::sync::Arc::new(build_installer_scripts(&config, &targets)?);
 
     tauri::async_runtime::spawn_blocking(move || {

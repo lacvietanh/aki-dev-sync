@@ -1,12 +1,23 @@
-import { computed, nextTick } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { onHostBoot } from "../utils/scheduler";
+import { Toast } from "../store/projectStore";
+import { copyText } from "../utils/clipboard";
 import {
   globalLogs, projectLogs, activeLogProjectId,
-  isLogExpanded, consoleRef, copied,
+  isLogExpanded,
   globalListener, setGlobalListener,
   appendGlobalLogLines, appendProjectLogLines
 } from "../store/logStore";
+
+// PER-SCREEN, and therefore NOT in src/store/*.js — services/mirror.js auto-discovers every `isRef`
+// export under src/store/ and would mirror both (the rule is documented in useTerminalPanel.js's
+// file header). `consoleRef` holds a live DOM node, which the mirror's encoder cannot serialise at
+// all; `copied` is this screen's own 2s COPIED flash, and mirroring it made a COPY tap on the phone
+// flash the Mac's button. Module scope (not inside useLogs()) because every caller of useLogs()
+// must see the SAME two refs: LogStack.vue binds the template ref, useSync.js scrolls it.
+const consoleRef = ref(null);
+const copied = ref(false);
 
 export function useLogs() {
   const displayedLogs = computed(() => {
@@ -14,6 +25,13 @@ export function useLogs() {
       return projectLogs.value[activeLogProjectId.value] || [];
     }
     return globalLogs.value;
+  });
+
+  // Feeds the collapsed dock stack's one-line peek (dock/LogStack.vue #peek) — updates live as
+  // logs stream in since it derives from the same displayedLogs computed.
+  const latestLogLine = computed(() => {
+    const lines = displayedLogs.value;
+    return lines.length ? lines[lines.length - 1] : '';
   });
 
   function scrollConsole() {
@@ -62,15 +80,17 @@ export function useLogs() {
     }
   }
 
+  // utils/clipboard.js, not `navigator.clipboard` directly: the companion is a non-secure context
+  // where that API does not exist, so COPY LOGS was silently dead on the phone. A total failure now
+  // says so instead of flashing COPIED over a clipboard that was never written.
   async function copyLogs() {
     const logs = displayedLogs.value;
     if (logs.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(logs.join("\n"));
+    if (await copyText(logs.join("\n"))) {
       copied.value = true;
       setTimeout(() => (copied.value = false), 2000);
-    } catch (err) {
-      console.warn('Clipboard copy failed:', err);
+    } else {
+      Toast.fire({ icon: 'error', title: 'Could not copy - select the log text and copy it by hand' });
     }
   }
 
@@ -99,6 +119,7 @@ export function useLogs() {
     consoleRef,
     copied,
     displayedLogs,
+    latestLogLine,
     scrollConsole,
     appendLog,
     appendGlobalLog,

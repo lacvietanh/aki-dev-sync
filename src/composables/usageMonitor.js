@@ -1,6 +1,6 @@
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
-// @docs docs/plan/usage-monitor-entity-refactor.md
+// @docs docs/plan/done/usage-monitor-entity-refactor.md
 // @docs docs/plan/done/1.16.1-ag-usage.md
 // @docs docs/research/claudecode-usage-FINAL.md
 // @docs docs/arch/logger.md
@@ -9,11 +9,15 @@
 //
 // This file was `useAgentUsage.js`, a composable taking a reactive `hostRef` that callers retargeted at runtime. That shape is what made two remote hosts unwatchable, and it dragged a whole family of guards along with it - `lastNonNullHost`, `realHostChange`, the retarget-and-wipe branch, and a `!hostRef.value` early return in five places. Making the host immutable and part of the identity deletes all of them: a monitor cannot be pointed somewhere else, so there is nothing to detect, nothing to reset, and nothing to discard. Whether it is currently polling is the ONLY thing that varies, and that is `enabled`.
 //
-// Instances are created through `usageMonitorRegistry.getMonitor()`, never directly - identity is the registry's job, and two slots naming the same (agent, host) must share one instance so a single SSH round trip serves both. Monitors are session-lived: there is deliberately no `onUnmounted` teardown, because a monitor outlives whichever component happened to ask for it first (binding it to that component would stop a monitor other slots are still displaying).
-import { ref, watch } from 'vue';
+// Instances are created through `usageMonitorRegistry.getMonitor()`, never directly - identity is the registry's job, and two slots naming the same (agent, host) must share one instance so a single SSH round trip serves both. A monitor outlives whichever component happened to ask for it first, so it is NOT torn down on that component's unmount; the registry refcounts holders instead and calls `stopWatching()` only when the last one lets go (`releaseMonitor`). The instance and its last reading survive that - only the poll timer and the wake subscription stop.
+//
+// A monitor's READING lives in `store/usageReadingStore.js`, not in refs here: only `src/store/*.js` is mirrored to companions (services/mirror.js), and a reading that cannot reach the phone is a phone with empty cards - which is what used to push it into running probes of its own.
+import { ref, computed, watch } from 'vue';
 import { invoke } from '../utils/tauri';
-import { hostInterval, onHostBoot } from '../utils/scheduler';
+import { isHost } from '../services/bridge';
+import { hostInterval } from '../utils/scheduler';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
+import { usageReading, patchUsageReading } from '../store/usageReadingStore';
 import { persistAgAccount, loadAgAccount, listAgAccounts, lastActiveEmailFor, lastActiveKeyFor } from './agUsageCache';
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
@@ -92,6 +96,11 @@ let _wakeListenersInstalled = false;
 
 function installWakeListenersOnce() {
   if (_wakeListenersInstalled) return;
+  // Host-only, like the watchdog's own `hostInterval` below and `useBackgroundRefresh`'s guard:
+  // there is nothing to self-heal on a companion (it produces no cycles - seam P), and every
+  // subscriber's onWake ultimately asks the HOST to do work. A phone regaining focus is not a
+  // reason for the Mac to probe anything.
+  if (!isHost) return;
   _wakeListenersInstalled = true;
 
   const fireWake = (reason) => {
@@ -117,7 +126,7 @@ function installWakeListenersOnce() {
  * The ONE wake/self-heal mechanism in this app. Any cycle that can be silently frozen by a WKWebView
  * suspend (usage polls, background git/diff refresh) subscribes here rather than installing its own
  * listeners and its own heartbeat - two watchdogs would double the wake-up cost and mean two places
- * to reason about when recovery misbehaves. Decided in docs/plan/1.20.1-flow-audit-fixes.md §3.21.
+ * to reason about when recovery misbehaves. Decided in docs/plan/done/1.20.1-flow-audit-fixes.md §3.21.
  *
  * `gapThresholdMs()` returning 0 or a non-finite value means "my cycle is off right now" - the
  * watchdog skips that subscriber instead of the whole heartbeat, so one disabled cycle can never
@@ -139,26 +148,39 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   logStartupInfo(); // one-time: resolves debug mode, enables console output
   const isAg = agentId === 'antigravity';
 
-  const data = ref(null);
-  const loading = ref(false);
-  const error = ref(null);
-  const stale = ref(false);
-  // Unix seconds the currently-displayed reading was written (the cache file's mtime), i.e. the exact clock `stale` is measured against - so a card can render the age itself instead of a yes/no badge. Never a fetch/render time: for Claude Code the file is written by the statusline hook, and its mtime is the only honest answer to "how old is this number".
-  const dataAt = ref(null);
+  // The reading is stored under this monitor's id in `usageReadingStore` (mirrored), and read back
+  // here as computeds so the shape callers destructure is unchanged. Writes go through `set()`.
+  // `stale` is deliberately NOT among them: it was duplicated state only a successful fetch ever
+  // updated, so past a reset boundary with no new turn it stayed false forever while `dataAt` aged
+  // correctly. It is now derived in the card from `dataAt` + the clock that card already ticks, and
+  // no code path can forget to update it.
+  const reading = computed(() => usageReading(id));
+  // Host-only by construction. The reading is measured on the Mac and travels down the mirror; a
+  // companion writing into its own copy could only produce a value the next delta contradicts (an
+  // amber breaker icon cleared on the phone while the host is still halted, say). Making the ONE
+  // write funnel refuse is cheaper to trust than a guard at each of the dozen call sites.
+  const set = (patch) => { if (isHost) patchUsageReading(id, patch); };
+
+  const data = computed(() => reading.value.data);
+  const loading = computed(() => reading.value.loading);
+  const error = computed(() => reading.value.error);
+  // Unix seconds the currently-displayed reading was written (the cache file's mtime) - the clock staleness and the age label are measured against. Never a fetch/render time: for Claude Code the file is written by the statusline hook, and its mtime is the only honest answer to "how old is this number".
+  const dataAt = computed(() => reading.value.dataAt);
   // AG-only: tracks whether current data is from cache (AG offline) and when it was cached
-  const isCached = ref(false);
-  const cachedAt = ref(null); // Unix seconds
+  const isCached = computed(() => reading.value.isCached);
+  const cachedAt = computed(() => reading.value.cachedAt); // Unix seconds
 
   // AG-only: multi-account view state (unused for Claude Code - one account per machine).
   // A monitor reports what is LIVE; it deliberately holds no view selection. Which account a card is pinned to belongs to the SLOT displaying it (`AgentUsageSlot.vue`'s `slotViewingEmail`, persisted per slot since 1.18.0) - two slots share one monitor by design, so a single selection stored here could not express "slot C watches the IDE account, slot D watches the CLI account", which is the whole point of the per-slot pin. The monitor's own `viewingEmail`/`selectAccount` pair was the pre-slot shape of that idea; it was left unwired when the pin moved up to the slot and was removed in 1.20.0.
   // Every read below is scoped to THIS monitor's host, so two hosts signed into the same Google account keep separate dropdowns and separate readings (agUsageCache §4).
-  const accounts = ref([]);       // dropdown list [{ email, fetchedAt }] sorted newest-first
-  const activeEmail = ref(null);  // email of the primary successful live fetch
-  const activeEmails = ref(new Set()); // Set of emails of all currently live accounts
-  const refreshAccounts = () => { accounts.value = listAgAccounts(host); };
-  if (isAg) {
-    accounts.value = listAgAccounts(host);
-    activeEmail.value = lastActiveEmailFor(host);
+  const accounts = computed(() => reading.value.accounts);       // dropdown list [{ email, fetchedAt }] sorted newest-first
+  const activeEmail = computed(() => reading.value.activeEmail); // email of the primary successful live fetch
+  const activeEmails = computed(() => reading.value.activeEmails); // Set of emails of all currently live accounts
+  const refreshAccounts = () => { set({ accounts: listAgAccounts(host) }); };
+  // Seeded from THIS host's own cache. `set` is host-only, so on a companion this is a no-op and the
+  // dropdown arrives mirrored instead of being rebuilt from the phone's (empty) localStorage.
+  if (isAg && isHost) {
+    set({ accounts: listAgAccounts(host), activeEmail: lastActiveEmailFor(host) });
   }
 
   let pollTimer = null;
@@ -168,13 +190,25 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   let provisioned = false;
   let provisionFailCount = 0;       // bound provision retries (a down host must not retry forever)
   const MAX_PROVISION_RETRIES = 3;
-  let isChecking = false;
+  // Generation token. `epoch` is bumped on every probe ISSUE and on every `enabled` flip;
+  // `inFlightEpoch` names the probe currently awaiting (0 = idle). A result whose epoch is no longer
+  // current is discarded instead of written, which is what makes two overlapping probes land in
+  // ISSUE order rather than completion order - and what stops a probe issued 29s ago from writing a
+  // reading for a monitor the user has since switched off.
+  let epoch = 0;
+  let inFlightEpoch = 0;
   let pendingRecheck = false; // a poll/manual-reload arrived while a check was already in flight
+  // Whether anything is still displaying this monitor (registry refcount > 0). A released monitor
+  // keeps its identity and its last reading but must not poll: exploring ten hosts used to leave
+  // twenty live 30s SSH loops behind cards nobody renders.
+  let watching = true;
+  let unsubscribeFromWake = null;
   // Circuit breaker for the poll loop itself - see restartPollTimer below.
   let consecutiveFailCount = 0;
-  // A ref, not a plain flag: the slot's power icon renders amber off it (contract C-3), and the icon
-  // is the only place the user can see - or clear - a halted monitor.
-  const pollHalted = ref(false);
+  // Part of the mirrored reading, not a local ref: the slot's power icon renders amber off it
+  // (contract C-3) on the phone as well as the Mac, and the icon is the only place the user can
+  // see - or clear - a halted monitor.
+  const pollHalted = computed(() => reading.value.pollHalted);
   const MAX_CONSECUTIVE_FAILS = 5;
 
   /**
@@ -211,18 +245,29 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   };
 
   const checkUsage = async () => {
+    // THE producer gate (seam P, utils/scheduler.js). Every path that can ask for a probe - the poll
+    // timer, the wake listeners, an `enabled` flip, a manual refresh, the card's boundary retry -
+    // funnels through this one function, so gating it here is what makes "the companion never
+    // produces" structural instead of a guard someone has to remember at each call site. It matters
+    // far more than a wasted call: `utils/tauri.invoke` on a companion is an RPC the HOST executes,
+    // so a phone merely regaining focus used to fire a 30s SSH probe on the Mac. The phone's numbers
+    // arrive through the mirrored reading store instead.
+    if (!isHost) return;
+    // Nothing is displaying this monitor any more (registry refcount 0).
+    if (!watching) return;
     if (!enabled.value) {
       // Monitoring off - leave any last-known data in place (the enabled watcher below already marked it isCached when the toggle flipped) instead of wiping it.
-      loading.value = false;
+      set({ loading: false });
       return;
     }
-    if (isChecking) {
+    if (inFlightEpoch) {
       // Don't silently drop this request (e.g. a manual "Reload" click landing mid-poll, common right after relaunching AG/switching accounts) - run once more immediately after the in-flight check finishes instead of waiting up to a full poll interval.
       pendingRecheck = true;
       ulog('queued', {}, 'debug');
       return;
     }
-    isChecking = true;
+    const myEpoch = ++epoch;
+    inFlightEpoch = myEpoch;
     pollCount++;
     lastTickAt = Date.now();
 
@@ -232,14 +277,20 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
       hadData: data.value !== null,
     }, 'debug');
 
-    loading.value = true;
+    set({ loading: true, error: null });
     ulog('loading=true', {}, 'debug');
-    error.value = null;
 
     try {
       const hadData = data.value !== null;
       ulog('invoke get', { host }, 'debug');
       const result = await invoke('get_agent_usage', { agentName: agentId, host });
+      // Superseded while this probe was in flight (the monitor was toggled, or a newer probe was
+      // issued). Writing now would land an older answer on top of a newer one - completion order,
+      // not issue order - so the whole result is dropped, breaker included.
+      if (myEpoch !== epoch) {
+        ulog('result discarded - superseded', { issued: myEpoch, current: epoch }, 'debug');
+        return;
+      }
       // `host_answered` is the whole point of the result envelope (agent_usage.rs's AgentUsageResult):
       // "no reading" and "no host" used to arrive here as the same `null`, and this line reset the
       // breaker on both - so a host refusing TCP (ssh exit 255 → null) cleared the very counter that
@@ -263,16 +314,25 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           const dataAge = mtimeSec > 0 ? (nowSec - mtimeSec) : Infinity;
           let resetIsPast = false;
           if (!isAg) {
+            // five_hour only, on purpose - NOT "any bucket whose reset has passed". The staleness
+            // contract is defined script-side: get-claudecode-usage.sh raises STALE_RESET off the
+            // 5-hour window, so this client-side test has to name the same bucket or the two
+            // disagree. The weekly buckets (shared or model-scoped) roll over far too rarely to be
+            // a useful freshness signal, and a lapsed weekly would otherwise pin the card to
+            // "stale" for hours while the 5h reading is perfectly current.
             const fh = parsed?.rate_limits?.five_hour;
             resetIsPast = fh?.resets_at > 0 && nowSec > fh.resets_at;
           }
+          // Logged, never stored: the card derives its own staleness from `dataAt` and the clock it
+          // already ticks (see the `reading` block above). Keeping the computation here keeps the
+          // log line honest about which rule fired.
           const liveStale = resetIsPast || dataAge > 600;
-          // Same value the staleness test above just used - published so the UI can show the age rather than assert "Stale". 0 means the host could not report an mtime; that is "unknown", not "now", so it stays null and the card falls back to the badge.
-          dataAt.value = mtimeSec > 0 ? mtimeSec : null;
+          // The mtime the staleness rule is measured against - published so the UI can show the age rather than assert "Stale". 0 means the host could not report an mtime; that is "unknown", not "now", so it stays null and the card falls back to the badge.
+          const nextDataAt = mtimeSec > 0 ? mtimeSec : null;
 
           if (isAg) {
             // Record this live fetch under its account email and refresh the dropdown. `data` always tracks the live/active account: a slot that wants a different one resolves it itself from `accounts` + `agUsageCache` (`AgentUsageSlot.vue`'s `slotAccountInfo`), so the monitor has no pinned-view case to skip.
-            activeEmail.value = parsed?.email || activeEmail.value;
+            const nextActiveEmail = parsed?.email || activeEmail.value;
 
             const liveList = [];
             if (Array.isArray(parsed?.allAccounts) && parsed.allAccounts.length > 0) {
@@ -290,33 +350,37 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
                 liveList.push(`${parsed.email}:${parsed.sourceType}`);
               }
             }
-            activeEmails.value = new Set(liveList);
-
             persistAgAccount(parsed, fetchedAt, host);
-            refreshAccounts();
-            data.value = Array.isArray(parsed?.allAccounts)
-              ? (parsed.allAccounts.find(a => a.email === activeEmail.value) || parsed)
-              : parsed;
-            isCached.value = false;
-            cachedAt.value = null;
-            stale.value = liveStale;
-            ulog('ag live fetched', { email: activeEmail.value, liveCount: activeEmails.value.size, fetchedAt }, 'debug');
+            set({
+              dataAt: nextDataAt,
+              activeEmail: nextActiveEmail,
+              activeEmails: new Set(liveList),
+              accounts: listAgAccounts(host),
+              data: Array.isArray(parsed?.allAccounts)
+                ? (parsed.allAccounts.find(a => a.email === nextActiveEmail) || parsed)
+                : parsed,
+              isCached: false,
+              cachedAt: null,
+            });
+            ulog('ag live fetched', { email: nextActiveEmail, liveCount: liveList.length, fetchedAt }, 'debug');
           } else {
-            data.value = parsed;
-            isCached.value = false;
-            cachedAt.value = null;
-            stale.value = liveStale;
+            set({ dataAt: nextDataAt, data: parsed, isCached: false, cachedAt: null });
           }
 
           const fiveHour = parsed?.rate_limits?.five_hour;
-          const sevenDay  = parsed?.rate_limits?.seven_day;
+          // Log every bucket the payload carries, not a hardcoded 5h/7d pair - `rate_limits` is an
+          // open map and a bucket that never reaches the log is a bucket nobody can debug.
+          const bucketFields = {};
+          for (const [k, b] of Object.entries(parsed?.rate_limits || {})) {
+            if (!b || typeof b !== 'object') continue;
+            bucketFields[`${k}.pct`] = b.used_percentage ?? null;
+            bucketFields[`${k}.resets_at`] = b.resets_at ?? null;
+            bucketFields[`${k}.state`] = b.resets_at > 0
+              ? (nowSec > b.resets_at ? 'PAST' : 'future')
+              : 'no_reset';
+          }
           ulog('got data', {
-            'five_hour.pct':      fiveHour?.used_percentage ?? null,
-            'five_hour.resets_at': fiveHour?.resets_at ?? null,
-            'five_hour.state':    fiveHour?.resets_at > 0
-                                    ? (nowSec > fiveHour.resets_at ? 'PAST' : 'future')
-                                    : 'no_reset',
-            'seven_day.pct':      sevenDay?.used_percentage ?? null,
+            ...bucketFields,
             mtime: mtimeSec,
             file_age_s:           mtimeSec > 0 ? Math.round(nowSec - mtimeSec) : null,
             stale:                liveStale,
@@ -330,11 +394,13 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           if (!isAg && !provisioned) provision();
         } catch (e) {
           ulog('parse error', { err: String(e), content_preview: String(res.content).slice(0, 100) }, 'error');
-          error.value = "Invalid usage data format.";
+          set({ error: 'Invalid usage data format.' });
         }
       } else {
-        // null from server: either no cache file (first load) or STALE_RESET (had data → null)
-        ulog('got null', { hadData, why: hadData ? 'STALE_RESET' : 'no_cache' }, 'info');
+        // null from server. The backend already says WHY (`miss_reason`: "no cache", "STALE_RESET",
+        // "no live AG session", "probe exited N"…) - this line used to guess "STALE_RESET" from
+        // `hadData` alone, which mislabelled every other miss the moment a reading existed.
+        ulog('got null', { hadData, why: result?.miss_reason ?? 'unknown' }, 'info');
 
         // AG offline: the live fetch failed (IDE mid-restart - common right after an account switch). Show the LAST-ACTIVE account's cache deterministically (never an ambiguous global blob), so the display can't randomly flip old/new. A slot pinned to some other account overrides this for itself, from the same cache, without the monitor knowing.
         if (isAg) {
@@ -344,27 +410,21 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           // session that was actually live - not whichever of the two the cache happened to list
           // first (agUsageCache: the entity is the triple).
           const lastActiveKey = lastActiveKeyFor(host);
-          if (!activeEmail.value) activeEmail.value = lastActiveEmailFor(host);
+          if (!activeEmail.value) set({ activeEmail: lastActiveEmailFor(host) });
           const cached = loadAgAccount(lastActiveKey, host);
           if (cached) {
-            data.value = cached.data;
-            isCached.value = true;
-            cachedAt.value = cached.fetchedAt;
-            stale.value = true;
+            set({ data: cached.data, isCached: true, cachedAt: cached.fetchedAt });
             ulog('ag offline cached', { account: lastActiveKey, fetchedAt: cached.fetchedAt }, 'info');
           } else {
-            data.value = null;
-            isCached.value = false;
-            cachedAt.value = null;
+            set({ data: null, isCached: false, cachedAt: null });
             ulog('ag offline no cache', {}, 'info');
           }
         } else if (hadData) {
           // STALE_RESET: past the reset boundary with no new CC turn yet. Keep the old reading on screen instead of blanking it - same cached-badge mechanism AG already uses. See docs/arch/usage-claudecode.md §4.
-          isCached.value = true;
-          cachedAt.value = lastFetchedAt;
+          set({ isCached: true, cachedAt: lastFetchedAt });
           ulog('cc STALE_RESET: keep cached', { cachedAt: lastFetchedAt }, 'info');
         } else {
-          data.value = null;
+          set({ data: null });
         }
 
         if (!isAg) provision();
@@ -374,15 +434,22 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
       // answering either. Set `error` first: haltPolling, if this is the fifth in a row, replaces it
       // with the halt message, which is the one the user needs.
       ulog('IPC error', { err: String(e) }, 'error');
-      error.value = e.toString();
-      noteUnreachable(String(e));
+      if (myEpoch === epoch) {
+        set({ error: e.toString() });
+        noteUnreachable(String(e));
+      }
     } finally {
-      loading.value = false;
-      isChecking = false;
-      ulog('check done', { hasData: data.value !== null, hasError: !!error.value }, 'debug');
-      if (pendingRecheck) {
-        pendingRecheck = false;
-        checkUsage();
+      // Only the probe that is still the current one owns these flags. A superseded probe finishing
+      // late must not clear the loading state of the one that replaced it, nor free the in-flight
+      // slot it no longer holds.
+      if (inFlightEpoch === myEpoch) {
+        inFlightEpoch = 0;
+        set({ loading: false });
+        ulog('check done', { hasData: data.value !== null, hasError: !!error.value }, 'debug');
+        if (pendingRecheck) {
+          pendingRecheck = false;
+          checkUsage();
+        }
       }
     }
   };
@@ -400,7 +467,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
 
   // Circuit breaker. The log from the 2026-07-20 incident shows 12 consecutive failures spaced at exactly 30.0s - the poll kept probing at full rate for 24 minutes after the host had stopped accepting TCP entirely. A host that has failed this many times in a row is down, not slow, and no amount of further probing will change that; only a human fixing it will.
   //
-  // Deliberately a hard stop, not exponential backoff: backoff is for a host expected to recover on its own, which is not this case, and the evenly-spaced log proves probes were already serialized by `isChecking` (they never piled up), so there is nothing for a graduated delay to relieve. Stopping outright is both simpler and the honest signal to the user.
+  // Deliberately a hard stop, not exponential backoff: backoff is for a host expected to recover on its own, which is not this case, and the evenly-spaced log proves probes were already serialized (they never piled up), so there is nothing for a graduated delay to relieve. Stopping outright is both simpler and the honest signal to the user.
   //
   // Only an explicit user action resumes: manual refresh, or switching this monitor back on. Notably NOT the wake listeners - visibilitychange/focus fire constantly as the user moves between windows, and resuming on those would rebuild the same relentless loop through the back door.
   function restartPollTimer() {
@@ -408,7 +475,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     pollTimer = null;
     const s = refreshSettings.value.usage_interval_s;
     ulog('poll timer restart', { interval_s: s }, 'debug');
-    if (!enabled.value || !(s > 0)) return;
+    if (!watching || !enabled.value || !(s > 0)) return;
     if (pollHalted.value) {
       ulog('poll halted - not restarting', { fails: consecutiveFailCount }, 'info');
       return;
@@ -421,19 +488,21 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
 
   /** Trips the breaker: stops the timer and tells the user why, in the one place that shows errors. */
   function haltPolling() {
-    pollHalted.value = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     // Names the host: a slot can be pointed anywhere, so "unreachable" without a name leaves the
     // user guessing which machine is down. The slot's power icon shows this same text as its tooltip.
-    error.value = `Host "${host}" unreachable ${consecutiveFailCount}× in a row - polling stopped. Click the power icon to retry.`;
+    set({
+      pollHalted: true,
+      error: `Host "${host}" unreachable ${consecutiveFailCount}× in a row - polling stopped. Click the power icon to retry.`,
+    });
     ulog('poll halted', { host, fails: consecutiveFailCount }, 'error');
   }
 
   /** Clears the breaker after an explicit user action (refresh / switched back on). */
   function resumePolling() {
     consecutiveFailCount = 0;
-    pollHalted.value = false;
+    if (pollHalted.value) set({ pollHalted: false });
   }
 
   /**
@@ -445,14 +514,21 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   function retryAfterHalt() {
     ulog('retry after halt', { host }, 'info');
     resumePolling();
-    error.value = null;
+    set({ error: null });
     restartPollTimer();
     checkUsage();
   }
 
   // P1 wake self-heal: triggered by visibilitychange/focus or the watchdog heartbeat (module scope, see installWakeListenersOnce above) after a suspected WKWebView suspend. Re-checks immediately and restarts the interval - a suspended setInterval does not reliably resume ticking on its own even once the page is visible/focused again.
   function onWake(reason) {
-    if (!enabled.value) return; // monitoring off - nothing to recover
+    if (!enabled.value) {
+      // Bump the clock even though there is nothing to recover: visibilitychange/focus wake every
+      // subscriber unconditionally, and leaving `lastTickAt` frozen here meant the 7s watchdog then
+      // saw an ever-growing gap and re-fired (and re-logged) this same no-op on every heartbeat,
+      // forever, for a monitor that is switched off.
+      lastTickAt = Date.now();
+      return;
+    }
     // A halted monitor stays halted. `restartPollTimer` already refuses to rebuild the interval, but
     // `checkUsage()` below is unconditional, so a halted monitor still probed the dead host once per
     // wake - and the watchdog manufactures a wake every `gapThresholdMs`, so "stopped polling" was in
@@ -470,41 +546,79 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     checkUsage();
     restartPollTimer();
   }
-  subscribeWake({
+  const wakeSubscription = {
     onWake,
     lastTickAt: () => lastTickAt,
-    // 0 when usage polling is switched off entirely - the watchdog then skips this monitor, which is
-    // what the old `if (!(s > 0)) return` did for the whole heartbeat before other cycles shared it.
-    gapThresholdMs: () => 2 * refreshSettings.value.usage_interval_s * 1000,
-  });
+    // 0 when this monitor's own cycle is off - switched off, released, or the interval set to 0.
+    // The watchdog then skips THIS monitor (not the whole heartbeat, which other cycles share), the
+    // contract subscribeWake documents. It used to report a live threshold for a disabled monitor,
+    // which is the case its own comment says returns 0.
+    gapThresholdMs: () => (watching && enabled.value ? 2 * refreshSettings.value.usage_interval_s * 1000 : 0),
+  };
+  unsubscribeFromWake = subscribeWake(wakeSubscription);
 
-  // false only during the watch's synchronous `{ immediate: true }` run — see below.
-  let watchBooted = false;
+  /**
+   * Called by `usageMonitorRegistry.releaseMonitor()` when the LAST holder stops displaying this
+   * monitor. Stops this monitor's poll timer and drops its wake subscription - and nothing else: the
+   * instance stays in the registry and its reading stays in `usageReadingStore`, so pointing a slot
+   * back at this host paints the last-known numbers immediately instead of an empty card.
+   *
+   * Named for its true blast radius (CLAUDE.md, Regression Guard): it stops ONE monitor watching. It
+   * is not a dispose, not a reset, and touches no other monitor's state.
+   */
+  function stopWatching() {
+    if (!watching) return;
+    watching = false;
+    // Any probe still in flight is orphaned deliberately: bumping the epoch makes its result land on
+    // the floor rather than in a reading nobody is displaying.
+    epoch++;
+    inFlightEpoch = 0;
+    pendingRecheck = false;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    if (unsubscribeFromWake) { unsubscribeFromWake(); unsubscribeFromWake = null; }
+    ulog('stopped watching - no holders', { host }, 'info');
+  }
+
+  /** The reverse: a slot pointed back at this monitor. Re-arms the timer and probes once. */
+  function startWatching() {
+    if (watching) return;
+    watching = true;
+    unsubscribeFromWake = subscribeWake(wakeSubscription);
+    lastTickAt = Date.now();
+    ulog('watching again', { host }, 'info');
+    restartPollTimer();
+    checkUsage();
+  }
+
   // The ONLY thing that varies about a monitor. Its predecessor watched a mutable host ref and had to work out whether a change meant "toggled off", "toggled back on" or "now pointing at a different machine" - the last of which discarded the reading. A monitor's machine is now fixed, so switching off keeps the last reading on screen as cached, and switching on resumes it.
   watch(enabled, (on) => {
     ulog('enabled', { on, host }, 'info');
     provisioned = false;
     provisionFailCount = 0;
-    isChecking = false;
+    // A probe may be in flight right now. Bumping the epoch is what abandons it: its result is
+    // discarded on arrival and its `finally` no longer owns the in-flight slot, so the fresh probe
+    // below cannot be overwritten by an answer about the state the user just left. This used to
+    // clear `isChecking` unconditionally instead, which let two probes race and write in COMPLETION
+    // order.
+    epoch++;
+    inFlightEpoch = 0;
+    pendingRecheck = false;
     resumePolling();
     pollCount = 0;
     lastTickAt = Date.now();
-    error.value = null;
+    set({ error: null });
 
     if (!on) {
-      if (data.value !== null) {
-        isCached.value = true;
-        cachedAt.value = lastFetchedAt;
-      }
+      if (data.value !== null) set({ isCached: true, cachedAt: lastFetchedAt });
     } else {
-      // Seam P (§5 of docs/plan/done/remote-control.md): the `{ immediate: true }` first run is a BOOT fetch. On a companion its socket is not open yet, so it can only produce a failed RPC — and the real numbers arrive mirrored from the host anyway. Every later run is a genuine user-driven switch-on and stays unconditional on both sides.
-      if (watchBooted) checkUsage();
-      else onHostBoot(() => checkUsage());
+      // Unconditional on both roles: `checkUsage` is host-gated at its own entry (seam P), so this
+      // is a no-op on a companion, whose numbers arrive through the mirrored reading store. The
+      // guard that used to sit here claimed the same thing about state that was never mirrored.
+      checkUsage();
     }
     restartPollTimer();
   }, { immediate: true });
-  // `{ immediate: true }` fires synchronously inside the watch() call above, so this assignment lands strictly after the boot run and before any reactive one.
-  watchBooted = true;
 
   watch(() => refreshSettings.value.usage_interval_s, (newVal) => {
     ulog('interval changed', { interval_s: newVal }, 'debug');
@@ -534,11 +648,14 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     // instead of toggling the monitor off.
     pollHalted,
     retryAfterHalt,
-    // Readings.
+    // Lifecycle, driven by the registry's refcount - never by a component directly.
+    stopWatching,
+    startWatching,
+    // Readings (mirrored, keyed by `id`, in store/usageReadingStore.js). No `stale`: the card
+    // derives it from `dataAt` (finding 3) so no path can leave it behind.
     data,
     loading,
     error,
-    stale,
     dataAt,
     isCached,
     cachedAt,

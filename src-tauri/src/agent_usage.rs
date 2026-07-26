@@ -379,6 +379,11 @@ fn ab(agent: &str) -> &str {
 
 #[tauri::command]
 pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
+    // The host becomes an argv element for `ssh` a few frames down. `ssh` parses its own argv, so
+    // a value like `-oProxyCommand=…` would run that command on THIS Mac - and this command is
+    // reachable from the companion seam, not just the app's own UI. Same guard as
+    // projects.rs::validate_project and git.rs.
+    crate::system::validate_remote_host(&host)?;
     // run_remote_script (below) is fully synchronous (wait/poll loop, up to REMOTE_SCRIPT_TIMEOUT_SECS). Running it directly on the async executor starves a tokio worker for the same duration - spawn_blocking offloads to the blocking thread-pool, same pattern as get_agent_usage/logout_antigravity (P5, docs/research/claudecode-usage-FINAL.md; this pair was the one gap the stack-tauri never-block-the-UI audit had missed).
     tauri::async_runtime::spawn_blocking(move || provision_agent_usage_sync(&agent_name, &host))
         .await
@@ -415,6 +420,8 @@ pub async fn get_agent_usage(
     agent_name: String,
     host: String,
 ) -> Result<AgentUsageResult, String> {
+    // See provision_agent_usage: every boundary where a host becomes an ssh argv element validates.
+    crate::system::validate_remote_host(&host)?;
     // Both inner fns are fully synchronous (wait_with_output, thread::sleep). Running them directly on the async executor starves it and freezes the UI. spawn_blocking offloads to the Tauri blocking thread-pool.
     tauri::async_runtime::spawn_blocking(move || {
         if agent_name == "claudecode" {
@@ -469,7 +476,20 @@ fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, String> {
     } else {
         SCRIPT
     };
-    let output = run_remote_script(host, script)?;
+    // Transport failure (spawn failed, or the bounded run timed out) resolves to `unreachable`,
+    // not an IPC `Err`. Propagating it with `?` made CC and AG behave differently through the same
+    // funnel for the identical condition: AG's arm returns `unreachable(...)` and the card keeps
+    // showing its last cached reading, while CC's `?` painted a full-card error banner on every
+    // poll tick - the flickering-banner instability this funnel exists to end (see the comments in
+    // get_antigravity_usage). `unreachable` still lets the frontend's breaker count the failure,
+    // which is the part that actually needs to be visible.
+    let output = match run_remote_script(host, script) {
+        Ok(o) => o,
+        Err(e) => {
+            logger::debug("GET_USAGE", &format!("soft-miss (spawn/timeout): {}", e));
+            return Ok(AgentUsageResult::unreachable(e));
+        }
+    };
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -552,8 +572,14 @@ fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, String> {
             val
         }
         Err(e) => {
+            // A miss, NOT an empty hit. Substituting `{}` here and falling through to
+            // `AgentUsageResult::hit` below reported a successful reading with no rate limits in
+            // it: the frontend overwrote its last good data with nothing, drew empty bars, and
+            // marked them fresh (stale=false) - i.e. corrupt output looked exactly like "you have
+            // used 0%". The sibling delimiter failure a few frames up already returns a miss for
+            // the same class of problem; this branch was the asymmetry.
             logger::error("GET_USAGE", &format!("json_parse err={} b={}", e, content_len));
-            serde_json::Value::Object(Default::default())
+            return Ok(AgentUsageResult::miss("malformed probe output (cache JSON did not parse)"));
         }
     };
 
@@ -582,25 +608,31 @@ fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, String> {
     // ── Rate limits summary ───────────────────────────────────────────────
     if let Some(obj) = v.as_object() {
         let now = now_secs();
-        let five_h = obj.get("rate_limits")
-            .and_then(|r| r.get("five_hour"))
-            .map(|fh| {
-                let pct      = fh.get("used_percentage").and_then(|v| v.as_i64()).unwrap_or(-1);
-                let resets   = fh.get("resets_at").and_then(|v| v.as_i64()).unwrap_or(0);
-                let overdue  = now - resets;
-                let state    = if resets == 0 { "no_reset" } else if overdue > 0 { "PAST" } else { "future" };
-                format!("pct={} resets_at={} overdue_s={} state={}", pct, resets, overdue, state)
+        // `rate_limits` is an open map (five_hour, seven_day, and model-scoped weeklies such as
+        // seven_day_opus/_sonnet/_oauth_apps that Anthropic adds without notice) - enumerate
+        // whatever arrived instead of naming two keys, or a new bucket is invisible in the log
+        // while the UI is already drawing it.
+        let summary = obj.get("rate_limits")
+            .and_then(|r| r.as_object())
+            .map(|rl| {
+                if rl.is_empty() { return "EMPTY".to_string(); }
+                let mut keys: Vec<&String> = rl.keys().collect();
+                keys.sort();
+                keys.iter()
+                    .map(|k| {
+                        let b = &rl[*k];
+                        let pct    = b.get("used_percentage").and_then(|v| v.as_i64()).unwrap_or(-1);
+                        let resets = b.get("resets_at").and_then(|v| v.as_i64()).unwrap_or(0);
+                        let state  = if resets == 0 { "no_reset" }
+                                     else if now - resets > 0 { "PAST" } else { "future" };
+                        format!("{}=[pct={} resets_at={} overdue_s={} state={}]",
+                                k, pct, resets, now - resets, state)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
             })
             .unwrap_or_else(|| "MISSING".to_string());
-        let seven_d = obj.get("rate_limits")
-            .and_then(|r| r.get("seven_day"))
-            .map(|sd| {
-                let pct    = sd.get("used_percentage").and_then(|v| v.as_i64()).unwrap_or(-1);
-                let resets = sd.get("resets_at").and_then(|v| v.as_i64()).unwrap_or(0);
-                format!("pct={} resets_at={}", pct, resets)
-            })
-            .unwrap_or_else(|| "absent".to_string());
-        logger::debug("GET_USAGE", &format!("rl 5h=[{}] 7d=[{}]", five_h, seven_d));
+        logger::debug("GET_USAGE", &format!("rl {}", summary));
     }
 
     let content = serde_json::to_string(&v).unwrap_or_default();
@@ -827,7 +859,7 @@ pub async fn logout_antigravity_cli() -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// The distinction the frontend circuit breaker is built on (docs/plan/1.20.1-flow-audit-fixes.md
+    /// The distinction the frontend circuit breaker is built on (docs/plan/done/1.20.1-flow-audit-fixes.md
     /// §3.8): only `ssh`'s own 255 means the host never answered.
     #[test]
     fn ssh_255_is_the_only_unreachable_signal() {

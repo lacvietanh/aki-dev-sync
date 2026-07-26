@@ -41,6 +41,16 @@ fn write_settings(value: &Value) -> Result<(), String> {
                 &format!("could not back up settings.json before rewriting it: {}", e),
             );
         }
+        // Bounded AFTER the new copy exists, so the newest backup is never the one pruned. These
+        // files hold a plaintext ANTHROPIC_AUTH_TOKEN, so an unbounded pile is a growing pile of
+        // credential copies, not just clutter.
+        if let Some(dir) = path.parent() {
+            crate::system::prune_timestamped_backups(
+                dir,
+                "settings.json.aki-bak-",
+                crate::system::BACKUP_KEEP,
+            );
+        }
     }
 
     let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;

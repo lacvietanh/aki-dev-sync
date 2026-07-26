@@ -160,8 +160,15 @@ pub fn get_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     })
 }
 
-#[tauri::command]
-pub fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
+/// The synchronous body of `load_projects`. Blocking by nature: `load_and_cache_project_icons`
+/// stats up to seven candidate icon paths per project and may read up to 250KB from each hit, and
+/// those paths live wherever the user's projects live - including an external or network volume
+/// whose `metadata()` can stall in the kernel for tens of seconds when the mount is unhealthy.
+///
+/// Callers that are ALREADY inside a `spawn_blocking` closure (web_server's
+/// `get_project_icons_map` and `read_text_file`) call this directly; the Tauri command below is
+/// the one that wraps it, so the work never lands on the IPC dispatch thread.
+pub fn load_projects_blocking(app: AppHandle) -> Result<Vec<SyncProject>, String> {
     let path = get_projects_path(&app)?;
     let mut projects = vec![];
     if path.exists() {
@@ -172,6 +179,13 @@ pub fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
     }
     crate::system::load_and_cache_project_icons(&projects);
     Ok(projects)
+}
+
+#[tauri::command]
+pub async fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
+    tauri::async_runtime::spawn_blocking(move || load_projects_blocking(app))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 #[tauri::command]

@@ -1,4 +1,4 @@
-// @docs docs/plan/usage-monitor-entity-refactor.md §2, §5
+// @docs docs/plan/done/usage-monitor-entity-refactor.md §2, §5
 //
 // Which usage monitors are switched on. One entry per monitor identity, NOT four fixed flags.
 //

@@ -82,7 +82,7 @@ fn quote_remote_path(path: &str) -> String {
         return "\"$HOME\"".to_string();
     }
     match path.strip_prefix("~/") {
-        Some(rest) if rest.is_empty() => "\"$HOME\"".to_string(),
+        Some("") => "\"$HOME\"".to_string(),
         Some(rest) => format!("\"$HOME\"/{}", shell_single_quote(rest)),
         None => shell_single_quote(path),
     }
@@ -197,6 +197,39 @@ static CANCELLED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn sync_procs() -> &'static Mutex<HashMap<String, Vec<u32>>> {
     SYNC_PROCS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// ─── In-flight sync guard (one sync per project) ──────────────────────────────
+// SYNC_PROCS cannot serve as this guard: it is only populated once rsync has actually spawned,
+// which is seconds after `run_sync` is entered (hooks, remote mkdir, version probe all run first),
+// so two calls arriving in that window would both see an empty registry. The frontend has its own
+// button-level guard, but the companion device invokes the same command over the relay seam and
+// never passes through it - two concurrent rsyncs on one project write the same tree, and with
+// `--delete` in the mix that is not a recoverable outcome. Keyed by project id, claimed
+// atomically, and released by `Drop` so every exit path (error, panic, early return) frees it.
+static SYNC_INFLIGHT: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn sync_inflight() -> &'static Mutex<HashSet<String>> {
+    SYNC_INFLIGHT.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+struct SyncSlot(String);
+
+impl SyncSlot {
+    /// Claims the slot for `project_id`, or `Err` naming the project if a sync is already running.
+    fn acquire(project_id: &str) -> Result<Self, String> {
+        let mut set = sync_inflight().lock().unwrap_or_else(|e| e.into_inner());
+        if !set.insert(project_id.to_string()) {
+            return Err("A sync is already running for this project.".to_string());
+        }
+        Ok(SyncSlot(project_id.to_string()))
+    }
+}
+
+impl Drop for SyncSlot {
+    fn drop(&mut self) {
+        sync_inflight().lock().unwrap_or_else(|e| e.into_inner()).remove(&self.0);
+    }
 }
 
 fn cancelled_ids() -> &'static Mutex<HashSet<String>> {
@@ -353,7 +386,24 @@ fn stream_reader<R: std::io::Read + Send + 'static>(
 ) -> thread::JoinHandle<()> {
     let prefix = prefix.to_string();
     thread::spawn(move || {
-        for line in BufReader::new(reader).lines().flatten() {
+        // Read raw bytes per line and decode lossily rather than `lines().flatten()`: rsync prints
+        // filenames in the filesystem's own bytes, so a single non-UTF-8 name made `lines()` yield
+        // an `Err` that `flatten()` silently DROPPED - the log then simply omitted that file, which
+        // is the worst possible thing for a log whose job is to say what was transferred. Lossy
+        // decoding shows the name with replacement characters instead of hiding the line.
+        let mut reader = BufReader::new(reader);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            while matches!(buf.last(), Some(b'\n') | Some(b'\r')) {
+                buf.pop();
+            }
+            let line = String::from_utf8_lossy(&buf);
             let _ = window.emit(
                 "sync-log",
                 LogPayload {
@@ -701,12 +751,19 @@ pub async fn run_sync(
     specific_paths: Vec<String>,
 ) -> Result<(), String> {
     validate_project(&project)?;
-    ensure_local_path_present(&project.local_path)?;
     validate_specific_paths(&specific_paths)?;
     let project_id = project.id.clone();
+    // Held until this command returns, so a second invoke (companion seam included) is refused
+    // rather than run concurrently against the same tree.
+    let _slot = SyncSlot::acquire(&project_id)?;
     // Drop any flag left by a previous run so this sync's outcome is judged on its own.
     consume_cancelled(&project_id);
     let result = tauri::async_runtime::spawn_blocking(move || {
+        // Existence check moved inside the blocking closure: `is_dir()` on an unmounted SMB/NFS
+        // mount can stall in the kernel for tens of seconds, and on the IPC dispatch thread that
+        // is a frozen window (stack-tauri A1). Same error, same ordering relative to the rest of
+        // the sync - only the thread it runs on changed.
+        ensure_local_path_present(&project.local_path)?;
         run_sync_blocking(window, project, direction, dry_run, specific_paths)
     })
     .await
@@ -807,12 +864,12 @@ fn run_sync_blocking(
         command.current_dir(&project.local_path);
     }
 
-    spawn_and_stream(&mut command.args(&args), &window, &project.id, "rsync")?;
+    spawn_and_stream(command.args(&args), &window, &project.id, "rsync")?;
 
     // Write baseline after a full (non-dry, non-partial) sync so the next status
     // check can classify PULL/PUSH files against the last-known-good state (EC-3).
     if !dry_run && specific_paths.is_empty() {
-        ensure_app_data_dir(&window.app_handle());
+        ensure_app_data_dir(window.app_handle());
         let local_path = project.local_path.clone();
         let project_id = project.id.clone();
         let dir_excludes = union_excludes(&project);
@@ -1010,9 +1067,11 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
 #[tauri::command]
 pub async fn check_sync_status(app: tauri::AppHandle, project: SyncProject) -> Result<SyncStatusResult, String> {
     validate_project(&project)?;
-    ensure_local_path_present(&project.local_path)?;
     ensure_app_data_dir(&app);
     tauri::async_runtime::spawn_blocking(move || {
+        // Inside the closure, not before it: this command is on the periodic refresh path, so an
+        // unmounted network volume whose `is_dir()` stalls would freeze the UI on every tick.
+        ensure_local_path_present(&project.local_path)?;
         let (push_count, pull_count) = compute_sync_counts(&project)?;
         Ok(SyncStatusResult {
             has_local_changes: push_count > 0,
@@ -1034,8 +1093,10 @@ pub async fn get_sync_delete_preview(
     direction: String,
 ) -> Result<Vec<String>, String> {
     validate_project(&project)?;
-    ensure_local_path_present(&project.local_path)?;
     tauri::async_runtime::spawn_blocking(move || {
+        // Inside the closure - see run_sync: a stalled network-volume stat must not run on the
+        // IPC dispatch thread.
+        ensure_local_path_present(&project.local_path)?;
         let is_push = direction == "push";
         let local = format!("{}/", project.local_path.trim_end_matches('/'));
         let remote = format!(

@@ -1,4 +1,4 @@
-// @docs docs/plan/usage-monitor-entity-refactor.md §2
+// @docs docs/plan/done/usage-monitor-entity-refactor.md §2
 //
 // The multiton that owns monitor identity: one UsageMonitor per `agentId@host`, created on first
 // request and kept for the session.
@@ -14,7 +14,12 @@ import { createUsageMonitor } from './usageMonitor';
 import { monitorId, isMonitorEnabled, setMonitorEnabled, LOCAL_HOST } from '../store/usageMonitorStore';
 import { claudeMode } from '../store/claudeModeStore';
 
-const registry = new Map(); // id -> monitor
+// id -> { monitor, holders }. `holders` is how many mounted views are currently displaying it: a
+// monitor is created on first request and CACHED for the session, but it only WATCHES (poll timer +
+// wake subscription) while at least one holder exists. Without that count, merely opening the host
+// dropdown and looking at ten machines left twenty 30s SSH poll loops running behind cards nobody
+// renders - and their amber breaker control, the only way to stop one, was unreachable.
+const registry = new Map();
 
 // Detached scope: `getMonitor` is normally first called from inside some component's setup, and a
 // monitor's watchers created there would be torn down when THAT component unmounts - stopping a
@@ -34,6 +39,10 @@ function lockedFor(agentId, host) {
 /**
  * The monitor for one agent on one machine. Same arguments → same instance, always.
  *
+ * ACQUIRES a hold: every call must be paired with `releaseMonitor()` when the caller stops
+ * displaying it (its `onUnmounted`, or the moment it re-targets at another host). An unpaired call
+ * leaves the monitor polling forever.
+ *
  * An empty `host` (no SSH host configured yet) yields a real but permanently-disabled monitor rather
  * than null, so callers never branch on it - the card renders its ordinary "monitoring off" state.
  * It gets its own identity (`monitorId`'s `NO_HOST`), never the local monitor's: sharing one was
@@ -42,7 +51,13 @@ function lockedFor(agentId, host) {
 export function getMonitor(agentId, host) {
   const id = monitorId(agentId, host);
   const existing = registry.get(id);
-  if (existing) return existing;
+  if (existing) {
+    // Back from zero: the instance and its last reading survived, so the card repaints immediately
+    // and only the polling has to be re-armed.
+    if (existing.holders === 0) existing.monitor.startWatching();
+    existing.holders++;
+    return existing.monitor;
+  }
 
   const locked = lockedFor(agentId, host);
   // Locked means "this monitor cannot say anything true right now", so it does not poll - DERIVED
@@ -64,8 +79,24 @@ export function getMonitor(agentId, host) {
   // `reactive` so templates read `monitor.data` / `monitor.enabled` directly instead of `.value` on
   // every field - the shape AgentUsageSlot.vue already consumed before the refactor.
   const monitor = reactive(monitorScope.run(() => createUsageMonitor({ id, agentId, host, enabled, locked, toggle })));
-  registry.set(id, monitor);
+  registry.set(id, { monitor, holders: 1 });
   return monitor;
+}
+
+/**
+ * Give up one hold taken by `getMonitor`. At zero holders the monitor STOPS WATCHING - its poll
+ * timer is cleared and its wake subscription dropped.
+ *
+ * Named for exactly that blast radius (CLAUDE.md, Regression Guard for multi-entity state): it
+ * releases ONE monitor. It does not evict the instance, does not clear the registry, and does not
+ * touch that monitor's stored reading - which is why re-targeting a slot back at this host paints
+ * the last-known numbers at once instead of an empty card.
+ */
+export function releaseMonitor(monitor) {
+  const entry = monitor && registry.get(monitor.id);
+  if (!entry || entry.holders === 0) return;
+  entry.holders--;
+  if (entry.holders === 0) entry.monitor.stopWatching();
 }
 
 // There is deliberately no watcher on `claudeMode` here any more. Proxy mode ON stops the local

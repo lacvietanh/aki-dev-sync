@@ -21,7 +21,15 @@
             <RefreshRing :interval-s="refreshSettings.git_interval_s" :refresh-key="gitRefreshKey" stroke-color="rgba(16, 185, 129, 0.6)" />
           </span>
         </div>
-        <div class="grid-header-cell col-last-sync" title="LAST ACTION">LAST</div>
+        <div class="grid-header-cell col-terminal" title="TERMINAL">
+          <button
+            class="th-term-btn"
+            @click="openGlobalTerminal()"
+            title="Global terminal (not tied to a project)"
+            aria-label="Global terminal">
+            <i class="fa-solid fa-terminal"></i>
+          </button>
+        </div>
         <div class="grid-header-cell col-action" title="OPEN / SELECT-PUSH">ACTION</div>
         <div class="grid-header-cell col-sync">
           <span class="th-with-ring">
@@ -75,7 +83,7 @@
               <!-- Project Icon (drag handle) -->
               <div
                    class="project-drag-handle icon-glow"
-                   title="Kéo để sắp xếp"
+                   title="Drag to reorder"
                    @mousedown="isHandleMouseDown = true">
                 <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" @error="failedIcons[p.id] = true" />
                 <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
@@ -123,26 +131,26 @@
             </div>
           </div>
 
-          <!-- Cell 4: Last Sync -->
-          <div class="grid-row-cell col-last-sync">
-            <div v-if="p.last_sync_action" class="last-sync-badge" :class="p.last_sync_action.includes('PULL') ? 'badge-pull' : 'badge-push'">
-              {{ p.last_sync_action }} <span class="sync-time">{{ formatTimeAgo(p.last_sync_time) }}</span>
-            </div>
-            <div v-else class="text-muted">Never</div>
-            <div v-if="p.last_sync_action && p.last_sync_host" class="sync-host" :title="`Last action host: ${p.last_sync_host}`">{{ p.last_sync_host }}</div>
+          <!-- Cell 4: Terminal -->
+          <div class="grid-row-cell col-terminal">
+            <TerminalCell :project="p" />
           </div>
 
           <!-- Cell 5: Action (OPEN + SELECT-push only) -->
           <div class="grid-row-cell col-action">
             <div class="actions-wrapper">
               <!-- Open Popup Trigger (OPEN Button) -->
-              <div class="open-popup-wrapper" @mouseenter="onOpenEnter(p, $event)">
-                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup">
+              <div class="open-popup-wrapper"
+                   :class="{ 'is-open': openPopupId === p.id }"
+                   @mouseenter="onOpenHover(p, $event)"
+                   @mouseleave="onOpenHoverLeave(p)">
+                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup" @click.stop="toggleOpenPopup(p, $event)">
                   <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
-                <!-- Open Popup (Native CSS Hover with fixed positioning) -->
-                <div class="open-popup" :style="projectRuntime[p.id]?.popupStyle">
+                <!-- Open Popup — visibility is state (.is-open), not CSS :hover: a phone has no
+                     hover, so the popup was unreachable there. Hover still opens it on the Mac. -->
+                <div class="open-popup" :style="popupStyles[p.id]">
                   <div class="popup-header" :title="p.name" style="display: flex; align-items: center;">
                     <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                     <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 18px;"></i>
@@ -160,38 +168,47 @@
                           <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
                         </button>
                       </div>
-                      <div class="popup-item" @click="openIdeLocal('finder', p.local_path)">
+                      <!-- Everything below consumes the local path, so a missing volume greys the
+                           whole list (COPY above deliberately stays live — copying a path you are
+                           about to go fix is legitimate). `localBlocked` also treats a not-yet-loaded
+                           ideAvailability as UNAVAILABLE rather than available. -->
+                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('finder', p.local_path)">
                         <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
                       </div>
                       <!-- In-app first: it is the only one of the two that works from a phone,
                            which is the whole reason the in-app terminal exists. -->
-                      <div class="popup-item" @click="openInAppTerminal(p.local_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openProjectTerminal(p)">
                         <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-cyan);"></i> In-App Terminal
                       </div>
-                      <div class="popup-item" @click="openIdeLocal('terminal', p.local_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('terminal', p.local_path)">
                         <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
                       </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeLocal('vscode', p.local_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode') }" :title="localTitle(p)" @click="openIdeLocal('vscode', p.local_path)">
                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
                       </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeLocal('vscode_insiders', p.local_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode_insiders') }" :title="localTitle(p)" @click="openIdeLocal('vscode_insiders', p.local_path)">
                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
                       </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeLocal('antigravity', p.local_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
                       </div>
                       <div v-if="getDevCmd(p) || getBuildCmd(p)" class="popup-run-row">
-                        <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" @click="runProjectDev(p.local_path, getDevCmd(p))" :title="getDevCmd(p)">
+                        <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) }" @click="runProjectDev(p, getDevCmd(p))" :title="localTitle(p) || getDevCmd(p)">
                           <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
                         </div>
-                        <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" @click="runProjectCommand(p.local_path, getBuildCmd(p))" :title="getBuildCmd(p)">
+                        <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) }" @click="runProjectCommand(p, getBuildCmd(p))" :title="localTitle(p) || getBuildCmd(p)">
                           <i class="fa-solid fa-hammer" style="width:14px; color: #f59e0b;"></i> BUILD
                         </div>
                       </div>
                     </div>
 
                     <!-- REMOTE -->
-                    <div v-if="p.remote_host && p.remote_path && syncCheckEnabled" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
+                    <!-- The column itself is NOT gated on the sync switch: SSH Terminal, the remote
+                         IDE entries and COPY are ways to REACH the server, not rsync traffic, and
+                         hiding them was over-reach. Only Upload actually pushes files, so only it
+                         is gated (disabled + a tooltip that says why - hiding it would leave the
+                         user hunting for a menu item that used to be there). -->
+                    <div v-if="p.remote_host && p.remote_path" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
                       <div class="popup-section-label">
                         <span>☁️ REMOTE (SSH)</span>
                         <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
@@ -201,19 +218,19 @@
                       <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
                         <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
                       </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode') }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
                       </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.vscode_insiders }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode_insiders') }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
                       </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideAvailability && !ideAvailability.antigravity }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
+                      <div class="popup-item" :class="{ 'popup-disabled': ideMissing('antigravity') }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
                       </div>
                       <div class="popup-item"
-                           :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing }"
-                           @click="!projectRuntime[p.id]?.syncing && requestSelectPush(p.id)"
-                           title="Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project's exclude list, unaffected by the DRY toggle">
+                           :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing || !syncCheckEnabled }"
+                           @click="!projectRuntime[p.id]?.syncing && syncCheckEnabled && requestSelectPush(p.id)"
+                           :title="!syncCheckEnabled ? 'Sync check is off - turn it on (power icon in the SYNC column header) to push files' : 'Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project\'s exclude list, unaffected by the DRY toggle'">
                         <i class="fa-solid fa-upload" style="width:14px; color: #38bdf8;"></i> Upload (select files)
                       </div>
                     </div>
@@ -233,60 +250,71 @@
           <!-- Cell 6: Sync (PUSH/DRY/PULL, LOG, config) -->
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
-              <!-- Only the sync-check switch disables the whole group now: while a sync is running
-                   one of PUSH/PULL turns into STOP (§3.6) and must stay clickable, and a disabled
-                   <fieldset> disables every control inside it regardless of the button's own
-                   :disabled. Everything that was disabled-while-syncing still is, per control. -->
-              <fieldset :disabled="!syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
-                <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
-                  <div class="dry-group-left">
-                    <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
-                      <button
-                              class="btn-tech btn-tech-push"
-                              :class="{
-                                'btn-sync-clean': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === false,
-                                'btn-sync-checking': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === null,
-                                'btn-sync-diverged': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
-                                'btn-sync-stop': isStop(p, 'push')
-                              }"
-                              :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'push')"
-                              @click="isStop(p, 'push') ? requestCancelSync(p.id) : requestSync(p.id, 'push')"
-                              :title="isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
-                        <i class="fa-solid" :class="isStop(p, 'push') ? 'fa-stop' : 'fa-cloud-arrow-up'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'push') ? 'STOP' : 'PUSH' }}</span>
-                      </button>
-                    </CountBadgeWrap>
-                  </div>
+              <div class="sync-cluster">
+                <!-- Only the sync-check switch disables the whole group now: while a sync is running
+                     one of PUSH/PULL turns into STOP (§3.6) and must stay clickable, and a disabled
+                     <fieldset> disables every control inside it regardless of the button's own
+                     :disabled. Everything that was disabled-while-syncing still is, per control. -->
+                <fieldset :disabled="!syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
+                  <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
+                    <div class="dry-group-left">
+                      <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
+                        <button
+                                class="btn-tech btn-tech-push"
+                                :class="{
+                                  'btn-sync-clean': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === false,
+                                  'btn-sync-checking': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === null,
+                                  'btn-sync-diverged': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
+                                  'btn-sync-stop': isStop(p, 'push')
+                                }"
+                                :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'push')"
+                                @click="isStop(p, 'push') ? requestCancelSync(p.id) : requestSync(p.id, 'push')"
+                                :title="isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
+                          <i class="fa-solid" :class="isStop(p, 'push') ? 'fa-stop' : 'fa-cloud-arrow-up'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'push') ? 'STOP' : 'PUSH' }}</span>
+                        </button>
+                      </CountBadgeWrap>
+                    </div>
 
-                  <div class="dry-toggle-center" title="Toggle Dry Run">
-                    <span class="dry-label">DRY</span>
-                    <label class="switch switch-sm">
-                      <!-- :checked + @change (NOT v-model): a companion must not mutate its own
-                           mirrored `p.dry_run` — the host flips it via setDryRun and the new value
-                           mirrors back. On the host this is identical to the old v-model+save. -->
-                      <input type="checkbox" :checked="p.dry_run" :disabled="projectRuntime[p.id]?.syncing" @change="setDryRun(p.id, $event.target.checked)" />
-                      <span class="slider"></span>
-                    </label>
-                  </div>
+                    <div class="dry-toggle-center" title="Toggle Dry Run">
+                      <span class="dry-label">DRY</span>
+                      <label class="switch switch-sm">
+                        <!-- :checked + @change (NOT v-model): a companion must not mutate its own
+                             mirrored `p.dry_run` — the host flips it via setDryRun and the new value
+                             mirrors back. On the host this is identical to the old v-model+save. -->
+                        <input type="checkbox" :checked="p.dry_run" :disabled="projectRuntime[p.id]?.syncing" @change="setDryRun(p.id, $event.target.checked)" />
+                        <span class="slider"></span>
+                      </label>
+                    </div>
 
-                  <div class="dry-group-right">
-                    <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
-                      <button
-                              class="btn-tech btn-tech-pull"
-                              :class="{
-                                'btn-sync-clean': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === false,
-                                'btn-sync-checking': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === null,
-                                'btn-sync-diverged': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
-                                'btn-sync-stop': isStop(p, 'pull')
-                              }"
-                              :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'pull')"
-                              @click="isStop(p, 'pull') ? requestCancelSync(p.id) : requestSync(p.id, 'pull')"
-                              :title="isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
-                        <i class="fa-solid" :class="isStop(p, 'pull') ? 'fa-stop' : 'fa-cloud-arrow-down'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'pull') ? 'STOP' : 'PULL' }}</span>
-                      </button>
-                    </CountBadgeWrap>
+                    <div class="dry-group-right">
+                      <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
+                        <button
+                                class="btn-tech btn-tech-pull"
+                                :class="{
+                                  'btn-sync-clean': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === false,
+                                  'btn-sync-checking': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === null,
+                                  'btn-sync-diverged': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
+                                  'btn-sync-stop': isStop(p, 'pull')
+                                }"
+                                :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'pull')"
+                                @click="isStop(p, 'pull') ? requestCancelSync(p.id) : requestSync(p.id, 'pull')"
+                                :title="isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
+                          <i class="fa-solid" :class="isStop(p, 'pull') ? 'fa-stop' : 'fa-cloud-arrow-down'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'pull') ? 'STOP' : 'PULL' }}</span>
+                        </button>
+                      </CountBadgeWrap>
+                    </div>
                   </div>
+                </fieldset>
+
+                <!-- LAST ACTION - two 8px in-flow lines, no separator, no "Never" placeholder
+                     (Extreme Narrow: absence of the state IS the "never synced" signal). NEVER
+                     position:absolute here - see the collision comment near the narrow-mode
+                     .dry-group rule below (an overhang there fights the next row's own content). -->
+                <div v-if="p.last_sync_action" class="last-action" :title="`${p.last_sync_action} — ${p.last_sync_host || ''}`">
+                  <div class="la-line"><span :class="p.last_sync_action.includes('PULL') ? 'la-pull' : 'la-push'">{{ p.last_sync_action }}</span> {{ formatTimeAgo(p.last_sync_time) }}</div>
+                  <div v-if="p.last_sync_host" class="la-line la-host">{{ p.last_sync_host }}</div>
                 </div>
-              </fieldset>
+              </div>
 
               <button class="btn-tech btn-tech-secondary" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
                 <i class="fa-solid fa-file-lines btn-log-icon-only"></i>
@@ -310,23 +338,29 @@ import { invoke } from '../utils/tauri';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
-import { useTerminalPanel } from '../composables/useTerminalPanel';
-import { gitRefreshKey, diffRefreshKey, refreshProject } from '../composables/useBackgroundRefresh';
+import { useTerminalTabs } from '../composables/useTerminalTabs';
+import { useAppWindow } from '../composables/useAppWindow';
+import { refreshIdeAvailability } from '../composables/useProjectConfig';
+import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
-import { Toast, ideAvailability, iconTimestamp, isRefreshing } from '../store/projectStore';
+import { Toast, ideAvailability, iconTimestamp, isRefreshing, pokeExternalTermCounts } from '../store/projectStore';
 import { projectIconSrc } from '../utils/projectIcon';
+import { copyText } from '../utils/clipboard';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
 // R-2 write side: these run the real action on the host whether clicked on the Mac or relayed
 // from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
 import { requestSync, requestSelectPush, setDryRun, requestRefresh, reorderProjects, requestCancelSync } from '../store/remoteActions';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
+import TerminalCell from './TerminalCell.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
 
 const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
-const { openInAppTerminal } = useTerminalPanel();
+const { openGlobalTerminal, openProjectTerminal } = useTerminalTabs();
+// `false` on a companion — see openReportHtml.
+const { nativeWindow } = useAppWindow();
 
 function handleCreateNew() {
   createNewProject(sshHosts);
@@ -356,33 +390,125 @@ watch([projects, iconTimestamp], () => {
   failedIcons.value = {};
 });
 
+// { [projectId]: styleObject } — COMPONENT-LOCAL on purpose. This used to live on
+// `projectRuntime`, which is a mirrored store ref: every hover on the Mac broadcast a style delta
+// that overwrote the phone's own popup position (two screens, two different viewports, one field),
+// and the write also resurrected the runtime entry of a project that had just been removed. Where
+// a popup sits on screen is per-screen presentation, so it never belongs on the wire.
+const popupStyles = ref({});
+
+// Which project's popup is open — at most one, app-wide. `openedByTap` distinguishes a pinned
+// popup (tapped/clicked open) from a hover-open one, so leaving with the mouse closes the second
+// but not the first.
+const openPopupId = ref(null);
+const openedByTap = ref(false);
+
 // Popup is `position: fixed`, so viewport coordinates are the right frame of reference. It is
 // horizontally centered on the window (clamped to a small viewport margin so it never crops
 // against an edge) rather than pinned to the trigger's left edge, which used to let a wide popup
 // run off the right side of the window. The popup element is already in the DOM at
 // `visibility: hidden` (not `display: none`) when this fires, so its real rendered width can be
 // measured before it becomes visible.
-function onOpenEnter(project, event) {
-  if (event) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (!projectRuntime.value[project.id]) {
-      projectRuntime.value[project.id] = {};
-    }
-    const popupEl = event.currentTarget.querySelector('.open-popup');
-    const margin = 8;
-    let left = rect.left;
-    if (popupEl) {
-      const popupWidth = popupEl.getBoundingClientRect().width || popupEl.offsetWidth || 0;
-      left = window.innerWidth / 2 - popupWidth / 2;
-      left = Math.min(Math.max(left, margin), window.innerWidth - popupWidth - margin);
-    }
-    projectRuntime.value[project.id].popupStyle = {
+function positionPopup(project, wrapperEl) {
+  if (!wrapperEl) return;
+  const rect = wrapperEl.getBoundingClientRect();
+  const popupEl = wrapperEl.querySelector('.open-popup');
+  const margin = 8;
+  let left = rect.left;
+  if (popupEl) {
+    const popupWidth = popupEl.getBoundingClientRect().width || popupEl.offsetWidth || 0;
+    left = window.innerWidth / 2 - popupWidth / 2;
+    left = Math.min(Math.max(left, margin), window.innerWidth - popupWidth - margin);
+  }
+  popupStyles.value = {
+    ...popupStyles.value,
+    [project.id]: {
       position: 'fixed',
       bottom: `${window.innerHeight - rect.top}px`,
       left: `${left}px`,
       transformOrigin: 'bottom center'
-    };
+    }
+  };
+}
+
+function openPopup(project, wrapperEl, byTap) {
+  positionPopup(project, wrapperEl);
+  openPopupId.value = project.id;
+  openedByTap.value = byTap;
+  // Re-probe which IDEs are installed, but TTL-cached (useProjectConfig.js): this fires on HOVER
+  // too, and sweeping the mouse down the OPEN column used to send one invoke per row plus one
+  // mirrored-ref write per row. IDE availability changes on the timescale of an app install, not a
+  // hover, so the cache makes hovering free while still catching an install within a minute.
+  refreshIdeAvailability();
+}
+
+function closePopup() {
+  openPopupId.value = null;
+  openedByTap.value = false;
+}
+
+function onOpenHover(project, event) {
+  // A tap on a touch device also fires mouseenter first; the click that follows only promotes the
+  // already-open popup to "pinned" (see toggleOpenPopup), it never re-toggles it shut.
+  if (openPopupId.value === project.id && openedByTap.value) return;
+  openPopup(project, event?.currentTarget, false);
+}
+
+function onOpenHoverLeave(project) {
+  if (openPopupId.value === project.id && !openedByTap.value) closePopup();
+}
+
+function toggleOpenPopup(project, event) {
+  if (openPopupId.value === project.id && openedByTap.value) {
+    closePopup();
+    return;
   }
+  openPopup(project, event?.currentTarget?.closest('.open-popup-wrapper'), true);
+}
+
+// Dismissal for the tap path (a phone has no "move the mouse away"). Registered only while a popup
+// is open, and `pointerdown` fires before the `click` that opened it has been dispatched, so the
+// opening gesture can never close it again.
+function onDocPointerDown(e) {
+  if (!e.target.closest?.('.open-popup-wrapper')) closePopup();
+}
+
+function onDocKeydown(e) {
+  if (e.key === 'Escape') closePopup();
+}
+
+watch(openPopupId, (id) => {
+  if (id) {
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    document.addEventListener('keydown', onDocKeydown);
+  } else {
+    document.removeEventListener('pointerdown', onDocPointerDown, true);
+    document.removeEventListener('keydown', onDocKeydown);
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocPointerDown, true);
+  document.removeEventListener('keydown', onDocKeydown);
+});
+
+// A null `ideAvailability` means "not asked yet", which must read as UNAVAILABLE, not available:
+// the old `ideAvailability && !ideAvailability.vscode` form left every IDE entry enabled until the
+// first check landed, so an early click launched nothing and said nothing.
+function ideMissing(name) {
+  return !ideAvailability.value?.[name];
+}
+
+const PATH_MISSING_TITLE = 'Local folder missing on disk';
+
+/** Every LOCAL popup item consumes the project's directory, so a missing volume blocks all of them
+ *  (COPY excepted — it is handled separately in the template and stays enabled). */
+function localBlocked(p, ide) {
+  return isPathMissing(p) || (ide ? ideMissing(ide) : false);
+}
+
+function localTitle(p) {
+  return isPathMissing(p) ? `${PATH_MISSING_TITLE}\n${p.local_path}` : null;
 }
 
 // --- Drag to reorder ---
@@ -394,16 +520,16 @@ function onRowDragStart(index, event) {
     event.preventDefault();
     return;
   }
-  // Reset trạng thái mousedown ngay lập tức sau khi xác thực dragstart
+  // Reset the mousedown flag as soon as the dragstart is validated.
   isHandleMouseDown.value = false;
   dragFromIndex.value = index;
-  // Bắt buộc phải set data đối với WebKit/macOS để drop được kích hoạt
+  // WebKit/macOS only fires drop when the drag carries data, so this set is mandatory.
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', String(index));
 }
 
 function onRowMouseDown(event) {
-  // Nếu mousedown không nằm trên drag handle, reset trạng thái
+  // A mousedown outside the drag handle resets the flag, so only the handle can start a drag.
   if (!event.target.closest('.project-drag-handle')) {
     isHandleMouseDown.value = false;
   }
@@ -412,16 +538,17 @@ function onRowMouseDown(event) {
 function onRowDragOver(index, event) {
   if (dragFromIndex.value === null || dragFromIndex.value === index) return;
 
-  // Tính toán toạ độ để xác định chuột đã vượt qua trung điểm của hàng đích chưa.
-  // Điều này ngăn chặn triệt để hiện tượng nhảy hàng liên tục (feedback loop/jittering) khi vừa chạm biên.
+  // Swap only once the pointer has crossed the target row's midpoint. Reacting on the row's edge
+  // instead produces a feedback loop: the swap moves the row back under the pointer, which
+  // immediately re-triggers the swap (visible as constant jitter).
   const rect = event.currentTarget.getBoundingClientRect();
   const threshold = rect.top + rect.height / 2;
   const fromIndex = dragFromIndex.value;
 
-  // Kéo xuống: chỉ swap khi chuột đi qua nửa dưới của hàng đích
+  // Dragging down: only swap past the lower half of the target row.
   if (fromIndex < index && event.clientY < threshold) return;
 
-  // Kéo lên: chỉ swap khi chuột đi qua nửa trên của hàng đích
+  // Dragging up: only swap past the upper half of the target row.
   if (fromIndex > index && event.clientY > threshold) return;
 
   const arr = [...projects.value];
@@ -460,33 +587,51 @@ async function openIdeLocal(ideName, path) {
     // same cold-start double-window fix as SSH terminal / run_project_command.
     if (ideName === 'terminal') {
       await invoke('open_local_terminal', { localPath: path });
+      // The badge is a live scan, not a tally, so nothing is incremented here — this only asks the
+      // host to re-scan sooner than its next tick, once the new shell has had time to `cd`.
+      pokeExternalTermCounts();
       return;
     }
     const args = IDE_LOCAL_ARGS[ideName]?.(path)
     if (args) await invoke('macos_open', { args });
   } catch (e) {
+    // `macos_open` now reports a non-zero `open` (missing app, unhandled URI) instead of always
+    // succeeding — surface it the same way openIdeRemote does, or the click stays silent.
     console.error(e);
-  }
-}
-
-// Shared invoke/Toast wrapper for the popup's run-commands row - BUILD and DEV differ only by
-// which Tauri command they call and the success wording.
-async function invokeProjectRun(command, path, cmd, successTitle) {
-  try {
-    await invoke(command, { localPath: path, cmd });
-    Toast.fire({ icon: 'success', title: successTitle });
-  } catch (e) {
-    console.error(`Failed to run project command (${command}):`, e);
     Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
   }
 }
 
-async function runProjectCommand(path, cmd) {
-  return invokeProjectRun('run_project_command', path, cmd, 'Command started in Terminal!');
+// Project ids with a DEV/BUILD invoke still in flight. Both commands open a Terminal window and
+// take a moment to answer, and nothing in the popup changes meanwhile — an impatient second click
+// used to open a second window running the same build. No spinner, no new element: the second
+// click is simply ignored until the first settles (Extreme Narrow).
+const runningProjectIds = ref(new Set());
+
+// Shared invoke/Toast wrapper for the popup's run-commands row - BUILD and DEV differ only by
+// which Tauri command they call and the success wording.
+async function invokeProjectRun(command, project, cmd, successTitle) {
+  if (runningProjectIds.value.has(project.id)) return;
+  runningProjectIds.value = new Set(runningProjectIds.value).add(project.id);
+  try {
+    await invoke(command, { localPath: project.local_path, cmd });
+    Toast.fire({ icon: 'success', title: successTitle });
+  } catch (e) {
+    console.error(`Failed to run project command (${command}):`, e);
+    Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
+  } finally {
+    const next = new Set(runningProjectIds.value);
+    next.delete(project.id);
+    runningProjectIds.value = next;
+  }
 }
 
-async function runProjectDev(path, cmd) {
-  return invokeProjectRun('run_project_dev', path, cmd, 'Command started in Terminal!');
+async function runProjectCommand(project, cmd) {
+  return invokeProjectRun('run_project_command', project, cmd, 'Command started in Terminal!');
+}
+
+async function runProjectDev(project, cmd) {
+  return invokeProjectRun('run_project_dev', project, cmd, 'Command started in Terminal!');
 }
 
 // (host, path) -> absolute path. The remote $HOME never changes within a session, so a
@@ -503,15 +648,15 @@ async function resolveRemoteFullPath(host, path) {
   const cached = resolvedPathCache.get(key);
   if (cached) return cached;
 
-  let resolvedPath = path;
-  try {
-    resolvedPath = await invoke('resolve_remote_path', { host, path });
-  } catch (e) {
-    console.error('Failed to resolve remote path', e);
-  }
+  // A failure RETHROWS rather than falling back to the raw path. The fallback produced
+  // `/~/project`, which every caller then embedded verbatim: `vscode://…/~/project` opens VSCode
+  // pointing at a directory that does not exist, and the user gets a broken window instead of an
+  // error. Rethrowing lets openIdeRemote's catch Toast the real SSH error. SSH Terminal takes the
+  // same path even though a remote shell would re-expand `~` itself — an unreachable host means
+  // that terminal would fail on connect anyway, so one consistent error beats a special case.
+  const resolvedPath = await invoke('resolve_remote_path', { host, path });
   const full = resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
-  // Only cache a real resolve (SSH succeeded → value changed); never pin a failed fallback.
-  if (resolvedPath !== path) resolvedPathCache.set(key, full);
+  resolvedPathCache.set(key, full);
   return full;
 }
 
@@ -522,27 +667,23 @@ function flashCopied(key) {
   setTimeout(() => { if (copiedPathKey.value === key) copiedPathKey.value = null; }, 1500);
 }
 
-async function copyLocalPath(project) {
-  try {
-    await navigator.clipboard.writeText(project.local_path);
-    flashCopied(`local-${project.id}`);
-  } catch (e) {
-    console.error('Failed to copy local path', e);
-  }
+// utils/clipboard.js owns the non-secure-context fallback (the phone companion is plain http, where
+// `navigator.clipboard` does not exist at all); this only decides what the user sees on failure.
+async function copyPath(text, flashKey) {
+  if (await copyText(text)) flashCopied(flashKey);
+  else Toast.fire({ icon: 'error', title: 'Could not copy - select the path in the row and copy it by hand' });
 }
 
+async function copyLocalPath(project) {
+  return copyPath(project.local_path, `local-${project.id}`);
+}
+
+// Copies the stored remote path verbatim - mirror copyLocalPath. `~` is a valid, portable path on
+// the remote (shells/scp/rsync expand it there), so copying it needs zero network work. The old
+// code awaited resolveRemoteFullPath here, which fired a blocking SSH `echo $HOME` per click
+// (system.rs) and froze the UI for seconds - for an operation that is just "copy an existing field".
 async function copyRemotePath(project) {
-  try {
-    // Copy the stored remote path verbatim - mirror copyLocalPath. `~` is a valid,
-    // portable path on the remote (shells/scp/rsync expand it there), so copying it
-    // needs zero network work. The old code awaited resolveRemoteFullPath here, which
-    // fired a blocking SSH `echo $HOME` per click (system.rs) and froze the UI for
-    // seconds - for an operation that is just "copy an existing field".
-    await navigator.clipboard.writeText(project.remote_path);
-    flashCopied(`remote-${project.id}`);
-  } catch (e) {
-    console.error('Failed to copy remote path', e);
-  }
+  return copyPath(project.remote_path, `remote-${project.id}`);
 }
 
 // Pulls REPORT.html from the remote first if it's newer than the local copy (or local has none),
@@ -556,6 +697,11 @@ async function openReportHtml(project) {
       remotePath: project.remote_path || null,
     });
     await invoke('macos_open', { args: [path] });
+    // The browser window opens on the MAC - which is invisible from a phone, so the tap looked
+    // like it did nothing. `nativeWindow` is useAppWindow's existing "this screen owns the real
+    // window" capability (false on a companion), reused here so no `isHost` token leaks into a
+    // component (ENV-1).
+    if (!nativeWindow) Toast.fire({ icon: 'success', title: 'Report opened on the Mac' });
   } catch (e) {
     console.error('Failed to open REPORT.html', e);
     Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
@@ -691,11 +837,13 @@ function formatTimeAgo(timestamp) {
   justify-content: center;
 }
 
-/* LAST holds two stacked divs (the pull/push badge+time, then the host line below it) - they
-   need to stay stacked, not sit side by side as flex-row items. */
-.col-last-sync {
-  flex-direction: column;
+/* The TERM header label IS the global-terminal button (R1) — same colour/size as the other header
+   labels, no button chrome until hover. */
+.th-term-btn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: inherit; font-size: 12px; line-height: 1;
 }
+.th-term-btn:hover { color: var(--accent-cyan); }
 
 .grid-header-cell:first-child,
 .grid-row-cell:first-child {
@@ -738,7 +886,7 @@ function formatTimeAgo(timestamp) {
 
 .col-tasks,
 .col-git-status,
-.col-last-sync,
+.col-terminal,
 .col-action,
 .col-sync {
   padding-left: 0 !important;
@@ -749,7 +897,7 @@ function formatTimeAgo(timestamp) {
 .col-project-info,
 .col-tasks,
 .col-git-status,
-.col-last-sync,
+.col-terminal,
 .col-action,
 .col-sync {
   width: auto !important;
@@ -777,7 +925,7 @@ function formatTimeAgo(timestamp) {
 }
 
 
-/* Drag handle: project icon vùng */
+/* Drag handle: the project icon area */
 .project-drag-handle {
   position: relative;
   width: 28px;
@@ -799,13 +947,13 @@ function formatTimeAgo(timestamp) {
   pointer-events: none;
 }
 
-/* Lớp chấm chấm phủ lên góc trên-trái để gợi ý có thể kéo */
+/* Dotted overlay on hover — the affordance that says this icon can be dragged. */
 .project-drag-handle::before {
   content: '';
   position: absolute;
   inset: 0;
+  /* Dim wash over the icon image. */
   background-color: rgba(0, 0, 0, 0.45);
-  /* Nền tối mờ phủ lên trên ảnh */
   background-image:
     radial-gradient(circle, rgba(255, 255, 255, 0.8) 1.2px, transparent 1.2px);
   background-size: 5px 5px;
@@ -814,8 +962,8 @@ function formatTimeAgo(timestamp) {
   transition: opacity 0.15s;
   pointer-events: none;
   border-radius: 6px;
+  /* Sits above the icon image. */
   z-index: 1;
-  /* Nổi lên trên cùng ảnh icon */
 }
 
 .project-drag-handle:hover::before {
@@ -831,7 +979,8 @@ function formatTimeAgo(timestamp) {
   opacity: 0.4;
 }
 
-/* Ngăn chặn child elements nhận mouse events khi đang kéo, đảm bảo WebKit ghi nhận sự kiện drop lên grid-row */
+/* Children must not take mouse events while a drag is running, or WebKit never registers the drop
+   on .grid-row itself. */
 .projects-grid.dragging-active .grid-row * {
   pointer-events: none;
 }
@@ -841,15 +990,50 @@ function formatTimeAgo(timestamp) {
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-/* Tiny host line under the LAST ACT badge - which remote the action ran against */
-.sync-host {
-  font-size: 9px;
-  line-height: 1.2;
-  color: rgba(255, 255, 255, 0.35);
+/* R6: LAST ACTION now lives under the sync fieldset, not its own column. Wrapper stacks the
+   fieldset and the two-line action summary; the summary trims padding on .col-sync (see below)
+   to buy back the extra lines' height. */
+.sync-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+
+.last-action {
+  font-size: 8px;
+  line-height: 1.05;
+  color: var(--text-darker);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+/* Colour-only PUSH/PULL distinction - no separate badge element (Extreme Narrow). */
+.la-push {
+  color: var(--accent-cyan);
+}
+
+.la-pull {
+  color: var(--accent-amber);
+}
+
+.la-host {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Row-height buy-back for the two new LAST ACTION lines: SYNC cell had 6px top/bottom padding
+   (.grid-row-cell's default), trimmed to 3px here; .dry-group's own 2px main.css padding trimmed
+   to 1px too. Net row growth measured against the ~47px project-info cell stays within ~5px. */
+.grid-row-cell.col-sync {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.col-sync .dry-group {
+  padding: 1px;
 }
 
 .git-cell {
@@ -926,7 +1110,10 @@ fieldset:disabled .switch {
   background: transparent;
 }
 
-.open-popup-wrapper:hover .open-popup {
+/* State, not `:hover` — a phone can never satisfy a hover selector, so the popup (and everything
+   only reachable through it) was unusable on the companion. `.is-open` is set by hover-enter on a
+   pointer device AND by a tap/click, so the Mac's behaviour is unchanged. */
+.open-popup-wrapper.is-open .open-popup {
   visibility: visible;
   opacity: 1;
   transform: scale(1);
@@ -1116,7 +1303,7 @@ fieldset:disabled .switch {
   .dry-group {
     margin: 0 2px;
     gap: 3px;
-    padding: 2px 4px;
+    padding: 1px 4px;
     overflow: visible;
   }
 
@@ -1125,11 +1312,9 @@ fieldset:disabled .switch {
     padding: 0;
   }
 
-  /* PUSH's count badge (CountBadgeWrap) overhangs 5px past the button's top-right corner.
-     To prevent it from overlapping the "DRY" text in the tight narrow layout, we add extra margin.
-     PULL's badge (in the right group) overhangs to the right, which causes it to poke outside
-     the border of the .dry-group box, so we add a little margin there too. */
-
+  /* The DRY toggle is squeezed hard here so PUSH/PULL's count badges (CountBadgeWrap, a 6px
+     overhang past each button's top-right corner — main.css .cell-badge) have room to sit without
+     overlapping the "DRY" text. */
   .dry-toggle-center {
     padding: 0 2px !important;
   }
@@ -1158,25 +1343,17 @@ fieldset:disabled .switch {
     transform: translateX(8px);
   }
 
-  /* GIT sits noticeably closer to LAST than the gap elsewhere reads as needing - pull LAST left
-     a touch rather than shrinking --grid-gap globally (that would also tighten LAST↔ACTION and
+  /* GIT sits noticeably closer to TERM than the gap elsewhere reads as needing - pull TERM left
+     a touch rather than shrinking --grid-gap globally (that would also tighten TERM↔ACTION and
      ACTION↔SYNC, which need the opposite). */
-  .col-last-sync {
+  .col-terminal {
     margin-left: -6px;
   }
 
-  /* Shrink the LAST column's own text (PUSH/PULL badge, relative time, host line) to help it
-     fit in the now-tighter gap. */
-  .last-sync-badge {
-    font-size: 9px;
-  }
-
-  .sync-time {
-    font-size: 8px;
-  }
-
-  .sync-host {
-    font-size: 8px;
+  /* LAST ACTION's two lines get even tighter at this width - re-homed here from the old
+     .last-sync-badge/.sync-time/.sync-host rules (that column no longer exists). */
+  .last-action {
+    font-size: 7px;
   }
 }
 </style>

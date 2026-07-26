@@ -54,7 +54,6 @@
       :data="slotAccountInfo.data"
       :loading="monitor.loading"
       :error="monitor.error"
-      :stale="monitor.stale"
       :dataAt="monitor.dataAt"
       :isCached="slotAccountInfo.isCached"
       :cachedAt="slotAccountInfo.cachedAt"
@@ -76,10 +75,10 @@
 </template>
 
 <script setup>
-import { ref, shallowRef, computed, watch } from 'vue';
+import { ref, shallowRef, computed, watch, onUnmounted } from 'vue';
 import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
-import { getMonitor } from '../composables/usageMonitorRegistry';
+import { getMonitor, releaseMonitor } from '../composables/usageMonitorRegistry';
 import { loadAgAccount } from '../composables/agUsageCache';
 import { slotTarget, setSlotTarget } from '../store/usageSlotStore';
 
@@ -90,7 +89,7 @@ import { slotTarget, setSlotTarget } from '../store/usageSlotStore';
 //
 // The per-slot host is the whole point: every slot's REMOTE tab used to read the one global
 // `sshStore.selectedSshHost`, so two hosts could never be on screen together. See
-// docs/plan/usage-monitor-entity-refactor.md.
+// docs/plan/done/usage-monitor-entity-refactor.md.
 const props = defineProps({
   slotId: { type: String, required: true },
 });
@@ -102,11 +101,27 @@ const target = computed(() => slotTarget(props.slotId));
 // Resolved in a watcher, not a computed. `getMonitor` CREATES a monitor on first request - it
 // starts a poll and installs watchers - and a computed getter is not a legal place for that; it is
 // supposed to be a pure function of its dependencies. The watcher is the side-effect site.
+//
+// Every `getMonitor` is a HOLD that this slot owns and must give back, or the monitor for a host the
+// user merely glanced at keeps polling it over SSH for the rest of the session. Both agents are held
+// while the slot is mounted, not just the visible one: each tab renders its own power icon off its
+// monitor's live state.
 const monitors = shallowRef(monitorsFor(target.value));
 function monitorsFor(t) {
   return { antigravity: getMonitor('antigravity', t.host), claudecode: getMonitor('claudecode', t.host) };
 }
-watch(() => target.value.host, () => { monitors.value = monitorsFor(target.value); });
+function releaseMonitors(pair) {
+  releaseMonitor(pair.antigravity);
+  releaseMonitor(pair.claudecode);
+}
+watch(() => target.value.host, () => {
+  // Acquire the new pair BEFORE releasing the old one: another slot may be watching the same host,
+  // and dropping to zero holders in between would stop and restart a poll that never needed to stop.
+  const previous = monitors.value;
+  monitors.value = monitorsFor(target.value);
+  releaseMonitors(previous);
+});
+onUnmounted(() => releaseMonitors(monitors.value));
 
 const monitor = computed(() => monitors.value[target.value.agentId]);
 
@@ -129,7 +144,7 @@ const srcTabs = computed(() => {
   ];
 });
 
-// Contract C-3 (docs/plan/1.20.1-flow-audit-fixes.md §1.1). When the circuit breaker halts a monitor
+// Contract C-3 (docs/plan/done/1.20.1-flow-audit-fixes.md §1.1). When the circuit breaker halts a monitor
 // the existing power icon turns AMBER - a third state on the control that is already there, never a
 // new row or banner (CLAUDE.md, UI Extreme Narrow). It matters because `is-on` while nothing is
 // polling is the app lying about the one thing the user opened this card to judge: whether the

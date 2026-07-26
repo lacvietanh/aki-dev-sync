@@ -25,7 +25,7 @@ function basename(path) {
   return path.split('/').pop().replace(/\.js$/, '')
 }
 
-// ── PER-SCREEN state: the ONE exclusion list (docs/plan/1.20.1-flow-audit-fixes.md §3.12) ────
+// ── PER-SCREEN state: the ONE exclusion list (docs/plan/done/1.20.1-flow-audit-fixes.md §3.12) ────
 //
 // Everything else in `src/store/*.js` is shared by construction. These three are not: they record
 // what THIS screen is looking at, not what the session is doing. Mirroring them meant a phone
@@ -43,6 +43,13 @@ const PER_SCREEN_KEYS = new Set([
   'logStore.activeLogProjectId',
   'logStore.isLogExpanded',
   'usageSlotStore.slotTargets',
+  // WP-C: which terminal TAB a screen is looking at is that screen's own navigation, exactly like
+  // activeLogProjectId — a phone switching tabs must not yank the Mac's terminal focus and vice
+  // versa. `terminalTabsStore.terminalTabs` (the tab LIST itself) is deliberately NOT here: which
+  // tabs exist is genuinely shared session state and stays mirrored.
+  'terminalTabsStore.activeTerminalTabId',
+  // Which tab GROUP a screen is in — same per-screen reasoning as activeTerminalTabId.
+  'terminalTabsStore.activeTerminalScope',
 ])
 
 const STATE = new Map() // "<store>.<ref>" -> Ref

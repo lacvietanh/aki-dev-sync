@@ -33,7 +33,7 @@ try:
     print('{} pct={}'.format(int(ra), pct))
 except Exception as e:
     print('0 pct=-1 err={}'.format(e))
-" 2>/dev/null)
+" 2>/dev/null || echo '0 pct=-1 err=no_python3')
 
     # RESETS_AT now has format "TIMESTAMP pct=N" - split it
     RESETS_AT_VAL=$(printf '%s' "$RESETS_AT" | awk '{print $1}')
@@ -129,7 +129,7 @@ try:
         a.get('userRateLimitTier', '') or ''))
 except Exception:
     print('|||')
-" 2>/dev/null)
+" 2>/dev/null || echo '|||')
         CURRENT_ACCT=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $1}')
         CURRENT_ACCT_UUID=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $2}')
         LIVE_ORG_TIER=$(printf '%s' "$CLAUDE_JSON_INFO" | awk -F'|' '{print $3}')
@@ -183,9 +183,16 @@ except Exception:
 
     # Sanitizer emits one "LOG:<message>" line per decision, followed by exactly one final
     # "STATUS:<code>[:<json>]" line. Everything goes to stdout (no stray files, no reliance on a
-    # writable $HOME/.claude for a scratch stderr file) so a single `python3 -c` failure can never
-    # abort the outer `set -e` script - a non-zero exit or empty output is simply treated as
-    # "no trustworthy data".
+    # writable $HOME/.claude for a scratch stderr file), so every decision is readable from the
+    # single captured string and the outcome is carried by that STATUS line rather than by an exit
+    # code.
+    #
+    # The `|| echo` guard is what keeps a python3 failure from killing the script: under POSIX sh a
+    # plain `VAR=$(cmd)` DOES take the command's exit status, so with `set -e` at the top a host
+    # without python3 aborted here - silently and permanently unmonitorable, no stdout, no log line
+    # saying why. (An earlier comment here claimed the opposite; it was wrong.) With the guard the
+    # missing interpreter arrives as an ordinary non-OK STATUS, which the branch below already
+    # handles as "no trustworthy data". Same guard as the auth reads at §5.
     SANITIZED=$(python3 -c "
 import json, sys
 now = $NOW
@@ -257,8 +264,7 @@ if not kept:
 out = dict(d)
 out['rate_limits'] = kept
 print('STATUS:OK:' + json.dumps(out))
-" 2>/dev/null)
-    SANITIZE_RC=$?
+" 2>/dev/null || echo 'STATUS:INTERPRETER_ERROR')
 
     printf '%s\n' "$SANITIZED" | while IFS= read -r _line; do
         case "$_line" in
@@ -268,13 +274,16 @@ print('STATUS:OK:' + json.dumps(out))
 
     SANITIZE_LAST=$(printf '%s\n' "$SANITIZED" | grep '^STATUS:' | tail -n 1)
     SANITIZE_STATUS=$(printf '%s' "$SANITIZE_LAST" | awk -F: '{print $2}')
-    _log "sanitize: exit=$SANITIZE_RC status=${SANITIZE_STATUS:-NONE}"
+    _log "sanitize: status=${SANITIZE_STATUS:-NONE}"
 
+    # The STATUS line is the only verdict. There is no exit-code conjunct here any more: the guard
+    # on the substitution above pins the status to 0 unconditionally, so testing it could only ever
+    # be true - a dead branch that read as a second safety net while checking nothing.
     SANITIZED_JSON=""
-    if [ "$SANITIZE_RC" -eq 0 ] && [ "$SANITIZE_STATUS" = "OK" ]; then
+    if [ "$SANITIZE_STATUS" = "OK" ]; then
         SANITIZED_JSON=$(printf '%s' "$SANITIZE_LAST" | cut -d: -f3-)
     else
-        _log "sanitize: no trustworthy data (status=${SANITIZE_STATUS:-NONE}, rc=$SANITIZE_RC) → no stdout"
+        _log "sanitize: no trustworthy data (status=${SANITIZE_STATUS:-NONE}) → no stdout"
     fi
 
     # ── 7. Write stdout payload ───────────────────────────────────────────

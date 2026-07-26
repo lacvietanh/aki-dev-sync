@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import Swal from 'sweetalert2'
 import { invoke } from '../utils/tauri'
+import { action } from '../services/action'
 
 export const Toast = Swal.mixin({
   toast: true,
@@ -23,9 +24,34 @@ export const projects = ref([])
 // Shape: { [id]: { git_status, git_log, remote_url, syncing } }
 export const projectRuntime = ref({})
 
+// LIVE count of external Terminal.app windows/tabs standing in each project's directory:
+// `{ [projectId]: n }`. Not a tally the app accumulates — a SNAPSHOT the host re-derives from the
+// process table every few seconds (`count_external_terminals`, composables/useExternalTerminals.js),
+// which is why opening a window raises it and closing one lowers it again.
+//
+// Multi-entity guard (CLAUDE.md): the whole map being replaced on each poll is not a "clear" — every
+// key is rewritten from the SAME single scan, so no project's value is ever dropped on another
+// project's behalf. There is deliberately no reset/clear function; nothing owns a part of this map.
+//
+// A ref export of a `src/store/*.js` module, so services/mirror.js carries it to every companion:
+// the phone shows the Mac's live count without polling anything itself (it cannot — `Terminal.app`
+// and its process table exist only on the Mac).
+export const externalTermCounts = ref({})
+
+/** Ask the host to re-scan shortly after it opened an external Terminal, so the badge moves at once
+ *  instead of on the next 5s tick. An `action()` because a companion's OPEN → Terminal must poke the
+ *  HOST's scan (the companion has no process table of its own); the new count returns via the mirror.
+ *  The import is dynamic for the same reason `Toast` is imported dynamically in services/action.js —
+ *  the composable imports this store, and a static import back would close that cycle at bootstrap. */
+export const pokeExternalTermCounts = action('projectStore.pokeExternalTermCounts', () => {
+  import('../composables/useExternalTerminals')
+    .then(({ scheduleExternalTermRescan }) => scheduleExternalTermRescan())
+    .catch(e => console.error('[projectStore] external terminal re-scan could not be scheduled', e))
+})
+
 export const isReloading = ref(false)
 
-// Ids of projects removed during this session (docs/plan/1.20.1-flow-audit-fixes.md §3.3). A
+// Ids of projects removed during this session (docs/plan/done/1.20.1-flow-audit-fixes.md §3.3). A
 // config modal that was already open when its project was removed — typically on the OTHER screen —
 // still holds a full copy of it, and Save would re-enter `applyProjectConfig`'s "new project"
 // branch and silently resurrect it. This is the record that lets that write be REJECTED instead:

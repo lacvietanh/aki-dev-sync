@@ -1,19 +1,17 @@
 <template>
   <div class="agent-usage-section" :style="{ height: sectionHeight }">
+    <!-- The separators between slots and between rows are borders on the neighbour, not elements:
+         a divider <div> is a DOM node whose only job is to be a line (CLAUDE.md, UI Extreme Narrow). -->
     <div v-for="(row, rIdx) in activeTierRows" :key="rIdx" class="tier-row-container">
       <div class="usage-split-layout">
-        <template v-for="(slot, sIdx) in row" :key="slot.id">
-          <AgentUsageSlot :slot-id="slot.id" />
-          <div v-if="sIdx < row.length - 1" class="column-divider"></div>
-        </template>
+        <AgentUsageSlot v-for="slot in row" :key="slot.id" :slot-id="slot.id" />
       </div>
-      <div v-if="rIdx < activeTierRows.length - 1" class="row-divider"></div>
     </div>
   </div>
 </template>
 
 <script setup>
-// @docs docs/plan/usage-monitor-entity-refactor.md
+// @docs docs/plan/done/usage-monitor-entity-refactor.md
 //
 // Pure tier layout. This component used to construct four shared usage sources and pass them down
 // to every slot - which is precisely what limited the app to one remote host: `agRemote`/`ccRemote`
@@ -38,10 +36,16 @@ const activeTierRows = computed(() => {
   return ALL_TIER_ROWS.slice(0, tierCount.value);
 });
 
+// One tier row is a fixed-height band (header + card body); rows are separated by ROW_GAP_PX.
+// There is no cap: the old `Math.min(…, 335)` could never bind - the tallest reachable value is
+// 2 * ROW_HEIGHT_PX + ROW_GAP_PX = 332 with the two tiers ALL_TIER_ROWS defines - so it only
+// hid what the real ceiling was.
+const ROW_HEIGHT_PX = 161;
+const ROW_GAP_PX = 10;
+
 const sectionHeight = computed(() => {
-  const count = tierCount.value;
-  if (count <= 1) return '161px';
-  return `${Math.min(count * 161 + (count - 1) * 10, 335)}px`;
+  const rows = Math.max(tierCount.value, 1);
+  return `${rows * ROW_HEIGHT_PX + (rows - 1) * ROW_GAP_PX}px`;
 });
 
 </script>
@@ -66,11 +70,10 @@ const sectionHeight = computed(() => {
   gap: 6px;
 }
 
-.row-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  margin: 3px 0;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+/* Row separator: a border on the row that follows one, not a node of its own. */
+.tier-row-container + .tier-row-container {
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
 }
 
 /* Narrower, low-contrast scrollbar than the app-wide 6px rule (main.css) - this element only. */
@@ -91,10 +94,11 @@ const sectionHeight = computed(() => {
   align-items: stretch;
 }
 
-.column-divider {
-  width: 1px;
-  background: rgba(255, 255, 255, 0.05);
-  margin: 0 4px;
+/* Column separator: a border on every slot after the first (the scope id lands on the child
+   component's root element), so two slots still read as two columns with no divider node. */
+.usage-split-layout > * + * {
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  padding-left: 8px;
 }
 
 /* Horizontal padding/gaps here were sized for the wide layout - tighten them at narrow so the
@@ -108,8 +112,8 @@ const sectionHeight = computed(() => {
     gap: 2px;
   }
 
-  .column-divider {
-    margin: 0;
+  .usage-split-layout > * + * {
+    padding-left: 2px;
   }
 }
 </style>

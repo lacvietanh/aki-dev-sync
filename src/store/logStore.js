@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 
 // Hard cap on retained log lines — 2,000 per project and 2,000 global, dropped from the HEAD
-// (docs/plan/1.20.1-flow-audit-fixes.md §3.14, contract C-2).
+// (docs/plan/done/1.20.1-flow-audit-fixes.md §3.14, contract C-2).
 //
 // C-2, one cap one owner: this store is the ONLY place log lines are trimmed. `AppConsole.vue`
 // must not add its own trimming — it only decides how much of the (already capped) array it
@@ -21,8 +21,11 @@ export const projectLogs = ref({})
 // exactly the cross-screen bleed §3.12 removes.
 export const activeLogProjectId = ref(null)
 export const isLogExpanded = ref(false)
-export const consoleRef = ref(null)
-export const copied = ref(false)
+// NOTE: the console's DOM element and the 2s COPIED flash used to live here too. They must NOT be
+// in a store at all: mirror.js discovers every `isRef` export under src/store/, so the DOM node
+// threw 'DOM node cannot be mirrored' on every frame, and the COPIED flash mirrored SUCCESSFULLY —
+// tapping COPY on the phone flipped the Mac's button. Both now live at module scope in
+// src/composables/useLogs.js (per-screen, exactly like useTerminalPanel.js's terminalStackCollapsed).
 export let globalListener = null
 export function setGlobalListener(fn) { globalListener = fn }
 
@@ -55,4 +58,19 @@ export function appendProjectLogLines(projectId, lines) {
   if (!projectLogs.value[projectId]) projectLogs.value[projectId] = []
   pushCapped(projectLogs.value[projectId], lines)
   _appended.projects[projectId] = (_appended.projects[projectId] || 0) + lines.length
+}
+
+/** Forgets ONE removed project's log lines and its append cursor. Scoped to that single id by
+ *  construction — it never touches any other project's entry, and never the global log (Regression
+ *  Guard - Multi-entity State, CLAUDE.md). Called from the project-removal path
+ *  (composables/useProjectConfig.js's confirmRemove); without it both maps keep an entry per project
+ *  ever removed for the life of the session. */
+export function dropProjectLogs(projectId) {
+  if (!projectId) return
+  if (projectLogs.value[projectId]) {
+    const next = { ...projectLogs.value }
+    delete next[projectId]
+    projectLogs.value = next
+  }
+  delete _appended.projects[projectId]
 }

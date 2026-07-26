@@ -9,7 +9,7 @@
             <div class="icon-dropdown-header-info">
               <span class="version-info-tag"><i class="fa-solid fa-code"></i> {{ appVersion }} {{ buildTime }}</span>
               <a href="#" @click.prevent="showChangelogModal = true" class="header-changelog-link" title="View Changelog">
-                <i class="fa-solid fa-clock-rotate-left"></i> Changelog
+                <i class="fa-solid fa-clock-rotate-left"></i> View Changelog
               </a>
             </div>
             <div class="icon-dropdown-preset-row">
@@ -41,6 +41,10 @@
             <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item icon-dropdown-item-ssh-color" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local - row shows the actual tint">
               <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
             </a>
+            <!-- Host-only: both modals WRITE this Mac's config (apply_statusline_config, set_claude_profile),
+                 which services/hostInvoke.js deliberately keeps off the companion allowlist. Showing them on a
+                 phone would open a modal whose Apply button can only ever fail. -->
+            <template v-if="nativeWindow">
             <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item statusline-menu-item" title="Build & deploy statuslines for AG CLI (~/.gemini/antigravity-cli/) visually, apply to local and/or remote hosts">
               <i class="fa-solid fa-terminal"></i>
               <span class="statusline-label"><span
@@ -55,6 +59,7 @@
             <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) - Native / Proxy settings for ~/.claude/settings.json on this machine">
               <i class="fa-solid fa-sliders"></i> Claude Code Profile (Local)
             </a>
+            </template>
             <template v-if="remoteAvailable">
               <div class="icon-dropdown-separator"></div>
               <div class="icon-dropdown-ac-section">
@@ -239,7 +244,7 @@
           <span v-if="isDev" class="dev-tag">DEV</span>
         </div>
       </div>
-      <span class="app-version clickable" @click="showChangelogModal = true" title="Click to view Changelog">
+      <span class="app-version clickable" @click="showChangelogModal = true" title="View Changelog">
         <span v-if="newVersionAvailable" class="version-row">
           <span class="update-badge" @click.stop="showUpdateModal = true" :title="'New version ' + newVersionAvailable + ' available! Click for details.'">
             <i class="fa-solid fa-circle-arrow-up"></i> Update
@@ -254,6 +259,7 @@
         </button>
         <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
           <i class="fa-solid fa-note-sticky" :style="noteContent ? 'color: #f59e0b;' : ''"></i>
+          <TaskCountBadges :pinned="globalNoteSummary.doing" :open="globalNoteSummary.todo" />
         </button>
         <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="openLink(DONATE_URL)" title="Donate - support development">
           <i class="fa-solid fa-heart"></i>
@@ -310,9 +316,10 @@ import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
-import { openGlobalNote, noteContent } from '../composables/useGlobalNote';
+import { openGlobalNote, noteContent, globalNoteSummary } from '../composables/useGlobalNote';
 import { useRemoteControl } from '../composables/useRemoteControl';
 import { STATUSLINE_COLORS } from '../utils/statuslineColors';
+import { copyText } from '../utils/clipboard';
 import { tierCount, setTierCount } from '../store/usageTierStore';
 import { requestRefreshAll } from '../store/remoteActions';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
@@ -321,6 +328,7 @@ import UpdateModal from './modals/UpdateModal.vue';
 import GlobalNoteModal from './modals/GlobalNoteModal.vue';
 import ClaudeSettingModal from './modals/ClaudeSettingModal.vue';
 import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
+import TaskCountBadges from './tasks/TaskCountBadges.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
@@ -373,7 +381,7 @@ const {
   nativeWindow,
 } = useAppWindow();
 const { openSshConfig } = useSsh();
-const { refreshAllProjects, anySyncing, anyRefreshing, isReloading, Toast } = useProjects();
+const { anySyncing, anyRefreshing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
 
 // Remote Control section (host-only — hidden on a companion via remoteAvailable). See
@@ -399,7 +407,7 @@ const {
 // on it (it is a WebSocket query parameter). Anyone on the same wifi can read it. That is a real risk
 // the user is entitled to know about and to weigh themselves - a home LAN and a cafe are not the same
 // bet - so the state rides the existing On toggle as an amber outline plus a tooltip, never a new row
-// (CLAUDE.md UI Extreme Narrow). Decided in docs/plan/1.20.1-flow-audit-fixes.md §4.
+// (CLAUDE.md UI Extreme Narrow). Decided in docs/plan/done/1.20.1-flow-audit-fixes.md §4.
 const remotePlainHttp = computed(
   () => remoteRunning.value && remoteUrls.value.some((u) => u.kind !== 'tailscale')
 );
@@ -427,13 +435,13 @@ async function copyRemoteUrl(url) {
   // block: on a home LAN this address is the whole point of the feature.
   const plain = url.startsWith('http://');
   const warn = 'Not encrypted - anyone on this network can read the pairing code.';
-  try {
-    await navigator.clipboard.writeText(url);
+  // utils/clipboard.js owns the non-secure-context fallback; this only decides what is shown.
+  if (await copyText(url)) {
     Toast.fire(plain
       ? { icon: 'warning', title: 'Copied', text: `${url}\n${warn}` }
       : { icon: 'success', title: 'Copied', text: url });
-  } catch {
-    // Clipboard blocked (rare in the webview) — still surface the address so it can be read/typed.
+  } else {
+    // Copy blocked entirely — still surface the address so it can be read/typed by hand.
     Toast.fire(plain ? { icon: 'warning', title: url, text: warn } : { icon: 'info', title: url });
   }
 }
@@ -565,8 +573,8 @@ async function installAkiClaudeDoc() {
 // unrelated mechanisms that only looked like one feature.
 function handleRefresh() {
   // R-2: routed through the seam-A action so the header's global refresh works when clicked from a
-  // phone too (host runs the real refreshAllProjects; on the Mac this is identical to calling it
-  // directly). `refreshAllProjects` stays imported for other callers/typing.
+  // phone too (the host runs the real refreshAllProjects; on the Mac this is identical to calling
+  // it directly).
   requestRefreshAll();
 }
 
@@ -1044,6 +1052,7 @@ function onViewShortcut(e) {
 }
 
 .btn-note {
+  position: relative;
   margin-left: 10px;
 }
 
@@ -1127,10 +1136,6 @@ function onViewShortcut(e) {
   min-width: 0;
 }
 
-.version-num {
-  flex-shrink: 0;
-}
-
 .build-time {
   flex-shrink: 1;
   overflow: hidden;
@@ -1200,20 +1205,6 @@ function onViewShortcut(e) {
 
 .pin-btn.active i {
   transform: rotate(45deg);
-}
-
-/* Hover swaps version/build for "Read Changelog". No width jump: the dropdown's width is set by
-   its longest item ("Claude Code Profile (Local)"), which is wider than either of these labels. */
-.icon-dropdown-version .version-text-hover {
-  display: none;
-}
-
-.icon-dropdown-version:hover .version-text-default {
-  display: none;
-}
-
-.icon-dropdown-version:hover .version-text-hover {
-  display: inline;
 }
 
 @media (max-width: 700px) {

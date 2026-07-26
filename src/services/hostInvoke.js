@@ -17,11 +17,101 @@ import { isHost, onFrame, send } from './bridge'
 import { invoke } from '../utils/tauri'
 import { FRAME_INVOKE, FRAME_INVOKE_RESULT } from '../constants/protocol'
 
+/**
+ * The ONLY Tauri commands a companion may run on the Mac. Default-deny: anything absent is refused
+ * here, before it reaches the IPC layer.
+ *
+ * Membership rule — a command belongs here only if it is (a) a read/query, or (b) a gesture the
+ * companion UI is *designed* to perform on the Mac (the OPEN popup, the in-app terminal, the SSH
+ * config editor, the Git modal, the usage slots). Everything destructive or privileged is reached
+ * from a phone through an `action()`/intent instead (services/action.js), so the host runs the real
+ * flow — including its guards. `run_sync` is the concrete case: its typed-project-name `--delete`
+ * barrier lives in composables/useSync.js, which only runs host-side via
+ * `remoteActions.requestSync`; forwarding a raw `run_sync` invoke would have skipped that barrier
+ * entirely.
+ *
+ * Deliberately NOT here (each is either unreachable from companion code or must never be):
+ *   run_sync, cancel_sync            -> remoteActions.requestSync / requestCancelSync (intents)
+ *   save_projects                    -> PERSIST-1: a companion would persist ITS copy of `projects`
+ *   write_global_note                -> noteStore.applyGlobalNoteEdit (intent); reads are allowed
+ *   logout_antigravity(_cli)         -> remoteActions.requestAgLogout (intent)
+ *   set_claude_profile,
+ *   apply_statusline_config          -> privileged host/remote config writes, host-window only
+ *   get_companion_status             -> its payload carries the relay's host token (bridge.js)
+ *   start/stop_companion_server,
+ *   get_companion_url, get_tailscale_https,
+ *   set_tailscale_https,
+ *   list_paired_devices, revoke_device -> remote-control admin; that UI is host-only (`isHost`)
+ *   get_sync_delete_preview,
+ *   get_file_conflict_info           -> only ever called from inside a host-side sync/drop flow
+ *   count_external_terminals,
+ *   cleanup_legacy_baselines         -> host-boot / host-gated callers only
+ *   pty_write, pty_resize            -> companion keystrokes/size ride their own pty frames
+ */
+export const COMPANION_ALLOWED_COMMANDS = new Set([
+  // Reads / status queries — no side effect on the Mac beyond a log line.
+  'check_for_updates',
+  'check_ide_availability',
+  'check_project_stack',
+  'check_statusline_status',
+  'check_sync_status',
+  'find_in_downloads',
+  'get_claude_mode',
+  'get_git_info',
+  'get_log_path',
+  'get_project_icons_map',
+  'get_ssh_history_status',
+  'get_ssh_hosts',
+  'is_debug_mode',
+  'load_projects',
+  'log_frontend',
+  'read_global_note',
+  'read_project_changelog',
+  'read_ssh_config',
+  'resolve_remote_path',
+  'resolve_report_html',
+  // Agent usage slots — the phone runs its own slots (usageSlotStore targets are per-screen).
+  'get_agent_usage',
+  'provision_agent_usage',
+  // In-app terminal (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4.4): the phone drives real tabs.
+  'pty_clear',
+  'pty_close_tab',
+  'pty_cwd',
+  'pty_get_scrollback',
+  'pty_kill',
+  'pty_list_tabs',
+  'pty_restart',
+  'pty_spawn',
+  // OPEN popup / header links — "do it on the Mac" is the whole point of these buttons on a phone.
+  'macos_open',
+  'open_local_terminal',
+  'open_remote_subprocess',
+  'run_project_command',
+  'run_project_dev',
+  // Git modal — fetch/pull/push/commit from the phone.
+  'run_git_command',
+  // SSH config editor: composables/useSsh.js documents these writes as running from the clicker,
+  // with only the reactive reconcile routed host-side through an action.
+  'save_ssh_config',
+  'undo_ssh_config',
+  'redo_ssh_config',
+  // Header one-shot installers — idempotent, user-initiated, no data loss.
+  'install_akiclaudedoc',
+  'install_ssh_terminal_color',
+])
+
 /** Run one inbound companion invoke on the host and reply with its result. Any throw becomes an
  *  `err` string on the reply (the companion's request() Promise rejects with it) — never an
  *  unanswered frame, which would strand the companion on the watchdog timeout. */
 async function respondToInvoke(frame) {
   const { id, cmd, args } = frame
+  if (!COMPANION_ALLOWED_COMMANDS.has(cmd)) {
+    // Answer with a concrete error rather than dropping the frame: silence would strand the
+    // companion on bridge.request()'s watchdog and hide the refusal from both consoles.
+    console.error(`[hostInvoke] refused command "${cmd}" — not in COMPANION_ALLOWED_COMMANDS`)
+    send({ t: FRAME_INVOKE_RESULT, id, err: `command "${cmd}" is not allowed from a companion` })
+    return
+  }
   try {
     const ok = await invoke(cmd, args)
     // JSON.stringify drops an `undefined` value, so a void command serializes to a frame with

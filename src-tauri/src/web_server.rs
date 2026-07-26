@@ -363,7 +363,7 @@ impl RelayState {
         let path = self
             .devices_path
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .clone()
             .ok_or_else(|| "companion-devices.json path not initialized".to_string())?;
         let devices = self.devices.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -879,7 +879,7 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
     state
         .companions
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .insert(conn_id, CompanionHandle { device_id: device_id.clone(), outbox: Arc::clone(&outbox) });
     state.notify_host_companion_connected(&device_id);
 
@@ -1320,14 +1320,14 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
 }
 
 /// ICON-1: scans once, holds a COMPLETE map (every project id → data URI or explicit `null`),
-/// so the frontend can never 404 or retry-loop on an icon. Reuses `projects::load_projects`
+/// so the frontend can never 404 or retry-loop on an icon. Reuses `projects::load_projects_blocking`
 /// (which already repopulates `system::PROJECT_ICONS` as a side effect) and
 /// `system::get_project_icons()` — the existing scan/cache primitives — rather than duplicating
 /// project-type detection here.
 #[tauri::command]
 pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Option<String>>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let projects = crate::projects::load_projects(app)?;
+        let projects = crate::projects::load_projects_blocking(app)?;
         let cache = crate::system::get_project_icons().lock().unwrap_or_else(|e| e.into_inner());
         let mut map = HashMap::with_capacity(projects.len());
         for p in &projects {
@@ -1351,7 +1351,7 @@ pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Opt
 #[tauri::command]
 pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let projects = crate::projects::load_projects(app)?;
+        let projects = crate::projects::load_projects_blocking(app)?;
         let requested = std::fs::canonicalize(&path).map_err(|e| format!("path not found: {}", e))?;
 
         let allowed = projects.iter().any(|p| {
@@ -1361,6 +1361,21 @@ pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, Stri
         });
         if !allowed {
             return Err("path is outside every project root — refusing to read".to_string());
+        }
+
+        // Size-capped before reading a byte: this result crosses the relay to a phone as one
+        // in-memory String, so an accidentally-huge file inside a project root (a build artifact,
+        // a log) would be read whole into RAM and then framed whole onto the socket. 2MB is far
+        // above any REPORT.html/CHANGELOG this is used for.
+        const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
+        let size = std::fs::metadata(&requested)
+            .map_err(|e| format!("failed to stat file: {}", e))?
+            .len();
+        if size > MAX_READ_BYTES {
+            return Err(format!(
+                "file is too large to read ({} bytes, limit {} bytes)",
+                size, MAX_READ_BYTES
+            ));
         }
 
         std::fs::read_to_string(&requested).map_err(|e| format!("failed to read file: {}", e))

@@ -51,13 +51,13 @@ fn fmt_epoch(secs: i64) -> String {
 fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     let mut y = 1970u64;
     loop {
-        let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        let leap = (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400);
         let dy = if leap { 366 } else { 365 };
         if days < dy { break }
         days -= dy;
         y += 1;
     }
-    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let leap = (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400);
     let months = if leap {
         [31u64,29,31,30,31,30,31,31,30,31,30,31]
     } else {
@@ -105,7 +105,7 @@ pub async fn get_git_info(local_path: String) -> Result<GitInfo, String> {
             .unwrap_or(0);
         let status = match porcelain.as_deref() {
             None => "Git Error".to_string(),
-            Some(s) if s.is_empty() => {
+            Some("") => {
                 let sb = git_capture(path, &["status", "-sb"]).unwrap_or_default();
                 if sb.contains("[ahead ") { "Ahead".to_string() } else { "Clean".to_string() }
             }

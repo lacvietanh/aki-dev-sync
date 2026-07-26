@@ -87,6 +87,52 @@ pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String
     })
 }
 
+/// How many timestamped backups of any one file this app keeps. Enough to walk back through a few
+/// bad edits, small enough that the pile cannot grow without bound.
+pub const BACKUP_KEEP: usize = 5;
+
+/// Deletes all but the newest [`BACKUP_KEEP`] files in `dir` whose name starts with `prefix`.
+///
+/// Every `*.aki-bak-<unix_ts>` writer in this app stamps a NEW backup on EVERY write - deliberately,
+/// because a "back up once" scheme destroys the only copy on the second edit. The cost of that
+/// choice is an unbounded pile, and these particular files are not innocuous: `settings.json`
+/// carries a plaintext `ANTHROPIC_AUTH_TOKEN` and `.zshrc` carries whatever the user keeps in it,
+/// so every extra copy is another copy of a secret sitting in a world-readable home directory,
+/// kept forever. Retention closes that without giving up the per-write backup.
+///
+/// Newest is decided by the numeric suffix after the last `-` (the writers' own timestamp), not by
+/// mtime - a copied file's mtime is not reliably its creation order. A name whose suffix does not
+/// parse sorts oldest, so a stray same-prefix file is pruned before any real backup is.
+///
+/// Best-effort throughout: this runs right after a backup the user's data depends on, and failing
+/// to prune must never be reported as failing to back up.
+pub fn prune_timestamped_backups(dir: &std::path::Path, prefix: &str, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+
+    let mut backups: Vec<(u64, std::path::PathBuf)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let rest = name.strip_prefix(prefix)?;
+            Some((rest.parse::<u64>().unwrap_or(0), e.path()))
+        })
+        .collect();
+
+    if backups.len() <= keep {
+        return;
+    }
+
+    backups.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in backups.into_iter().skip(keep) {
+        if let Err(e) = std::fs::remove_file(&path) {
+            crate::logger::error(
+                "backup",
+                &format!("could not prune old backup '{}': {}", path.display(), e),
+            );
+        }
+    }
+}
+
 /// Escapes a string for embedding inside an **AppleScript double-quoted literal**. This is the
 /// outermost layer only (the one `osascript` itself parses) - it says nothing about what the shell
 /// underneath will do with the result, which is `shell_quote`'s job. Newlines are escaped too: a
@@ -218,36 +264,83 @@ axWin.size = [w, targetH];
 }
 
 /// Passes args directly to macOS `open`. JS is responsible for building the arg list.
+///
+/// The exit status is READ, not discarded: `open` is the only thing that can tell us a
+/// `vscode://…` URI has no handler, or that the requested `.app` is not installed. The old
+/// `spawn()`-and-forget form always reported success, so a wrong URI (e.g. an unresolved remote
+/// path) looked identical to a working one at the call site.
+///
+/// Waiting on a child is exactly the case CLAUDE.md's NEVER-BLOCK-THE-UI rule covers, hence
+/// `async fn` + `spawn_blocking`.
 #[tauri::command]
-pub fn macos_open(args: Vec<String>) -> Result<(), String> {
-    Command::new("open")
-        .args(&args)
-        .spawn()
-        .map_err(|e| format!("Failed to open: {}", e))?;
-    Ok(())
+pub async fn macos_open(args: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = Command::new("open")
+            .args(&args)
+            .output()
+            .map_err(|e| format!("Failed to open: {}", e))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Err(if stderr.is_empty() {
+            format!("`open` failed ({})", out.status)
+        } else {
+            stderr
+        })
+    })
+    .await
+    .map_err(|e| format!("Failed to open: {}", e))?
+}
+
+/// `Err` unless `path` is an existing directory on this Mac.
+///
+/// Terminal.app's `do script` cannot report failure back to us: a `cd` into a path that is not
+/// there scrolls past inside a window that opened anyway, while the caller had already shown a
+/// success toast. Checking first is the only place the user can be told.
+///
+/// `is_dir()` is cheap on a healthy local disk, but a project path on an unmounted or wedged
+/// SMB/NFS volume makes it stall in the kernel for tens of seconds - which is why every command
+/// that calls this runs it inside `spawn_blocking` rather than on the IPC dispatch thread
+/// (stack-tauri A1). The rule's "a single Path::exists() is fine" carve-out assumes a local disk;
+/// a user-supplied project path carries no such guarantee.
+#[cfg(target_os = "macos")]
+fn ensure_local_dir(path: &str) -> Result<(), String> {
+    if std::path::Path::new(path).is_dir() {
+        Ok(())
+    } else {
+        Err(format!("Local folder not found: {}", path))
+    }
 }
 
 /// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as `run_project_command`/SSH terminal.
 ///
 /// `local_path` is optional (contract C-1 with the in-app terminal, which sends `null` when it cannot read the shell's cwd). Absent, empty, or the bare string `~` all mean **no `cd` at all** - the new shell then starts in `$HOME` by itself, which is what the caller wanted. Emitting `cd "~"` instead, as this used to, never worked: a tilde inside quotes is not expanded, so the window opened and immediately printed "no such file or directory".
 #[tauri::command]
-pub fn open_local_terminal(local_path: Option<String>) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let path = local_path.unwrap_or_default();
-        let path = path.trim();
-        let shell_cmd = if path.is_empty() || path == "~" {
-            String::new()
-        } else {
-            format!("cd {}", shell_quote(path))
-        };
-        open_terminal_with_command(&shell_cmd)?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = local_path;
-    }
-    Ok(())
+pub async fn open_local_terminal(local_path: Option<String>) -> Result<(), String> {
+    // spawn_blocking for `ensure_local_dir`: a project on a wedged network volume makes that
+    // single stat block for tens of seconds, and on the dispatch thread that is a frozen window.
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        {
+            let path = local_path.unwrap_or_default();
+            let path = path.trim();
+            let shell_cmd = if path.is_empty() || path == "~" {
+                String::new()
+            } else {
+                ensure_local_dir(path)?;
+                format!("cd {}", shell_quote(path))
+            };
+            open_terminal_with_command(&shell_cmd)?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = local_path;
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 /// Resolves the `antigravity-ide` CLI into `$AGY_BIN` via static `[ -x path ]` checks before falling back to PATH lookup, then is prefixed to the command run inside the login shell below. Same cold-start PATH race, same fix pattern, and same reason as `agent_usage.rs`'s `NODE_BIN_RESOLVER_PREAMBLE` (stack-tauri A2): a `[ -x ]` test does not care whether the user's rc files have finished sourcing, whereas `-ilc` PATH resolution alone does. It matters more here than it looks, because the call site only `spawn()`s and never reads the exit code - a 127 from a lost PATH race is completely silent, the user just sees nothing happen.
@@ -395,6 +488,9 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
             let backup_path =
                 std::path::Path::new(&home).join(format!(".zshrc.aki-bak-{}", stamp));
             std::fs::copy(&zshrc_path, &backup_path).map_err(|e| e.to_string())?;
+            // Bounded after the copy succeeds - see `prune_timestamped_backups`. A `.zshrc` is
+            // often where a user keeps export-ed tokens, so the pile is not innocuous either.
+            prune_timestamped_backups(std::path::Path::new(&home), ".zshrc.aki-bak-", BACKUP_KEEP);
         }
         // Atomic: `.zshrc` is the user's own file and a truncated one breaks every new shell.
         write_atomic(&zshrc_path, &new_content)?;
@@ -495,7 +591,7 @@ pub fn load_and_cache_project_icons(projects: &[SyncProject]) {
                 let size = meta.len();
                 if best
                     .as_ref()
-                    .map_or(true, |(_, best_size, _)| size < *best_size)
+                    .is_none_or(|(_, best_size, _)| size < *best_size)
                 {
                     best = Some((icon_path, size, icon));
                 }
@@ -521,7 +617,7 @@ pub fn load_and_cache_project_icons(projects: &[SyncProject]) {
 pub fn check_ide_availability() -> IdeAvailability {
     #[cfg(target_os = "macos")]
     {
-        return IdeAvailability {
+        IdeAvailability {
             vscode: std::path::Path::new("/Applications/Visual Studio Code.app").exists(),
             vscode_insiders: std::path::Path::new(
                 "/Applications/Visual Studio Code - Insiders.app",
@@ -529,7 +625,7 @@ pub fn check_ide_availability() -> IdeAvailability {
             .exists(),
             antigravity: std::path::Path::new("/Applications/Antigravity IDE.app").exists()
                 || std::path::Path::new("/Applications/Antigravity.app").exists(),
-        };
+        }
     }
     #[cfg(not(target_os = "macos"))]
     IdeAvailability {
@@ -638,7 +734,7 @@ pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
 pub async fn check_for_updates() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let out = create_command("curl")
-            .args(&[
+            .args([
                 "-s",
                 // Bounded on both ends. `spawn_blocking` keeps a hung request off the UI thread,
                 // but without a timeout that request still pins one OS thread forever - and this
@@ -665,7 +761,7 @@ pub async fn check_for_updates() -> Result<String, String> {
 }
 
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Default)]
 pub struct ProjectStackInfo {
     pub is_node: bool,
     pub is_tauri: bool,
@@ -681,9 +777,19 @@ fn is_nuxt_project(path: &std::path::Path) -> bool {
     path.join("nuxt.config.js").exists() || path.join("nuxt.config.ts").exists() || path.join(".nuxt").exists()
 }
 
+/// ~8 `exists()` probes on a user-supplied project path - cheap locally, but tens of seconds on a
+/// wedged network mount, so the command below runs it off the dispatch thread (stack-tauri A1).
 #[tauri::command]
-pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
-    let path = std::path::Path::new(&local_path);
+pub async fn check_project_stack(local_path: String) -> ProjectStackInfo {
+    tauri::async_runtime::spawn_blocking(move || check_project_stack_blocking(&local_path))
+        .await
+        // A join failure means the probe never ran; an all-false stack is exactly what "we could
+        // not detect anything" already means to the frontend, so no new error state is invented.
+        .unwrap_or_default()
+}
+
+fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
+    let path = std::path::Path::new(local_path);
     let is_node = path.join("package.json").exists();
     let is_tauri = path.join("src-tauri").exists() || path.join("src-tauri/tauri.conf.json").exists();
     let is_nuxt = is_nuxt_project(path);
@@ -703,9 +809,11 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
 
     let (dev_cmd, build_cmd) = if is_tauri {
         (format!("{pm} {run_prefix}tauri dev"), format!("{pm} {run_prefix}build:app"))
-    } else if is_nuxt {
-        (format!("{pm} {run_prefix}dev"), format!("{pm} {run_prefix}build"))
-    } else if is_node {
+    } else if is_nuxt || is_node {
+        // Nuxt and plain Node deliberately share one arm: Nuxt's own scaffold names its scripts
+        // `dev`/`build` exactly like any other Node project, so splitting them produced two
+        // byte-identical branches. `is_nuxt` is still reported separately in the returned struct -
+        // the UI labels the stack with it - it just does not change the commands.
         (format!("{pm} {run_prefix}dev"), format!("{pm} {run_prefix}build"))
     } else {
         ("".to_string(), "".to_string())
@@ -732,6 +840,10 @@ pub fn check_project_stack(local_path: String) -> ProjectStackInfo {
 /// Opens a Terminal window `cd`'d into `local_path` running `cmd`. Shared by `run_project_command` (BUILD) and `run_project_dev` (DEV) so the terminal-launch line is not duplicated between them.
 #[cfg(target_os = "macos")]
 fn run_in_project_terminal(local_path: &str, cmd: &str) -> Result<(), String> {
+    // Refuse BEFORE opening a window: `cd` failing inside Terminal.app is invisible to us, so
+    // DEV/BUILD used to report "Command started in Terminal!" for a project whose volume was not
+    // mounted - the command never ran.
+    ensure_local_dir(local_path)?;
     // `local_path` is user-typed free text, so it is quoted. `cmd` is NOT: it is the app-built
     // command line from `check_project_stack` (`npm run build:app`, …) and must stay parseable as
     // a command, not collapse into one literal word.
@@ -740,41 +852,259 @@ fn run_in_project_terminal(local_path: &str, cmd: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn run_project_command(local_path: String, cmd: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        run_in_project_terminal(&local_path, &cmd)?;
-    }
-    Ok(())
+pub async fn run_project_command(local_path: String, cmd: String) -> Result<(), String> {
+    // spawn_blocking for the `ensure_local_dir` inside - see `open_local_terminal`.
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        {
+            run_in_project_terminal(&local_path, &cmd)?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (&local_path, &cmd);
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 /// DEV button command: opens the dev command in Terminal, exactly like `run_project_command` (BUILD). An earlier version also polled for the dev server's port to come up and auto-opened it in a browser; removed - it never reliably worked across the range of real project configs (custom dev scripts, non-standard ports, monorepo boot times) and the fixed-cost complexity (port resolution, TCP poll, detached background task) wasn't worth the unreliable payoff. The user opens the browser themselves once the Terminal shows the server is up.
 #[tauri::command]
-pub fn run_project_dev(local_path: String, cmd: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        run_in_project_terminal(&local_path, &cmd)?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (&local_path, &cmd);
-    }
-    Ok(())
+pub async fn run_project_dev(local_path: String, cmd: String) -> Result<(), String> {
+    // spawn_blocking for the `ensure_local_dir` inside - see `open_local_terminal`.
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "macos")]
+        {
+            run_in_project_terminal(&local_path, &cmd)?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (&local_path, &cmd);
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-#[tauri::command]
-pub fn read_project_changelog(local_path: String) -> Result<String, String> {
-    let path = std::path::Path::new(&local_path);
-    let names = ["CHANGELOG.md", "changelog.md", "CHANGELOG.txt", "changelog.txt", "CHANGELOG", "changelog"];
-    for name in names {
-        let file_path = path.join(name);
-        if file_path.exists() {
-            let bytes = std::fs::read(file_path)
-                .map_err(|e| format!("Failed to read file: {}", e))?;
-            return Ok(String::from_utf8_lossy(&bytes).into_owned());
+// ---------------------------------------------------------------------------
+// LIVE external-Terminal count (docs/feat/in-app-terminal.md, the `TERM` cell's bottom badge).
+//
+// Replaces a session-only "how many windows did WE open" counter, which could only ever grow: the
+// app can watch itself call `do script`, but never sees the user close that window. The count is
+// therefore not remembered at all - it is re-derived from the process table every few seconds, so
+// closing a window drops the badge on its own.
+// ---------------------------------------------------------------------------
+
+/// Trailing-slash-normalised directory string. `/a/b/` and `/a/b` are the same directory, and `lsof`
+/// and a user-typed project path do not agree on which form to use. Root stays `/`.
+fn normalize_dir(p: &str) -> &str {
+    let t = p.trim_end_matches('/');
+    if t.is_empty() {
+        "/"
+    } else {
+        t
+    }
+}
+
+/// THE COUNTING RULE, pure and testable (no subprocess): for each requested path, count the
+/// processes whose cwd is that path and **whose parent's cwd is not also that path** - i.e. the
+/// ROOTS of matching subtrees.
+///
+/// Why roots and not every match: one Terminal window running `npm run dev` in a project is a shell
+/// plus node plus whatever node spawned, all inheriting that cwd. Counting matches would report 4
+/// windows for one window. Counting subtree roots reports exactly one per window/tab no matter what
+/// is running inside it, without having to recognise which executables are "a shell".
+///
+/// v1 semantics are **exact match only** - a shell sitting in `<project>/src` does not count. That
+/// keeps the badge's meaning crisp ("standing in the project root") and is trivially explainable;
+/// subdirectory counting can be added later if it turns out to be what users mean.
+///
+/// Returns counts aligned index-for-index with `paths` (so duplicate paths stay well-defined).
+pub fn count_cwd_subtree_roots(
+    ppid_of: &HashMap<u32, u32>,
+    cwd_of: &HashMap<u32, String>,
+    paths: &[String],
+) -> Vec<u32> {
+    paths
+        .iter()
+        .map(|want| {
+            let want = normalize_dir(want);
+            let matches = |pid: u32| -> bool {
+                cwd_of.get(&pid).map(|c| normalize_dir(c) == want).unwrap_or(false)
+            };
+            cwd_of
+                .keys()
+                .filter(|pid| matches(**pid))
+                .filter(|pid| match ppid_of.get(pid) {
+                    Some(parent) => !matches(*parent),
+                    None => true,
+                })
+                .count() as u32
+        })
+        .collect()
+}
+
+/// Parses `ps -axo pid=,ppid=` output into pid -> ppid.
+fn parse_ps_ppids(out: &str) -> HashMap<u32, u32> {
+    let mut map = HashMap::new();
+    for line in out.lines() {
+        let mut it = line.split_whitespace();
+        if let (Some(pid), Some(ppid)) = (it.next(), it.next()) {
+            if let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) {
+                map.insert(pid, ppid);
+            }
         }
     }
-    Err("No changelog file found".to_string())
+    map
+}
+
+/// Parses `lsof -F pn` output into pid -> cwd. Field lines are `p<pid>` (starts a process set) then
+/// `n<path>` for the one fd we asked for (`-d cwd`).
+fn parse_lsof_cwds(out: &str) -> HashMap<u32, String> {
+    let mut map = HashMap::new();
+    let mut current: Option<u32> = None;
+    for line in out.lines() {
+        match line.as_bytes().first() {
+            Some(b'p') => current = line[1..].trim().parse::<u32>().ok(),
+            Some(b'n') => {
+                if let Some(pid) = current {
+                    map.entry(pid).or_insert_with(|| line[1..].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    map
+}
+
+/// Every pid reachable downward from `roots` (Terminal -> login -> zsh -> whatever the user ran),
+/// roots excluded: Terminal.app's own cwd is not a shell standing anywhere.
+fn descendants_of(ppid_of: &HashMap<u32, u32>, roots: &[u32]) -> Vec<u32> {
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (pid, ppid) in ppid_of {
+        children.entry(*ppid).or_default().push(*pid);
+    }
+    let mut out = Vec::new();
+    let mut queue: Vec<u32> = roots.to_vec();
+    let mut seen: std::collections::HashSet<u32> = roots.iter().copied().collect();
+    while let Some(pid) = queue.pop() {
+        if let Some(kids) = children.get(&pid) {
+            for kid in kids {
+                if seen.insert(*kid) {
+                    out.push(*kid);
+                    queue.push(*kid);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Defensive bound on the `lsof` argument list. A Terminal tree of more than this many processes is
+/// pathological; truncating keeps the command line (and the scan's cost) bounded.
+const MAX_SCANNED_PIDS: usize = 200;
+
+/// How many external `Terminal.app` windows/tabs are standing in each of `paths` **right now**.
+///
+/// Three subprocesses per call, all short and local, all on the blocking pool (CLAUDE.md
+/// never-block-the-UI): `pgrep -x Terminal`, one `ps -axo pid=,ppid=`, one batched `lsof`. Terminal
+/// not running (pgrep exits non-zero) is not an error - every count is simply 0. macOS-only: this
+/// app only ever opens `Terminal.app`, so no other terminal emulator is probed.
+#[tauri::command]
+pub async fn count_external_terminals(paths: Vec<String>) -> Result<HashMap<String, u32>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let zero = || -> HashMap<String, u32> {
+            paths.iter().map(|p| (p.clone(), 0u32)).collect()
+        };
+        if paths.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Ok(zero());
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let pgrep = create_command("pgrep")
+                .args(["-x", "Terminal"])
+                .output()
+                .map_err(|e| format!("Failed to look for Terminal.app: {}", e))?;
+            let terminal_pids: Vec<u32> = String::from_utf8_lossy(&pgrep.stdout)
+                .lines()
+                .filter_map(|l| l.trim().parse::<u32>().ok())
+                .collect();
+            if terminal_pids.is_empty() {
+                return Ok(zero());
+            }
+
+            let ps = create_command("ps")
+                .args(["-axo", "pid=,ppid="])
+                .output()
+                .map_err(|e| format!("Failed to enumerate processes: {}", e))?;
+            let ppid_of = parse_ps_ppids(&String::from_utf8_lossy(&ps.stdout));
+
+            let mut kids = descendants_of(&ppid_of, &terminal_pids);
+            kids.truncate(MAX_SCANNED_PIDS);
+            if kids.is_empty() {
+                return Ok(zero());
+            }
+
+            let pid_list = kids
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            // `lsof` exits non-zero when any listed pid has already died between the `ps` and this
+            // call - a completely ordinary race, so the status is ignored and stdout is parsed for
+            // whatever did resolve.
+            let lsof = create_command("lsof")
+                .args(["-a", "-d", "cwd", "-p", &pid_list, "-F", "pn"])
+                .output()
+                .map_err(|e| format!("Failed to read process directories: {}", e))?;
+            let cwd_of = parse_lsof_cwds(&String::from_utf8_lossy(&lsof.stdout));
+
+            // Canonicalised so a project stored via a symlinked path still matches the real path
+            // `lsof` reports. A path that cannot be canonicalised (removed directory) falls back to
+            // itself and simply matches nothing.
+            let wanted: Vec<String> = paths
+                .iter()
+                .map(|p| {
+                    std::fs::canonicalize(p)
+                        .map(|c| c.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| p.clone())
+                })
+                .collect();
+            let counts = count_cwd_subtree_roots(&ppid_of, &cwd_of, &wanted);
+            Ok(paths.iter().cloned().zip(counts).collect())
+        }
+    })
+    .await
+    .map_err(|e| format!("count_external_terminals task join error: {}", e))?
+}
+
+/// Six `exists()` probes plus a whole-file read, all on a user-supplied project path that may live
+/// on a network volume - off the dispatch thread (stack-tauri A1).
+#[tauri::command]
+pub async fn read_project_changelog(local_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = std::path::Path::new(&local_path);
+        let names = ["CHANGELOG.md", "changelog.md", "CHANGELOG.txt", "changelog.txt", "CHANGELOG", "changelog"];
+        for name in names {
+            let file_path = path.join(name);
+            if file_path.exists() {
+                let bytes = std::fs::read(file_path)
+                    .map_err(|e| format!("Failed to read file: {}", e))?;
+                return Ok(String::from_utf8_lossy(&bytes).into_owned());
+            }
+        }
+        Err("No changelog file found".to_string())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 #[cfg(test)]
@@ -958,6 +1288,105 @@ mod tests {
         assert!(leftovers.is_empty(), "temp file left behind: {:?}", leftovers);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── the live external-Terminal count: the pure counting rule ────────────────────────────
+    fn maps(rows: &[(u32, u32, Option<&str>)]) -> (HashMap<u32, u32>, HashMap<u32, String>) {
+        let mut ppid = HashMap::new();
+        let mut cwd = HashMap::new();
+        for (pid, parent, dir) in rows {
+            ppid.insert(*pid, *parent);
+            if let Some(d) = dir {
+                cwd.insert(*pid, d.to_string());
+            }
+        }
+        (ppid, cwd)
+    }
+
+    #[test]
+    fn one_window_running_a_dev_server_counts_once() {
+        // Terminal(100) -> login(200) -> zsh(300, in the project) -> npm(400) -> node(500),
+        // the last three all inheriting the project cwd. One window must read as one.
+        let (ppid, cwd) = maps(&[
+            (100, 1, Some("/Users/aki")),
+            (200, 100, Some("/Users/aki")),
+            (300, 200, Some("/proj")),
+            (400, 300, Some("/proj")),
+            (500, 400, Some("/proj")),
+        ]);
+        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![1]);
+    }
+
+    #[test]
+    fn two_windows_in_the_same_directory_count_twice() {
+        let (ppid, cwd) = maps(&[
+            (200, 100, Some("/Users/aki")),
+            (300, 200, Some("/proj")),
+            (301, 200, Some("/proj")),
+        ]);
+        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![2]);
+    }
+
+    #[test]
+    fn a_subdirectory_does_not_count_as_the_project() {
+        // v1 semantics: exact match only.
+        let (ppid, cwd) = maps(&[(300, 200, Some("/proj/src"))]);
+        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![0]);
+    }
+
+    #[test]
+    fn trailing_slashes_are_the_same_directory() {
+        let (ppid, cwd) = maps(&[(300, 200, Some("/proj/"))]);
+        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![1]);
+    }
+
+    #[test]
+    fn each_project_is_counted_independently() {
+        let (ppid, cwd) = maps(&[
+            (300, 200, Some("/a")),
+            (400, 300, Some("/a")),
+            (500, 200, Some("/b")),
+            (600, 200, Some("/c")),
+        ]);
+        assert_eq!(
+            count_cwd_subtree_roots(&ppid, &cwd, &["/a".to_string(), "/b".to_string(), "/z".to_string()]),
+            vec![1, 1, 0]
+        );
+    }
+
+    #[test]
+    fn a_process_whose_parent_is_unknown_still_counts() {
+        // The parent is outside the scanned set (its cwd was never read) - the child is a root.
+        let (ppid, cwd) = maps(&[(300, 999, Some("/proj"))]);
+        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![1]);
+    }
+
+    #[test]
+    fn ps_output_parses_into_pid_ppid_pairs() {
+        let map = parse_ps_ppids("  300   200\n  400   300\ngarbage\n");
+        assert_eq!(map.get(&300), Some(&200));
+        assert_eq!(map.get(&400), Some(&300));
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn lsof_field_output_parses_into_pid_cwd_pairs() {
+        let map = parse_lsof_cwds("p300\nn/Users/aki/proj\np400\nn/tmp\n");
+        assert_eq!(map.get(&300).map(String::as_str), Some("/Users/aki/proj"));
+        assert_eq!(map.get(&400).map(String::as_str), Some("/tmp"));
+    }
+
+    #[test]
+    fn descendants_walk_the_whole_tree_and_exclude_the_root() {
+        let (ppid, _) = maps(&[
+            (200, 100, None),
+            (300, 200, None),
+            (400, 300, None),
+            (900, 1, None), // unrelated
+        ]);
+        let mut kids = descendants_of(&ppid, &[100]);
+        kids.sort();
+        assert_eq!(kids, vec![200, 300, 400]);
     }
 
     /// A scratch path under the OS temp dir, unique per test. The rewrite tests must never touch a

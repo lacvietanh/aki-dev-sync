@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { invoke } from '../utils/tauri'
 import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp } from '../store/projectStore'
 import { useLogs } from './useLogs'
+import { dropProjectLogs } from '../store/logStore'
 import { refreshAllProjects, refreshProject, startBackgroundRefresh } from './useBackgroundRefresh'
 
 export const showConfigModal = ref(false)
@@ -59,7 +60,7 @@ function removeEntry(list, entry) {
 
 /**
  * Single source of truth for "is this project safe to rsync at all"
- * (docs/plan/1.20.1-flow-audit-fixes.md §2.1). An empty `local_path` makes the sync path build
+ * (docs/plan/done/1.20.1-flow-audit-fixes.md §2.1). An empty `local_path` makes the sync path build
  * `format!("{}/", "")` → `/`: PUSH uploads the whole filesystem root, and PULL — which is the worse
  * direction, since `delete_on_pull` defaults to true on a new project — mirrors the remote *into*
  * `/` with `--delete`. Neither is recoverable, so the same predicate gates the Save button
@@ -84,6 +85,50 @@ export function projectPathError(project) {
   return projectPathIssue(project).message
 }
 
+/** How long a probe result stays good enough to reuse. IDE availability changes when someone
+ *  installs or deletes an application - minutes-to-never, not per interaction. */
+const IDE_AVAILABILITY_TTL_MS = 60_000
+let ideAvailabilityCheckedAt = 0
+let ideAvailabilityInFlight = null
+
+/**
+ * Which of the three IDEs are installed on the Mac (`check_ide_availability` = three
+ * `Path::exists()` probes). Called on load AND every time the OPEN popup opens (ProjectTable.vue) -
+ * fetching it once per `loadData` meant an IDE installed or removed while the app ran stayed
+ * misreported until the next full reload. A failure writes all-false rather than leaving `null`:
+ * `null` means "not asked yet", which the popup gates read as unavailable, and an unanswerable probe
+ * deserves the same treatment.
+ *
+ * TTL-CACHED, and this is not just an invoke-count optimisation: the popup opens on HOVER, and
+ * `ideAvailability` is a MIRRORED store ref, so a fresh object per hover meant a deep-watcher delta
+ * broadcast to every companion per row swept. Within the TTL this is a no-op; `{ force: true }`
+ * (loadData) always re-probes. The result is also compared before it is written, so an unchanged
+ * answer never dirties the ref at all.
+ */
+export async function refreshIdeAvailability({ force = false } = {}) {
+  if (!force && ideAvailabilityInFlight) return ideAvailabilityInFlight
+  if (!force && ideAvailability.value && Date.now() - ideAvailabilityCheckedAt < IDE_AVAILABILITY_TTL_MS) return
+  ideAvailabilityInFlight = (async () => {
+    let next
+    try {
+      next = await invoke('check_ide_availability')
+    } catch (e) {
+      console.error("Failed to check IDE availability:", e)
+      next = { vscode: false, vscode_insiders: false, antigravity: false }
+    }
+    ideAvailabilityCheckedAt = Date.now()
+    const prev = ideAvailability.value
+    const unchanged = prev && Object.keys(next).every((k) => prev[k] === next[k])
+      && Object.keys(prev).length === Object.keys(next).length
+    if (!unchanged) ideAvailability.value = next
+  })()
+  try {
+    await ideAvailabilityInFlight
+  } finally {
+    ideAvailabilityInFlight = null
+  }
+}
+
 export async function loadData(sshHosts, showToast = false) {
   if (isReloading.value) return
   isReloading.value = true
@@ -101,8 +146,11 @@ export async function loadData(sshHosts, showToast = false) {
         git_status: "...",
         git_log: "",
         remote_url: "",
-        // Preserve syncing flag if a sync is in progress during reload
+        // Preserve the in-flight sync's flag AND its direction across a reload: ProjectTable's
+        // `isStop` reads `syncDirection` to decide WHICH of PUSH/PULL turns into STOP, so dropping
+        // it here would show STOP on the push button while a pull is running.
         syncing: prev?.syncing ?? false,
+        syncDirection: prev?.syncDirection ?? null,
         hasPendingPush: null,
         hasPendingPull: null,
         // The project list was just re-read from disk, so any status check still in flight
@@ -122,13 +170,8 @@ export async function loadData(sshHosts, showToast = false) {
       appendGlobalLog("MIGRATE", "Migrated sync_git toggle to push-only exclude-list semantics.")
     }
 
-    // Prefetch IDE availability status once
-    try {
-      ideAvailability.value = await invoke('check_ide_availability')
-    } catch (e) {
-      console.error("Failed to check IDE availability:", e)
-      ideAvailability.value = { vscode: false, vscode_insiders: false, antigravity: false }
-    }
+    // force: a manual reload is the user explicitly asking for fresh state, TTL or not.
+    await refreshIdeAvailability({ force: true })
 
     // Refresh icon timestamp to bust browser cache
     iconTimestamp.value = Date.now()
@@ -150,7 +193,7 @@ export async function loadData(sshHosts, showToast = false) {
   }
 }
 
-// PERSIST-1 invariant (docs/plan/1.20.0-terminal-and-remote-sync.md §2): this is a HOST-SIDE
+// PERSIST-1 invariant (docs/plan/done/1.20.0-terminal-and-remote-sync.md §2): this is a HOST-SIDE
 // persist of the HOST's own `projects.value`. It must only ever be reached from code already
 // running on the host — i.e. from inside an action() body, or a plain function only ever called
 // from one. Reaching it from a companion-triggered path (a bare click handler, a v-model change
@@ -289,7 +332,7 @@ export async function confirmRemove() {
   const id = editingProject.value.id
   const projectName = editingProject.value.name
 
-  // The confirm dialog itself is mirrored state now (docs/plan/1.20.0-terminal-and-remote-sync.md
+  // The confirm dialog itself is mirrored state now (docs/plan/done/1.20.0-terminal-and-remote-sync.md
   // §3) — requestRemoveProject asks + (on Yes) removes entirely on the host, same ACT-1 reason as
   // saveConfig/removeProject above. Dynamic import avoids the useProjectConfig ⇄ remoteActions
   // static cycle (remoteActions imports saveProjectsList from this module).
@@ -305,6 +348,9 @@ export async function confirmRemove() {
   const removed = await requestRemoveProject(id, projectName)
   if (removed) {
     if (activeLogProjectId.value === id) activeLogProjectId.value = null
+    // Scoped to THIS id only (Regression Guard - Multi-entity State, CLAUDE.md): the log map and
+    // its append cursor keep a per-project entry that nothing else ever removes.
+    dropProjectLogs(id)
     closeConfig()
     appendGlobalLog("REMOVE", `Project "${projectName}" was removed from the local list.`)
   }

@@ -1,5 +1,5 @@
 // Seam A+S together — a decision dialog as mirrored state (docs/plan/done/remote-control.md §3.4,
-// docs/plan/1.20.0-terminal-and-remote-sync.md §3).
+// docs/plan/done/1.20.0-terminal-and-remote-sync.md §3).
 //
 // Per SYNC-1 a dialog awaiting a decision is a DATA EVENT, not host-local UI: it must be visible
 // and answerable from either screen, whichever answers first wins. It rides the two seams that

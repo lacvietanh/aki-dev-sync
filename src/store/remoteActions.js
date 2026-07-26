@@ -70,7 +70,7 @@ export const requestSync = action('remoteActions.requestSync', (id, direction) =
 })
 
 /** Which direction the row's running sync is going, recorded BEFORE `startSync` flips `syncing`
- *  (docs/plan/1.20.1-flow-audit-fixes.md §3.6). The row turns exactly that one button into STOP, so
+ *  (docs/plan/done/1.20.1-flow-audit-fixes.md §3.6). The row turns exactly that one button into STOP, so
  *  the control sits where the user's eyes already are; without this the UI cannot tell which of
  *  PUSH/PULL is the live one. Written at the two funnels every sync passes through (here and
  *  `requestSelectPush`), on the host, so it mirrors to the phone with the rest of the runtime.
@@ -172,7 +172,7 @@ export const requestRefreshAll = action('remoteActions.requestRefreshAll', () =>
 })
 
 /** Apply a task-list/notes edit to exactly ONE project by id (PERSIST-1,
- *  docs/plan/1.20.0-terminal-and-remote-sync.md §2 / CLAUDE.md multi-entity regression guard).
+ *  docs/plan/done/1.20.0-terminal-and-remote-sync.md §2 / CLAUDE.md multi-entity regression guard).
  *  Only the fields actually present in `patch` are assigned — this must NEVER become
  *  `projects.value = patch` or otherwise touch any project besides the one resolved by `id`.
  *
@@ -395,7 +395,7 @@ export const applySshHostsChange = action('remoteActions.applySshHostsChange', a
       const inputOptions = {}
       newHosts.forEach((h) => { inputOptions[h] = h })
 
-      // DialogHost needs a 'select' kind for this one (docs/plan/1.20.0-terminal-and-remote-sync.md
+      // DialogHost needs a 'select' kind for this one (docs/plan/done/1.20.0-terminal-and-remote-sync.md
       // §3) — this whole function already runs host-side (applySshHostsChange is itself an
       // action, always dispatched via useSsh.js), so askConfirm here behaves identically to the
       // old direct call to the popup library, just mirrored to any companion screen too.

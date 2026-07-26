@@ -1,9 +1,17 @@
 <!--
-  In-app terminal — the xterm.js mount (docs/plan/1.20.0-terminal-and-remote-sync.md §4, §4.5).
+  In-app terminal — the xterm.js mount (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4, §4.5).
 
   Role-agnostic by construction (ENV-1, docs/plan/done/remote-control.md §9): this file never imports
   or checks `isHost` — every host/companion branch lives in composables/usePtyTerminal.js and
-  services/ptyBridge.js. The SAME markup renders on the Mac window and on a paired phone.
+  services/ptyBridge.js. The SAME markup renders on the Mac window and on a paired phone. It asks
+  the composable for CAPABILITIES instead: `ownsPtySize` (does this screen decide the shared PTY's
+  cols/rows?) and `showKeyRow` (does this screen need the synthetic Esc/Tab/arrow/Ctrl row?) — never
+  "am I the host".
+
+  WP-C (tab strip): one instance per open tab (`tabId` prop), all mounted at once so switching tabs
+  never re-spawns a shell or drops render state — `active` (prop) picks which one is shown
+  (dock/TerminalStack.vue's v-for uses v-show), and this file re-fits + refocuses itself the moment
+  it becomes the active one (see the `props.active` watcher below).
 
   Extreme Narrow (CLAUDE.md): one mount area + one slim icon key row, no extra banner/label row.
 -->
@@ -18,19 +26,45 @@
       synthetic click on iOS, which is why the touch path FIRES the key itself and `onKeyClick`
       ignores a click that follows a touch it already served.
     -->
-    <div class="pty-key-row">
+    <div v-if="ptyApi?.showKeyRow" class="pty-key-row">
       <button
         v-for="k in KEY_ROW"
         :key="k.title"
         class="pty-key"
         :title="k.title"
-        :class="{ 'is-armed': k.arms && ptyApi?.ctrlArmed?.value }"
+        :class="{
+          'is-armed':
+            (k.arms === 'ctrl' && ptyApi?.ctrlArmed?.value) ||
+            (k.arms === 'shift' && ptyApi?.shiftArmed?.value),
+        }"
         @mousedown.prevent
         @touchstart.prevent="onKeyTouch(k)"
         @click="onKeyClick(k)"
       >
         <span v-if="k.label" class="pty-key-label">{{ k.label }}</span>
         <i v-else class="fa-solid" :class="k.icon"></i>
+      </button>
+    </div>
+    <!--
+      Compose row: a real text input for phone voice-dictation / IME typing (§4.5 follow-up). Unlike
+      the key row's buttons, this input MUST keep native focus so the phone's dictation/Telex IME can
+      compose into it — no `.prevent` on it, ever.
+    -->
+    <div v-if="ptyApi?.showKeyRow" class="pty-compose-row">
+      <input
+        ref="composeInputEl"
+        v-model="composeText"
+        type="text"
+        class="pty-compose-input"
+        placeholder="message…"
+        autocapitalize="off"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+        @keydown.enter="onComposeSend"
+      />
+      <button class="pty-key pty-compose-send" title="Send" @mousedown.prevent @click="onComposeSend">
+        <i class="fa-solid fa-paper-plane"></i>
       </button>
     </div>
   </div>
@@ -42,11 +76,15 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
-import { pendingCd } from '../composables/useTerminalPanel'
 
-// T-8: no caller passes this yet (the DEV/BUILD-redirect follow-up in plan §7 will) — the prop
-// exists so that follow-up is additive, not a signature change.
-const props = defineProps({ cwd: { type: String, default: null } })
+// `tabId`/`active` are WP-C's multi-tab additions. `active: default true` keeps a single, undecorated
+// <TerminalView /> (any call site that predates tabs) behaving exactly as before — only
+// dock/TerminalStack.vue's v-for ever passes `active: false` for a backgrounded tab.
+const props = defineProps({
+  cwd: { type: String, default: null },
+  tabId: { type: Number, default: 0 },
+  active: { type: Boolean, default: true },
+})
 
 const mountEl = ref(null)
 let term = null
@@ -54,17 +92,37 @@ let fitAddon = null
 let resizeObserver = null
 const ptyApi = ref(null)
 
+// Compose row (§4.5 follow-up): a real `<input>` under the key row so a phone's voice dictation or
+// its browser IME (e.g. Telex) can compose a full command before it is sent, instead of the app
+// receiving keystroke-at-a-time IME edits through xterm's own hidden textarea.
+const composeInputEl = ref(null)
+const composeText = ref('')
+
+function onComposeSend() {
+  if (!ptyApi.value) return
+  // Empty text + send is still useful (a bare Enter), so this always sends at least '\r'.
+  ptyApi.value.sendRaw((composeText.value || '') + '\r')
+  composeText.value = ''
+  // Refocus explicitly: the send BUTTON path would otherwise blur the input via its default
+  // mousedown action (see `@mousedown.prevent` on it, same fix as the key row), and staying
+  // focused is what lets consecutive commands flow without re-tapping the input each time.
+  composeInputEl.value?.focus()
+}
+
 // §4.5 mobile key row, as data rather than eight near-identical buttons — each one carries three
 // event bindings now (see the template comment), and hand-copying those is exactly the duplication
-// a v-for exists to prevent. `arms` marks the sticky modifier; everything else sends a sequence.
+// a v-for exists to prevent. `arms: 'ctrl' | 'shift'` marks a sticky modifier button; everything
+// else sends a sequence (`shiftSeq`, when present, is what sticky Shift swaps `seq` for — see
+// fireKey). Tab between Esc and Ctrl per the sticky-Shift placement (between Tab and Ctrl).
 const KEY_ROW = [
   { title: 'Esc', label: 'Esc', seq: '\x1b' },
-  { title: 'Tab', label: 'Tab', seq: '\t' },
-  { title: 'Ctrl (tap, then type a letter)', label: 'Ctrl', arms: true },
-  { title: 'Up', icon: 'fa-arrow-up', seq: '\x1b[A' },
-  { title: 'Down', icon: 'fa-arrow-down', seq: '\x1b[B' },
-  { title: 'Left', icon: 'fa-arrow-left', seq: '\x1b[D' },
-  { title: 'Right', icon: 'fa-arrow-right', seq: '\x1b[C' },
+  { title: 'Tab', label: 'Tab', seq: '\t', shiftSeq: '\x1b[Z' },
+  { title: 'Shift (tap, then tap Tab or an arrow)', label: 'Shift', arms: 'shift' },
+  { title: 'Ctrl (tap, then type a letter)', label: 'Ctrl', arms: 'ctrl' },
+  { title: 'Up', icon: 'fa-arrow-up', seq: '\x1b[A', shiftSeq: '\x1b[1;2A' },
+  { title: 'Down', icon: 'fa-arrow-down', seq: '\x1b[B', shiftSeq: '\x1b[1;2B' },
+  { title: 'Left', icon: 'fa-arrow-left', seq: '\x1b[D', shiftSeq: '\x1b[1;2D' },
+  { title: 'Right', icon: 'fa-arrow-right', seq: '\x1b[C', shiftSeq: '\x1b[1;2C' },
   { title: 'Enter', label: 'Enter', seq: '\r' },
 ]
 
@@ -72,10 +130,29 @@ const KEY_ROW = [
 // prevented touchstart would otherwise send the key twice.
 let lastKeyTouchAt = 0
 
+// `\x1b[Z` (backtab) and the CSI modifier-2 arrow sequences are the standard terminal encodings
+// for Shift+Tab / Shift+arrow — AI agents (Claude Code) use Shift+Tab constantly for mode cycling,
+// which a phone's on-screen keyboard has no physical Shift key to produce.
 function fireKey(k) {
   if (!ptyApi.value) return
-  if (k.arms) ptyApi.value.armCtrl()
-  else ptyApi.value.sendRaw(k.seq)
+  if (k.arms === 'ctrl') {
+    ptyApi.value.armCtrl()
+    return
+  }
+  if (k.arms === 'shift') {
+    ptyApi.value.armShift()
+    return
+  }
+  // Ctrl arms the next REAL keystroke (wireInput's onData in usePtyTerminal.js) and is untouched
+  // here — Ctrl+letter still goes through the soft keyboard exactly as today. Shift instead arms
+  // the next KEY-ROW button, so it is consumed right here: swap in `shiftSeq` if this key has one,
+  // then disarm unconditionally (Enter/Esc/etc. have no `shiftSeq` and are sent unaffected, but a
+  // tap on ANY key-row key still consumes/disarms sticky Shift).
+  const shiftArmed = ptyApi.value.shiftArmed
+  const wasShiftArmed = !!shiftArmed?.value
+  const seq = wasShiftArmed && k.shiftSeq ? k.shiftSeq : k.seq
+  if (wasShiftArmed) shiftArmed.value = false
+  if (seq) ptyApi.value.sendRaw(seq)
 }
 
 function onKeyTouch(k) {
@@ -191,13 +268,17 @@ function scaleFontToFit() {
   term.options.fontSize = next
 }
 
-// Consume the queued "open project in the in-app terminal" gesture (useTerminalPanel.js). Watched
-// rather than read once, since the tab can already be open when the user clicks a second project.
-watch(pendingCd, (path) => {
-  if (!path || !ptyApi.value) return
-  pendingCd.value = null
-  ptyApi.value.cd(path)
-})
+// A v-show-hidden tab (WP-C: all tabs stay mounted, only the active one is shown) measures 0 and
+// doFit bails below the 40x24 floor, so becoming active must explicitly re-fit rather than rely on
+// the ResizeObserver, which never fires for a container that was never resized — only shown.
+watch(
+  () => props.active,
+  (isActive) => {
+    if (!isActive) return
+    scheduleFit()
+    term?.focus()
+  }
+)
 
 onMounted(async () => {
   term = new Terminal({
@@ -221,7 +302,7 @@ onMounted(async () => {
   // fit() emits the event, the follow-up fit finds the same size and emits nothing further.
   term.onResize(scheduleFit)
 
-  ptyApi.value = usePtyTerminal(term)
+  ptyApi.value = usePtyTerminal(term, props.tabId)
 
   // Hydrate from the backend's last-known state FIRST (spawns the shared PTY if needed, applies
   // its current size), THEN fit to this screen's real container — on the host that fit is
@@ -231,7 +312,7 @@ onMounted(async () => {
   // clobber a freshly-correct host fit with a stale backend value.
   await ptyApi.value.start(props.cwd)
   // One frame later: at this point in onMounted the flex chain above this component
-  // (.dashboard-bottom → .terminal-panel → .terminal-mount-wrap) has not necessarily resolved a
+  // (.dashboard-bottom → .dock-stack → .terminal-mount-wrap) has not necessarily resolved a
   // height yet, and the web font xterm measures its cell size against may still be loading.
   // Fitting synchronously here is what produced a permanently 80x24-ish terminal parked in the
   // corner. scheduleFit() also self-corrects via the observer if this frame is still too early.
@@ -241,14 +322,7 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(scheduleFit)
   resizeObserver.observe(mountEl.value)
 
-  // Consume a `cd` queued BEFORE this component existed (the common case: the popup click is what
-  // switched the tab and mounted us).
-  if (pendingCd.value) {
-    const path = pendingCd.value
-    pendingCd.value = null
-    ptyApi.value.cd(path)
-  }
-  term.focus()
+  if (props.active) term.focus()
 })
 
 onBeforeUnmount(() => {
@@ -257,13 +331,17 @@ onBeforeUnmount(() => {
   if (term) term.dispose()
 })
 
-// Consumed by AppConsole.vue's header buttons — the management row lives in the panel header that
-// already exists rather than in a new row of its own (Extreme Narrow, CLAUDE.md).
+// Consumed by dock/TerminalStack.vue's header buttons — the management row lives in the panel
+// header that already exists rather than in a new row of its own (Extreme Narrow, CLAUDE.md).
+// `alive` is now the TRI-STATE ref itself ('unknown'|true|false, see usePtyTerminal.js), not
+// coerced to boolean — TerminalTabStrip.vue and TerminalStack.vue need to tell "no news yet" apart
+// from "confirmed dead" so an 'unknown' tab is never painted red.
 defineExpose({
-  alive: computed(() => !!ptyApi.value?.alive?.value),
+  alive: computed(() => ptyApi.value?.alive?.value ?? 'unknown'),
   restart: () => ptyApi.value?.restart(),
   clear: () => ptyApi.value?.clear(),
   kill: () => ptyApi.value?.kill(),
+  close: () => ptyApi.value?.close(),
   openExternal: () => ptyApi.value?.openExternal(),
   focus: () => term?.focus(),
 })
@@ -342,5 +420,42 @@ defineExpose({
 
 .pty-key-label {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+/* Compose row: one slim row directly under the key row — still Extreme Narrow (CLAUDE.md), just one
+   more element in the same companion-only block that already exists only on phones. */
+.pty-compose-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.02);
+  flex-shrink: 0;
+}
+
+.pty-compose-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-light);
+}
+
+.pty-compose-input::placeholder {
+  color: var(--text-muted);
+}
+
+.pty-compose-input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+}
+
+.pty-compose-send {
+  font-size: 12px;
 }
 </style>

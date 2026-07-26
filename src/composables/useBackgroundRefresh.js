@@ -11,6 +11,7 @@ import { fetchProjectStack } from './useProjectStack'
 // The app's single wake/self-heal mechanism lives with the usage monitor (it was built there first);
 // this file subscribes rather than running a second heartbeat. See §3.21 of the flow-audit plan.
 import { subscribeWake } from './usageMonitor'
+import { startExternalTerminalWatch } from './useExternalTerminals'
 
 // ---------------------------------------------------------------------------
 // Refresh controller.
@@ -178,6 +179,10 @@ let watching = false
 export function startBackgroundRefresh() {
   restartGitTimer()
   restartDiffTimer()
+  // Its own fixed 5s cycle, not one of the two configurable ones: it costs three tiny local
+  // subprocesses and its whole point is being fresh enough that closing a Terminal window is
+  // reflected before you look back at the app. Host-only and idempotent inside.
+  startExternalTerminalWatch()
   installWakeSelfHeal()
   if (!watching) {
     watch(() => refreshSettings.value.git_interval_s, () => restartGitTimer())

@@ -1,4 +1,4 @@
-// In-app terminal — role wiring (docs/plan/1.20.0-terminal-and-remote-sync.md §4).
+// In-app terminal — role wiring (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4).
 //
 // TerminalView.vue owns the xterm.js instance (creation, DOM mount, the mobile key row) and hands
 // it to this composable; this file owns everything role-specific: which event feeds the terminal,
@@ -21,6 +21,75 @@ import { isHost, onFrame, send } from '../services/bridge'
 import { invoke } from '../utils/tauri'
 import { FRAME_PTY_INPUT, FRAME_PTY_OUTPUT, FRAME_PTY_RESIZE, FRAME_PTY_EXIT } from '../constants/protocol'
 
+// ── Module-level tab liveness tracker (S3 fix) ──────────────────────────────────────────────────
+//
+// Per-tab liveness that SURVIVES every TerminalView mount/unmount, unlike each composable
+// instance's own `alive` ref above. Before this, useTerminalTabs.js's `tabAlive` map (consumed by
+// TerminalTabStrip.vue's per-chip tint and TerminalCell.vue's dot badge) had exactly one writer:
+// dock/TerminalStack.vue's `watchEffect`, which aggregated every MOUNTED tab's own `alive`. That
+// stopped updating the moment the dock stack collapsed (the whole stack body unmounts — see
+// TerminalStack.vue's own doc comment) and never ran at all on a companion, which does not mount
+// every tab up front (see `activatedTabs` below). So a shell dying while the stack was collapsed,
+// or on a companion, never turned its chip/badge red.
+//
+// This tracker is a SEPARATE set of listeners, registered ONCE at module scope regardless of
+// mount/unmount, and lives in THIS file (not useTerminalTabs.js) specifically so its isHost branch
+// stays inside the two files ENV-1 allows (this one and services/ptyBridge.js) rather than leaking
+// into a file that must stay role-neutral.
+/** `{ [tabId]: 'unknown' | true | false }` — same tri-state semantics as each instance's own
+ *  `alive`. Re-exported by useTerminalTabs.js as `tabAlive` so existing consumers
+ *  (TerminalTabStrip.vue, TerminalCell.vue) need no changes. */
+export const tabLiveness = ref({})
+
+function setTabLiveness(tabId, value) {
+  const id = typeof tabId === 'number' ? tabId : 0
+  if (tabLiveness.value[id] === value) return
+  tabLiveness.value = { ...tabLiveness.value, [id]: value }
+}
+
+let livenessTrackingStarted = false
+
+/** Idempotent — safe to call from every screen (useTerminalTabs.js does, at module scope); only
+ *  the first call registers anything. */
+export function startTabLivenessTracking() {
+  if (livenessTrackingStarted) return
+  livenessTrackingStarted = true
+  if (isHost) {
+    // Mirrors usePtyTerminal's own per-instance `applyAlive`/exit handling, but unfiltered by
+    // tabId (this tracker covers EVERY tab, not one) and never torn down (module lifetime, same as
+    // services/ptyBridge.js's listeners).
+    listen('pty-output', (event) => {
+      const payload = (event && event.payload) || {}
+      if (typeof payload.alive === 'boolean') setTabLiveness(payload.tab_id, payload.alive)
+    })
+    listen('pty-exit', (event) => {
+      const payload = (event && event.payload) || {}
+      setTabLiveness(payload.tab_id, false)
+    })
+  } else {
+    onFrame((frame) => {
+      if (!frame) return
+      if (frame.t === FRAME_PTY_OUTPUT) {
+        if (typeof frame.alive === 'boolean') setTabLiveness(frame.tab_id, frame.alive)
+      } else if (frame.t === FRAME_PTY_EXIT) {
+        setTabLiveness(frame.tab_id, false)
+      }
+    })
+  }
+}
+
+/** HOST BOOT ONLY — called from useTerminalTabs.js's `initTerminalTabs`. Seeds this tracker from
+ *  `pty_list_tabs()`'s per-tab `alive` so a re-adopted tab's chip/badge is correct immediately,
+ *  instead of sitting on `'unknown'` until that tab's first `pty_output`/`pty_exit`. */
+export function seedTabLiveness(list) {
+  if (!Array.isArray(list) || list.length === 0) return
+  const next = { ...tabLiveness.value }
+  for (const t of list) {
+    if (t && typeof t.id === 'number' && typeof t.alive === 'boolean') next[t.id] = t.alive
+  }
+  tabLiveness.value = next
+}
+
 function decodeBase64ToBytes(b64) {
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
@@ -35,13 +104,23 @@ function encodeBytesToBase64(bytes) {
 }
 
 /**
- * Wires an already-created xterm.js `Terminal` instance to the shared PTY.
+ * Wires an already-created xterm.js `Terminal` instance to ONE TAB's PTY.
+ *
+ * One instance of this composable per mounted TerminalView, i.e. one per tab. Everything it does is
+ * scoped to `tabId`: every command carries it, every outgoing frame stamps it, and — the part that
+ * is easiest to get wrong — every incoming event is FILTERED by it. Both the Tauri event path and
+ * the companion frame path are broadcast channels: each listener sees EVERY tab's bytes and must
+ * discard the ones that are not its own. A missing filter does not fail loudly; it writes another
+ * shell's output into this terminal.
  *
  * @param {import('@xterm/xterm').Terminal} term
- * @returns {{ start, ownsPtySize, hostResize, sendRaw, armCtrl, ctrlArmed, alive, restart, clear,
- *             kill, openExternal, cd }}
+ * @param {number} [tabId=0] which terminal tab this surface drives. Defaults to 0, the tab every
+ *   id-less caller has always driven (src-tauri/src/pty.rs), so existing single-terminal call sites
+ *   keep working untouched.
+ * @returns {{ start, ownsPtySize, showKeyRow, hostResize, sendRaw, armCtrl, ctrlArmed, armShift,
+ *             shiftArmed, alive, restart, clear, kill, close, openExternal, cd }}
  */
-export function usePtyTerminal(term) {
+export function usePtyTerminal(term, tabId = 0) {
   let unlistenHostOutput = null
   let unlistenHostExit = null
   let unsubscribeFrame = null
@@ -65,12 +144,30 @@ export function usePtyTerminal(term) {
   // Ctrl button; consumed by the very next onData chunk (see wireInput), then auto-disarmed.
   // Exposed as a ref (not a plain bool) so the key row's active-state styling stays reactive.
   const ctrlArmed = ref(false)
-  // Is there a live shell behind this terminal? Drives the header's RESTART affordance and the
-  // "type anything to respawn" behaviour. Set from `pty_get_scrollback().alive` on mount, and from
-  // then on ONLY from what the host says: every liveness-bearing pty-output payload/frame, plus the
-  // exit event/frame. Never guessed from output text, and never left to drift — a screen believing
-  // the wrong thing here is what let one screen's keystroke destroy the other screen's live shell.
-  const alive = ref(false)
+  // Sticky Shift — same pattern as ctrlArmed, but consumed differently: Ctrl modifies the next
+  // REAL keystroke (term.onData, wireInput below), because it exists to let a phone's soft
+  // keyboard type Ctrl+letter one tap at a time. Shift instead modifies the next KEY-ROW BUTTON
+  // press (Tab/arrows) — TerminalView.vue's fireKey reads and disarms this ref directly, there is
+  // no onData involvement, because AI-agent workflows (Claude Code's mode-cycling Shift+Tab) are
+  // driven from the synthetic row, not from typed characters. Kept here (not local to the
+  // component) only so it is exposed/styled exactly like ctrlArmed, per-instance, same as ctrlArmed.
+  const shiftArmed = ref(false)
+  // Is there a live shell behind this terminal? TRI-STATE: `'unknown'` | `true` | `false`.
+  //
+  // WHY 'unknown' EXISTS, AND WHY IT IS THE INITIAL VALUE: `false` is a CLAIM — the UI paints the
+  // tab red on it, and a keystroke on a `false` terminal triggers a respawn instead of being typed.
+  // The old boolean had no way to say "I have not heard yet": it started at `false`, so a terminal
+  // asserted "the shell is dead" for the length of one round-trip on every mount. With one terminal
+  // that was one flicker at startup; with a tab per project, mounted lazily, it would be a red chip
+  // every time a tab is opened. `false` may now only be set by the host actually SAYING the shell is
+  // dead (a liveness-bearing payload, a pty-exit, or a hydrate).
+  //
+  // A FAILED CALL MUST NEVER PRODUCE `false`. An invoke that throws tells us nothing about the
+  // shell — the shell may be perfectly alive and the IPC merely unavailable — so every failure path
+  // lands on `'unknown'`, which renders exactly like a normal live terminal and passes keystrokes
+  // straight through. Erring toward "not sure" is the safe direction here: the failure mode of a
+  // wrong `false` is a red tab that respawns shells nobody asked for.
+  const alive = ref('unknown')
   // Remembered from `start()` so RESTART reopens in the same directory the tab was opened for.
   let bootCwd = null
   // Guards against two respawns racing (e.g. the user mashes keys into a dead terminal).
@@ -94,30 +191,38 @@ export function usePtyTerminal(term) {
 
   async function ensureSpawned(cwd) {
     try {
-      await invoke('pty_spawn', { cwd: cwd ?? null })
+      await invoke('pty_spawn', { tabId, cwd: cwd ?? null })
       // Not an optimistic guess: the host emits the authoritative liveness for this same call and
       // it will overwrite this within a frame. Set here only so the local screen does not sit on a
-      // stale `false` for one WS round-trip.
+      // stale value for one WS round-trip. Set ONLY on success — the resolved promise IS the host
+      // confirming the tab has a shell.
       alive.value = true
     } catch (e) {
+      // NOT `false`. The spawn may have failed because the IPC seam is down, the tab cap was hit,
+      // or the companion's socket dropped mid-call — none of which is evidence about the shell. See
+      // `alive`'s doc comment: a failed call may never paint the tab red.
+      alive.value = 'unknown'
       console.error('[usePtyTerminal] pty_spawn failed', e)
     }
   }
 
-  /** RESTART: kill whatever is there, wipe the shared scrollback, spawn a fresh login shell. The
-   *  host broadcasts the reset itself (src-tauri/src/pty.rs), so this needs no local clearing and
-   *  works identically when a companion triggers it through the invoke seam.
+  /** RESTART: kill THIS TAB's shell, wipe THIS TAB's shared scrollback, spawn a fresh login shell
+   *  on it. The host broadcasts the reset itself (src-tauri/src/pty.rs), so this needs no local
+   *  clearing and works identically when a companion triggers it through the invoke seam. Every
+   *  other tab is untouched — the blast radius is one tab, and the `tabId` below is what bounds it.
    *
    *  DESTRUCTIVE, AND THEREFORE BOUND TO THE EXPLICIT BUTTON ONLY. It ends whatever is running in
-   *  the shell and wipes the shared scrollback, which is not something a stray tap on a phone in
-   *  another room may ever cause — see `respawn` for what an ordinary keystroke does instead. */
+   *  the shell and wipes that tab's shared scrollback, which is not something a stray tap on a phone
+   *  in another room may ever cause — see `respawn` for what an ordinary keystroke does instead. */
   async function restart() {
     if (restarting) return
     restarting = true
     try {
-      await invoke('pty_restart', { cwd: bootCwd ?? null })
+      await invoke('pty_restart', { tabId, cwd: bootCwd ?? null })
       alive.value = true
     } catch (e) {
+      // 'unknown', never `false` — same reasoning as `ensureSpawned`.
+      alive.value = 'unknown'
       console.error('[usePtyTerminal] pty_restart failed', e)
     } finally {
       restarting = false
@@ -141,21 +246,39 @@ export function usePtyTerminal(term) {
     }
   }
 
-  /** Wipes the HOST's ring buffer, not just this screen — otherwise the output comes straight
-   *  back on the next reconnect, which is what makes a purely local clear feel broken. */
+  /** Wipes the HOST's ring buffer FOR THIS TAB, not just this screen — otherwise the output comes
+   *  straight back on the next reconnect, which is what makes a purely local clear feel broken.
+   *  Other tabs' buffers are untouched. */
   async function clear() {
     try {
-      await invoke('pty_clear')
+      await invoke('pty_clear', { tabId })
     } catch (e) {
       console.error('[usePtyTerminal] pty_clear failed', e)
     }
   }
 
+  /** Ends THIS TAB's shell, leaving the tab itself open showing `[process exited]`. */
   async function kill() {
     try {
-      await invoke('pty_kill')
+      await invoke('pty_kill', { tabId })
     } catch (e) {
       console.error('[usePtyTerminal] pty_kill failed', e)
+    }
+  }
+
+  /** Closes THIS TAB for good: the host kills its shell and forgets everything keyed under it.
+   *  Distinct from `kill()`, which leaves the tab in place — the tab LIST is store state and its
+   *  own owner removes the entry (src/store/terminalTabsStore.js); this is only the backend half.
+   *
+   *  `tabId` is passed explicitly and the host command REQUIRES it (unlike every other pty command,
+   *  which defaults to tab 0). That is deliberate on both sides: a destructive operation must not
+   *  have a default target, or a dropped argument anywhere along this path would quietly close the
+   *  user's first tab. */
+  async function close() {
+    try {
+      await invoke('pty_close_tab', { tabId })
+    } catch (e) {
+      console.error('[usePtyTerminal] pty_close_tab failed', e)
     }
   }
 
@@ -164,12 +287,18 @@ export function usePtyTerminal(term) {
    *  back to the plain home-directory window if the cwd cannot be read. */
   async function openExternal() {
     try {
-      const cwd = await invoke('pty_cwd')
-      // Contract C-1 (docs/plan/1.20.1-flow-audit-fixes.md §1.1): `null`, never the literal `'~'`.
+      const cwd = await invoke('pty_cwd', { tabId })
+      // Contract C-1 (docs/plan/done/1.20.1-flow-audit-fixes.md §1.1): `null`, never the literal `'~'`.
       // The host side does no shell expansion, so `cd "~"` looks for a directory actually named
       // `~` and always fails; a null path means "no cd at all" and the shell opens in $HOME by
       // itself, which is the fallback that was intended all along.
       await invoke('open_local_terminal', { localPath: cwd || null })
+      // Same poke the OPEN popup's Terminal item sends: the live scan would count this window on
+      // its next tick anyway, this only stops the badge lagging ~5s behind the click. Dynamic
+      // import because projectStore's poke reaches back into useExternalTerminals — see its own
+      // comment on why that direction is lazily resolved.
+      const { pokeExternalTermCounts } = await import('../store/projectStore')
+      pokeExternalTermCounts()
     } catch (e) {
       console.error('[usePtyTerminal] openExternal failed', e)
     }
@@ -189,15 +318,32 @@ export function usePtyTerminal(term) {
    *  doc comment for why size travels with this call instead of waiting on the next resize echo. */
   async function hydrateScrollback() {
     try {
-      const { data, cols, rows, alive: isAlive } = await invoke('pty_get_scrollback')
-      // The tab can be switched away mid-call; the Terminal is disposed by then.
+      const { data, cols, rows, alive: isAlive } = await invoke('pty_get_scrollback', { tabId })
+      // The component can be unmounted mid-call; the Terminal is disposed by then.
       if (disposed) return
       if (cols && rows) term.resize(cols, rows)
       writeChunk(data, true)
+      // The one place a `false` is legitimately derived from a call's RESULT rather than from a
+      // pushed liveness statement — the host read its own session map to answer this.
       alive.value = !!isAlive
     } catch (e) {
+      // The hydrate failing says nothing about the shell — leave whatever belief we already hold
+      // rather than inventing `false`. See `alive`'s doc comment.
       console.error('[usePtyTerminal] pty_get_scrollback failed', e)
     }
+  }
+
+  /** Is this event/frame addressed to THE TAB THIS COMPOSABLE DRIVES?
+   *
+   *  Both channels below are broadcasts: the Tauri `pty-output` event and the WS `pty_output` frame
+   *  both reach every mounted TerminalView, not just the one whose tab produced them. With N tabs
+   *  open there are N listeners on each channel and N-1 of them must ignore any given message. This
+   *  test is the entire mechanism — there is no per-tab subscription to lean on instead.
+   *
+   *  `?? 0` is the backward-compatibility default, matching the host: a message from an older
+   *  build carries no tab id and means tab 0. */
+  function isForThisTab(message) {
+    return (message.tab_id ?? 0) === tabId
   }
 
   function wireOutput() {
@@ -210,20 +356,28 @@ export function usePtyTerminal(term) {
         // write into a Terminal the component has already disposed.
         if (disposed) return
         const payload = (event && event.payload) || {}
+        // Another tab's bytes — and another tab's liveness. Dropped before EITHER is applied: a
+        // sibling tab's `alive: false` would be just as wrong as its bytes.
+        if (!isForThisTab(payload)) return
         if (payload.data || payload.reset) writeChunk(payload.data, !!payload.reset)
         // A liveness-only payload carries neither bytes nor `reset` (that is how the host says
         // "the shell came back" without touching the screen), so this must sit OUTSIDE the write
         // condition above.
         applyAlive(payload.alive)
       }).then((un) => adoptSubscription(un, (h) => { unlistenHostOutput = h }))
-      listen('pty-exit', () => {
+      listen('pty-exit', (event) => {
         if (disposed) return
+        // `pty-exit` now carries `{ tab_id }`. Without this filter, ONE tab's shell exiting would
+        // mark every open tab dead — and typing into any of them would then respawn a shell over a
+        // session that was never dead in the first place.
+        if (!isForThisTab((event && event.payload) || {})) return
         alive.value = false
       }).then((un) => adoptSubscription(un, (h) => { unlistenHostExit = h }))
     } else {
       unsubscribeFrame = onFrame((frame) => {
         if (disposed || !frame) return
         if (frame.t === FRAME_PTY_OUTPUT) {
+          if (!isForThisTab(frame)) return
           if (frame.data || frame.reset) writeChunk(frame.data, !!frame.reset)
           if (frame.reset && frame.cols && frame.rows) term.resize(frame.cols, frame.rows)
           // Applied for EVERY pty_output frame that states it, not only for `reset` frames. That
@@ -231,8 +385,10 @@ export function usePtyTerminal(term) {
           // a plain frame, and a companion that ignored it went on believing a live shell was dead.
           applyAlive(frame.alive)
         } else if (frame.t === FRAME_PTY_EXIT) {
+          if (!isForThisTab(frame)) return
           alive.value = false
         } else if (frame.t === FRAME_PTY_RESIZE) {
+          if (!isForThisTab(frame)) return
           // T-4: the ONLY path a companion's xterm is ever resized through — it never calls
           // pty_resize itself, and never derives a size from its own container.
           term.resize(frame.cols, frame.rows)
@@ -248,12 +404,12 @@ export function usePtyTerminal(term) {
     if (!str) return
     const data = encodeBytesToBase64(new TextEncoder().encode(str))
     if (isHost) {
-      invoke('pty_write', { data }).catch((e) => console.error('[usePtyTerminal] pty_write failed', e))
+      invoke('pty_write', { tabId, data }).catch((e) => console.error('[usePtyTerminal] pty_write failed', e))
     } else {
       // Raw frame, not the generic invoke/invoke_result seam — an ack round-trip per keystroke
       // would double traffic and add latency for no benefit (see protocol.js's FRAME_PTY_INPUT
-      // doc comment). services/ptyBridge.js applies it host-side.
-      send({ t: FRAME_PTY_INPUT, data })
+      // doc comment). services/ptyBridge.js applies it host-side, to the tab named here.
+      send({ t: FRAME_PTY_INPUT, tab_id: tabId, data })
     }
   }
 
@@ -274,7 +430,14 @@ export function usePtyTerminal(term) {
       // screen never moved again). Mirrors the "press any key to restart" convention.
       // `respawn()`, never `restart()` — see respawn's doc comment for why the difference is the
       // whole point.
-      if (!alive.value) {
+      //
+      // `=== false`, NOT `!alive.value`. The required behaviour is that only a STATED death
+      // respawns: `'unknown'` means "we have not heard from the host yet", and a keystroke typed
+      // then must go through to the shell. `!alive.value` happens to do that too — but only by the
+      // accident that `'unknown'` is a truthy string, so it would start swallowing keystrokes the
+      // moment the sentinel was ever spelled `''`, `0` or `null`. The explicit test says what the
+      // rule actually is instead of depending on the sentinel's truthiness.
+      if (alive.value === false) {
         respawn()
         return
       }
@@ -294,11 +457,27 @@ export function usePtyTerminal(term) {
     ctrlArmed.value = true
   }
 
+  /** Arms sticky Shift. See `shiftArmed`'s doc comment: disarming is done by TerminalView.vue's
+   *  fireKey (it owns the key-row press that consumes it), not by anything in this file. */
+  function armShift() {
+    shiftArmed.value = true
+  }
+
   /** T-4 as a CAPABILITY rather than a role: "does this screen decide the shared PTY's cols/rows?"
    *  Only the host does. TerminalView.vue reads this to choose between fitting the grid and scaling
    *  the font — it must never import `isHost` itself (ENV-1), so every role fact the component
    *  needs is published here in terms of what the component actually decides with it. */
   const ownsPtySize = isHost
+
+  /** The SECOND published capability, in the same voice as `ownsPtySize`: "does this surface need
+   *  the synthetic key row (Esc/Tab/arrows/Ctrl)?" — not "is this a phone".
+   *
+   *  Only a screen without a physical keyboard does, which today means every screen that is not the
+   *  host. Published as a capability rather than the role it happens to be derived from so
+   *  TerminalView.vue keeps asking what it needs to DECIDE rather than who it is (ENV-1: this file
+   *  and services/ptyBridge.js remain the only two places that read `isHost`). If a future host
+   *  surface ever wants the key row, the change lands on this line and nowhere else. */
+  const showKeyRow = !isHost
 
   /** T-4: call ONLY from the host's own fit-on-resize handler, i.e. behind `ownsPtySize`. Resizes
    *  the real PTY, then echoes the authoritative size to every companion so their xterm matches
@@ -312,8 +491,8 @@ export function usePtyTerminal(term) {
     // is unrecoverable without a restart. Below this floor the local render is simply left as-is.
     if (cols < 8 || rows < 3) return
     try {
-      await invoke('pty_resize', { cols, rows })
-      send({ t: FRAME_PTY_RESIZE, cols, rows })
+      await invoke('pty_resize', { tabId, cols, rows })
+      send({ t: FRAME_PTY_RESIZE, tab_id: tabId, cols, rows })
     } catch (e) {
       console.error('[usePtyTerminal] pty_resize failed', e)
     }
@@ -338,5 +517,22 @@ export function usePtyTerminal(term) {
     if (unsubscribeFrame) unsubscribeFrame()
   })
 
-  return { start, ownsPtySize, hostResize, sendRaw, armCtrl, ctrlArmed, alive, restart, clear, kill, openExternal, cd }
+  return {
+    start,
+    ownsPtySize,
+    showKeyRow,
+    hostResize,
+    sendRaw,
+    armCtrl,
+    ctrlArmed,
+    armShift,
+    shiftArmed,
+    alive,
+    restart,
+    clear,
+    kill,
+    close,
+    openExternal,
+    cd,
+  }
 }

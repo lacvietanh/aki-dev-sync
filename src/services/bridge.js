@@ -61,11 +61,39 @@ let nextRequestId = 1
 const pending = new Map() // id -> { resolve, reject }
 
 // Companion-side invoke RPC watchdog. request() is used ONLY by the companion's invoke() (seam N):
-// every genuinely long operation (run_sync, delete-preview) runs on the host via an `intent`, not
-// as a companion invoke, so a companion invoke that has not been answered in this window is not
-// "slow" — it means no `invoke_result` is coming back at all. Without this the promise hangs
-// forever (silently), which is exactly why a broken invoke produces no console error to capture.
+// the genuinely unbounded operations (run_sync, delete-preview) run on the host via an `intent`,
+// not as a companion invoke, so for most commands an unanswered call in this window is not "slow" —
+// it means no `invoke_result` is coming back at all. Without this the promise hangs forever
+// (silently), which is exactly why a broken invoke produces no console error to capture.
 const INVOKE_RPC_TIMEOUT_MS = 20000
+
+// …but the default is wrong for the commands that legitimately take longer than 20s, and firing on
+// those invented a failure the host never had: `get_agent_usage` alone budgets 30s for its SSH
+// round-trip, so the phone showed "the host is not answering" while the Mac was still working and
+// about to reply. Per-command budget, consulted by request(): a value of 0 means NO client-side
+// timeout at all (the socket drop is then the only failure signal — see rejectAllPending).
+const INVOKE_TIMEOUT_MS_BY_CMD = {
+  // SSH / network round-trips on the host, each well past the 20s default under a slow link.
+  get_agent_usage: 120000,
+  provision_agent_usage: 120000,
+  resolve_remote_path: 120000,
+  check_sync_status: 120000,
+  check_statusline_status: 120000,
+  check_for_updates: 120000,
+  get_git_info: 120000,
+  open_remote_subprocess: 120000,
+  install_akiclaudedoc: 120000,
+  install_ssh_terminal_color: 120000,
+  // No upper bound worth guessing: a git push/pull and a REPORT.html transfer are both "as long as
+  // the repo/file and the network need".
+  run_git_command: 0,
+  resolve_report_html: 0,
+}
+
+function invokeTimeoutMs(cmd) {
+  const v = INVOKE_TIMEOUT_MS_BY_CMD[cmd]
+  return v === undefined ? INVOKE_RPC_TIMEOUT_MS : v
+}
 
 function getDeviceToken() {
   try {
@@ -226,17 +254,21 @@ export function request(frame) {
     }
     // Watchdog: if the host never replies with a matching invoke_result, surface a concrete,
     // named error instead of hanging silently. clearTimeout on either settle path (and on a socket
-    // drop, which calls reject via rejectAllPending) so a normal reply never trips it.
-    const timer = setTimeout(() => {
-      if (!pending.has(id)) return
-      pending.delete(id)
-      const msg =
-        `[bridge] invoke "${frame && frame.cmd}" got NO invoke_result from the host within ` +
-        `${INVOKE_RPC_TIMEOUT_MS}ms — the host is not answering {t:'invoke'} frames (seam N: the ` +
-        `host-side invoke responder is not wired). args=${JSON.stringify(frame && frame.args)}`
-      console.error(msg)
-      reject(new Error(msg))
-    }, INVOKE_RPC_TIMEOUT_MS)
+    // drop, which calls reject via rejectAllPending) so a normal reply never trips it. A budget of
+    // 0 opts out entirely — those commands rely on the socket drop instead.
+    const budget = invokeTimeoutMs(frame && frame.cmd)
+    const timer = budget
+      ? setTimeout(() => {
+          if (!pending.has(id)) return
+          pending.delete(id)
+          const msg =
+            `[bridge] invoke "${frame && frame.cmd}" got NO invoke_result from the host within ` +
+            `${budget}ms — the host is not answering {t:'invoke'} frames (seam N: the host-side ` +
+            `invoke responder is not wired). args=${JSON.stringify(frame && frame.args)}`
+          console.error(msg)
+          reject(new Error(msg))
+        }, budget)
+      : null
     pending.set(id, {
       resolve: (v) => { clearTimeout(timer); resolve(v) },
       reject: (e) => { clearTimeout(timer); reject(e) },
@@ -360,6 +392,10 @@ function openSocket() {
   })
   socket.addEventListener('message', handleMessage)
   socket.addEventListener('close', (evt) => {
+    // Identity check (same idea as pty.rs's generation token): a superseded socket can still fire
+    // its close AFTER connect() has replaced it — a late close from the old one would then clear
+    // the LIVE socket's ping timers and schedule a reconnect against a connection that is fine.
+    if (ws !== socket) return
     clearPingTimers()
     rejectAllPending(new Error('bridge: connection closed'))
     if (!isHost) {
@@ -390,21 +426,9 @@ function openSocket() {
     scheduleReconnect()
   })
   socket.addEventListener('error', () => {
+    if (ws !== socket) return // same staleness guard as `close` above
     connectionState.value = 'error'
   })
-}
-
-export function disconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-  clearPingTimers()
-  if (ws) {
-    ws.close()
-    ws = null
-  }
-  connectionState.value = 'idle'
 }
 
 /** Companion-only pairing (§7.1): exchange the 6-digit code shown on the Mac for a persistent

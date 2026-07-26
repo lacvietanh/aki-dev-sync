@@ -16,7 +16,7 @@
           </select>
         </div>
         <!-- Both fields are `required` in the destructive sense: empty makes rsync operate on `/`
-             (docs/plan/1.20.1-flow-audit-fixes.md §2.1). The invalid state rides the input's own
+             (docs/plan/done/1.20.1-flow-audit-fixes.md §2.1). The invalid state rides the input's own
              border + title - no extra row or error label (UI Extreme Narrow). -->
         <div class="form-group full-width">
           <label>Local Path (Absolute)</label>

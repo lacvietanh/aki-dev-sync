@@ -34,7 +34,7 @@ export function initRemote() {
   initMirror()
   initIntents()
   initHostInvoke()
-  // In-app terminal relay (docs/plan/1.20.0-terminal-and-remote-sync.md §4.4). Host-only inside,
+  // In-app terminal relay (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4.4). Host-only inside,
   // like initHostInvoke — registered here, before connect(), for the same reason every other seam
   // is: its onFrame listener must exist before the socket can deliver a frame to it.
   initPtyBridge()

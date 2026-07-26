@@ -1,8 +1,10 @@
 <template>
   <div class="agent-usage-card">
-    <!-- Claude Code Custom Header -->
-    <div v-if="agentId === 'claudecode'" class="agent-header claudecode-custom-header">
-      <div class="agent-title-group">
+    <!-- ONE header shell for both agents. Only the title group differs; the badge + reload group on
+         the right was byte-identical in each branch and now exists once. -->
+    <div class="agent-header" :class="{ 'claudecode-custom-header': agentId === 'claudecode' }">
+      <!-- Claude Code title -->
+      <div v-if="agentId === 'claudecode'" class="agent-title-group">
         <div class="agent-icon-wrapper">
           <img src="/claude-icon.png" class="agent-img-icon icon-glow" alt="Claude Code" />
         </div>
@@ -21,20 +23,9 @@
           <span v-if="ccOrgName" class="agent-org u-select-text" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
         </div>
       </div>
-      <div class="agent-status-badges">
-        <!-- Same trigger as the badge it replaces, same slot, same styling as AG's age note - an age the user can act on instead of the word "Stale". The badge stays as the fallback for the one case where the age is genuinely unknown (host reported no mtime): never print a guessed number. -->
-        <span v-if="stale && dataAgo" class="cached-note" :title="'Data from ' + dataAbsTime">{{ dataAgo }}</span>
-        <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
-        <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
-          <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
-          <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
-        </button>
-      </div>
-    </div>
 
-    <!-- Antigravity Header (Keep tiny logo + email) -->
-    <div v-else class="agent-header">
-      <div class="agent-title-group">
+      <!-- Antigravity title (keep tiny logo + email) -->
+      <div v-else class="agent-title-group">
         <div class="agent-icon-wrapper" :class="currentSourceType">
           <i
             v-if="currentSourceType === 'cli'"
@@ -125,9 +116,10 @@
         </div>
       </div>
 
+      <!-- One age note (AG: cached-at, Claude Code: data-age), else the Stale badge for the one case
+           where the age is genuinely unknown - never print a guessed number. -->
       <div class="agent-status-badges">
-        <!-- Show cached badge when AG is offline; stale badge otherwise -->
-        <span v-if="isCached" class="cached-note" :title="'Data cached at ' + cachedAbsTime">{{ cachedAgo }}</span>
+        <span v-if="ageNote" class="cached-note" :title="ageNote.title">{{ ageNote.text }}</span>
         <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" :class="{ 'error-state': error, 'is-loading': loading }" @click="!loading && !sourceOff && $emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
@@ -189,40 +181,30 @@
         <!-- Render Claude Code specific circular progress (2 circles) -->
         <template v-if="agentId === 'claudecode'">
           <div class="cc-bars-block">
+            <!-- One bar per rate_limits bucket, whatever the map happens to contain. Anthropic has
+                 already added model-scoped weeklies (seven_day_opus/_sonnet, _oauth_apps) and can add
+                 more (e.g. seven_day_fable) with no client change; hardcoding two bars here was the
+                 single place in this pipeline that dropped them. See docs/ref/claude-quota-buckets.md. -->
             <div
+              v-for="b in ccBuckets"
+              :key="b.key"
               class="cc-usage-bar"
-              :class="{ 'is-muted': cc5hMutedBy7d }"
-              :title="cc5hMutedBy7d ? 'Dimmed - the 7-day pool is full (100%), so this reading no longer changes anything' : null"
+              :class="{ 'is-muted': b.muted }"
+              :title="b.muted ? 'Dimmed - the 7-day pool is full (100%), so this reading no longer changes anything' : null"
             >
               <div class="cc-bar-header">
-                <span class="cc-bar-label">5-Hour</span>
-                <span class="cc-bar-pct" :class="cc5hColorClass">{{ cc5hPct !== null ? cc5hPct + '%' : 'N/A' }}</span>
+                <span class="cc-bar-label">{{ b.label }}</span>
+                <span class="cc-bar-pct" :class="b.colorClass">{{ b.pct }}%</span>
               </div>
               <div class="cc-progress-track">
-                <div class="cc-progress-fill" :class="cc5hColorClass" :style="{ width: (cc5hPct || 0) + '%' }"></div>
+                <div class="cc-progress-fill" :class="b.colorClass" :style="{ width: (b.pct || 0) + '%' }"></div>
               </div>
-              <div class="cc-reset-line" :class="{ 'is-na': !cc5hResetsAt }">
-                <template v-if="cc5hResetLine.val">
-                  <span class="time-label">Reset </span><span class="time-val">{{ cc5hResetLine.val }}</span>
-                  <span v-if="cc5hResetLine.abs" class="time-abs"> ({{ cc5hResetLine.abs }})</span>
+              <div class="cc-reset-line" :class="{ 'is-na': !b.resetsAt }">
+                <template v-if="b.resetLine.val">
+                  <span class="time-label">Reset </span><span class="time-val">{{ b.resetLine.val }}</span>
+                  <span v-if="b.resetLine.abs" class="time-abs"> ({{ b.resetLine.abs }})</span>
                 </template>
-                <span v-else class="time-label">{{ cc5hResetLine.label }}</span>
-              </div>
-            </div>
-            <div v-if="data.rate_limits?.seven_day?.used_percentage != null" class="cc-usage-bar">
-              <div class="cc-bar-header">
-                <span class="cc-bar-label">7-Day</span>
-                <span class="cc-bar-pct" :class="cc7dColorClass">{{ cc7dPct !== null ? cc7dPct + '%' : 'N/A' }}</span>
-              </div>
-              <div class="cc-progress-track">
-                <div class="cc-progress-fill" :class="cc7dColorClass" :style="{ width: (cc7dPct || 0) + '%' }"></div>
-              </div>
-              <div class="cc-reset-line" :class="{ 'is-na': !cc7dResetsAt }">
-                <template v-if="cc7dResetLine.val">
-                  <span class="time-label">Reset </span><span class="time-val">{{ cc7dResetLine.val }}</span>
-                  <span v-if="cc7dResetLine.abs" class="time-abs"> ({{ cc7dResetLine.abs }})</span>
-                </template>
-                <span v-else class="time-label">{{ cc7dResetLine.label }}</span>
+                <span v-else class="time-label">{{ b.resetLine.label }}</span>
               </div>
             </div>
             <div v-if="isCached" class="cc-waiting-line">Waiting for next Claude Code session</div>
@@ -278,6 +260,30 @@
   </div>
 </template>
 
+<script>
+// Module scope, so ONE clock serves every mounted card. Each card used to start its own 10s
+// setInterval computing the identical integer - four slots meant four timers waking the webview
+// four times as often for one number. Refcounted rather than left running: with no card mounted
+// there is nothing to re-render.
+import { ref as _ref } from 'vue';
+
+export const agoNow = _ref(Math.floor(Date.now() / 1000));
+let agoTimer = null;
+let agoHolders = 0;
+
+export function retainAgoClock() {
+  if (agoHolders++ === 0) {
+    agoTimer = setInterval(() => { agoNow.value = Math.floor(Date.now() / 1000); }, 10000);
+  }
+}
+export function releaseAgoClock() {
+  if (--agoHolders === 0 && agoTimer) {
+    clearInterval(agoTimer);
+    agoTimer = null;
+  }
+}
+</script>
+
 <script setup>
 // @docs docs/arch/usage-claudecode.md
 // @docs docs/arch/usage-antigravity.md
@@ -295,8 +301,7 @@ const props = defineProps({
   data: Object,
   loading: Boolean,
   error: String,
-  stale: Boolean,
-  // Unix seconds the displayed reading was written - the same clock `stale` is derived from, so the header can print the real age instead of the word "Stale". Null when the host reported no mtime.
+  // Unix seconds the displayed reading was written - the clock BOTH the age label and `stale` below are derived from. Null when the host reported no mtime.
   dataAt: { type: Number, default: null },
   isCached: { type: Boolean, default: false },
   cachedAt: { type: Number, default: null },
@@ -379,7 +384,7 @@ function getLogoutTitle() {
 
 const loggingOut = ref(false);
 // Confirm + the two logout commands both live in `remoteActions.requestAgLogout`, on the host: the
-// confirm is a mirrored dialog (docs/plan/1.20.0-terminal-and-remote-sync.md §3), and a companion
+// confirm is a mirrored dialog (docs/plan/done/1.20.0-terminal-and-remote-sync.md §3), and a companion
 // cannot ask one - it would render a popup nothing on the host is awaiting. `requestAgLogout`
 // returns true only when a logout really ran, so the stub's `undefined` on a companion never fakes
 // a success here.
@@ -560,13 +565,30 @@ const ccNow = ref(Math.floor(Date.now() / 1000));
 let ccClockTimer = null;
 onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 
-// Clock for every relative age this card renders - AG's cached note and account dropdown, and Claude Code's data age. Ticks for both agents because both now show an age; it is deliberately separate from `ccNow` above, which is a 60s countdown clock for the reset lines and carries a refetch side effect.
-const agoNow = ref(Math.floor(Date.now() / 1000));
-let agoTimer = null;
-onMounted(() => {
-  agoTimer = setInterval(() => { agoNow.value = Math.floor(Date.now() / 1000); }, 10000);
+// The clock for every relative age this card renders - AG's cached note and account dropdown, Claude Code's data age, and the derived `stale` below. Shared across all mounted cards (module scope above); deliberately separate from `ccNow`, which is a 60s countdown for the reset lines and carries a refetch side effect.
+onMounted(retainAgoClock);
+onUnmounted(releaseAgoClock);
+
+// Derived, never stored. `stale` used to be a ref written ONLY on a successful fetch, so past a
+// 5-hour boundary with no new Claude Code turn it stayed false forever while `dataAt` aged
+// correctly: the card showed neither the age nor the badge, and drew a pre-reset percentage
+// labelled "ready". Deriving it from the same clock the age label already ticks means no code path
+// can forget to update it.
+//
+// The rule itself is unchanged (docs/arch/usage-claudecode.md §4): older than 10 minutes, or past
+// the FIVE_HOUR reset - `five_hour` only, because that is the bucket
+// `scripts/get-claudecode-usage.sh` writes its STALE_RESET contract against, and a weekly bucket
+// rolls over far too rarely to be a freshness signal. Antigravity payloads carry no `rate_limits`
+// at all, so that clause is simply never true for AG - no agent branch needed.
+const stale = computed(() => {
+  if (!props.data) return false;
+  // No mtime reported: the age is unknown, which is what the pre-derivation code treated as
+  // infinitely old. The badge (not the age label) is the honest rendering of that.
+  if (!props.dataAt) return true;
+  if (agoNow.value - props.dataAt > 600) return true;
+  const fh = props.data?.rate_limits?.five_hour;
+  return !!(fh && fh.resets_at > 0 && agoNow.value > fh.resets_at);
 });
-onUnmounted(() => { if (agoTimer) clearInterval(agoTimer); });
 
 // The one relative-age formatter in this card: `<1m` / `Nm` / `NhNm` / `Nh`, reactive via agoNow. Every age shown anywhere in the header goes through it, so AG and Claude Code cannot drift into two dialects of the same string.
 function formatAgo(sec) {
@@ -592,11 +614,96 @@ function formatAbsTime(sec) {
 const cachedAgo = computed(() => (props.cachedAt ? `${formatAgo(props.cachedAt)} ago` : ''));
 const cachedAbsTime = computed(() => formatAbsTime(props.cachedAt));
 
-// Claude Code header age. Renders only where the "Stale" badge used to: the badge was a yes/no with nothing actionable in it, and the age it was hiding is already known exactly (usageMonitor's `dataAt`, the very mtime the stale test compares).
+// Claude Code header age. Renders only where the "Stale" badge used to: the badge was a yes/no with nothing actionable in it, and the age it was hiding is already known exactly (`dataAt`, the very mtime the stale rule compares).
 const dataAgo = computed(() => (props.dataAt ? `${formatAgo(props.dataAt)} ago` : ''));
 const dataAbsTime = computed(() => formatAbsTime(props.dataAt));
 
-const cc5hPct = computed(() => { const v = props.data?.rate_limits?.five_hour?.used_percentage; return v != null ? Math.round(v) : null; });
+// The one age note in the header, for whichever agent this card is. AG announces WHEN a cached
+// reading was taken (it is showing an offline account's last state); Claude Code announces HOW OLD
+// the live reading is, and only once that is worth saying. Same slot, same styling, one element.
+const ageNote = computed(() => {
+  if (props.agentId === 'antigravity') {
+    return props.isCached ? { text: cachedAgo.value, title: `Data cached at ${cachedAbsTime.value}` } : null;
+  }
+  return (stale.value && dataAgo.value) ? { text: dataAgo.value, title: `Data from ${dataAbsTime.value}` } : null;
+});
+
+// ── Claude Code buckets: rendered generically ────────────────────────────────
+// `rate_limits` is an OPEN map, not a fixed pair. The whole pipeline below the UI (statusline hook →
+// get-claudecode-usage.sh → agent_usage.rs → usageMonitor) already carries every key through
+// untouched; only this component used to hardcode five_hour + seven_day. Adding a bucket must never
+// require a code change here again.
+//   Order: five_hour, seven_day, then the known model-scoped weeklies in the order below, then any
+//   key we have never seen, alphabetically (so an unknown one lands at the bottom deterministically).
+const CC_BUCKET_ORDER = [
+  'five_hour',
+  'seven_day',
+  'seven_day_opus',
+  'seven_day_sonnet',
+  'seven_day_fable',
+  'seven_day_mythos',
+  'seven_day_oauth_apps',
+];
+const CC_BUCKET_LABELS = {
+  five_hour: '5-Hour',
+  seven_day: '7-Day',
+  seven_day_opus: '7-Day Opus',
+  seven_day_sonnet: '7-Day Sonnet',
+  seven_day_fable: '7-Day Fable',
+  seven_day_mythos: '7-Day Mythos',
+  seven_day_oauth_apps: '7-Day OAuth apps',
+};
+
+function titleCaseWords(s) {
+  return s.split('_').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Unknown keys still get a readable label instead of a raw snake_case key: a `seven_day_*` prefix is
+// rewritten to the same "7-Day X" shape the known weeklies use, anything else is Title Cased.
+function ccBucketLabel(key) {
+  if (CC_BUCKET_LABELS[key]) return CC_BUCKET_LABELS[key];
+  if (key.startsWith('seven_day_')) return `7-Day ${titleCaseWords(key.slice('seven_day_'.length))}`;
+  if (key.startsWith('five_hour_')) return `5-Hour ${titleCaseWords(key.slice('five_hour_'.length))}`;
+  return titleCaseWords(key);
+}
+
+function ccBucketRank(key) {
+  const i = CC_BUCKET_ORDER.indexOf(key);
+  return i === -1 ? CC_BUCKET_ORDER.length : i;
+}
+
+const ccBuckets = computed(() => {
+  const rl = props.data?.rate_limits;
+  if (!rl || typeof rl !== 'object') return [];
+  const keys = Object.keys(rl).filter(k => {
+    const v = rl[k];
+    // A null/absent bucket means "not applicable to this plan", not an error - skip it silently
+    // rather than drawing an N/A bar for a limit the account does not have.
+    return v && typeof v === 'object' && typeof v.used_percentage === 'number' && Number.isFinite(v.used_percentage);
+  });
+  keys.sort((a, b) => {
+    const ra = ccBucketRank(a), rb = ccBucketRank(b);
+    return ra !== rb ? ra - rb : a.localeCompare(b);
+  });
+  return keys.map(key => {
+    const entry = rl[key];
+    const pct = Math.round(entry.used_percentage);
+    // five_hour keeps its two historical quirks; every other bucket is plain.
+    const isFiveHour = key === 'five_hour';
+    const resetsAt = isFiveHour ? cc5hResetsAt.value : (entry.resets_at ?? null);
+    const muted = isFiveHour && cc5hMutedBy7d.value;
+    return {
+      key,
+      label: ccBucketLabel(key),
+      pct,
+      resetsAt,
+      muted,
+      colorClass: muted ? 'color-muted' : pctColorClass(pct),
+      resetLine: formatResetLine(resetsAt, ccNow.value),
+    };
+  });
+});
+
 const cc5hResetsAt = computed(() => {
   const r5 = props.data?.rate_limits?.five_hour?.resets_at ?? null;
   // Claude reports 5h.resets_at == 7d.resets_at when the 5h window sits idle at 0% with no
@@ -606,17 +713,27 @@ const cc5hResetsAt = computed(() => {
   if (r5 && r7 && r5 === r7) return null;
   return r5;
 });
-// Same rule as AG's per-pool dimming above, for Claude Code's single pool: its own 7d at 100%
-// makes its own 5h reading noise. Read the AG block for the full rationale; here there is only
-// one pool, so "its own" is trivially satisfied - and a null 7d still dims nothing.
+// Same rule as AG's per-pool dimming above, for Claude Code's SHARED pool: the shared `seven_day`
+// at 100% makes the `five_hour` reading noise. Read the AG block for the full rationale. Scope is
+// deliberate and stays narrow as buckets multiply: only the shared weekly dims, and only the shared
+// session bar. A model-scoped weekly (seven_day_opus/_fable/…) neither dims another bar nor is
+// dimmed by one - it is a separate pool, so a full Opus week says nothing about the 5h window.
+// A null/absent 7d still dims nothing: `null >= 100` must never read as "full".
 const cc5hMutedBy7d = computed(() => cc7dPct.value !== null && cc7dPct.value >= 100);
-const cc5hColorClass = computed(() => (cc5hMutedBy7d.value ? 'color-muted' : pctColorClass(cc5hPct.value)));
-const cc5hResetLine = computed(() => formatResetLine(cc5hResetsAt.value, ccNow.value));
 
 // P4 boundary trigger: CC had no client-side equivalent of AG's UsageCircle @timeout - the
 // 5-hour bar could sit stale at "ready" past its reset with nothing prompting a refetch until
 // the next STALE_RESET poll noticed server-side. Same wasPast/nowPast edge-detect pattern as
 // UsageCircle.vue, wired to the existing @retry → refresh handler (AgentUsageSlot.vue).
+// Deliberately still keyed to `five_hour` only after the generic-bucket refactor: the 5-hour window
+// is the one that turns over often enough for a client-side boundary refetch to be worth anything,
+// and it is the same bucket the script's STALE_RESET contract is written against. A weekly bucket
+// rolling over is caught by the ordinary poll.
+//
+// A plain setInterval, NOT hostInterval: `ccNow` also drives the visible reset countdown, which must
+// keep counting on a companion (seam P exempts cosmetic UI clocks). The producer half - the `retry`
+// emit - is gated where every other producer path is, at `checkUsage()` itself, so on a phone this
+// timer only repaints.
 onMounted(() => {
   if (props.agentId === 'claudecode') {
     let wasPast = cc5hResetsAt.value > 0 && ccNow.value > cc5hResetsAt.value;
@@ -629,10 +746,9 @@ onMounted(() => {
   }
 });
 
+// Kept as a named computed (not folded into ccBuckets) because it is the input to the dimming rule
+// above, which is about the SHARED weekly pool specifically - not "whatever weekly buckets exist".
 const cc7dPct = computed(() => { const v = props.data?.rate_limits?.seven_day?.used_percentage; return v != null ? Math.round(v) : null; });
-const cc7dResetsAt = computed(() => props.data?.rate_limits?.seven_day?.resets_at ?? null);
-const cc7dColorClass = computed(() => pctColorClass(cc7dPct.value));
-const cc7dResetLine = computed(() => formatResetLine(cc7dResetsAt.value, ccNow.value));
 
 // Org name: skip Anthropic's auto-generated default "email's Organization"
 const ccOrgName = computed(() => {
@@ -1382,26 +1498,6 @@ async function handleIconClick() {
 .cc-reset-line .time-abs {
   color: var(--text-muted);
   font-weight: 400;
-}
-
-.ag-src-tag {
-  font-size: 8px;
-  font-weight: 800;
-  padding: 1px 3px;
-  border-radius: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  line-height: 1;
-}
-.ag-src-tag.cli {
-  background: rgba(168, 85, 247, 0.2);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.4);
-}
-.ag-src-tag.ide {
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.4);
 }
 
 /* Narrow mode (<=700px): the LOCAL/REMOTE columns stay side-by-side (not stacked) - the fix is

@@ -33,7 +33,7 @@ pub fn run() {
         .register_uri_scheme_protocol("aki-devsync-icon", |_ctx, request| {
             let uri_str = request.uri().to_string();
             let host = if let Some(stripped) = uri_str.strip_prefix("aki-devsync-icon://") {
-                let end = stripped.find(|c| c == '/' || c == '?').unwrap_or(stripped.len());
+                let end = stripped.find(['/', '?']).unwrap_or(stripped.len());
                 &stripped[..end]
             } else {
                 ""
@@ -94,6 +94,7 @@ pub fn run() {
             system::run_project_command,
             system::run_project_dev,
             system::read_project_changelog,
+            system::count_external_terminals,
             // global note
             global_note::read_global_note,
             global_note::write_global_note,
@@ -118,7 +119,7 @@ pub fn run() {
             web_server::revoke_device,
             web_server::get_project_icons_map,
             web_server::read_text_file,
-            // in-app terminal (docs/plan/1.20.0-terminal-and-remote-sync.md §4)
+            // in-app terminal (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4)
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
@@ -127,6 +128,10 @@ pub fn run() {
             pty::pty_restart,
             pty::pty_clear,
             pty::pty_cwd,
+            // Multi-tab surface: enumerate the backend's tabs (scrollback replay + host re-adoption
+            // after a frontend reload) and close exactly one of them.
+            pty::pty_list_tabs,
+            pty::pty_close_tab,
         ])
         // `build` + `run(closure)` rather than `run(context)` purely so there is somewhere to hang
         // the exit hook below — the two are otherwise equivalent.

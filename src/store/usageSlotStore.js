@@ -1,4 +1,4 @@
-// @docs docs/plan/usage-monitor-entity-refactor.md §2, §3
+// @docs docs/plan/done/usage-monitor-entity-refactor.md §2, §3
 //
 // What each display slot is pointed at. A slot is a VIEW; the thing it views is a UsageMonitor
 // (`usageMonitorStore.monitorId`). Slots and monitors are deliberately separate: two slots may point

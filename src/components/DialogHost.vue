@@ -1,6 +1,6 @@
 <template>
   <!-- Renders nothing itself — Swal.fire is a portal-style overlay driven imperatively below.
-       Mounted on BOTH host and companion (docs/plan/1.20.0-terminal-and-remote-sync.md §3): the
+       Mounted on BOTH host and companion (docs/plan/done/1.20.0-terminal-and-remote-sync.md §3): the
        requirement is that the STATE (pendingDialog) is mirrored, not that the widget is
        hand-built, so this keeps the visual diff at zero by reusing Swal under the hood. -->
   <div style="display:none" aria-hidden="true"></div>

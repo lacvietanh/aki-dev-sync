@@ -20,7 +20,7 @@
       <ProjectTasksModal />
 
       <!-- Renders the mirrored `dialogStore.pendingDialog` (docs/plan/done/remote-control.md §3.4,
-           docs/plan/1.20.0-terminal-and-remote-sync.md §3). Mounted on BOTH roles and unconditionally:
+           docs/plan/done/1.20.0-terminal-and-remote-sync.md §3). Mounted on BOTH roles and unconditionally:
            a decision dialog is a data event under SYNC-1, so it must appear on whichever screen is
            looking and be answerable from either. Renders nothing until a dialog is actually pending. -->
       <DialogHost />
@@ -50,6 +50,7 @@ import PairingGate from './components/PairingGate.vue';
 import { useProjects } from './composables/useProjects';
 import { useSsh } from './composables/useSsh';
 import { initGlobalNote } from './composables/useGlobalNote';
+import { initTerminalTabs } from './composables/useTerminalTabs';
 import { refreshClaudeMode } from './store/claudeModeStore';
 import { refreshProjectIcons } from './store/projectStore';
 import { initRemote } from './services';
@@ -75,6 +76,7 @@ onMounted(() => {
   onHostBoot(() => {
     loadData(sshHosts, false);
     initGlobalNote();
+    initTerminalTabs();
     refreshClaudeMode();
     refreshProjectIcons(); // ICON-1: fills projectStore.projectIcons, mirrored to the phone
 

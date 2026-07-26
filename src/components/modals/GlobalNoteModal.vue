@@ -1,15 +1,29 @@
 <template>
-  <BaseModal :show="showGlobalNote" @close="closeGlobalNote" container-style="max-width: 600px; width: 90vw">
+  <BaseModal :show="showGlobalNote" @close="closeGlobalNote" container-style="max-width: 720px; width: 90vw">
     <template #title>
       <i class="fa-solid fa-note-sticky mr-1"></i> Global Note
     </template>
-    <div class="modal-body note-body">
-      <textarea
-        class="note-area"
-        :value="noteContent"
-        @input="onNoteInput($event.target.value)"
+    <div class="modal-body note-body scrollable">
+      <NotesField
+        class="global-notes-field"
+        :model-value="noteContent"
+        @update:model-value="onNoteInput"
+        label="Global Note"
         placeholder="Ghi chú tổng hợp..."
-        spellcheck="false"
+        :maxlength="100000"
+        :rows="8"
+      />
+
+      <TaskListPanel
+        :tasks="collection.orderedTasks.value"
+        :summary="collection.summary.value"
+        :hide-completed="collection.hideCompleted.value"
+        @add="collection.addTask"
+        @toggle="collection.toggleProp"
+        @remove="collection.removeTask"
+        @update:title="collection.updateTitle"
+        @update:detail="collection.updateDetail"
+        @update:hide-completed="(v) => (collection.hideCompleted.value = v)"
       />
     </div>
     <div class="modal-footer note-footer">
@@ -21,34 +35,45 @@
 
 <script setup>
 import BaseModal from './BaseModal.vue'
-import { showGlobalNote, noteContent, noteSaving, closeGlobalNote, onNoteInput } from '../../composables/useGlobalNote'
+import NotesField from '../tasks/NotesField.vue'
+import TaskListPanel from '../tasks/TaskListPanel.vue'
+import {
+  showGlobalNote, noteContent, noteSaving, closeGlobalNote, onNoteInput,
+  useGlobalTaskCollection,
+} from '../../composables/useGlobalNote'
+
+const collection = useGlobalTaskCollection()
 </script>
 
 <style scoped>
 .note-body {
-  padding: 0;
+  padding: 12px 16px;
 }
 
-.note-area {
-  width: 100%;
+/* Preserve the big monospace look the Global Note has always had, via :deep() overrides on the
+   shared NotesField (which otherwise renders the compact project-notes style). */
+.global-notes-field {
+  margin-bottom: 12px;
+}
+
+.global-notes-field :deep(.project-notes-section) {
+  background: #0d1117;
+  border: none;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.global-notes-field :deep(.project-notes-textarea) {
   min-height: 320px;
   max-height: 60vh;
-  background: #0d1117;
   color: #e2e8f0;
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  padding: 14px 16px;
   font-size: 13px;
   font-family: 'JetBrains Mono', 'Fira Mono', monospace;
   line-height: 1.6;
   resize: vertical;
-  outline: none;
-  box-sizing: border-box;
-  display: block;
-  field-sizing: content;
 }
 
-.note-area::placeholder {
+.global-notes-field :deep(.project-notes-textarea::placeholder) {
   color: #475569;
 }
 

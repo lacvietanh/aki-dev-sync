@@ -10,11 +10,29 @@ import { action } from '../services/action'
 // the clicker in useGlobalNote — they are transient modal-open / spinner UI, not shared state.
 export const noteContent = ref('')
 
-// C→H action: a companion typing runs the real persist ON THE HOST, which mutates the mirrored
-// `noteContent` (flows back to every screen) and writes the Mac's disk. On the host action(fn)===fn,
-// so this is byte-identical to the old inline mutate+invoke. Returns the persist promise so the
-// clicker's flushSave spinner can await it on the host.
-export const saveNote = action('noteStore.saveNote', (content) => {
-  noteContent.value = content
-  return invoke('write_global_note', { content })
+// The global task list — mirrored exactly like noteContent (shared session state, not per-screen).
+// WP-F: the global note gained a shared task list on top of its free-text content, via the same
+// useTaskCollection factory the project tasks use (src/composables/useGlobalNote.js).
+export const globalTasks = ref([])
+
+// C→H action: a companion editing either the note text or the task list runs the real persist ON
+// THE HOST, which mutates the mirrored refs (flows back to every screen) and writes the Mac's disk.
+// On the host action(fn)===fn, so this is byte-identical to an inline mutate+invoke.
+//
+// Only fields ACTUALLY PRESENT in `patch` are applied or sent — this is the multi-entity regression
+// guard (CLAUDE.md) applied to the note file: a notes-only save must never wipe globalTasks, and a
+// task-only edit must never touch noteContent. Mirrors global_note.rs's read-modify-write contract
+// (`None` on the wire = "leave that field on disk alone").
+export const applyGlobalNoteEdit = action('noteStore.applyGlobalNoteEdit', (patch) => {
+  // `patch.notes` is an alias for `patch.content`: useTaskCollection.js's `setNotes(text)` (the
+  // generic engine also used by useProjectTasks.js) calls `apply({ notes: text })` — it knows
+  // nothing about this store's own field name, so this store meets that contract here rather than
+  // asking the shared engine to special-case one caller's field name.
+  const content = patch.content !== undefined ? patch.content : patch.notes
+  if (content !== undefined) noteContent.value = content
+  if (patch.tasks !== undefined) globalTasks.value = patch.tasks
+  return invoke('write_global_note', {
+    content: content !== undefined ? content : undefined,
+    tasks: patch.tasks !== undefined ? patch.tasks : undefined,
+  })
 })

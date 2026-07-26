@@ -1,5 +1,5 @@
 // @docs docs/arch/usage-antigravity.md
-// @docs docs/plan/usage-monitor-entity-refactor.md §4
+// @docs docs/plan/done/usage-monitor-entity-refactor.md §4
 //
 // The Antigravity per-account usage cache, owned here and nowhere else.
 //
