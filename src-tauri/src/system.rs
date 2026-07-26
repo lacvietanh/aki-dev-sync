@@ -25,7 +25,28 @@ pub struct IdeAvailability {
     pub antigravity: bool,
 }
 
-fn validate_remote_host(host: &str) -> Result<(), String> {
+/// The single answer in this app to "is this string safe to hand to `ssh`/`rsync` as a host".
+///
+/// Two separate dangers, which is why an empty allowlist is the wrong shape and a leading `-` is
+/// rejected on its own line:
+///   1. A host reaching a *shell* string (`ssh host 'cmd'` built by hand) could carry `;` or
+///      `$(…)`. The character allowlist closes that.
+///   2. A host reaching `ssh` as a bare **argv element** never touches a shell - but `ssh` parses
+///      its own argv, so a value beginning with `-` is read as an *option*, not a hostname.
+///      `-oProxyCommand=…` makes ssh run that command **locally on this Mac**. Every character in
+///      it is alphanumeric/`.`/`-`/`=`, so the allowlist alone would wave it through; `=` not being
+///      allowed happens to stop today's exact payload, but the class is "argv that looks like a
+///      flag", so it is rejected explicitly rather than by lucky side effect.
+///
+/// Must be called at EVERY boundary where a persisted host becomes a process argument - the
+/// frontend is not trusted, and a companion device can send a project record directly.
+pub fn validate_remote_host(host: &str) -> Result<(), String> {
+    if host.starts_with('-') {
+        return Err(format!(
+            "Remote host '{}' cannot start with '-' (ssh would read it as an option, not a host)",
+            host
+        ));
+    }
     if host
         .chars()
         .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '@')
@@ -34,6 +55,36 @@ fn validate_remote_host(host: &str) -> Result<(), String> {
     } else {
         Err(format!("Remote host '{}' contains unsafe characters", host))
     }
+}
+
+/// Writes `contents` to `path` atomically: a temp file **in the same directory** (so the rename
+/// cannot cross a filesystem boundary and silently degrade to copy-then-truncate), then `rename`
+/// over the target.
+///
+/// The point is not tidiness. `fs::write` truncates first and writes after, so a crash, a forced
+/// quit, or a full disk between those two steps leaves the user's real file empty or half-written.
+/// Every file this app owns on the user's disk - the project list, the global note, Claude Code's
+/// own `settings.json` - is one where a truncated file loses data that was never the app's to lose.
+/// With `rename`, a reader either sees the whole old file or the whole new one, never a stump.
+pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| format!("Cannot resolve a parent directory for '{}'", path.display()))?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+
+    let tmp = dir.join(format!(
+        ".{}.aki-tmp",
+        path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "write".to_string())
+    ));
+    std::fs::write(&tmp, contents).map_err(|e| format!("Failed to write '{}': {}", tmp.display(), e))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        // Leaving the temp file behind after a failed rename only adds a second broken thing to
+        // explain; the target is still intact, which is the property that matters.
+        let _ = std::fs::remove_file(&tmp);
+        format!("Failed to replace '{}': {}", path.display(), e)
+    })
 }
 
 /// Escapes a string for embedding inside an **AppleScript double-quoted literal**. This is the
@@ -332,13 +383,21 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
         new_content.push_str(SSH_COLOR_MARKER_END);
         new_content.push('\n');
 
+        // Timestamped on every install, never "once ever". The old `if !backup_path.exists()`
+        // guard meant the first install kept a copy and every install after it destroyed whatever
+        // the user had hand-edited since, with no copy anywhere - the same defect already retired
+        // from the statusline installer.
         if zshrc_path.exists() {
-            let backup_path = std::path::Path::new(&home).join(".zshrc.aki-bak");
-            if !backup_path.exists() {
-                std::fs::copy(&zshrc_path, &backup_path).map_err(|e| e.to_string())?;
-            }
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let backup_path =
+                std::path::Path::new(&home).join(format!(".zshrc.aki-bak-{}", stamp));
+            std::fs::copy(&zshrc_path, &backup_path).map_err(|e| e.to_string())?;
         }
-        std::fs::write(&zshrc_path, new_content).map_err(|e| e.to_string())?;
+        // Atomic: `.zshrc` is the user's own file and a truncated one breaks every new shell.
+        write_atomic(&zshrc_path, &new_content)?;
         Ok(zshrc_path.to_string_lossy().to_string())
     })
     .await
@@ -581,6 +640,12 @@ pub async fn check_for_updates() -> Result<String, String> {
         let out = create_command("curl")
             .args(&[
                 "-s",
+                // Bounded on both ends. `spawn_blocking` keeps a hung request off the UI thread,
+                // but without a timeout that request still pins one OS thread forever - and this
+                // runs on every app launch, so a captive-portal-style blackhole leaks a thread per
+                // launch for the life of the process.
+                "--connect-timeout", "5",
+                "--max-time", "15",
                 "-H", "User-Agent: aki-dev-sync",
                 "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest"
             ])
@@ -854,6 +919,45 @@ mod tests {
     #[test]
     fn shell_quote_remote_path_handles_quote_after_tilde() {
         assert_eq!(shell_quote_remote_path("~/it's"), "\"$HOME\"/'it'\\''s'");
+    }
+
+    #[test]
+    fn a_host_that_looks_like_an_ssh_option_is_refused() {
+        // The payload that made this a blocker: every character is in the allowlist, so only the
+        // leading-dash rule stops it. ssh would read it as an option and run the command locally.
+        assert!(validate_remote_host("-oProxyCommand=touch /tmp/pwned").is_err());
+        assert!(validate_remote_host("-lroot").is_err());
+        // A dash elsewhere is ordinary and must keep working.
+        assert!(validate_remote_host("build-server-01").is_ok());
+        assert!(validate_remote_host("deploy@build-01.example.com").is_ok());
+    }
+
+    #[test]
+    fn write_atomic_leaves_the_old_file_intact_when_the_write_cannot_land() {
+        let dir = scratch("atomic-write");
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("settings.json");
+        std::fs::write(&target, "{\"keep\":true}").unwrap();
+
+        // A directory where the file should be makes the rename fail. The point of the assertion
+        // is what survives: the original contents, not a truncated stump.
+        let blocked = dir.join("blocked");
+        std::fs::create_dir_all(&blocked).unwrap();
+        assert!(write_atomic(&blocked, "new").is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"keep\":true}");
+
+        // And the ordinary path replaces the whole file, leaving no temp file behind.
+        write_atomic(&target, "{\"keep\":false}").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"keep\":false}");
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains("aki-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp file left behind: {:?}", leftovers);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A scratch path under the OS temp dir, unique per test. The rewrite tests must never touch a

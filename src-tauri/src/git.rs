@@ -242,23 +242,26 @@ pub async fn get_file_conflict_info(
                     .to_string(),
             );
         }
-
-        // Expand tilde in remote path
-        let expanded_remote = if remote_path.starts_with("~/") {
-            format!("$HOME/{}", &remote_path[2..])
-        } else if remote_path == "~" {
-            "$HOME".to_string()
-        } else {
-            remote_path.clone()
-        };
+        // The host lands in ssh's argv below. It arrives here straight from a project record,
+        // which a companion device can write directly - so it is checked at this boundary too,
+        // not only where projects are saved.
+        crate::system::validate_remote_host(&remote_host)?;
 
         // Build SSH command: for each file print "STAT {mtime} {rel_path}" or "MISS {rel_path}"
-        // Use double quotes around the cd path so $HOME expands on the remote shell.
+        //
+        // The `cd` target goes through the app's ONE remote-path quoter, which keeps a leading
+        // `~`/`$HOME` expandable by the remote shell while quoting everything after it literally.
+        // The hand-rolled escaping this replaced only escaped `"` and then embedded the result in
+        // a double-quoted segment - and `"…"` does not suppress `$(…)` or backticks, so a remote
+        // path of `$(curl …|sh)` ran on the remote host the moment a pre-upload conflict check
+        // fired. That is the same defect fixed everywhere else in 1.20.0; this call site was
+        // simply missed, which is exactly why the quoting lives in one shared function now.
+        //
         // mtime is read portably: GNU coreutils first (the common Linux case), BSD/macOS as the
         // fallback. Hardcoding `stat -c` made every file on a BSD remote look non-existent, and
         // ssh still exited 0 - a silent wrong answer, which is the failure mode this whole
         // command must never produce.
-        let safe_remote = expanded_remote.replace('"', "\\\"");
+        let safe_remote = crate::system::shell_quote_remote_path(&remote_path);
         let checks: Vec<String> = rel_paths.iter().map(|f| {
             // shell-escape single quotes in filename
             let safe = f.replace('\'', "'\"'\"'");
@@ -267,7 +270,7 @@ pub async fn get_file_conflict_info(
             )
         }).collect();
 
-        let script = format!("cd \"{safe_remote}\" && {}", checks.join("; "));
+        let script = format!("cd {safe_remote} && {}", checks.join("; "));
 
         // ConnectTimeout matches every other ssh hop in the sync path (sync.rs) and the usage
         // poller, so the app has one answer to "how long before we call a host dead". Without it

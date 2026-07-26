@@ -131,6 +131,11 @@ pub fn validate_project(project: &SyncProject) -> Result<(), String> {
     if project.remote_host.is_empty() {
         return Err("remote_host cannot be empty".to_string());
     }
+    // The host becomes an argv element for `ssh`/`rsync` further down every one of these paths.
+    // `ssh` parses its own argv, so a host beginning with `-` is read as an option: a stored
+    // `-oProxyCommand=…` would execute that command on THIS Mac the next time a sync ran. The
+    // rule lives in one function so no call site can be the one that forgot it.
+    crate::system::validate_remote_host(&project.remote_host)?;
     Ok(())
 }
 
@@ -178,11 +183,22 @@ pub fn save_projects(app: AppHandle, projects: Vec<SyncProject>) -> Result<(), S
     for p in &projects {
         validate_project_paths(p)
             .map_err(|e| format!("Cannot save project '{}': {}", p.name, e))?;
+        // A host is allowed to be empty at rest (a project can be half-configured), but if one is
+        // present it must already be safe here - persisting a hostile value and only catching it
+        // at sync time means the dangerous string is sitting in the file that every later path
+        // trusts.
+        if !p.remote_host.is_empty() {
+            crate::system::validate_remote_host(&p.remote_host)
+                .map_err(|e| format!("Cannot save project '{}': {}", p.name, e))?;
+        }
     }
     let path = get_projects_path(&app)?;
     let content = serde_json::to_string_pretty(&projects)
         .map_err(|e| format!("Failed to serialize projects: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write projects: {}", e))?;
+    // Atomic: this one file holds every project's config, tasks and notes. A truncated write
+    // loses all of them at once, and `load_projects` rejects a half-written file wholesale.
+    crate::system::write_atomic(&path, &content)
+        .map_err(|e| format!("Failed to write projects: {}", e))?;
     Ok(())
 }
 
@@ -306,6 +322,21 @@ mod tests {
     #[test]
     fn validate_accepts_valid_project() {
         let p = make_project("/home/user/myproject/", "~/sites/myproject", "myserver");
+        assert!(validate_project(&p).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_a_host_that_ssh_would_read_as_an_option() {
+        // A companion device can write a project record directly, so this is reachable without
+        // ever touching the host's own UI. `ssh -oProxyCommand=…` runs that command on THIS Mac.
+        let p = make_project("/home/user/app", "~/app", "-oProxyCommand=touch /tmp/pwned");
+        assert!(validate_project(&p).is_err());
+
+        let p = make_project("/home/user/app", "~/app", "host; rm -rf /");
+        assert!(validate_project(&p).is_err());
+
+        // An ordinary host with dashes in it is not what this guards against.
+        let p = make_project("/home/user/app", "~/app", "deploy@build-01.example.com");
         assert!(validate_project(&p).is_ok());
     }
 
