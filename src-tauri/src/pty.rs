@@ -82,6 +82,13 @@ struct PtyOutputPayload {
     data: String,
     /// `true` = "this payload replaces everything on screen", not "append it". Set by `pty_clear`/`pty_restart` so BOTH screens wipe in one step: the host's own TerminalView listens to this event directly, and `services/ptyBridge.js` forwards the same flag on the `pty_output` frame. Without it, clearing on one screen would leave the other showing a scrollback the host no longer has.
     reset: bool,
+    /// LIVENESS, CARRIED ON THE OUTPUT CHANNEL. `Some(x)` = "the shell is/was x at the moment this payload was produced"; `None` = "this payload says nothing about liveness, leave your current belief alone" (and, thanks to `skip_serializing_if`, the field is absent from the JSON entirely, so the frontend's `typeof alive === 'boolean'` test is the whole protocol).
+    ///
+    /// WHY IT IS OPTIONAL RATHER THAN ALWAYS PRESENT: the ordinary byte path (`flush_locked`) runs on every read and must not take the session mutex — the hot path would then contend with every keystroke's `pty_write` for no benefit. Liveness only ever *changes* at a spawn, a kill or an EOF, so it is stamped exactly on those three payloads.
+    ///
+    /// WHY IT EXISTS AT ALL: before this field there was no "the shell came back" signal anywhere on the wire. A screen that had seen the shell exit stayed convinced it was dead until it happened to re-hydrate, and one keystroke on that screen then tore down the live shell the *other* screen had just restarted. See `emit_alive`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alive: Option<bool>,
 }
 
 /// Emits accumulated bytes as one `pty-output` Tauri event and clears the accumulator. No-op on an empty accumulator (the read loop's final post-EOF call, if nothing was pending).
@@ -91,7 +98,7 @@ fn flush_locked(app: &AppHandle, buf: &mut OutBuf) {
     if buf.acc.is_empty() {
         return;
     }
-    let payload = PtyOutputPayload { data: STANDARD.encode(&buf.acc[..]), reset: false };
+    let payload = PtyOutputPayload { data: STANDARD.encode(&buf.acc[..]), reset: false, alive: None };
     // AppHandle::emit is thread-safe and callable from a raw thread — same shape as the existing `sync-log` emit in src-tauri/src/sync.rs. `services/ptyBridge.js` (host-only) listens for this and relays it to companions as a `pty_output` WS frame; the host's own TerminalView listens for it directly for lowest latency (plan §4.4 wire-path diagram).
     let _ = app.emit("pty-output", payload);
     buf.acc.clear();
@@ -133,9 +140,23 @@ fn flusher_loop(app: AppHandle, shared: Arc<(StdMutex<OutBuf>, Condvar)>) {
     }
 }
 
-/// Tells every screen "wipe what you have, this is the new whole content" (usually empty).
+/// Reads the one true answer to "is there a shell right now" straight off the session slot. Never inferred from output bytes anywhere.
+fn is_alive() -> bool {
+    pty_state().session.lock().unwrap().is_some()
+}
+
+/// Tells every screen "wipe what you have, this is the new whole content" (usually empty), stamped with the liveness at that instant.
 fn emit_reset(app: &AppHandle, bytes: &[u8]) {
-    let _ = app.emit("pty-output", PtyOutputPayload { data: STANDARD.encode(bytes), reset: true });
+    let alive = is_alive();
+    let _ = app.emit("pty-output", PtyOutputPayload { data: STANDARD.encode(bytes), reset: true, alive: Some(alive) });
+}
+
+/// "The shell came back" — the event that did not exist before, and whose absence let one screen keep believing a restarted shell was dead (plan §2.4).
+///
+/// It carries no bytes and no `reset`, so it can never disturb what is on screen; it only corrects a stale belief. That is exactly why it is emitted AFTER the spawn rather than folding liveness into the `reset` that precedes it: the reset has to go out BEFORE the new shell starts writing, or it would wipe the fresh prompt off both screens, while the liveness has to be read AFTER the spawn or it is stale by construction. One payload cannot satisfy both orderings — so it is two payloads, and the ordering of each is forced rather than chosen.
+fn emit_alive(app: &AppHandle) {
+    let alive = is_alive();
+    let _ = app.emit("pty-output", PtyOutputPayload { data: String::new(), reset: false, alive: Some(alive) });
 }
 
 /// End-of-session notice appended to the scrollback (so a screen that opens the tab later still sees WHY the terminal is idle) and rendered dim-red by the terminal itself via SGR. This is the fix for the 1.20.0 "ssh, exit, exit → the terminal just sits there dead" report: the shell exiting used to be completely invisible and unrecoverable.
@@ -192,7 +213,8 @@ fn read_loop(app: AppHandle, mut reader: Box<dyn Read + Send>, generation: u64) 
     drop(guard);
 
     append_scrollback(EXIT_NOTICE);
-    let payload = PtyOutputPayload { data: STANDARD.encode(EXIT_NOTICE), reset: false };
+    // `alive: false` rides the notice as well as the separate `pty-exit` signal below: they travel different paths to a companion (`pty_output` vs `pty_exit` frames), and a screen must never be able to render the "[process exited]" line while still believing it has a live shell.
+    let payload = PtyOutputPayload { data: STANDARD.encode(EXIT_NOTICE), reset: false, alive: Some(false) };
     let _ = app.emit("pty-output", payload);
     // Separate signal from the notice bytes: the frontend needs to flip its own alive state (to enable "type anything to respawn" and colour the tab), which it cannot infer from output.
     let _ = app.emit("pty-exit", ());
@@ -201,9 +223,14 @@ fn read_loop(app: AppHandle, mut reader: Box<dyn Read + Send>, generation: u64) 
 /// Spawns the one shared PTY if it does not already exist; a no-op returning `Ok(())` on every later call (T-3). `cwd` (T-8) is only honoured on the first, actual spawn — no UI passes it yet, but the signature is settled now so the DEV/BUILD-redirect follow-up (plan §7) never needs a breaking change. Initial size is a placeholder 80x24; the host's `usePtyTerminal.js` calls `pty_resize` immediately after mount once it knows the real fit (T-4).
 #[tauri::command]
 pub async fn pty_spawn(app: AppHandle, cwd: Option<String>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || spawn_if_absent(app, cwd))
-        .await
-        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let result = spawn_if_absent(app.clone(), cwd);
+        // Broadcast liveness even on the no-op path: the caller is not the only screen, and the OTHER screen may still believe the shell is dead (it is the screen that did not press the button). Announcing the state rather than the event is what keeps the two in step regardless of who acted.
+        emit_alive(&app);
+        result
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 /// The actual spawn, synchronous. Called only from inside a `spawn_blocking` closure. Takes the session lock itself and no-ops if a live session is already in the slot (T-3 idempotency).
@@ -303,21 +330,26 @@ pub async fn pty_kill(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         kill_current();
         append_scrollback(EXIT_NOTICE);
-        let _ = app.emit("pty-output", PtyOutputPayload { data: STANDARD.encode(EXIT_NOTICE), reset: false });
+        let _ = app.emit("pty-output", PtyOutputPayload { data: STANDARD.encode(EXIT_NOTICE), reset: false, alive: Some(false) });
         let _ = app.emit("pty-exit", ());
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
 }
 
-/// Kill + wipe scrollback + spawn a fresh shell, as one atomic user gesture (the RESTART button, and the implicit respawn when someone types into an exited terminal). Emits a `reset` so every screen — host and companions alike — clears at the same moment instead of the phone keeping a dead shell's output above a live one's prompt.
+/// Kill + wipe scrollback + spawn a fresh shell, as one atomic user gesture — now the EXPLICIT RESTART button only. (Typing into an exited terminal used to come through here too; it goes to the idempotent `pty_spawn` instead, see `usePtyTerminal.js`'s `respawn`.) Emits a `reset` so every screen — host and companions alike — clears at the same moment instead of the phone keeping a dead shell's output above a live one's prompt.
+///
+/// THE ORDER OF THE THREE EMITS IS THE FIX, not decoration (plan §2.4): `reset` goes out while the slot is empty, so it is the last thing every screen sees before the new shell's first byte and cannot wipe the fresh prompt; `emit_alive` goes out after the spawn, so the value it reports is the new session's, not the corpse's. Emitting one combined payload either way round is wrong in one direction or the other.
 #[tauri::command]
 pub async fn pty_restart(app: AppHandle, cwd: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         kill_current();
         pty_state().scrollback.lock().unwrap().clear();
         emit_reset(&app, b"");
-        spawn_if_absent(app, cwd)
+        let result = spawn_if_absent(app.clone(), cwd);
+        // Also emitted when the spawn failed — `emit_alive` reports what IS, and a screen that thinks it has a shell when the spawn just failed is the same class of lie this fix exists to remove.
+        emit_alive(&app);
+        result
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?

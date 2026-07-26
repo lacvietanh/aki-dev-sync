@@ -50,8 +50,17 @@ export function initPtyBridge() {
     // `reset` rides along so CLEAR / RESTART wipe the phone's screen in the same beat as the
     // Mac's — an append-only relay would leave the phone showing a scrollback the host has
     // already discarded, which then never self-corrects until the next reconnect.
-    if (payload.data || payload.reset) {
-      send({ t: FRAME_PTY_OUTPUT, data: payload.data || '', reset: !!payload.reset })
+    //
+    // `alive` rides along for the same reason one step further: dropping it here was the desync
+    // (plan §2.4). The host emits a liveness-only payload after every spawn — no bytes, no reset —
+    // and a relay that forwarded only byte-bearing payloads swallowed exactly the "the shell came
+    // back" news the phone needed. The field is forwarded ONLY when the host actually stated it, so
+    // a companion can keep distinguishing "no news" from "dead".
+    const hasAlive = typeof payload.alive === 'boolean'
+    if (payload.data || payload.reset || hasAlive) {
+      const frame = { t: FRAME_PTY_OUTPUT, data: payload.data || '', reset: !!payload.reset }
+      if (hasAlive) frame.alive = payload.alive
+      send(frame)
     }
   })
 

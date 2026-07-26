@@ -50,13 +50,23 @@ export function usePtyTerminal(term) {
   // Exposed as a ref (not a plain bool) so the key row's active-state styling stays reactive.
   const ctrlArmed = ref(false)
   // Is there a live shell behind this terminal? Drives the header's RESTART affordance and the
-  // "type anything to respawn" behaviour. Set from `pty_get_scrollback().alive` on mount, flipped
-  // by the exit event/frame, and back on a successful spawn — never guessed from output text.
+  // "type anything to respawn" behaviour. Set from `pty_get_scrollback().alive` on mount, and from
+  // then on ONLY from what the host says: every liveness-bearing pty-output payload/frame, plus the
+  // exit event/frame. Never guessed from output text, and never left to drift — a screen believing
+  // the wrong thing here is what let one screen's keystroke destroy the other screen's live shell.
   const alive = ref(false)
   // Remembered from `start()` so RESTART reopens in the same directory the tab was opened for.
   let bootCwd = null
   // Guards against two respawns racing (e.g. the user mashes keys into a dead terminal).
   let restarting = false
+
+  /** Liveness is only ever adopted when the host actually stated it. The host omits the field
+   *  entirely on ordinary output (see PtyOutputPayload in src-tauri/src/pty.rs), so anything that
+   *  is not a boolean means "this payload says nothing about liveness" — treating a missing field
+   *  as `false` would mark the terminal dead on the first chunk of normal output. */
+  function applyAlive(value) {
+    if (typeof value === 'boolean') alive.value = value
+  }
 
   function writeChunk(base64, reset) {
     // `term.reset()`, not `term.clear()`: clear() keeps the current line and all SGR/cursor modes,
@@ -69,6 +79,9 @@ export function usePtyTerminal(term) {
   async function ensureSpawned(cwd) {
     try {
       await invoke('pty_spawn', { cwd: cwd ?? null })
+      // Not an optimistic guess: the host emits the authoritative liveness for this same call and
+      // it will overwrite this within a frame. Set here only so the local screen does not sit on a
+      // stale `false` for one WS round-trip.
       alive.value = true
     } catch (e) {
       console.error('[usePtyTerminal] pty_spawn failed', e)
@@ -77,7 +90,11 @@ export function usePtyTerminal(term) {
 
   /** RESTART: kill whatever is there, wipe the shared scrollback, spawn a fresh login shell. The
    *  host broadcasts the reset itself (src-tauri/src/pty.rs), so this needs no local clearing and
-   *  works identically when a companion triggers it through the invoke seam. */
+   *  works identically when a companion triggers it through the invoke seam.
+   *
+   *  DESTRUCTIVE, AND THEREFORE BOUND TO THE EXPLICIT BUTTON ONLY. It ends whatever is running in
+   *  the shell and wipes the shared scrollback, which is not something a stray tap on a phone in
+   *  another room may ever cause — see `respawn` for what an ordinary keystroke does instead. */
   async function restart() {
     if (restarting) return
     restarting = true
@@ -86,6 +103,23 @@ export function usePtyTerminal(term) {
       alive.value = true
     } catch (e) {
       console.error('[usePtyTerminal] pty_restart failed', e)
+    } finally {
+      restarting = false
+    }
+  }
+
+  /** The "press any key to start a new shell" path. Deliberately `pty_spawn`, NOT `pty_restart`:
+   *  `pty_spawn` is idempotent (T-3), so if this screen's `alive` is wrong and a shell IS running,
+   *  the worst outcome is a no-op — where `pty_restart` would kill the live shell, everything
+   *  inside it, and the scrollback. The person typing is holding a phone away from the Mac and did
+   *  not ask to destroy anything; the flow is shaped so that they cannot, rather than guarded by
+   *  hoping the liveness flag is fresh. It also keeps the dead shell's output above the new prompt,
+   *  which is the context you were reading when it died. */
+  async function respawn() {
+    if (restarting) return
+    restarting = true
+    try {
+      await ensureSpawned(bootCwd)
     } finally {
       restarting = false
     }
@@ -115,7 +149,11 @@ export function usePtyTerminal(term) {
   async function openExternal() {
     try {
       const cwd = await invoke('pty_cwd')
-      await invoke('open_local_terminal', { localPath: cwd || '~' })
+      // Contract C-1 (docs/plan/1.20.1-flow-audit-fixes.md §1.1): `null`, never the literal `'~'`.
+      // The host side does no shell expansion, so `cd "~"` looks for a directory actually named
+      // `~` and always fails; a null path means "no cd at all" and the shell opens in $HOME by
+      // itself, which is the fallback that was intended all along.
+      await invoke('open_local_terminal', { localPath: cwd || null })
     } catch (e) {
       console.error('[usePtyTerminal] openExternal failed', e)
     }
@@ -152,6 +190,10 @@ export function usePtyTerminal(term) {
       listen('pty-output', (event) => {
         const payload = (event && event.payload) || {}
         if (payload.data || payload.reset) writeChunk(payload.data, !!payload.reset)
+        // A liveness-only payload carries neither bytes nor `reset` (that is how the host says
+        // "the shell came back" without touching the screen), so this must sit OUTSIDE the write
+        // condition above.
+        applyAlive(payload.alive)
       }).then((un) => {
         unlistenHostOutput = un
       })
@@ -163,12 +205,13 @@ export function usePtyTerminal(term) {
     } else {
       unsubscribeFrame = onFrame((frame) => {
         if (!frame) return
-        if (frame.t === FRAME_PTY_OUTPUT && (frame.data || frame.reset)) {
-          writeChunk(frame.data, !!frame.reset)
-          if (frame.reset) {
-            if (frame.cols && frame.rows) term.resize(frame.cols, frame.rows)
-            if (frame.alive !== undefined) alive.value = !!frame.alive
-          }
+        if (frame.t === FRAME_PTY_OUTPUT) {
+          if (frame.data || frame.reset) writeChunk(frame.data, !!frame.reset)
+          if (frame.reset && frame.cols && frame.rows) term.resize(frame.cols, frame.rows)
+          // Applied for EVERY pty_output frame that states it, not only for `reset` frames. That
+          // narrower test was the desync: the host's "shell restarted" news reaches a companion on
+          // a plain frame, and a companion that ignored it went on believing a live shell was dead.
+          applyAlive(frame.alive)
         } else if (frame.t === FRAME_PTY_EXIT) {
           alive.value = false
         } else if (frame.t === FRAME_PTY_RESIZE) {
@@ -211,8 +254,10 @@ export function usePtyTerminal(term) {
       // Dead shell: swallow the keystroke and respawn instead of writing into a closed PTY (which
       // is what made `exit` look like a freeze — pty_write simply errored into the console and the
       // screen never moved again). Mirrors the "press any key to restart" convention.
+      // `respawn()`, never `restart()` — see respawn's doc comment for why the difference is the
+      // whole point.
       if (!alive.value) {
-        restart()
+        respawn()
         return
       }
       let out = chunk
