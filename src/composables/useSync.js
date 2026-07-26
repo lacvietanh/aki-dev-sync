@@ -5,7 +5,7 @@ import { syncCheckEnabled } from '../store/syncCheckStore'
 import { askConfirm } from '../store/dialogStore'
 import { activePanel } from './useTerminalPanel'
 import { useLogs } from './useLogs'
-import { saveProjectsList } from './useProjectConfig'
+import { saveProjectsList, projectPathError } from './useProjectConfig'
 import { fetchGitStatus } from './useGit'
 
 const { appendGlobalLog, appendLog, projectLogs, activeLogProjectId, isLogExpanded } = useLogs()
@@ -47,8 +47,19 @@ export async function startSync(project, direction, specificPaths = []) {
     return
   }
 
+  // A project with no local_path / remote_path turns rsync into an operation on `/`
+  // (docs/plan/1.20.1-flow-audit-fixes.md §2.1). The modal blocks saving one, and Rust rejects it,
+  // but a hand-edited projects.json still reaches here — refuse before anything is spawned.
+  const pathError = projectPathError(project)
+  if (pathError) {
+    Toast.fire({ icon: 'error', title: pathError })
+    return
+  }
+
   projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: true }
-  const isDryRun = project.dry_run
+  // SELECT push is documented as unaffected by the DRY toggle (§2.11): leaving DRY on here made the
+  // user pick files, confirm an overwrite and read "Sync complete" while nothing moved.
+  const isDryRun = specificPaths.length > 0 ? false : !!project.dry_run
 
   // Save previous log state so cancel can restore it instead of forcing-close
   const prevLogProjectId = activeLogProjectId.value
@@ -83,25 +94,11 @@ export async function startSync(project, direction, specificPaths = []) {
       previewFailed = true
     }
 
-    if (previewFailed) {
-      // Mirrored dialog (docs/plan/1.20.0-terminal-and-remote-sync.md §3) — startSync only ever
-      // runs on the host (dispatched via remoteActions.requestSync), so this genuinely awaits the
-      // answer wherever it was clicked, phone or Mac.
-      const proceedAnswer = await askConfirm({
-        kind: 'confirm',
-        title: 'Không thể kiểm tra file sẽ bị xóa',
-        html: `Kết nối tới remote thất bại khi preview --delete.<br>Bạn có muốn tiếp tục <b>${direction.toUpperCase()} --delete</b> mà không biết file nào sẽ bị xóa không?`,
-        icon: 'error',
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#374151',
-        confirmButtonText: 'Vẫn tiếp tục (nguy hiểm)',
-        cancelButtonText: 'Hủy bỏ',
-      })
-      if (!proceedAnswer || !proceedAnswer.confirmed) {
-        abortSync()
-        return
-      }
-    }
+    // A failed preview used to WEAKEN the barrier to a single "continue anyway" click, because
+    // deleteList stayed [] and every typed-name branch below was skipped (§2.9). It is the more
+    // dangerous case, not the less: nobody — not even the app — knows what --delete will remove.
+    // It now falls through to the same typed-project-name dialog, with copy saying the list is
+    // unknown.
 
     if (deleteList.length > 0) {
       // Flow-app artifacts (e.g. REPORT.html) are routine churn, so ordinary --delete sync (which
@@ -152,9 +149,19 @@ export async function startSync(project, direction, specificPaths = []) {
       deleteList = needsConfirm
     }
 
-    if (deleteList.length > 0) {
+    if (previewFailed || deleteList.length > 0) {
       const dest = direction === 'push' ? 'Remote' : 'Local'
-      const fullFileList = deleteList.map(f => `  ${f}`).join('\n')
+      // Filenames are attacker-controllable content (any name is legal on APFS) rendered into the
+      // LAST confirmation before permanent deletion — unescaped markup could hide the rest of the
+      // list or fabricate reassuring text (§2.8). The SELECT dialog below already escapes; so does
+      // this one now. Same for the project name, which the user types freely.
+      const fullFileList = deleteList.map(f => `  ${escHtml(f)}`).join('\n')
+      const safeName = escHtml(project.name)
+      const body = previewFailed
+        ? `Không kiểm tra được remote, nên <b>không xác định được</b> file nào sẽ bị xóa.<br>` +
+          `<b>${direction.toUpperCase()} --delete</b> vẫn sẽ xóa vĩnh viễn mọi file chỉ tồn tại trên <b>${dest}</b>.<br>`
+        : `<b>${direction.toUpperCase()} --delete</b> sẽ xóa vĩnh viễn <b>${deleteList.length}</b> file(s) chỉ tồn tại trên <b>${dest}</b> (không có ở phía nguồn):<br>` +
+          `<pre style="text-align:left;font-size:11px;line-height:1.5;background:#0a0f16;padding:10px;border-radius:6px;max-height:240px;overflow-y:auto;margin:10px 0;white-space:pre;word-break:break-all;border:1px solid #1f2937;color:#e5e7eb;">${fullFileList}</pre>`
       // THE reported bug (docs/plan/1.20.0-terminal-and-remote-sync.md §0/§3): a phone-triggered
       // PUSH/PULL --delete used to show a spinner on the phone forever while a plain Swal.fire
       // blocked here, invisible off the Mac's own call stack. Mirrored via dialogStore instead —
@@ -163,13 +170,12 @@ export async function startSync(project, direction, specificPaths = []) {
       // phone can never skip this check by racing DialogHost's own client-side preConfirm gate.
       const answer = await askConfirm({
         kind: 'typed',
-        title: `XÁC NHẬN: ${deleteList.length} FILE SẼ BỊ XÓA`,
+        title: previewFailed
+          ? 'XÁC NHẬN: KHÔNG BIẾT FILE NÀO SẼ BỊ XÓA'
+          : `XÁC NHẬN: ${deleteList.length} FILE SẼ BỊ XÓA`,
         width: '560px',
-        html:
-          `<b>${direction.toUpperCase()} --delete</b> sẽ xóa vĩnh viễn <b>${deleteList.length}</b> file(s) chỉ tồn tại trên <b>${dest}</b> (không có ở phía nguồn):<br>` +
-          `<pre style="text-align:left;font-size:11px;line-height:1.5;background:#0a0f16;padding:10px;border-radius:6px;max-height:240px;overflow-y:auto;margin:10px 0;white-space:pre;word-break:break-all;border:1px solid #1f2937;color:#e5e7eb;">${fullFileList}</pre>` +
-          `Nhập tên project <b>${project.name}</b> để xác nhận:`,
-        icon: 'warning',
+        html: body + `Nhập tên project <b>${safeName}</b> để xác nhận:`,
+        icon: previewFailed ? 'error' : 'warning',
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#374151',
         confirmButtonText: `Xác nhận ${direction.toUpperCase()} & Xóa`,
@@ -259,6 +265,14 @@ export async function startSync(project, direction, specificPaths = []) {
  * A companion reaches it through `remoteActions.requestSelectPush`, never by calling this directly.
  */
 export async function openSelectDialog(project) {
+  // Same §2.1 gate as startSync, and earlier: without it the relative-path conversion below
+  // dereferences an empty local_path and the picker opens at an undefined defaultPath.
+  const pathError = projectPathError(project)
+  if (pathError) {
+    Toast.fire({ icon: 'error', title: pathError })
+    return
+  }
+
   let selected
   try {
     selected = await openDialog({

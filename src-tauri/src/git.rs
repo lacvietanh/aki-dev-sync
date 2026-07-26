@@ -130,6 +130,55 @@ pub async fn run_git_command(local_path: String, args: Vec<String>) -> Result<St
     }).await.map_err(|e| format!("Task error: {}", e))?
 }
 
+/// Folds the remote stat script's stdout into `results`.
+///
+/// Fail-closed by construction: every entry must be answered by exactly one `STAT`/`MISS` line,
+/// and a `STAT` line whose mtime cannot be parsed is an error rather than a skipped entry. A
+/// skipped entry would leave `remote_exists: false` / `remote_mtime: 0`, which every caller reads
+/// as "the remote does not have this file" - i.e. "safe to overwrite" and "safe to auto-approve
+/// for deletion". Unknown must never collapse into that answer.
+fn apply_remote_stat_output(
+    stdout: &str,
+    remote_host: &str,
+    results: &mut [FileConflictInfo],
+) -> Result<(), String> {
+    let mut answered: Vec<&str> = Vec::with_capacity(results.len());
+
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("STAT ") {
+            // rest = "{mtime} {rel_path}"
+            let (mtime_str, rel) = rest.split_once(' ').ok_or_else(|| {
+                format!("Unreadable reply from '{}' while checking remote files: {}", remote_host, line)
+            })?;
+            let mtime = mtime_str.trim().parse::<i64>().map_err(|_| {
+                format!(
+                    "Cannot read the modification time of '{}' on '{}' (the remote reported '{}'). Refusing to guess whether the remote copy is newer.",
+                    rel,
+                    remote_host,
+                    mtime_str.trim()
+                )
+            })?;
+            if let Some(entry) = results.iter_mut().find(|e| e.rel_path == rel) {
+                entry.remote_exists = true;
+                entry.remote_mtime = mtime;
+                entry.remote_mtime_fmt = fmt_epoch(mtime);
+                answered.push(rel);
+            }
+        } else if let Some(rel) = line.strip_prefix("MISS ") {
+            // The remote genuinely does not have this file - remote_exists stays false.
+            answered.push(rel);
+        }
+    }
+
+    if let Some(missing) = results.iter().find(|e| !answered.contains(&e.rel_path.as_str())) {
+        return Err(format!(
+            "'{}' gave no answer for '{}' while checking remote files. Refusing to continue without knowing what is on the remote.",
+            remote_host, missing.rel_path
+        ));
+    }
+    Ok(())
+}
+
 /// Checks local and remote mtime for a list of relative file paths.
 /// Used by the SELECT (native file picker) to warn about conflicts before pushing.
 #[tauri::command]
@@ -166,8 +215,14 @@ pub async fn get_file_conflict_info(
             }
         }).collect();
 
-        if remote_host.is_empty() || rel_paths.is_empty() {
+        if rel_paths.is_empty() {
             return Ok(results);
+        }
+        if remote_host.is_empty() {
+            return Err(
+                "Cannot check the remote files: this project has no remote host configured."
+                    .to_string(),
+            );
         }
 
         // Expand tilde in remote path
@@ -181,12 +236,16 @@ pub async fn get_file_conflict_info(
 
         // Build SSH command: for each file print "STAT {mtime} {rel_path}" or "MISS {rel_path}"
         // Use double quotes around the cd path so $HOME expands on the remote shell.
+        // mtime is read portably: GNU coreutils first (the common Linux case), BSD/macOS as the
+        // fallback. Hardcoding `stat -c` made every file on a BSD remote look non-existent, and
+        // ssh still exited 0 - a silent wrong answer, which is the failure mode this whole
+        // command must never produce.
         let safe_remote = expanded_remote.replace('"', "\\\"");
         let checks: Vec<String> = rel_paths.iter().map(|f| {
             // shell-escape single quotes in filename
             let safe = f.replace('\'', "'\"'\"'");
             format!(
-                "if [ -e '{safe}' ]; then printf 'STAT %s %s\\n' \"$(stat -c '%Y' '{safe}' 2>/dev/null)\" '{safe}'; else printf 'MISS %s\\n' '{safe}'; fi"
+                "if [ -e '{safe}' ]; then printf 'STAT %s %s\\n' \"$(stat -c '%Y' '{safe}' 2>/dev/null || stat -f '%m' '{safe}' 2>/dev/null)\" '{safe}'; else printf 'MISS %s\\n' '{safe}'; fi"
             )
         }).collect();
 
@@ -194,29 +253,88 @@ pub async fn get_file_conflict_info(
 
         let out = create_command("ssh")
             .args([&remote_host, &script])
-            .output();
+            .output()
+            .map_err(|e| format!("Cannot reach '{}': failed to start ssh ({})", remote_host, e))?;
 
-        if let Ok(out) = out {
-            if out.status.success() {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                for line in stdout.lines() {
-                    if let Some(rest) = line.strip_prefix("STAT ") {
-                        // rest = "{mtime} {rel_path}"
-                        if let Some((mtime_str, rel)) = rest.split_once(' ') {
-                            if let Ok(mtime) = mtime_str.trim().parse::<i64>() {
-                                if let Some(entry) = results.iter_mut().find(|e| e.rel_path == rel) {
-                                    entry.remote_exists = true;
-                                    entry.remote_mtime = mtime;
-                                    entry.remote_mtime_fmt = fmt_epoch(mtime);
-                                }
-                            }
-                        }
-                    }
-                    // MISS lines: remote_exists stays false (default)
-                }
-            }
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let detail = stderr.trim();
+            let code = out
+                .status
+                .code()
+                .map(|c| format!("exit {}", c))
+                .unwrap_or_else(|| "killed by a signal".to_string());
+            return Err(format!(
+                "Cannot reach '{}' to check the remote files ({}): {}",
+                remote_host,
+                code,
+                if detail.is_empty() { "no error output from ssh" } else { detail }
+            ));
         }
+
+        apply_remote_stat_output(&String::from_utf8_lossy(&out.stdout), &remote_host, &mut results)?;
 
         Ok(results)
     }).await.map_err(|e| format!("Task error: {}", e))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entries(rels: &[&str]) -> Vec<FileConflictInfo> {
+        rels.iter()
+            .map(|r| FileConflictInfo {
+                rel_path: r.to_string(),
+                local_mtime: 100,
+                local_mtime_fmt: fmt_epoch(100),
+                remote_exists: false,
+                remote_mtime: 0,
+                remote_mtime_fmt: " - ".to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn stat_output_marks_existing_and_missing_files() {
+        let mut r = entries(&["a.txt", "b.txt"]);
+        let out = "STAT 1700000000 a.txt\nMISS b.txt\n";
+        apply_remote_stat_output(out, "vps01", &mut r).unwrap();
+        assert!(r[0].remote_exists);
+        assert_eq!(r[0].remote_mtime, 1700000000);
+        assert!(!r[1].remote_exists);
+        assert_eq!(r[1].remote_mtime, 0);
+    }
+
+    #[test]
+    fn stat_output_handles_paths_with_spaces() {
+        let mut r = entries(&["my dir/my file.txt"]);
+        apply_remote_stat_output("STAT 42 my dir/my file.txt\n", "vps01", &mut r).unwrap();
+        assert!(r[0].remote_exists);
+        assert_eq!(r[0].remote_mtime, 42);
+    }
+
+    #[test]
+    fn stat_output_errors_on_unparsable_mtime() {
+        // What a BSD remote produced before the portable `stat -f` fallback: an empty mtime.
+        let mut r = entries(&["a.txt"]);
+        let err = apply_remote_stat_output("STAT  a.txt\n", "vps01", &mut r).unwrap_err();
+        assert!(err.contains("a.txt"), "error must name the file: {err}");
+        assert!(!r[0].remote_exists);
+    }
+
+    #[test]
+    fn stat_output_errors_when_a_file_is_unanswered() {
+        let mut r = entries(&["a.txt", "b.txt"]);
+        let err = apply_remote_stat_output("STAT 5 a.txt\n", "vps01", &mut r).unwrap_err();
+        assert!(err.contains("b.txt"), "error must name the unanswered file: {err}");
+    }
+
+    #[test]
+    fn stat_output_ignores_unrelated_noise_lines() {
+        let mut r = entries(&["a.txt"]);
+        let out = "Warning: Permanently added host to known hosts.\nSTAT 7 a.txt\n";
+        apply_remote_stat_output(out, "vps01", &mut r).unwrap();
+        assert!(r[0].remote_exists);
+    }
 }

@@ -97,10 +97,37 @@ pub fn validate_path_segment(label: &str, s: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validates persisted project fields at the system boundary before any shell execution.
-pub fn validate_project(project: &SyncProject) -> Result<(), String> {
+/// Validates the two fields that decide what rsync actually operates on.
+///
+/// Split out from `validate_project` on purpose: these are the only fields whose emptiness
+/// silently turns a sync into a filesystem-root mirror (`format!("{}/", "")` → `"/"`, and
+/// `remote_path: ""` → `host:/`), so they are the ones `save_projects` must reject at write
+/// time. `remote_host` is deliberately NOT checked here - a project saved before its host is
+/// filled in is merely incomplete, not destructive, and refusing that save would be friction
+/// with no safety payoff.
+pub fn validate_project_paths(project: &SyncProject) -> Result<(), String> {
     validate_path_segment("local_path", &project.local_path)?;
     validate_path_segment("remote_path", &project.remote_path)?;
+    if project.local_path.trim().is_empty() {
+        return Err("local_path cannot be empty".to_string());
+    }
+    // An unexpanded `~/...` never worked either: commands are spawned without a shell, so the
+    // tilde would reach rsync literally. Requiring an absolute path makes that failure explicit.
+    if !PathBuf::from(&project.local_path).is_absolute() {
+        return Err(format!(
+            "local_path must be an absolute path (got '{}')",
+            project.local_path
+        ));
+    }
+    if project.remote_path.trim().is_empty() {
+        return Err("remote_path cannot be empty".to_string());
+    }
+    Ok(())
+}
+
+/// Validates persisted project fields at the system boundary before any shell execution.
+pub fn validate_project(project: &SyncProject) -> Result<(), String> {
+    validate_project_paths(project)?;
     if project.remote_host.is_empty() {
         return Err("remote_host cannot be empty".to_string());
     }
@@ -144,6 +171,14 @@ pub fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
 
 #[tauri::command]
 pub fn save_projects(app: AppHandle, projects: Vec<SyncProject>) -> Result<(), String> {
+    // Last line of defence: the frontend is not trusted. A project persisted with an empty
+    // local_path becomes `rsync -avz --delete / host:remote/` on the next PUSH, and mirrors the
+    // remote into `/` on the next PULL (delete_on_pull defaults to true). Rejecting the write is
+    // recoverable - re-typing a path costs seconds; neither of those syncs is recoverable at all.
+    for p in &projects {
+        validate_project_paths(p)
+            .map_err(|e| format!("Cannot save project '{}': {}", p.name, e))?;
+    }
     let path = get_projects_path(&app)?;
     let content = serde_json::to_string_pretty(&projects)
         .map_err(|e| format!("Failed to serialize projects: {}", e))?;
@@ -224,6 +259,47 @@ mod tests {
     #[test]
     fn validate_rejects_empty_remote_host() {
         let p = make_project("/home/user/app", "~/app", "");
+        assert!(validate_project(&p).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_empty_local_path() {
+        let p = make_project("", "~/app", "server");
+        assert!(validate_project(&p).is_err());
+        assert!(validate_project_paths(&p).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_whitespace_only_local_path() {
+        let p = make_project("   ", "~/app", "server");
+        assert!(validate_project(&p).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_relative_local_path() {
+        let p = make_project("dev/app", "~/app", "server");
+        assert!(validate_project(&p).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_tilde_local_path() {
+        // `~` is never expanded: commands are spawned without a shell.
+        let p = make_project("~/dev/app", "~/app", "server");
+        assert!(validate_project(&p).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_empty_remote_path() {
+        let p = make_project("/home/user/app", "", "server");
+        assert!(validate_project(&p).is_err());
+        assert!(validate_project_paths(&p).is_err());
+    }
+
+    #[test]
+    fn validate_project_paths_ignores_empty_remote_host() {
+        // A draft with no host yet is incomplete, not destructive - save must still work.
+        let p = make_project("/home/user/app", "~/app", "");
+        assert!(validate_project_paths(&p).is_ok());
         assert!(validate_project(&p).is_err());
     }
 

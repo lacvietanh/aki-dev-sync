@@ -15,13 +15,20 @@
             <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
           </select>
         </div>
+        <!-- Both fields are `required` in the destructive sense: empty makes rsync operate on `/`
+             (docs/plan/1.20.1-flow-audit-fixes.md §2.1). The invalid state rides the input's own
+             border + title - no extra row or error label (UI Extreme Narrow). -->
         <div class="form-group full-width">
           <label>Local Path (Absolute)</label>
-          <input type="text" v-model="editingProject.local_path" placeholder="/Volumes/DEV/..." />
+          <input type="text" v-model="editingProject.local_path" placeholder="/Volumes/DEV/..."
+                 :class="{ 'input-invalid': localPathInvalid }"
+                 :title="localPathInvalid ? pathError : ''" />
         </div>
         <div class="form-group full-width">
           <label>Remote Destination Directory</label>
-          <input type="text" v-model="editingProject.remote_path" placeholder="~/" />
+          <input type="text" v-model="editingProject.remote_path" placeholder="~/"
+                 :class="{ 'input-invalid': remotePathInvalid }"
+                 :title="remotePathInvalid ? pathError : ''" />
         </div>
         <div class="form-group full-width">
           <label>Production URL <i class="fa-solid fa-circle-info help-icon" title="Used by the web icon button next to the project name to open the production site in a browser"></i></label>
@@ -157,7 +164,7 @@
       </button>
       <div>
         <button class="btn-secondary mr-1" @click="closeConfig">Cancel</button>
-        <button class="btn-save" @click="saveConfig"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Changes</button>
+        <button class="btn-save" :disabled="!!pathError" :title="pathError" @click="saveConfig"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Changes</button>
       </div>
     </div>
   </BaseModal>
@@ -168,12 +175,20 @@ import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useProjects } from '../../composables/useProjects'
 import { useSsh } from '../../composables/useSsh'
+import { projectPathIssue } from '../../composables/useProjectConfig'
 
 const { showConfigModal, editingProject, closeConfig, saveConfig, confirmRemove, Toast, projectRuntime } = useProjects()
 const { sshHosts } = useSsh()
 
 const togglePushScripts = ref(false)
 const togglePullScripts = ref(false)
+
+// Same predicate the sync path and saveConfig use, so the button state can never disagree with
+// what the app will actually accept.
+const pathIssue = computed(() => projectPathIssue(editingProject.value))
+const pathError = computed(() => pathIssue.value.message)
+const localPathInvalid = computed(() => pathIssue.value.field === 'local_path')
+const remotePathInvalid = computed(() => pathIssue.value.field === 'remote_path')
 
 const hasPushScripts = computed(() => {
   return !!(editingProject.value?.hooks?.pre_push_cmd?.trim() || editingProject.value?.hooks?.post_push_cmd?.trim())
@@ -239,6 +254,13 @@ function applyPreset(stack) {
   margin-top: 0 !important;
 }
 
+
+/* Invalid path = the field itself turns red. No error row, no helper label - the reason lives in
+   the native tooltip on the input and on the disabled Save button (UI Extreme Narrow). */
+.input-invalid {
+  border-color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.06);
+}
 
 .commands-group {
   border: 1px solid rgba(16, 185, 129, 0.2);

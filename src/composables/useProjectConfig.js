@@ -57,6 +57,33 @@ function removeEntry(list, entry) {
   return arr.includes(entry) ? arr.filter(e => e !== entry) : arr
 }
 
+/**
+ * Single source of truth for "is this project safe to rsync at all"
+ * (docs/plan/1.20.1-flow-audit-fixes.md §2.1). An empty `local_path` makes the sync path build
+ * `format!("{}/", "")` → `/`: PUSH uploads the whole filesystem root, and PULL — which is the worse
+ * direction, since `delete_on_pull` defaults to true on a new project — mirrors the remote *into*
+ * `/` with `--delete`. Neither is recoverable, so the same predicate gates the Save button
+ * (ProjectConfigModal), `saveConfig` and `startSync`; Rust's `validate_project` is the backstop.
+ *
+ * Returns `{ field, message }` - `field` names the offending input so the modal can mark it
+ * without re-implementing the rules; both are `''` when the project is fine.
+ */
+export function projectPathIssue(project) {
+  const none = { field: '', message: '' }
+  if (!project) return none
+  const local = (project.local_path || '').trim()
+  const remote = (project.remote_path || '').trim()
+  if (!local) return { field: 'local_path', message: 'Local Path is required' }
+  if (!local.startsWith('/')) return { field: 'local_path', message: 'Local Path must be absolute (start with /)' }
+  if (!remote) return { field: 'remote_path', message: 'Remote Destination Directory is required' }
+  return none
+}
+
+/** Message-only form of `projectPathIssue` - `''` means the project is safe to sync. */
+export function projectPathError(project) {
+  return projectPathIssue(project).message
+}
+
 export async function loadData(sshHosts, showToast = false) {
   if (isReloading.value) return
   isReloading.value = true
@@ -163,6 +190,14 @@ export function closeConfig() {
 
 export async function saveConfig() {
   if (!editingProject.value) return
+
+  // Backstop for the disabled Save button (§2.1) - saveConfig is also reachable by Enter/keyboard
+  // and from a companion screen, where the button state is not what decides.
+  const pathError = projectPathError(editingProject.value)
+  if (pathError) {
+    Toast.fire({ icon: 'error', title: pathError })
+    return
+  }
 
   if (editingProject.value.production_url) {
     const pUrl = editingProject.value.production_url.trim()
