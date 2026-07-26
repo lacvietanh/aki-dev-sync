@@ -82,7 +82,7 @@ field needed resetting. Rule, to make this class of bug structurally harder to r
 
 - **Feature changed?** Check `README.md` and `src/components/modals/IntroModal.vue` in the same task. English, terse.
 - **Titlebar height**: 42px (`var(--titlebar-h)`). Ref: `docs/ref/titlebar-sacred-boundary.md`
-- **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/post-build.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X-arch.dmg`.
+- **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/post-build.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X.BUILD-arch.dmg` (e.g. `Aki-DevSync-v1.20.0.2346-uni.dmg`) - `BUILD` is `HHMM` at build time, or `$BUILD_NUM` if set. The `v` here is part of a *filename*, not a stored version value, so it does not conflict with the bare-semver rule above.
 - **Release build command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg) - not `build:app`/`build:rmad` - unless the user asks for a different bundle.
 - **Release and tag via CLI**: check remote tags (`git ls-remote --tags origin | sort -V | tail -5`) and follow convention (`git tag X.Y.Z`), push (`git push && git push --tags`), then create GitHub release with DMG asset (`gh release create X.Y.Z <dmg_path> --title "X.Y.Z" --notes "<notes>"`).
 - **async fn + blocking subprocess history**: `run_sync` v1.1.1 hit the UI-freeze pitfall (see GLOBAL TAURI STACK) - already fixed, kept here as the concrete precedent.
