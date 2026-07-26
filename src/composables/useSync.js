@@ -1,8 +1,9 @@
 import { invoke } from '../utils/tauri'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import Swal from 'sweetalert2'
 import { projectRuntime, Toast } from '../store/projectStore'
 import { syncCheckEnabled } from '../store/syncCheckStore'
+import { askConfirm } from '../store/dialogStore'
+import { activePanel } from './useTerminalPanel'
 import { useLogs } from './useLogs'
 import { saveProjectsList } from './useProjectConfig'
 import { fetchGitStatus } from './useGit'
@@ -52,9 +53,13 @@ export async function startSync(project, direction, specificPaths = []) {
   // Save previous log state so cancel can restore it instead of forcing-close
   const prevLogProjectId = activeLogProjectId.value
   const prevLogExpanded = isLogExpanded.value
+  const prevActivePanel = activePanel.value
 
   activeLogProjectId.value = project.id
   isLogExpanded.value = true
+  // Expanding the dock is not enough since the dock grew a TERMINAL tab: with that tab selected the
+  // sync log streams into a hidden panel and the app looks hung. Select the LOG tab too.
+  activePanel.value = 'log'
   if (!projectLogs.value[project.id]) projectLogs.value[project.id] = []
   projectLogs.value[project.id] = []
 
@@ -65,6 +70,7 @@ export async function startSync(project, direction, specificPaths = []) {
     projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: false }
     activeLogProjectId.value = prevLogProjectId
     isLogExpanded.value = prevLogExpanded
+    activePanel.value = prevActivePanel
   }
 
   if (isDeleteOp) {
@@ -78,19 +84,20 @@ export async function startSync(project, direction, specificPaths = []) {
     }
 
     if (previewFailed) {
-      const { isConfirmed: proceedAnyway } = await Swal.fire({
+      // Mirrored dialog (docs/plan/1.20.0-terminal-and-remote-sync.md §3) — startSync only ever
+      // runs on the host (dispatched via remoteActions.requestSync), so this genuinely awaits the
+      // answer wherever it was clicked, phone or Mac.
+      const proceedAnswer = await askConfirm({
+        kind: 'confirm',
         title: 'Không thể kiểm tra file sẽ bị xóa',
         html: `Kết nối tới remote thất bại khi preview --delete.<br>Bạn có muốn tiếp tục <b>${direction.toUpperCase()} --delete</b> mà không biết file nào sẽ bị xóa không?`,
         icon: 'error',
-        showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#374151',
         confirmButtonText: 'Vẫn tiếp tục (nguy hiểm)',
         cancelButtonText: 'Hủy bỏ',
-        background: '#131317',
-        color: '#F3F4F6',
       })
-      if (!proceedAnyway) {
+      if (!proceedAnswer || !proceedAnswer.confirmed) {
         abortSync()
         return
       }
@@ -148,32 +155,32 @@ export async function startSync(project, direction, specificPaths = []) {
     if (deleteList.length > 0) {
       const dest = direction === 'push' ? 'Remote' : 'Local'
       const fullFileList = deleteList.map(f => `  ${f}`).join('\n')
-      const { isConfirmed } = await Swal.fire({
+      // THE reported bug (docs/plan/1.20.0-terminal-and-remote-sync.md §0/§3): a phone-triggered
+      // PUSH/PULL --delete used to show a spinner on the phone forever while a plain Swal.fire
+      // blocked here, invisible off the Mac's own call stack. Mirrored via dialogStore instead —
+      // both screens see the same modal, whichever answers first wins (askConfirm/resolveDialog).
+      // The typed value travels back in `answer.typed` and is re-validated right below — the
+      // phone can never skip this check by racing DialogHost's own client-side preConfirm gate.
+      const answer = await askConfirm({
+        kind: 'typed',
         title: `XÁC NHẬN: ${deleteList.length} FILE SẼ BỊ XÓA`,
         width: '560px',
         html:
           `<b>${direction.toUpperCase()} --delete</b> sẽ xóa vĩnh viễn <b>${deleteList.length}</b> file(s) chỉ tồn tại trên <b>${dest}</b> (không có ở phía nguồn):<br>` +
           `<pre style="text-align:left;font-size:11px;line-height:1.5;background:#0a0f16;padding:10px;border-radius:6px;max-height:240px;overflow-y:auto;margin:10px 0;white-space:pre;word-break:break-all;border:1px solid #1f2937;color:#e5e7eb;">${fullFileList}</pre>` +
           `Nhập tên project <b>${project.name}</b> để xác nhận:`,
-        input: 'text',
-        inputPlaceholder: project.name,
         icon: 'warning',
-        showCancelButton: true,
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#374151',
         confirmButtonText: `Xác nhận ${direction.toUpperCase()} & Xóa`,
         cancelButtonText: 'Hủy bỏ',
-        background: '#131317',
-        color: '#F3F4F6',
-        preConfirm: (val) => {
-          if (val !== project.name) {
-            Swal.showValidationMessage(`Nhập đúng "${project.name}" để xác nhận`)
-            return false
-          }
-          return val
-        }
+        inputPlaceholder: project.name,
+        requireText: project.name,
+        mismatchText: `Nhập đúng "${project.name}" để xác nhận`,
       })
-      if (!isConfirmed) {
+      // Authoritative check, on the host, regardless of which screen answered (§3.4).
+      const typedOk = !!answer && answer.confirmed && answer.typed === project.name
+      if (!typedOk) {
         abortSync()
         return
       }
@@ -246,6 +253,10 @@ export async function startSync(project, direction, specificPaths = []) {
 
 /**
  * SELECT: opens native OS file dialog, checks for remote conflicts, then pushes selected files.
+ *
+ * HOST-ONLY, like `startSync`: the native file picker is the Mac's, and the overwrite confirm below
+ * is a mirrored dialog (`askConfirm` writes host state and only the host can resolve its waiter).
+ * A companion reaches it through `remoteActions.requestSelectPush`, never by calling this directly.
  */
 export async function openSelectDialog(project) {
   let selected
@@ -320,7 +331,13 @@ export async function openSelectDialog(project) {
       </tr>`
     ).join('')
 
-    const { isConfirmed } = await Swal.fire({
+    // Mirrored like every other decision dialog in this file (docs/plan/1.20.0-terminal-and-remote-sync.md
+    // §3): this one is destructive (it authorises overwriting remote files), and while it was a
+    // plain popup-library call it blocked here invisibly off the Mac's own call stack — a phone that
+    // triggered SELECT sat on a spinner forever with no way to answer. Both screens now see it and
+    // whichever answers first wins.
+    const answer = await askConfirm({
+      kind: 'confirm',
       title: `${conflicts.length} file(s) đã tồn tại trên remote`,
       html:
         `<p style="font-size:12px;margin:0 0 10px">Push sẽ ghi đè các file sau:</p>` +
@@ -333,15 +350,12 @@ export async function openSelectDialog(project) {
         </tr></thead>` +
         `<tbody>${rows}</tbody></table></div>`,
       icon: 'warning',
-      showCancelButton: true,
       confirmButtonColor: '#f59e0b',
       cancelButtonColor: '#374151',
       confirmButtonText: 'Ghi đè & Push',
       cancelButtonText: 'Hủy',
-      background: '#131317',
-      color: '#F3F4F6',
     })
-    if (!isConfirmed) return
+    if (!answer || !answer.confirmed) return
   }
 
   startSync(project, 'push', relPaths)

@@ -2,13 +2,19 @@
 
 Control the Mac app from a phone (or any browser) on the same LAN or over Tailscale. The Mac
 webview stays the single source of truth; the phone is a thin mirror that shows the same state and
-sends intents back over one WebSocket. Full architecture: `docs/plan/remote-control.md`.
+sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`.
 
 > **Status:** foundation + host entry point + **companion control (R-2)** + pairing gate shipped.
 > The Rust relay (`src-tauri/src/web_server.rs`) must be built on the Mac before it works
 > end-to-end. A phone can now push, pull, flip DRY, refresh and toggle sync-check; the full pairing
 > modal (QR + device management) is still Wave 2. Every companion state and failure case is
 > enumerated in **"Companion states — every case"** below.
+>
+> **1.20.0 adds** (code complete, unverified on a Mac): decision **dialogs are mirrored** so a
+> confirm triggered from the phone appears and is answerable on both screens; **task/note/reorder
+> edits from a phone now stick** (PERSIST-1); and a shared **in-app terminal** the phone can type
+> into. See "1.20.0 — the two classes that were still broken" below, plus
+> `docs/plan/1.20.0-terminal-and-remote-sync.md`.
 
 ## How a user turns it on and pairs a phone
 
@@ -47,6 +53,10 @@ is on shows it still on, with the same code (`get_companion_status()`).
 | Wire-protocol constants | `src/constants/protocol.js` |
 | Rust relay + pairing + address discovery | `src-tauri/src/web_server.rs` |
 | Role stamp | `src/boot/roleStamp.js` (first import in `main.js`) |
+| Mirrored decision dialogs (1.20.0) | `src/store/dialogStore.js` + `src/components/DialogHost.vue` |
+| In-app terminal — PTY backend (1.20.0) | `src-tauri/src/pty.rs` |
+| In-app terminal — xterm surface / role wiring / host relay | `src/components/TerminalView.vue` · `src/composables/usePtyTerminal.js` · `src/services/ptyBridge.js` |
+| In-app terminal — panel tab + the "open project in the in-app terminal" gesture | `src/composables/useTerminalPanel.js` (module-level refs, deliberately **not** in `src/store/` so the mirror does not sync one screen's tab choice onto the other) |
 
 > **Why `action()` is split from `intents.js` (REGISTRY-1).** `remoteActions.js` and
 > `syncCheckStore.js` live in `src/store/` and need `action()` at their definition site. If they
@@ -75,7 +85,7 @@ is on shows it still on, with the same code (`get_companion_status()`).
 - **One address in dev and release (PORT-1).** The phone always uses `http://<ip>:1421`. In a release
   build axum serves the embedded frontend on 1421; in `npm run tauri dev` axum reverse-proxies the
   page to the Vite dev server (localhost) on the same 1421, so DX matches production and hot-reload
-  still works. See `docs/plan/remote-control.md` §7.2.
+  still works. See `docs/plan/done/remote-control.md` §7.2.
 - macOS-only, like the rest of the app. Tailscale is only *noticed* (via `if-addrs` reading the
   `100.64/10` CGNAT range) and offered as an address — never installed or configured for the user.
 - **Minimal PWA (install as a standalone app).** `index.html` carries the favicon (`/icon.png`),
@@ -108,7 +118,7 @@ is on shows it still on, with the same code (`get_companion_status()`).
 - The host role stamp is `if (window.__TAURI_INTERNALS__) window.__AKI_ROLE__='host'` in
   `src/boot/roleStamp.js`, imported first in `main.js` (a module, not an inline script — the host
   CSP `script-src 'self'` blocks inline). A phone browser never has `__TAURI_INTERNALS__`, so it
-  defaults to companion. See `docs/plan/remote-control.md` §9 (S-1) for why this replaced the
+  defaults to companion. See `docs/plan/done/remote-control.md` §9 (S-1) for why this replaced the
   originally-planned Rust init-script.
 
 ## Companion states — every case
@@ -185,7 +195,8 @@ means exactly this — the host isn't feeding the relay.
 | :-- | :-- | :-- |
 | F1 | Companion clicks PUSH / PULL / DRY / Refresh / global-refresh / sync-check power | sends an `intent` (project **id** + args) → host runs the real action → the resulting state change mirrors back to every screen. |
 | F2 | Host clicks the same buttons | `action(fn) === fn` on the host → byte-identical to before R-2 (the only change is an id→object resolve the host does anyway). |
-| F3 | Companion triggers a `--delete` sync, or the native "Upload (select files)" | the confirm dialog / file picker runs **on the Mac** (host-only; phone-answerable dialogs are Wave 2, §3.4). The normal no-dialog push/pull/DRY path is fully phone-usable. |
+| F3 | Companion triggers the native "Upload (select files)" | the file picker and its overwrite confirm (`useSync.js:325`, plain `Swal.fire`) run **on the Mac** — host-only by design, being bound to the native macOS dialog. |
+| F3b | Companion triggers a `--delete` sync | as of 1.20.0 the typed `--delete` confirm is a **mirrored** dialog (`useSync.js:159` `askConfirm` → `dialogStore`/`DialogHost.vue`), answerable from the phone, typed value re-validated on the host. Before 1.20.0 it was host-only like F3. The normal no-dialog push/pull/DRY path is fully phone-usable either way. |
 | F4 | Companion clicks while the host is mid-sync | the PUSH/PULL fieldset is disabled via the mirrored `syncing` flag; `startSync` also guards host-side, so a racing intent is a no-op. |
 | F5 | Intent with an unknown key reaches the host | logged as a warning, never executed. |
 
@@ -252,14 +263,14 @@ side effect with no shared state to mirror.
 | Sync-check power | `toggleSyncCheck()` :30 | ACTION | OK |
 | Edit config → Save | `saveConfig`→`remoteActions.applyProjectConfig` | ACTION (data) + LOCAL Toast/close | **FIXED** — host applies to its reactive `projects`, mirrors to every screen |
 | New project | `createNewProject`→`saveConfig`→`applyProjectConfig` | native folder dialog (Mac) + ACTION save | **FIXED** (save path); folder picker still opens on the Mac (RPC-OK) |
-| Remove project | `confirmRemove`→`remoteActions.removeProject` | ACTION | **FIXED** — host mutates its `projects`, mirrors out |
+| Remove project | `confirmRemove`→`remoteActions.requestRemoveProject`→`removeProject` | MIRRORED DIALOG + ACTION | **FIXED (1.20.0)** — the confirm is mirrored state answerable from either screen; the removal mutates the host's `projects` and mirrors out. The companion's own config modal does not self-close afterwards (R-1, `showConfigModal` still per-screen) |
 | Open Git modal | `openGitModal(p)` :114 | RPC (git info) + LOCAL modal | LOCAL-OK |
-| Open config modal | `openConfig(p)` :280 | LOCAL modal-open | LOCAL-OK (save is the BUG above) |
+| Open config modal | `openConfig(p)` :280 | LOCAL modal-open | LOCAL-OK |
 | Toggle project log | `toggleProjectLog(p.id)` :275 | LOCAL (which log is shown) | LOCAL-OK |
 | Open REPORT.html | `openReportHtml(p)` :147 | RPC (`resolve_report_html`+`macos_open`) | RPC-OK (opens on Mac) |
 | Open IDE local/remote | `openIdeLocal/Remote` :160-202 | RPC | RPC-OK (opens on Mac) |
-| Run DEV / BUILD | `runProjectDev/Command` :176/179 | RPC | RPC-OK (Mac Terminal) |
-| Upload (select files) | `openSelectDialog(p)` :207 | RPC native dialog (Mac) | RPC-OK (host-only, F3) |
+| Run DEV / BUILD | `runProjectDev/Command` :176/179 | RPC | RPC-OK (opens a Mac `Terminal.app` window, still not visible to a phone — redirecting these into the 1.20.0 in-app terminal needs per-project cwd + multi-session first, see the 1.20.0 plan T-6) |
+| Upload (select files) | `openSelectDialog(p)` :207 | RPC native dialog (Mac) | RPC-OK (host-only, F3) — its overwrite confirm stays a host-local Swal on purpose, being bound to the native picker |
 | Copy local/remote path | `copyLocalPath/RemotePath` :156/189 | LOCAL clipboard | LOCAL-OK |
 | Open production URL | `openUrl(p.production_url)` :87 | RPC `macos_open` | RPC-OK |
 
@@ -273,7 +284,7 @@ side effect with no shared state to mirror.
 | Update check | `triggerManualUpdateCheck` :19 | RPC + LOCAL modal | RPC-OK |
 | Window presets width/place | `applyViewSafe/ComboSafe` :158-195 | RPC window API on Mac window | RPC-OK (controls the Mac window) |
 | Pin / Minimize / Close | `togglePin/minimize/closeWin` :261-268 | RPC window API | RPC-OK (controls the Mac window) |
-| SSH config → Save/Undo/Redo | `saveSshConfig`→`remoteActions.applySshHostsChange` | LOCAL modal/RPC file-write + ACTION (host reconcile) | **FIXED** — host re-reads `sshHosts`/undo-redo flags + migrates affected projects on its reactive state; missing-host Swal stays host-only (F3) |
+| SSH config → Save/Undo/Redo | `saveSshConfig`→`remoteActions.applySshHostsChange` | LOCAL modal/RPC file-write + ACTION (host reconcile) | **FIXED** — host re-reads `sshHosts`/undo-redo flags + migrates affected projects on its reactive state; the missing-host replacement dialog is decided host-side and, since 1.20.0, mirrored to the phone (`askConfirm` `kind: 'select'`) |
 | Refresh-settings modal | `save`→`refreshStore.setRefreshSettings` :237 | LOCAL modal + ACTION (data) | **FIXED** — save routes through an action; host sets `refreshSettings`, re-drives Mac timers, mirrors back |
 | Global note | note save via `noteStore.saveNote` :227 | LOCAL modal + ACTION (persist) | **FIXED** — `noteContent` moved into `store/noteStore.js` (mirrors H→C); save is an action that mutates it + writes disk on the host |
 | Changelog / Update / Intro / Profile / Statusline modals | `show*Modal=true` :11-55 | LOCAL modal-open | LOCAL-OK |
@@ -286,30 +297,62 @@ side effect with no shared state to mirror.
 
 | Control | Handler:line | Mechanism | Verdict |
 | :-- | :-- | :-- | :-- |
-| Power AG / CC-local | `toggle()`→`setSourceEnabled` (`usageSourcesStore`) | MIRROR + ACTION | **FIXED** — flags moved to store; toggle is an action |
-| Power ccRemote | `ccRemote.toggle()`→`setSourceEnabled` | MIRROR + ACTION | **FIXED** — same |
-| Remote host select | `@change=setSelectedSshHost` Slot:47 | MIRROR (`sshStore`) + ACTION | **FIXED** — `:value`+`@change`→action, not v-model |
+| Power AG / CC (any scope) | `monitor.toggle()`→`setMonitorEnabled(id, …)` (`usageMonitorStore`) | MIRROR + ACTION | **FIXED** — flags moved to store; toggle is an action. Since 1.20.0 one keyed map, one entry per `agentId@host` (`monitorId`), not four fixed source flags — "ccRemote" is no longer a thing |
+| Remote host select | `@change=setSlotTarget(slotId,{remoteHost})` Slot:40-41 | MIRROR (`usageSlotStore`) + ACTION | **FIXED** — `:value`+`@change`→action, not v-model. Per **slot** since 1.20.0; `sshStore.selectedSshHost` is only the fallback |
 | Reload / retry | `$emit('retry')`→`checkUsage`→`get_agent_usage` RPC | RPC | RPC-OK (refetches the phone's view) |
 | Logout AG (IDE/CLI) | `logoutAntigravity`→`logout_antigravity*` RPC | Swal on phone + RPC | RPC-OK (logs out on Mac) |
 | Open Antigravity | `handleIconClick`→`macos_open` RPC | RPC | RPC-OK |
-| Tab LOCAL / REMOTE | `topTab=…` Slot:6/13 | component-local + localStorage | **REVIEW — under SCOPE-1 this is session view, not per-device; currently local** |
-| Source tab AG / CC | `localSub=…` Slot:32 | component-local | **REVIEW — same as above** |
+| Tab LOCAL / REMOTE | `setSlotTarget(slotId,{scope})` Slot:6/13 | MIRROR (`usageSlotStore`) + ACTION | **FIXED (1.20.0)** — the slot's target became store state; the old "component-local + localStorage" REVIEW is settled |
+| Source tab AG / CC | `setAgent()`→`setSlotTarget(slotId,{localAgent\|remoteAgent})` Slot:31/116 | MIRROR + ACTION | **FIXED (1.20.0)** — same |
 | Account view dropdown | `select-account`→`selectAccount` | composable-local view | **REVIEW — which account is *shown*; currently local** |
 | Email show/hide | `toggle-email`→`showEmail` Slot:112 | slot-local | **REVIEW — same** |
+
+### 1.20.0 — the two classes that were still broken
+
+Both are documented in full in `docs/plan/1.20.0-terminal-and-remote-sync.md` (§2, §3).
+
+- **PERSIST-1 — a companion must never write the projects array.** `saveProjectsList()` was a bare
+  `invoke('save_projects', {projects: projects.value})`, the one mutating persistence path not wrapped
+  in `action()`. From a phone it shipped the *phone's* array to disk while the Mac's reactive
+  `projects` stayed on the old value — so the next `broadcastFull()` (fired on **every** companion
+  reconnect: screen lock, backgrounded tab, LAN blip) replayed the stale copy back over the edit.
+  That is the "task note reverts after a while" report. Fixed by `remoteActions.applyTaskEdit(id, patch)`
+  and `remoteActions.reorderProjects(orderedIds)`; the seven bare call sites (task add/toggle/remove,
+  notes, task title, task detail, drag-reorder) now all route through them. `saveProjectsList` carries
+  the invariant as a comment at its definition: it is a **host-side persist of the host's own state**
+  and may only be reached from inside an action body. No guard was added inside it — by the time it
+  runs the wrong array is already in hand, so a guard would police the symptom.
+- **Dialogs are mirrored state (§3.4, designed in 1.19.0, built in 1.20.0).** Four decision dialogs
+  moved out of host-local `Swal.fire` into `store/dialogStore.js` (`pendingDialog` ref + `resolveDialog`
+  action + a host-side `askConfirm()` promise helper) rendered by `components/DialogHost.vue` on both
+  screens: the typed `--delete` confirm, the preview-failed prompt, Remove Project, and the
+  missing-SSH-host replacement picker. First-answer-wins via the id guard; the typed value travels with
+  the answer and is **re-validated on the host**, so a phone cannot skip the check. No new frame type
+  and no relay change — it rides the two existing seams. Still plain `Swal.fire` on purpose: the
+  file-picker overwrite confirm (`useSync.js`, bound to the native macOS dialog, host-only by design),
+  the Antigravity logout confirm (`AgentUsage.vue`, runs in the clicking screen's own handler), and
+  every toast.
+
+Still open after 1.20.0: a companion's **Config modal does not self-close** after a remove it triggered
+(the removal itself succeeds and mirrors — only `editingProject`/`showConfigModal` are still per-screen
+composable refs, R-1). Usage numbers are still the one area the mirror does not carry (each screen
+fetches its own). `projectIcons` is still filled only at boot.
 
 ### Fix order — progress
 
 - **DONE** — Config save (`applyProjectConfig`), Remove project (`removeProject`), New-project save path.
-- **DONE** — `setTierCount` action; usage power toggles (`usageSourcesStore` + `setSourceEnabled`);
-  remote host select (`setSelectedSshHost`).
+- **DONE** — `setTierCount` action; usage power toggles (now `usageMonitorStore` +
+  `setMonitorEnabled`, one entry per `agentId@host`); remote host select (now per-slot,
+  `usageSlotStore.setSlotTarget`).
 - **DONE (same class)** — all three former TODOs, identical pattern (data mutation → an `action()` in
   a `store/*.js`):
   - **`saveSshConfig`/`undoSshConfig`/`redoSshConfig`** → `remoteActions.applySshHostsChange`. The RPC
     file writes stay on the clicker; the reactive reconcile (re-read `get_ssh_hosts` → set the
     mirrored `sshHosts`, refresh `hasSshUndo`/`hasSshRedo`, migrate any project pinned to a
     now-missing host + `saveProjectsList`) runs host-side. The many-to-many missing-host replacement
-    Swal runs on the Mac (host-only, like the `--delete` confirm in F3 — phone-answerable dialogs are
-    Wave 2). `oldHosts` is read from the live host `sshHosts`, so nothing crosses the intent wire.
+    dialog is **mirrored** since 1.20.0 (`remoteActions.js:247`, `askConfirm` `kind: 'select'`): it is
+    decided host-side, as it always was, but is now visible and answerable from a companion screen
+    too. `oldHosts` is read from the live host `sshHosts`, so nothing crosses the intent wire.
     useSsh/SshConfigModal no longer forward `saveProjectsList` (the action owns the save).
   - **Refresh-settings interval** → `refreshStore.setRefreshSettings`. `RefreshSettingsModal.save()`
     calls the action instead of writing `refreshSettings.value` directly; the host's existing deep

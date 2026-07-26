@@ -78,7 +78,7 @@
               <button
                 class="task-state-icon-btn pin-btn"
                 :class="{ 'is-active': task.pin }"
-                @click="toggleTaskProp(task, 'pin')"
+                @click="toggleTaskProp(tasksProject, task, 'pin')"
                 :disabled="task.done"
                 title="Pin to top"
               >
@@ -89,7 +89,7 @@
               <button
                 class="task-state-icon-btn wish-btn"
                 :class="{ 'is-active': task.wish }"
-                @click="toggleTaskProp(task, 'wish')"
+                @click="toggleTaskProp(tasksProject, task, 'wish')"
                 :disabled="task.done"
                 title="Mark as wish (do it later)"
               >
@@ -101,8 +101,8 @@
               <!-- Enter key marks task as Done -->
               <input
                 v-model="task.title"
-                @change="saveProjectsList"
-                @keyup.enter="toggleTaskProp(task, 'done')"
+                @change="handleTitleChange"
+                @keyup.enter="toggleTaskProp(tasksProject, task, 'done')"
                 type="text"
                 class="task-title-input"
                 maxlength="200"
@@ -125,7 +125,7 @@
             <button
               class="task-check-btn"
               :class="{ 'is-completed': task.done }"
-              @click="toggleTaskProp(task, 'done')"
+              @click="toggleTaskProp(tasksProject, task, 'done')"
               aria-label="Toggle Done"
               :title="task.done ? 'Mark Active' : 'Mark Done'"
             >
@@ -157,7 +157,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { iconTimestamp } from '../../store/projectStore'
 import { projectIconSrc } from '../../utils/projectIcon'
-import { saveProjectsList } from '../../composables/useProjectConfig'
+import { applyTaskEdit } from '../../store/remoteActions'
 import {
   showTasksModal, tasksProject, closeTasksModal,
   sortedTasks, openTaskCount, doingCount,
@@ -176,14 +176,20 @@ function handleIconError() {
 function handleNotesChange() {
   if (tasksProject.value) {
     tasksProject.value.notes = (tasksProject.value.notes || '').trim()
-    saveProjectsList()
+    applyTaskEdit(tasksProject.value.id, { notes: tasksProject.value.notes })
   }
 }
 
 function handleDetailChange(task) {
-  if (task) {
+  if (task && tasksProject.value) {
     task.detail = (task.detail || '').trim()
-    saveProjectsList()
+    applyTaskEdit(tasksProject.value.id, { tasks: tasksProject.value.tasks })
+  }
+}
+
+function handleTitleChange() {
+  if (tasksProject.value) {
+    applyTaskEdit(tasksProject.value.id, { tasks: tasksProject.value.tasks })
   }
 }
 

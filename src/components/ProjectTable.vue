@@ -162,6 +162,11 @@
                       <div class="popup-item" @click="openIdeLocal('finder', p.local_path)">
                         <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
                       </div>
+                      <!-- In-app first: it is the only one of the two that works from a phone,
+                           which is the whole reason the in-app terminal exists. -->
+                      <div class="popup-item" @click="openInAppTerminal(p.local_path)">
+                        <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-cyan);"></i> In-App Terminal
+                      </div>
                       <div class="popup-item" @click="openIdeLocal('terminal', p.local_path)">
                         <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
                       </div>
@@ -206,7 +211,7 @@
                       </div>
                       <div class="popup-item"
                            :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing }"
-                           @click="!projectRuntime[p.id]?.syncing && openSelectDialog(p)"
+                           @click="!projectRuntime[p.id]?.syncing && requestSelectPush(p.id)"
                            title="Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project's exclude list, unaffected by the DRY toggle">
                         <i class="fa-solid fa-upload" style="width:14px; color: #38bdf8;"></i> Upload (select files)
                       </div>
@@ -296,6 +301,7 @@ import { invoke } from '../utils/tauri';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
+import { useTerminalPanel } from '../composables/useTerminalPanel';
 import { gitRefreshKey, diffRefreshKey, refreshProject } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
 import { Toast, ideAvailability, iconTimestamp, isRefreshing } from '../store/projectStore';
@@ -303,14 +309,15 @@ import { projectIconSrc } from '../utils/projectIcon';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
 // R-2 write side: these run the real action on the host whether clicked on the Mac or relayed
 // from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
-import { requestSync, setDryRun, requestRefresh } from '../store/remoteActions';
+import { requestSync, requestSelectPush, setDryRun, requestRefresh, reorderProjects } from '../store/remoteActions';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
 
-const { projects, projectRuntime, anySyncing, isReloading, startSync, saveProjectsList, openSelectDialog, openConfig, openGitModal, createNewProject } = useProjects();
+const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
+const { openInAppTerminal } = useTerminalPanel();
 
 function handleCreateNew() {
   createNewProject(sshHosts);
@@ -404,7 +411,12 @@ function onRowDrop(index) {
 function onRowDragEnd() {
   dragFromIndex.value = null;
   isHandleMouseDown.value = false;
-  saveProjectsList();
+  // The drag itself already reordered the local `projects` ref in place (onRowDragOver) for
+  // instant visual feedback — that's the sanctioned optimistic mutation. The actual persist
+  // (PERSIST-1) goes through the id-based, host-resolved reorderProjects action instead of a bare
+  // saveProjectsList(), so a phone-initiated drag reorders the HOST's own `projects.value`, not
+  // just the phone's local copy.
+  reorderProjects(projects.value.map((p) => p.id));
 }
 
 const IDE_LOCAL_ARGS = {

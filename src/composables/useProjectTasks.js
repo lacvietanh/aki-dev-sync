@@ -1,5 +1,10 @@
 import { ref } from 'vue'
-import { saveProjectsList } from './useProjectConfig'
+// PERSIST-1 (docs/plan/1.20.0-terminal-and-remote-sync.md §2): every task/notes mutation goes
+// through the id-based, host-resolved applyTaskEdit action, never a bare saveProjectsList() —
+// that bare call is what shipped a companion's whole `projects` array to disk instead of the
+// host's, and is the root cause of the "task note reverts" bug. No import cycle: remoteActions.js
+// does not import this module.
+import { applyTaskEdit } from '../store/remoteActions'
 
 export const showTasksModal = ref(false)
 export const tasksProject = ref(null)
@@ -82,17 +87,21 @@ export function addTask(project, title) {
     updated_at: now,
   }
   ensureTasks(project).push(task)
-  saveProjectsList()
+  applyTaskEdit(project.id, { tasks: project.tasks })
   return task
 }
 
-export function toggleTaskProp(task, prop) {
+// Takes the owning project (or lets the caller resolve one) explicitly — a bare `task` carries no
+// project reference, and PERSIST-1 requires the persist to be id-based and host-resolved, so the
+// caller must supply which project this task belongs to (ProjectTasksModal.vue already has
+// `tasksProject` in scope for every call site).
+export function toggleTaskProp(project, task, prop) {
   task[prop] = !task[prop]
   if (prop === 'done' && task.done) {
     task.pin = false
   }
   task.updated_at = Date.now()
-  saveProjectsList()
+  if (project) applyTaskEdit(project.id, { tasks: project.tasks })
 }
 
 export function removeTask(project, task) {
@@ -100,6 +109,6 @@ export function removeTask(project, task) {
   const i = tasks.findIndex((t) => t.id === task.id)
   if (i !== -1) {
     tasks.splice(i, 1)
-    saveProjectsList()
+    applyTaskEdit(project.id, { tasks: project.tasks })
   }
 }

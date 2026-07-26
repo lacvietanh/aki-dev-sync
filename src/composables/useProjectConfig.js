@@ -1,6 +1,5 @@
 import { ref } from 'vue'
 import { invoke } from '../utils/tauri'
-import Swal from 'sweetalert2'
 import { projects, projectRuntime, isReloading, Toast, ideAvailability, iconTimestamp } from '../store/projectStore'
 import { useLogs } from './useLogs'
 import { refreshAllProjects, refreshProject, startBackgroundRefresh } from './useBackgroundRefresh'
@@ -124,6 +123,17 @@ export async function loadData(sshHosts, showToast = false) {
   }
 }
 
+// PERSIST-1 invariant (docs/plan/1.20.0-terminal-and-remote-sync.md §2): this is a HOST-SIDE
+// persist of the HOST's own `projects.value`. It must only ever be reached from code already
+// running on the host — i.e. from inside an action() body, or a plain function only ever called
+// from one. Reaching it from a companion-triggered path (a bare click handler, a v-model change
+// handler not routed through an id-based action first) is exactly the class of bug that shipped
+// the "task note reverts" regression: a companion would ship ITS OWN copy of `projects.value`
+// here, which this function would then happily persist to disk while the host's reactive state —
+// and the next broadcastFull() — stayed on the old value. Adding a guard inside this function
+// cannot fix that (by the time it runs, the wrong array is already in hand); the fix is that
+// every mutation site upstream goes through an id-based action first (see remoteActions.js's
+// applyTaskEdit/reorderProjects and this file's own applyProjectConfig/removeProject usage below).
 export async function saveProjectsList() {
   try {
     await invoke("save_projects", { projects: projects.value })
@@ -225,32 +235,28 @@ export async function createNewProject(sshHosts) {
   }
 }
 
-export function confirmRemove() {
+export async function confirmRemove() {
   if (!editingProject.value) return
+  const id = editingProject.value.id
+  const projectName = editingProject.value.name
 
-  Swal.fire({
-    title: 'Remove Project?',
-    text: `Remove "${editingProject.value.name}" from the app list? Your actual code files will NOT be touched.`,
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: '#ef4444',
-    cancelButtonColor: '#374151',
-    confirmButtonText: 'Yes, remove it',
-    background: '#131317',
-    color: '#F3F4F6'
-  }).then(async (result) => {
-    if (result.isConfirmed) {
-      const id = editingProject.value.id
-      const projectName = editingProject.value.name
-      // Removal must mutate the HOST's reactive `projects` (and drop its runtime entry, which also
-      // cancels any in-flight status check for this id) so the Mac UI updates live and mirrors out —
-      // same ACT-1 reason as saveConfig. On a companion this ships an intent; on the host it runs
-      // directly. Dynamic import avoids the useProjectConfig ⇄ remoteActions static cycle.
-      const { removeProject } = await import('../store/remoteActions')
-      await removeProject(id)
-      if (activeLogProjectId.value === id) activeLogProjectId.value = null
-      closeConfig()
-      appendGlobalLog("REMOVE", `Project "${projectName}" was removed from the local list.`)
-    }
-  })
+  // The confirm dialog itself is mirrored state now (docs/plan/1.20.0-terminal-and-remote-sync.md
+  // §3) — requestRemoveProject asks + (on Yes) removes entirely on the host, same ACT-1 reason as
+  // saveConfig/removeProject above. Dynamic import avoids the useProjectConfig ⇄ remoteActions
+  // static cycle (remoteActions imports saveProjectsList from this module).
+  //
+  // On the HOST this genuinely awaits the real confirm+remove, so `removed` reflects the real
+  // outcome. On a COMPANION, action() is fire-and-forget (it never RPCs a result back — see
+  // services/action.js) — `removed` resolves to `undefined` immediately, before the host has even
+  // shown the dialog. Guarding on `removed` means a companion never closes this modal or logs
+  // "removed" on a stale assumption; its config modal simply doesn't auto-close after a
+  // phone-triggered removal (this modal's open/closed state isn't mirrored at all yet — a known,
+  // separately-tracked gap, not something this fix introduces).
+  const { requestRemoveProject } = await import('../store/remoteActions')
+  const removed = await requestRemoveProject(id, projectName)
+  if (removed) {
+    if (activeLogProjectId.value === id) activeLogProjectId.value = null
+    closeConfig()
+    appendGlobalLog("REMOVE", `Project "${projectName}" was removed from the local list.`)
+  }
 }

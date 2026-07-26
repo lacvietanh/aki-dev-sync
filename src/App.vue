@@ -18,6 +18,12 @@
       <GitModal />
       <IntroModal />
       <ProjectTasksModal />
+
+      <!-- Renders the mirrored `dialogStore.pendingDialog` (docs/plan/done/remote-control.md §3.4,
+           docs/plan/1.20.0-terminal-and-remote-sync.md §3). Mounted on BOTH roles and unconditionally:
+           a decision dialog is a data event under SYNC-1, so it must appear on whichever screen is
+           looking and be answerable from either. Renders nothing until a dialog is actually pending. -->
+      <DialogHost />
     </template>
 
     <!-- Companion-only: shown whenever NOT ready (enter-code, or connecting…). Renders nothing on
@@ -38,6 +44,7 @@ import SshConfigModal from './components/modals/SshConfigModal.vue';
 import GitModal from './components/modals/GitModal.vue';
 import IntroModal from './components/modals/IntroModal.vue';
 import ProjectTasksModal from './components/modals/ProjectTasksModal.vue';
+import DialogHost from './components/DialogHost.vue';
 import PairingGate from './components/PairingGate.vue';
 
 import { useProjects } from './composables/useProjects';
@@ -56,7 +63,7 @@ const { sshHosts } = useSsh();
 const LEGACY_BASELINE_CLEANUP_KEY = 'aki-legacy-baseline-cleanup-v1';
 
 onMounted(() => {
-  // Remote-control bring-up (docs/plan/remote-control.md §1). Idempotent, safe on both roles:
+  // Remote-control bring-up (docs/plan/done/remote-control.md §1). Idempotent, safe on both roles:
   // host opens its relay socket + broadcasts store state; companion mirrors incoming state.
   // MUST run before the producers below so the host's first broadcast reflects loaded data.
   initRemote();
