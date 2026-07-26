@@ -173,18 +173,24 @@ const slotAccountInfo = computed(() => {
     return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: false };
   }
 
-  const emailPart = key.includes(':') ? key.split(':')[0] : key;
+  // A pin names an ENTITY - `email:sourceType` - because one Google account can be signed into the
+  // Antigravity IDE and the desktop/CLI pair at the same time, with two separate quotas. Matching a
+  // pin on its email alone is what let this card render the CLI session's numbers under the IDE
+  // label (agUsageCache: the entity is `(host, email, sourceType)`).
+  const emailPart = key.includes(':') ? key.slice(0, key.indexOf(':')) : key;
+  const typePart = key.includes(':') ? key.slice(key.indexOf(':') + 1) : null;
+  const isPinned = (a) => !!a && a.email === emailPart && (typePart === null || (a.sourceType || 'ide') === typePart);
 
   // Check live match in allAccounts or src.data:
   if (src.data.allAccounts && Array.isArray(src.data.allAccounts)) {
-    const liveMatch = src.data.allAccounts.find(a => {
-      const aKey = a.sourceType ? `${a.email}:${a.sourceType}` : a.email;
-      return aKey === key || (key.includes(':') ? aKey === key : a.email === emailPart);
-    });
-    if (liveMatch) {
-      return { data: liveMatch, isCached: false, cachedAt: null, isMissing: false };
+    // A legacy pin carrying no session type can match two live accounts. Two candidates is not a
+    // reason to pick one: show nothing rather than the wrong session's quota, and let the fallthrough
+    // below re-derive an honest state.
+    const liveMatches = src.data.allAccounts.filter(isPinned);
+    if (liveMatches.length === 1) {
+      return { data: liveMatches[0], isCached: false, cachedAt: null, isMissing: false };
     }
-  } else if (src.data.email === emailPart) {
+  } else if (isPinned(src.data)) {
     return { data: src.data, isCached: false, cachedAt: null, isMissing: false };
   }
 

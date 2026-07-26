@@ -14,7 +14,7 @@ import { ref, watch } from 'vue';
 import { invoke } from '../utils/tauri';
 import { hostInterval, onHostBoot } from '../utils/scheduler';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
-import { persistAgAccount, loadAgAccount, listAgAccounts, lastActiveEmailFor } from './agUsageCache';
+import { persistAgAccount, loadAgAccount, listAgAccounts, lastActiveEmailFor, lastActiveKeyFor } from './agUsageCache';
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 // Three levels matching logger.rs contract:
@@ -303,15 +303,19 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
         // AG offline: the live fetch failed (IDE mid-restart - common right after an account switch). Show the LAST-ACTIVE account's cache deterministically (never an ambiguous global blob), so the display can't randomly flip old/new. A slot pinned to some other account overrides this for itself, from the same cache, without the monitor knowing.
         if (isAg) {
           refreshAccounts();
-          const lastActive = lastActiveEmailFor(host);
-          if (!activeEmail.value) activeEmail.value = lastActive;
-          const cached = loadAgAccount(lastActive, host);
+          // The full `email:sourceType` handle, not the email: one email can be signed into the IDE
+          // and the desktop/CLI pair at once with two separate quotas, and this card must show the
+          // session that was actually live - not whichever of the two the cache happened to list
+          // first (agUsageCache: the entity is the triple).
+          const lastActiveKey = lastActiveKeyFor(host);
+          if (!activeEmail.value) activeEmail.value = lastActiveEmailFor(host);
+          const cached = loadAgAccount(lastActiveKey, host);
           if (cached) {
             data.value = cached.data;
             isCached.value = true;
             cachedAt.value = cached.fetchedAt;
             stale.value = true;
-            ulog('ag offline cached', { email: lastActive, fetchedAt: cached.fetchedAt }, 'info');
+            ulog('ag offline cached', { account: lastActiveKey, fetchedAt: cached.fetchedAt }, 'info');
           } else {
             data.value = null;
             isCached.value = false;
