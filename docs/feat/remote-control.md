@@ -30,6 +30,12 @@ sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote
 4. Done. That phone reconnects silently after that (no code, no QR) — across app restarts on both
    ends — until you revoke it.
 
+> This promise was **not true until 1.20.0**. `enabled` started at `false` on every launch and one
+> close code (4001) covered both "your token is rejected" and "remote control is switched off", so
+> the phone read a restart as a revocation and threw its token away. Both halves are fixed: the
+> On/Off choice is persisted and restored, and the two cases now have separate close codes (see the
+> table below). A restart no longer costs anyone a walk back to the Mac.
+
 Flip the toggle **Off** (`stop_companion_server()`) to cut every live phone immediately and reject
 new joins; the code and addresses disappear from the menu so a stale code can't be read off it.
 
@@ -69,7 +75,17 @@ is on shows it still on, with the same code (`get_companion_status()`).
 ## Security model (summary)
 
 - **Off means off.** While the toggle is off, `:1421` serves *nothing* to the LAN — not the page, not
-  (in dev) the proxied dev server. Everything returns 503 until the user turns it on.
+  (in dev) the proxied dev server. Everything returns 503 until the user turns it on. Since 1.20.0
+  the On/Off choice **survives a restart** (`companion-server.json`), which does not weaken this:
+  what is restored is always the user's own last decision, never a default the app picked — a fresh
+  install still starts off. The **pairing code is deliberately not persisted**; a restore mints a
+  new one, so a code read off the Mac's screen last week is already dead. The 10-strike lockout is
+  persisted too, so an attacker cannot clear it by waiting for a restart.
+- **A tailnet peer cannot claim `role=host`.** The host role was gated on `is_loopback()` alone, but
+  `tailscale serve` proxies every tailnet connection through `127.0.0.1` — so with HTTPS on, any
+  peer could take the host slot, cut the real Mac's mirror and feed every phone forged state. Since
+  1.20.0 the host role also requires a 128-bit token minted per process, never persisted, handed
+  only to the Tauri webview: a proxy can forge a source address, not a value it was never given.
 - The server binds all interfaces but is **useless without a token**. A stranger on the same wifi
   hitting `:1421` gets only the pairing page; they need the 6-digit code shown on the Mac screen.
 - **10 wrong codes in a row disable remote control** and wipe the code — the guess space of a 6-digit
@@ -145,7 +161,8 @@ pairing socket (`ws://<ip>:1421/ws?role=companion&token=…`).
 | B1 | No stored token | connect sends an empty token → relay closes **4001** → `unpaired` → **code-entry form**. |
 | B2 | Valid token, remote control **on** | socket `open` → `ready` → dashboard mounts and mirrors host state. |
 | B3 | Stale / revoked token, remote **on** | relay closes **4001** → token is **cleared** (ROBUST-1) → code-entry form, no reconnect loop on the dead credential. |
-| B4 | Remote control **off** on the Mac | relay closes **4001** "disabled" → code-entry form + "Not paired, or remote control is off on the Mac." |
+| B4 | Remote control **off** on the Mac | relay closes **4002** → state `host-off` → token is **kept**, reconnect with backoff; the phone heals by itself the moment the Mac is switched back on. Until 1.20.0 this shared 4001 with B3, so switching off — or simply restarting the app — silently revoked every paired phone. The `enabled` check runs **before** the token check, so a switched-off server cannot be used as an oracle for whether a token is still live. |
+| B4b | `role=host` rejected | relay closes **4003**. Only the Mac's own webview can see this; it re-reads its per-process host token and retries. A companion never dials `role=host`. |
 | B5 | Relay unreachable (app closed / wrong IP) | WS errors or closes with a non-4001 code → `error`/`closed` → **code form still shown** with "No connection to the Mac — is the app running?"; auto-reconnect with backoff. |
 | B6 | Socket hangs at `connecting` (no TCP response) | **code form still shown** (this was the old trap — a token used to hide it and leave the user stuck on "Connecting…"). |
 | B7 | Was `open`, then dropped | `ready` flips false → dashboard unmounts → gate reappears with the form → backoff reconnect → on `open`, dashboard returns. |
