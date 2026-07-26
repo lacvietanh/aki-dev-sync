@@ -5,14 +5,21 @@
 // content-blind routing plus the small set of native operations the plan calls out (pairing,
 // icon scan-and-hold, confined file read, LAN/Tailscale address discovery).
 //
-// INVARIANT (§13.6): the WS relay never parses `t`, never holds mirrored app state, never
-// transforms a payload it is asked to forward. The one deliberate exception — spelled out in
-// plan §2.3 — is that the relay itself originates a `{"t":"companion-connected","id":<deviceId>}`
-// frame to the host right after a companion's token check passes, so the host knows to push an
-// `init` snapshot. That frame is not documented in §13.2's table (a gap in the frozen doc as
-// written); it is produced by the relay about a *connection lifecycle event*, not derived from
-// parsing any client payload, so it does not violate content-blindness. Flagged again in this
-// lane's final report for the JS lane to pick up.
+// INVARIANT (§13.6): the WS relay never holds mirrored app state and never transforms a payload it
+// is asked to forward. Two deliberate, documented departures from strict content-blindness:
+//
+//  1. (plan §2.3) The relay itself ORIGINATES a `{"t":"companion-connected","id":<deviceId>}` frame
+//     to the host right after a companion's token check passes, so the host knows to push an `init`
+//     snapshot. That frame is not in §13.2's table (a gap in the frozen doc as written); it is
+//     produced by the relay about a *connection lifecycle event*, not derived from parsing any
+//     client payload.
+//  2. (backpressure, below) The relay READS ONE FIELD — the top-level `t` — of frames already
+//     sitting in a companion's outbound queue, and only when that queue has blown its byte budget.
+//     It never reads `t` on the hot path, never reads any other field, and never rewrites a frame.
+//     This is a real, if narrow, widening of the relay's knowledge: it now knows that `pty_output`
+//     is re-derivable from the host and everything else is not (see `is_coalescible`). The
+//     alternative — a content-blind cap — can only drop arbitrary frames, which is precisely the
+//     "phone renders a corrupted half-stream" outcome the policy exists to avoid.
 
 use axum::{
     body::Body,
@@ -28,17 +35,20 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        Mutex as StdMutex, OnceLock,
+        Arc, Mutex as StdMutex, OnceLock,
     },
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::AppHandle;
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, Notify},
+};
 
 /// Fixed relay port — also baked into `tauri.conf.json`'s CSP `connect-src` and every
 /// `get_companion_url()` result. Not user-configurable (see plan §7.1a "Dev vs prod" table).
@@ -64,6 +74,197 @@ const CLOSE_SERVER_DISABLED: u16 = 4002;
 /// match). Only the Mac's own webview ever sees this; it re-reads the secret and retries.
 const CLOSE_HOST_ROLE_REJECTED: u16 = 4003;
 
+// ── Backpressure toward companions ────────────────────────────────────────────────────────────
+//
+// THE SHAPE OF THE PROBLEM. A companion used to be fed by an UNBOUNDED mpsc: the host's frames
+// were pushed in at whatever rate the Mac produced them, and drained at whatever rate the phone
+// could accept them. Those two rates are unrelated, and one of them has no ceiling — a runaway
+// shell (`yes`) in the in-app terminal emits a `pty_output` frame every ~20ms forever. A phone on
+// a weak link that cannot keep up therefore grows a queue that nothing bounds, in the Mac's
+// address space, until the app dies. That is the whole bug: not "the queue is too big" but "there
+// is no relationship at all between production and consumption".
+//
+// WHY NOT THE TWO OBVIOUS FIXES.
+//  * Block the producer (a bounded `send().await`). The producer is the relay's host-socket loop,
+//    which serves EVERY companion and also carries the host's own inbound frames. Stalling it to
+//    wait for the slowest phone hands one bad link the power to freeze the terminal for everyone,
+//    and — through the WS backpressure chain — eventually the shell itself.
+//  * Drop arbitrary frames at a cap. A terminal byte stream with a hole in it is not "slightly
+//    stale", it is corrupt: xterm renders whatever escape sequence the surviving half implies. A
+//    phone showing a coherent screen that is 3 seconds old is strictly better than one showing
+//    scrambled output it will never correct.
+//
+// THE POLICY: COALESCE, THEN RE-HYDRATE. Every companion gets a byte-budgeted outbox. When the
+// budget is blown, the backlog is collapsed by dropping exactly the frames the host can regenerate
+// in full — `pty_output`, whose entire content is re-derivable from `pty_get_scrollback` — and the
+// connection is flagged for a re-hydrate. Once the phone has drained what remains (i.e. it is
+// actually able to receive again), the relay re-issues the `companion-connected` frame it already
+// originates on join. The host's existing handlers answer that with a full `init` snapshot plus a
+// `reset:true` scrollback replay — the exact "put this screen back in a known-good state" path that
+// already runs on every join and every reconnect. No new frame type, no new host-side code, and the
+// recovery path is the one that gets exercised constantly rather than a special one that only runs
+// under a fault.
+//
+// Re-hydrating only once the queue has DRAINED is what keeps this self-limiting without a timer or
+// a counter: a phone that is still behind has not drained, so it cannot trigger another resync.
+// Under a sustained firehose the phone therefore settles into "one coherent full snapshot whenever
+// it can absorb one", which is the best a slow link can be given.
+
+/// Per-companion outbound budget. Sized so four paired phones cannot cost more than ~8 MB of the
+/// Mac's RAM between them even while all four are wedged, and so a single budget still holds
+/// several seconds of a firehosing terminal (~21 KB of base64 per flush, ~50 flushes/s) — enough
+/// that an ordinary hiccup is absorbed silently and only a genuinely stuck link ever coalesces.
+const COMPANION_QUEUE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
+
+/// Frame tag of the ONE coalescible kind. Mirrors `FRAME_PTY_OUTPUT` in `src/constants/protocol.js`
+/// — same two-file mirroring convention as the close codes above, for the same reason (the JS
+/// constant file is the protocol SSoT; Rust cannot import it).
+const FRAME_PTY_OUTPUT: &str = "pty_output";
+
+/// RFC 6455 1013 "Try Again Later" — a standard code, deliberately NOT one of the 4001/4002/4003
+/// app codes. `services/bridge.js` has no special case for it, so it lands in the generic close
+/// branch: state `closed`, then reconnect with backoff. That reconnect re-runs pairing-free auth
+/// and a full `init` + scrollback replay, which is exactly the recovery this case needs.
+const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
+
+/// A companion's pending outbound frames, plus the two flags that make the coalescing policy a
+/// property of the queue rather than of whoever happens to push into it.
+struct Outbox {
+    queue: VecDeque<Message>,
+    /// Payload bytes currently queued — the budget is measured in bytes because bytes are what
+    /// actually exhausts the machine; a frame count would let 500 firehose chunks look identical to
+    /// 500 keystroke echoes.
+    bytes: usize,
+    /// Set when a coalesce dropped something. Consumed by the writer once the queue is empty.
+    resync_pending: bool,
+    /// The connection is being torn down (a Close frame is queued). Further pushes are ignored so a
+    /// late broadcast cannot append after the Close.
+    closed: bool,
+}
+
+/// Shared between the relay's producers (the host-socket loop, `revoke_device`,
+/// `stop_companion_server`) and the one companion task that owns the socket.
+type CompanionOutbox = Arc<(StdMutex<Outbox>, Notify)>;
+
+impl Outbox {
+    fn new() -> Self {
+        Outbox { queue: VecDeque::new(), bytes: 0, resync_pending: false, closed: false }
+    }
+
+    /// Queue one frame and enforce the budget. THE WHOLE POLICY LIVES HERE, not in the caller, so
+    /// there is exactly one answer to "what happens when a phone falls behind" no matter which
+    /// producer pushed the frame that tipped it over.
+    fn push_within_budget(&mut self, msg: Message) {
+        if self.closed {
+            return;
+        }
+        self.bytes += frame_bytes(&msg);
+        self.queue.push_back(msg);
+        if self.bytes > COMPANION_QUEUE_LIMIT_BYTES {
+            self.coalesce();
+            if self.bytes > COMPANION_QUEUE_LIMIT_BYTES {
+                self.force_close();
+            }
+        }
+    }
+
+    /// Drops every coalescible frame and flags the connection for a re-hydrate. Called only when
+    /// the budget is already blown, so the JSON parsing it does is off the hot path entirely: after
+    /// a collapse the queue is near-empty, so the next one cannot happen until another whole budget
+    /// has accumulated.
+    fn coalesce(&mut self) {
+        let before = self.queue.len();
+        self.queue.retain(|m| !is_coalescible(m));
+        if self.queue.len() != before {
+            self.resync_pending = true;
+            self.bytes = self.queue.iter().map(frame_bytes).sum();
+        }
+    }
+
+    /// Last resort: the budget is blown by frames that may NOT be dropped (a phone so wedged that
+    /// even state deltas have piled up past the cap). Rather than grow — the original bug — or drop
+    /// something undroppable, cut the connection and let the companion's own reconnect+`init` do
+    /// the recovery. Bounded memory is not negotiable; this connection is.
+    fn force_close(&mut self) {
+        self.queue.clear();
+        self.bytes = 0;
+        self.resync_pending = false;
+        self.queue.push_back(Message::Close(Some(CloseFrame {
+            code: CLOSE_TOO_FAR_BEHIND,
+            reason: "this device fell too far behind the host — reconnect for a fresh snapshot".into(),
+        })));
+        self.closed = true;
+    }
+
+    /// Hands the whole backlog to the socket writer in one go, and answers "should a re-hydrate be
+    /// requested now?" — true only when a coalesce happened AND the queue is now empty, i.e. the
+    /// phone has actually caught up and can absorb a snapshot.
+    fn take(&mut self) -> (Vec<Message>, bool) {
+        let batch: Vec<Message> = self.queue.drain(..).collect();
+        self.bytes = 0;
+        let resync = self.resync_pending;
+        self.resync_pending = false;
+        (batch, resync)
+    }
+}
+
+fn frame_bytes(msg: &Message) -> usize {
+    match msg {
+        Message::Text(s) => s.len(),
+        Message::Binary(b) => b.len(),
+        // Ping/pong/close carry nothing worth budgeting and are never coalescible.
+        _ => 0,
+    }
+}
+
+/// THE ONE PLACE THE RELAY LOOKS INSIDE A FRAME (see the module header's invariant note).
+///
+/// COALESCIBLE — may be collapsed, because the host can regenerate the full truth on demand:
+///   * `pty_output`. Terminal bytes, live chunks and `reset` replays alike. Their entire content is
+///     the host's scrollback ring buffer, and `pty_get_scrollback` returns that buffer verbatim
+///     along with the authoritative size and liveness. Dropping a run of them and replaying the
+///     buffer yields a screen that is *behind*, never a screen that is *wrong*.
+///
+/// NEVER DROPPED — everything else, including every frame kind not listed here:
+///   * `init` / `delta` — mirrored app state. A delta is the only record that a value changed;
+///     collapsing state onto a re-hydrate would work only while the re-hydrate is guaranteed, and
+///     making correctness depend on a second thing succeeding is how a "safe" drop becomes a phone
+///     quietly showing last minute's project list.
+///   * dialogs — these ride inside `delta` (`dialogStore.pendingDialog`), and a confirmation the
+///     user must answer before an irreversible sync is the single worst frame in the protocol to
+///     lose. Called out separately because "it's just a delta" is exactly how it would get dropped.
+///   * `invoke_result` — the reply to one specific companion RPC id. Not re-derivable by anything:
+///     no snapshot contains it, and dropping it turns a working call into a 20s timeout error.
+///   * `pty_exit`, `pty_resize` — liveness and size edges. Tiny, rare, never a cause of backlog, and
+///     a lost liveness edge is the 1.20.0 bug (§2.4) where one screen killed the other's live shell.
+///   * `ping`/`pong` — dropping a pong makes a healthy phone declare its own socket dead.
+///   * anything unrecognized, malformed, or binary — DEFAULT-DENY. A relay that has to guess what a
+///     frame means must guess "important"; a future frame type is then safe by construction rather
+///     than by someone remembering to come back here.
+fn is_coalescible(msg: &Message) -> bool {
+    let Message::Text(text) = msg else { return false };
+    #[derive(Deserialize)]
+    struct FrameTag {
+        t: Option<String>,
+    }
+    match serde_json::from_str::<FrameTag>(text) {
+        Ok(tag) => tag.t.as_deref() == Some(FRAME_PTY_OUTPUT),
+        Err(_) => false,
+    }
+}
+
+/// Queue one frame for a companion. NEVER blocks and never awaits: the caller is the relay's shared
+/// host loop, and anything that can make it wait on a phone is the bug this whole section exists to
+/// remove.
+fn enqueue(outbox: &CompanionOutbox, msg: Message) {
+    let (lock, notify) = &**outbox;
+    lock.lock().unwrap().push_within_budget(msg);
+    // `notify_one` stores a permit when nobody is waiting, so a notification sent while the
+    // companion task is busy awaiting `socket.send` is not lost — its next `notified()` returns
+    // immediately. That is what makes creating a fresh `notified()` future each loop iteration safe.
+    notify.notify_one();
+}
+
 // ── Shared state (process-global, mirrors the OnceLock<Mutex<..>> pattern already used by
 // `system::PROJECT_ICONS` — copied deliberately for consistency, not reinvented) ─────────────
 
@@ -73,7 +274,7 @@ struct CompanionHandle {
     /// live connection belonging to one device without touching any other entity (CLAUDE.md
     /// multi-entity scoped-clear rule).
     device_id: String,
-    tx: mpsc::UnboundedSender<Message>,
+    outbox: CompanionOutbox,
 }
 
 struct RelayState {
@@ -127,10 +328,16 @@ impl RelayState {
     fn broadcast_to_companions(&self, msg: Message) {
         let companions = self.companions.lock().unwrap();
         for handle in companions.values() {
-            let _ = handle.tx.send(msg.clone());
+            enqueue(&handle.outbox, msg.clone());
         }
     }
 
+    /// The host's own queue stays UNBOUNDED, deliberately. Everything travelling this way is either
+    /// human-paced (a companion's keystrokes and intents) or relay-originated (`companion-connected`),
+    /// and the consumer is the Mac's own webview over loopback — there is no unbounded producer and
+    /// no slow link on this side. More to the point, the coalescing policy has nothing to offer here:
+    /// not one frame going to the host is re-derivable, so a bound could only drop something that
+    /// matters. Bounding it would be a guard for its own sake.
     fn forward_to_host(&self, msg: Message) {
         let host_tx = self.host_tx.lock().unwrap();
         if let Some(tx) = host_tx.as_ref() {
@@ -650,13 +857,20 @@ async fn handle_host_socket(mut socket: WebSocket) {
     *state.host_tx.lock().unwrap() = None;
 }
 
+/// Owns one companion's socket, and is the ONLY consumer of that companion's outbox — which is what
+/// makes the queue's order the wire's order without any locking discipline asked of the producers.
 async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id: String) {
     let state = relay();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-    state.companions.lock().unwrap().insert(conn_id, CompanionHandle { device_id: device_id.clone(), tx });
+    let outbox: CompanionOutbox = Arc::new((StdMutex::new(Outbox::new()), Notify::new()));
+    state
+        .companions
+        .lock()
+        .unwrap()
+        .insert(conn_id, CompanionHandle { device_id: device_id.clone(), outbox: Arc::clone(&outbox) });
     state.notify_host_companion_connected(&device_id);
 
-    loop {
+    let (lock, notify) = &*outbox;
+    'conn: loop {
         tokio::select! {
             incoming = socket.recv() => {
                 let Some(result) = incoming else { break };
@@ -669,12 +883,26 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
                     Err(_) => break,
                 }
             }
-            maybe_msg = rx.recv() => {
-                match maybe_msg {
-                    Some(msg) => { if socket.send(msg).await.is_err() { break; } }
-                    None => break,
-                }
+            _ = notify.notified() => {}
+        }
+
+        // Drained after EITHER branch, so nothing queued during an inbound frame waits for the next
+        // notification. The lock is released before the first `await` — a producer must never find
+        // this mutex held across socket I/O.
+        let (batch, wants_resync) = lock.lock().unwrap().take();
+        for msg in batch {
+            let is_close = matches!(msg, Message::Close(_));
+            if socket.send(msg).await.is_err() {
+                break 'conn;
             }
+            if is_close {
+                break 'conn;
+            }
+        }
+        if wants_resync {
+            // The queue is empty and the socket accepted everything in it, so this phone can absorb
+            // a snapshot now. The host answers this exactly as it answers a fresh join.
+            state.notify_host_companion_connected(&device_id);
         }
     }
 
@@ -822,10 +1050,13 @@ pub async fn stop_companion_server() -> Result<(), String> {
         for (_, handle) in companions.drain() {
             // CLOSE_SERVER_DISABLED, never CLOSE_UNPAIRED: turning the toggle off revokes nothing.
             // Sending 4001 here is exactly what made every paired phone forget its token on an Off.
-            let _ = handle.tx.send(Message::Close(Some(CloseFrame {
-                code: CLOSE_SERVER_DISABLED,
-                reason: "remote control was turned off on the host".into(),
-            })));
+            enqueue(
+                &handle.outbox,
+                Message::Close(Some(CloseFrame {
+                    code: CLOSE_SERVER_DISABLED,
+                    reason: "remote control was turned off on the host".into(),
+                })),
+            );
         }
         Ok(())
     })
@@ -1059,10 +1290,13 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
             if let Some(handle) = companions.remove(&k) {
                 // A genuine revocation IS the CLOSE_UNPAIRED case — this is the one place the
                 // companion should drop its stored token, and now the only one that says so.
-                let _ = handle.tx.send(Message::Close(Some(CloseFrame {
-                    code: CLOSE_UNPAIRED,
-                    reason: "this device was revoked on the host".into(),
-                })));
+                enqueue(
+                    &handle.outbox,
+                    Message::Close(Some(CloseFrame {
+                        code: CLOSE_UNPAIRED,
+                        reason: "this device was revoked on the host".into(),
+                    })),
+                );
             }
         }
         Ok(())
@@ -1149,6 +1383,94 @@ mod tests {
         assert_eq!(a.host_token.len(), 32, "128-bit hex");
         assert!(a.host_token.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a.host_token, b.host_token, "must not be a constant");
+    }
+
+    // ── Backpressure / coalescing policy ─────────────────────────────────────────────────────
+    //
+    // These drive `Outbox` directly rather than through a socket: the policy is a property of the
+    // queue, and a test that needed a live phone to prove it would prove it on nobody's machine.
+
+    fn text(t: &str, payload_bytes: usize) -> Message {
+        Message::Text(serde_json::json!({ "t": t, "data": "x".repeat(payload_bytes) }).to_string())
+    }
+
+    /// The policy in one assertion per frame kind. If someone later widens what may be dropped,
+    /// this is where it fails — a `delta` carrying an unanswered delete-confirmation is the frame
+    /// this test exists to protect.
+    #[test]
+    fn only_terminal_output_may_be_coalesced() {
+        assert!(is_coalescible(&text("pty_output", 8)), "terminal bytes are re-derivable from the host's scrollback");
+
+        for kind in ["init", "delta", "invoke_result", "pty_exit", "pty_resize", "ping", "pong", "companion-connected", "intent"] {
+            assert!(!is_coalescible(&text(kind, 8)), "`{}` is not re-derivable and must never be dropped", kind);
+        }
+
+        // Default-deny for anything this function was not taught about.
+        assert!(!is_coalescible(&text("some-future-frame", 8)), "an unknown frame kind must be kept, not guessed at");
+        assert!(!is_coalescible(&Message::Text("not json at all".into())), "an unparseable frame must be kept");
+        assert!(!is_coalescible(&Message::Text("{}".into())), "a frame with no `t` must be kept");
+        assert!(!is_coalescible(&Message::Binary(vec![1, 2, 3])), "binary frames are not classified and must be kept");
+    }
+
+    /// The core of the fix: over budget, the terminal backlog collapses and everything else survives
+    /// **in order**, with the connection flagged for a re-hydrate.
+    #[test]
+    fn overflow_collapses_terminal_output_and_keeps_state_frames_in_order() {
+        let mut ob = Outbox::new();
+        let chunk = COMPANION_QUEUE_LIMIT_BYTES / 16;
+
+        ob.push_within_budget(text("delta", 32));
+        ob.push_within_budget(text("invoke_result", 32));
+
+        // A firehosing shell, one flush at a time, until the budget blows.
+        for _ in 0..64 {
+            ob.push_within_budget(text("pty_output", chunk));
+            if ob.resync_pending {
+                break;
+            }
+        }
+
+        assert!(ob.bytes <= COMPANION_QUEUE_LIMIT_BYTES, "coalescing must bring the queue back inside its budget");
+        assert!(ob.resync_pending, "dropping output must flag the connection for a re-hydrate");
+        let kinds: Vec<bool> = ob.queue.iter().map(is_coalescible).collect();
+        assert_eq!(kinds, vec![false, false], "exactly the two undroppable frames survive");
+        assert!(
+            matches!(&ob.queue[0], Message::Text(s) if s.contains("delta")),
+            "and they survive in their original order — the delta was queued first"
+        );
+
+        // The re-hydrate is requested only once the phone has actually drained the queue.
+        let (batch, wants_resync) = ob.take();
+        assert_eq!(batch.len(), 2);
+        assert!(wants_resync);
+        assert_eq!(ob.bytes, 0);
+        let (_, again) = ob.take();
+        assert!(!again, "one coalesce must produce exactly one resync request, not one per drain");
+    }
+
+    /// A phone so wedged that even undroppable frames blow the budget is cut loose rather than
+    /// allowed to grow — the OOM path must be closed for every input, not just the nice one.
+    #[test]
+    fn a_backlog_of_undroppable_frames_closes_the_connection_instead_of_growing() {
+        let mut ob = Outbox::new();
+        let chunk = COMPANION_QUEUE_LIMIT_BYTES / 4;
+        for _ in 0..8 {
+            ob.push_within_budget(text("delta", chunk));
+        }
+
+        assert_eq!(ob.bytes, 0);
+        assert!(ob.closed);
+        assert_eq!(ob.queue.len(), 1, "the whole backlog is discarded — only the close survives");
+        assert!(!ob.resync_pending, "a closing connection must not also ask the host for a snapshot");
+        assert!(
+            matches!(ob.queue.front(), Some(Message::Close(Some(f))) if f.code == CLOSE_TOO_FAR_BEHIND),
+            "the queue must end in a close the companion can reconnect from"
+        );
+
+        // 1013 is not an app close code: the companion must reconnect, not treat itself as revoked.
+        for app_code in [CLOSE_UNPAIRED, CLOSE_SERVER_DISABLED, CLOSE_HOST_ROLE_REJECTED] {
+            assert_ne!(CLOSE_TOO_FAR_BEHIND, app_code);
+        }
     }
 
     /// CLAUDE.md's serde rule: an older or truncated `companion-server.json` must degrade to "off",

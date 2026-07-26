@@ -21,6 +21,7 @@ import {
   FRAME_PING,
   FRAME_PONG,
   FRAME_INVOKE_RESULT,
+  FRAME_PTY_OUTPUT,
   CLOSE_UNPAIRED,
   CLOSE_SERVER_DISABLED,
   CLOSE_HOST_ROLE_REJECTED,
@@ -151,14 +152,62 @@ export function onFrame(cb) {
   return () => frameListeners.delete(cb)
 }
 
-/** Fire-and-forget. Returns false (and drops the frame, with a console.debug) if the socket
- *  isn't open right now — callers that need a durable resync rely on mirror.js's full
- *  rebroadcast on (re)connect rather than on this module buffering frames. */
-export function send(frame) {
+// ── Outbound congestion (the JS half of the backpressure policy) ──────────────────────────────
+//
+// `ws.send()` never blocks and never fails: the browser accepts the frame and grows
+// `bufferedAmount` until the socket drains. That is the same unbounded-queue shape the Rust relay
+// had toward companions (src-tauri/src/web_server.rs, "Backpressure toward companions"), one hop
+// earlier — so it gets the SAME policy rather than a second, differently-shaped one:
+//
+//   * only `pty_output` may be dropped, because only terminal bytes are re-derivable in full (the
+//     host can replay its whole scrollback ring buffer on demand). Every other frame — deltas,
+//     dialogs, intents, invoke results, liveness, pings — is queued to the browser as before,
+//     however congested the socket is. Losing any of them is unrecoverable; losing a run of
+//     terminal bytes is recoverable by one `reset` replay, which is what services/ptyBridge.js does
+//     when this function turns it down.
+//   * high/low water rather than one threshold, so a socket hovering at the limit does not
+//     alternate between relaying and dropping every other frame — it drops until it has genuinely
+//     caught up, then resumes with one clean re-hydrate.
+//
+// The frame-kind rule is mirrored in `is_coalescible()` in web_server.rs — same two-file mirroring
+// (and same reason) as the close codes: `constants/protocol.js` is the protocol SSoT, and Rust
+// cannot import it.
+const SEND_BUFFER_HIGH_WATER = 1024 * 1024
+const SEND_BUFFER_LOW_WATER = 128 * 1024
+let congested = false
+
+/** True while the socket's own outbound buffer is backed up. Latches at the high-water mark and
+ *  only clears once the buffer has drained past the low-water mark. services/ptyBridge.js reads
+ *  this to decide when it is worth re-hydrating the companions. */
+export function isSocketCongested() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.debug('[bridge] send dropped, socket not open', frame && frame.t)
+    congested = false
     return false
   }
+  if (congested) {
+    if (ws.bufferedAmount <= SEND_BUFFER_LOW_WATER) congested = false
+  } else if (ws.bufferedAmount > SEND_BUFFER_HIGH_WATER) {
+    congested = true
+  }
+  return congested
+}
+
+/** Fire-and-forget. Returns false (and drops the frame) if the socket isn't open right now, or if
+ *  the frame is terminal output and the socket is congested — callers that need a durable resync
+ *  rely on mirror.js's full rebroadcast on (re)connect, or on ptyBridge's scrollback replay, rather
+ *  than on this module buffering frames.
+ *
+ *  The return value is NOT advisory: a dropped `intent` is a tap that did nothing, so
+ *  services/action.js turns `false` into a Toast (§3.13), and a dropped `pty_output` is a hole in a
+ *  terminal stream, so services/ptyBridge.js turns `false` into a scrollback replay. */
+export function send(frame) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    console.warn('[bridge] send dropped, socket not open', frame && frame.t)
+    return false
+  }
+  // Deliberately silent — a congested socket drops many frames in a row, and a warn per frame would
+  // bury the console at exactly the moment someone is trying to read it. The caller reports it once.
+  if (frame && frame.t === FRAME_PTY_OUTPUT && isSocketCongested()) return false
   ws.send(JSON.stringify(frame))
   return true
 }

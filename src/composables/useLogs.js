@@ -4,7 +4,8 @@ import { onHostBoot } from "../utils/scheduler";
 import {
   globalLogs, projectLogs, activeLogProjectId,
   isLogExpanded, consoleRef, copied,
-  globalListener, setGlobalListener
+  globalListener, setGlobalListener,
+  appendGlobalLogLines, appendProjectLogLines
 } from "../store/logStore";
 
 export function useLogs() {
@@ -23,17 +24,18 @@ export function useLogs() {
     });
   }
 
+  // Both appenders go through logStore's capped funnel (LOG_CAP, contract C-2) rather than pushing
+  // into the array directly - that is where the 2,000-line ceiling and the mirror's append cursor
+  // are maintained together.
   function appendLog(projectId, line) {
-    if (!projectLogs.value[projectId]) projectLogs.value[projectId] = [];
-    projectLogs.value[projectId].push(line);
+    appendProjectLogLines(projectId, [line]);
     if (activeLogProjectId.value === projectId) {
       scrollConsole();
     }
   }
 
   function appendGlobalLog(action, message) {
-    const line = `[${new Date().toLocaleTimeString()}] [${action}] ${message}`;
-    globalLogs.value.push(line);
+    appendGlobalLogLines([`[${new Date().toLocaleTimeString()}] [${action}] ${message}`]);
     if (!activeLogProjectId.value) {
       scrollConsole();
     }
@@ -47,6 +49,10 @@ export function useLogs() {
     }
   }
 
+  // Deliberately NOT wrapped in action(): `activeLogProjectId` / `isLogExpanded` are per-screen and
+  // excluded from the mirror (§3.12, see store/logStore.js). Each screen opens and closes its own
+  // panel; routing this through the host would put the choice back on the wire, which is the very
+  // bleed §3.12 removes. Nothing reverts it now, because nothing mirrors it.
   function toggleProjectLog(id) {
     if (activeLogProjectId.value === id) {
       activeLogProjectId.value = null;
