@@ -4,6 +4,7 @@ mod git;
 mod global_note;
 mod logger;
 mod projects;
+mod pty;
 mod ssh;
 mod statusline;
 mod sync;
@@ -15,7 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             logger::init(app.handle());
-            // Remote Control relay (docs/plan/remote-control.md §7) — binds the axum server on
+            // Remote Control relay (docs/plan/done/remote-control.md §7) — binds the axum server on
             // Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
             web_server::init(app.handle());
             Ok(())
@@ -105,7 +106,7 @@ pub fn run() {
             logger::is_debug_mode,
             logger::get_log_path,
             logger::log_frontend,
-            // remote control relay (docs/plan/remote-control.md §7)
+            // remote control relay (docs/plan/done/remote-control.md §7)
             web_server::start_companion_server,
             web_server::stop_companion_server,
             web_server::get_companion_url,
@@ -116,7 +117,27 @@ pub fn run() {
             web_server::revoke_device,
             web_server::get_project_icons_map,
             web_server::read_text_file,
+            // in-app terminal (docs/plan/1.20.0-terminal-and-remote-sync.md §4)
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_get_scrollback,
+            pty::pty_kill,
+            pty::pty_restart,
+            pty::pty_clear,
+            pty::pty_cwd,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        // `build` + `run(closure)` rather than `run(context)` purely so there is somewhere to hang
+        // the exit hook below — the two are otherwise equivalent.
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // Kill the in-app terminal's whole process tree on quit. Without this, anything the
+            // user left running in that shell — most damagingly a live `ssh <host>` — outlives the
+            // app as an init-owned orphan and keeps its remote session (and that session's `agy`/
+            // `claude`) alive indefinitely. See pty::kill_process_group.
+            if let tauri::RunEvent::Exit = event {
+                pty::shutdown();
+            }
+        });
 }

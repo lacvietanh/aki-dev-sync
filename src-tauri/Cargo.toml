@@ -1,6 +1,6 @@
 [package]
 name = "aki-dev-sync"
-version = "1.19.0"
+version = "1.20.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -26,7 +26,7 @@ dirs = "6.0.0"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 base64 = "0.22.1"
-# Remote Control relay (docs/plan/remote-control.md §7) — new deps, this feature only.
+# Remote Control relay (docs/plan/done/remote-control.md §7) — new deps, this feature only.
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["net", "sync", "macros", "time"] }
 tower-http = { version = "0.5", features = ["cors"] }
@@ -35,6 +35,15 @@ getrandom = "0.2"
 # §7.2 (PORT-1) dev-mode reverse proxy to Vite. TLS stripped — every request it makes is to
 # 127.0.0.1, never a remote/https host. (No HMR websocket bridge: HMR stays direct to Vite.)
 reqwest = { version = "0.12", default-features = false }
+# In-app terminal (docs/plan/1.20.0-terminal-and-remote-sync.md §4, T-1) — the only battle-tested
+# cross-platform PTY crate; ships on Apple Silicon in wezterm itself. tauri-plugin-shell has no PTY.
+portable-pty = "0.9"
+
+# `killpg` for the in-app terminal's teardown (see pty.rs::kill_process_group). Already in the
+# lockfile transitively; declared explicitly because this crate calls it directly. unix-only —
+# there is no `killpg` on Windows, and that path falls back to `Child::kill()`.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 panic = "abort"

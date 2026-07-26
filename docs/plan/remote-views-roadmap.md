@@ -1,6 +1,6 @@
 # Roadmap — Remote view subsystem (Explorer View + Terminal View)
 
-> **Next round, NOT the current one.** The current round (`docs/plan/remote-control.md`) ships only
+> **Next round, NOT the current one.** The current round (`docs/plan/done/remote-control.md`) ships only
 > the mirror/intent/native/pairing foundation plus a minimal `FileView` that renders `REPORT.html` on
 > the phone. This file pins the *shape* of the two views that come after, so the foundation built now
 > stays generic enough to carry them without rework.
@@ -37,7 +37,27 @@ adds a second brain: the Mac still executes; the phone still mirrors + sends int
 * **Open question for then:** editing/writing files from the phone (adds a `write_text_file` intent +
   the confirm-dialog pattern from §3.4) — decide when we get there; read-only first.
 
-## Terminal View (next round — sketch, not committed)
+## Terminal View — BUILT in 1.20.0
+
+> **Shipped (code complete, unverified on a Mac).** The sketch below was followed essentially as
+> written: `portable-pty` on the Mac, `xterm.js` in a shared `TerminalView.vue`, `PTY_INPUT`/
+> `PTY_OUTPUT` on the same socket, the PTY as SSOT with no local echo, gated behind the pairing
+> token. Two things the sketch left open were decided during the build:
+> * **Security posture** — no extra per-session opt-in on the Mac. A paired device could already run
+>   arbitrary commands via the DEV/BUILD command; a gate on the PTY alone would be theatre and would
+>   defeat the whole point (the phone is used when nobody is at the Mac). Recorded as a decision, not
+>   an omission — see the 1.20.0 plan T-7 and the CHANGELOG security note.
+> * **Resize with two viewports** — the host is the sole resize authority; the companion never sizes
+>   the shared PTY. A third frame (`pty_resize`, host→companion only) echoes the authoritative size.
+> * **Session lifecycle** — not in the sketch at all, and the first Mac run proved it is not optional:
+>   a shell that exits with nothing representing its death reads as a frozen app. A fourth frame
+>   (`pty_exit`) plus CLEAR/RESTART/KILL/OPEN controls were added in the same release. See §4.7.
+>
+> Full design and the deviations: `docs/plan/1.20.0-terminal-and-remote-sync.md` §4, §4.7 and §6a.
+> Still deferred from here: multiple sessions/tabs, split panes, and redirecting the DEV/BUILD
+> `Terminal.app` launchers into this view (they need per-project cwd + multi-session first).
+
+### Original sketch (kept for the record)
 
 * **Native side:** `portable-pty` spawns a shell; its output streams as `PTY_OUTPUT` frames, input
   arrives as `PTY_INPUT`. The PTY lives on the Mac (the only place a real shell makes sense); the
