@@ -27,6 +27,7 @@ pub async fn write_global_note(app: tauri::AppHandle, content: String) -> Result
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let json = serde_json::json!({ "content": content });
-    std::fs::write(dir.join("globalnote.json"), json.to_string())
-        .map_err(|e| e.to_string())
+    // Atomic (temp + rename): the note is the user's own writing and this is its only copy, so a
+    // write torn by a crash or a full disk destroys it outright.
+    crate::system::write_atomic(&dir.join("globalnote.json"), &json.to_string())
 }

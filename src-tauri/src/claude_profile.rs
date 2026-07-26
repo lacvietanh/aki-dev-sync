@@ -12,11 +12,39 @@ fn read_settings() -> Value {
         .unwrap_or_else(|| json!({}))
 }
 
+/// Rewrites `~/.claude/settings.json` **atomically**, and keeps a timestamped copy of what was
+/// there before.
+///
+/// This file is not ours. It is Claude Code's own settings - statusline config, permissions,
+/// everything - and this function rewrites the whole document to change one key under `env`.
+/// A plain `fs::write` truncates first: a crash or a full disk between truncate and write left the
+/// user with an empty or half-written `settings.json` and no copy anywhere, which Claude Code
+/// then reads as "no settings at all". Temp-then-rename means a reader sees either the whole old
+/// file or the whole new one, and the backup means even a bad *value* is recoverable.
 fn write_settings(value: &Value) -> Result<(), String> {
     let path = settings_path().ok_or("Cannot resolve home dir")?;
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    fs::write(path, serde_json::to_string_pretty(value).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+
+    if path.exists() {
+        // Timestamped on every write, not once ever: the "back up once" shape means every edit
+        // after the first silently destroys the only copy - the exact bug already retired from
+        // the statusline installer.
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let backup = path.with_file_name(format!("settings.json.aki-bak-{}", stamp));
+        // A failed backup must not block the write the user asked for, but it is worth saying so.
+        if let Err(e) = fs::copy(&path, &backup) {
+            crate::logger::error(
+                "claude_profile",
+                &format!("could not back up settings.json before rewriting it: {}", e),
+            );
+        }
+    }
+
+    let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    crate::system::write_atomic(&path, &content)
 }
 
 /// Returns "proxy" if ANTHROPIC_BASE_URL is set under settings.json's `env` block, otherwise

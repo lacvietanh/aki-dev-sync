@@ -307,6 +307,13 @@ pub fn generate_statusline_script(config: &StatuslineConfig) -> Result<String, S
 ///   2. The backup is timestamped and taken on EVERY apply. The old `[ ! -f "$FILE.aki-bak" ]`
 ///      guard backed up once ever, so every hand-edit made after the first Apply was destroyed
 ///      with no copy anywhere.
+///   3. The script file is written to a `mktemp` **in its own directory** and then `mv`'d over the
+///      target, the same shape the `jq` settings patch above it already used. `cat > "$FILE"`
+///      truncates the live, executable statusline in place: killed mid-write (the local path runs
+///      under a 4s `BoundedSh` timeout, and a remote one under an ssh that can drop), it leaves a
+///      truncated script that `settings.json` already points at, so every subsequent CLI turn
+///      renders nothing. Same directory matters - a `/tmp` temp file would make `mv` a
+///      cross-filesystem copy, which is not atomic and reintroduces the torn write.
 struct Target {
     /// Short human label, used to say WHICH target failed in the per-host message.
     label: &'static str,
@@ -330,8 +337,10 @@ const TARGETS: &[Target] = &[
                  tmp=$(mktemp)\n\
                  jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS\"\n\
                  if [ -f \"$FILE\" ]; then cp \"$FILE\" \"$FILE.aki-bak-$(date +%s)\"; fi\n\
-                 cat > \"$FILE\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}AKI_STATUSLINE_CLAUDE_EOF\n\
-                 chmod +x \"$FILE\"\n"
+                 tmpf=$(mktemp \"$HOME/.claude/.statusline.aki-tmp.XXXXXX\")\n\
+                 cat > \"$tmpf\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}AKI_STATUSLINE_CLAUDE_EOF\n\
+                 chmod +x \"$tmpf\"\n\
+                 mv \"$tmpf\" \"$FILE\"\n"
             )
         },
     },
@@ -349,8 +358,10 @@ const TARGETS: &[Target] = &[
                  tmp=$(mktemp)\n\
                  jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS_AGY\"\n\
                  if [ -f \"$FILE_AGY\" ]; then cp \"$FILE_AGY\" \"$FILE_AGY.aki-bak-$(date +%s)\"; fi\n\
-                 cat > \"$FILE_AGY\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}AKI_STATUSLINE_AGY_EOF\n\
-                 chmod +x \"$FILE_AGY\"\n"
+                 tmpf=$(mktemp \"$HOME/.gemini/antigravity-cli/.statusline.aki-tmp.XXXXXX\")\n\
+                 cat > \"$tmpf\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}AKI_STATUSLINE_AGY_EOF\n\
+                 chmod +x \"$tmpf\"\n\
+                 mv \"$tmpf\" \"$FILE_AGY\"\n"
             )
         },
     },
@@ -799,9 +810,21 @@ mod tests {
     fn agy_never_touches_the_claude_rate_limit_cache() {
         let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.25}}}"#;
         let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0}}}"#;
+        // The assertion below is a bare "did any 42% reach the line" check, kept deliberately
+        // broad so it catches a leak no matter which field renders it. That only works if no
+        // OTHER field can put a percentage on the line by coincidence - and `ram` does exactly
+        // that, from the real machine's memory use, so this test failed on any host that happened
+        // to be sitting at 42% RAM. The value under test is planted, the RAM figure is not, so
+        // the RAM field is what gives way here.
+        let mut cfg = test_config();
+        for field in &mut cfg.fields {
+            if field.key == "ram" {
+                field.enabled = false;
+            }
+        }
         let (line, home) = run_script(
             ".gemini/antigravity-cli/agy_rlcache.sh",
-            &gen(&test_config()),
+            &gen(&cfg),
             payload,
             &[(".claude/rate-limits-cache.json", cache)],
         );
