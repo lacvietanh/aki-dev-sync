@@ -69,7 +69,16 @@ function seed() {
     if (raw) return JSON.parse(raw) || {}
   } catch (_) {}
   legacyRemotePending = true
-  return readLegacyFlags(selectedSshHost.value)
+  const migrated = readLegacyFlags(selectedSshHost.value)
+  // Persist the synchronous half immediately rather than leaving it to the deferred remote pass
+  // below. That pass returns early when it has nothing to add - which is the ordinary case for a
+  // user who only ever monitored locally - so the migrated LOCAL flags would sit in memory only
+  // and never reach disk. Re-deriving them on every launch happens to produce the same answer, but
+  // "the migration ran" would not be true of anything you could inspect, which is exactly the kind
+  // of gap that makes a later state bug unreadable. The legacy keys are only read, never removed,
+  // so going back to 1.19.0 still finds them.
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated)) } catch (_) {}
+  return migrated
 }
 
 export const monitorEnabled = ref(seed())

@@ -31,7 +31,6 @@
   --text-darker: #6B7280;
   --border-color: rgba(255, 255, 255, 0.08);
   --bg-tertiary: rgba(255, 255, 255, 0.05);
-  --color-danger: #ef4444;
 }
 
 body {
@@ -1209,13 +1208,13 @@ input:checked+.slider:before {
 }
 
 .btn-ui-action.error-state {
-  color: var(--color-danger);
+  color: var(--accent-red);
   border-color: rgba(239, 68, 68, 0.3);
 }
 
 .btn-ui-action.error-state:hover {
   background-color: rgba(239, 68, 68, 0.1);
-  border-color: var(--color-danger);
+  border-color: var(--accent-red);
 }
 
 .changelog-modal {

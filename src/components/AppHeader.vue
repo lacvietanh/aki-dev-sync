@@ -631,7 +631,11 @@ function onViewShortcut(e) {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 1000;
+  /* Below the modal layer, which starts at 1000 (BaseModal computes 1000 + depth*10). Both sat on
+     exactly 1000 before, so with a modal open over this dropdown the winner was decided by DOM
+     order rather than intent - and the Teleported modal is always later, which happened to be
+     right. Making the gap explicit is what stops the next modal-adjacent change from flipping it. */
+  z-index: 500;
   background: #1a1d23;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 7px;

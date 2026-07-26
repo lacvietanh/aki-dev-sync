@@ -115,16 +115,6 @@ async function applyMode(mode) {
 </script>
 
 <style scoped>
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .scope-tag {
   display: inline-flex;
   align-items: center;

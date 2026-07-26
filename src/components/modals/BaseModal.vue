@@ -4,7 +4,9 @@
       <div class="modal-container" :class="containerClass" :style="containerStyle">
         <div class="modal-header" :class="headerClass">
           <h2><slot name="title" /></h2>
-          <button class="btn-close-modal" @click="$emit('close')">
+          <!-- Icon-only, so it needs a name of its own. Every modal in the app closes through
+               this one button, so labelling it here labels all of them. -->
+          <button class="btn-close-modal" title="Close" aria-label="Close" @click="$emit('close')">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
