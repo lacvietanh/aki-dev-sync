@@ -1,15 +1,14 @@
 <template>
   <BaseModal :show="showIntroModal" @close="closeIntroModal">
     <template #title>
-      <i class="fa-solid fa-book-open mr-1" style="color: #6ee7b7;"></i> Hướng Dẫn Sử Dụng - Aki Dev Sync
+      <i class="fa-solid fa-book-open mr-1" style="color: #6ee7b7;"></i> User Guide - Aki Dev Sync
     </template>
 
     <div class="modal-body scrollable intro-content u-select-text">
       <div class="intro-header mb-3">
         <h3>🚀 Aki Dev Sync</h3>
         <p>
-          Command Center để đồng bộ code giữa <strong>Máy Local</strong> và <strong>Máy Remote</strong> qua SSH/rsync  - 
-          không lo treo giao diện (UI freeze), không làm bẩn lịch sử Git bằng các commit tạm.
+          Command center for syncing code between a <strong>Local</strong> and a <strong>Remote</strong> machine over SSH/rsync - no UI freeze, no junk commits polluting your Git history.
         </p>
       </div>
 
@@ -27,18 +26,18 @@
         <div class="model-node remote">
           <div class="model-role">REMOTE</div>
           <div class="model-title">AI Workspace</div>
-          <div class="model-meta">Claude Code · Tác vụ nặng</div>
+          <div class="model-meta">Claude Code · Heavy jobs</div>
         </div>
       </div>
 
       <!-- Use Cases -->
       <div class="alert-box info mb-3">
-        <h4 class="alert-title"><i class="fa-solid fa-earth-americas"></i> Ai cần dùng?</h4>
+        <h4 class="alert-title"><i class="fa-solid fa-earth-americas"></i> Who is this for?</h4>
         <ul class="custom-list">
-          <li><strong>Máy yếu ↔ Server cấu hình cao:</strong> Viết code nhẹ nhàng ở máy Local, chuyển các tác vụ build nặng / chạy AI lên Server.</li>
-          <li><strong>Bảo mật mã nguồn:</strong> Tách biệt môi trường công việc, lưu giữ mã nguồn cốt lõi (core code) trên Remote riêng.</li>
-          <li><strong>Đồng bộ đa thiết bị:</strong> Đồng bộ nhanh giữa PC, Laptop và Server mà không tạo commit nháp trên GitHub.</li>
-          <li><strong>AI Workspace:</strong> Đẩy toàn bộ project (kèm <code>.git/</code>) lên Remote để AI đọc hiểu đầy đủ ngữ cảnh.</li>
+          <li><strong>Weak machine ↔ powerful server:</strong> Keep the laptop light, push heavy builds / AI work to the server.</li>
+          <li><strong>Source protection:</strong> Keep the core code on your own Remote, separate from the work machine.</li>
+          <li><strong>Multi-device sync:</strong> Sync fast across PC, laptop and server without draft commits on GitHub.</li>
+          <li><strong>AI Workspace:</strong> Push the whole project (including <code>.git/</code>) so the AI has full context.</li>
         </ul>
       </div>
 
@@ -49,7 +48,7 @@
           <div class="feature-icon"><i class="fa-solid fa-arrow-up"></i></div>
           <div class="feature-text">
             <strong>PUSH</strong>
-            <span>Đẩy code Local → Remote, kèm mọi thứ không nằm trong <code>push_excludes</code>, cùng cấu hình "Force Delete" riêng từng dự án. Thư mục chỉ có trong <code>pull_excludes</code> là <strong>push-only</strong> - đẩy lên nhưng không kéo về và không tính là thay đổi (mặc định <code>.git/</code>: AI có đủ history, badge PUSH không sáng vì git tự dọn nội bộ).</span>
+            <span>Push Local → Remote with everything not listed in <code>push_excludes</code>, plus a per-project "Force Delete" setting. A folder listed only in <code>pull_excludes</code> is <strong>push-only</strong> - sent up, never pulled back, never counted as a change (<code>.git/</code> by default: the AI gets full history, and the PUSH badge stays dark through git's own housekeeping).</span>
           </div>
         </div>
 
@@ -57,7 +56,7 @@
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-bolt"></i></div>
           <div class="feature-text">
             <strong>SELECT (Push Special)</strong>
-            <span>Mở hộp thoại chọn file native của macOS (multi-select). Nếu file đã tồn tại ở Remote, hiển thị bảng so sánh mtime Local / Remote trước khi xác nhận ghi đè.</span>
+            <span>Opens the native macOS file picker (multi-select). If a file already exists on Remote, shows a Local / Remote mtime comparison before you confirm the overwrite.</span>
           </div>
         </div>
 
@@ -65,7 +64,7 @@
           <div class="feature-icon" style="color: #3b82f6;"><i class="fa-solid fa-arrow-down"></i></div>
           <div class="feature-text">
             <strong>PULL</strong>
-            <span>Lấy file (Pull) sau khi code trên Remote về lại Local để kiểm tra và commit.</span>
+            <span>Pull back what was written on Remote so you can review and commit it on Local.</span>
           </div>
         </div>
 
@@ -73,7 +72,7 @@
           <div class="feature-icon" style="color: #22c55e;"><i class="fa-solid fa-shield-halved"></i></div>
           <div class="feature-text">
             <strong>DRY RUN</strong>
-            <span>Xem trước (Dry Run) các file sẽ thay đổi - không ghi đè dữ liệu thực tế cho đến khi tắt chế độ này.</span>
+            <span>Preview exactly which files would change - nothing is written until you turn this off.</span>
           </div>
         </div>
 
@@ -81,7 +80,7 @@
           <div class="feature-icon" style="color: #a78bfa;"><i class="fa-solid fa-circle-dot"></i></div>
           <div class="feature-text">
             <strong>Sync Status</strong>
-            <span>Tự động kiểm tra - nút PUSH/PULL sáng lên để thông báo khi dữ liệu giữa hai phía có sự chênh lệch.</span>
+            <span>Checked automatically - the PUSH/PULL buttons light up when the two sides drift apart.</span>
           </div>
         </div>
 
@@ -89,7 +88,7 @@
           <div class="feature-icon" style="color: #f97316;"><i class="fa-solid fa-code"></i></div>
           <div class="feature-text">
             <strong>Pre / Post Hooks</strong>
-            <span>Script chạy trước/sau mỗi lần sync (build, restart service, notify...), chạy Local hoặc Remote tuỳ chọn.</span>
+            <span>Scripts run before/after each sync (build, restart a service, notify...), on Local or Remote as you choose.</span>
           </div>
         </div>
 
@@ -97,7 +96,7 @@
           <div class="feature-icon" style="color: #ef4444;"><i class="fa-solid fa-clone"></i></div>
           <div class="feature-text">
             <strong>Mirror / Delete</strong>
-            <span>Bật <code>--delete</code> để mirror chính xác. Mặc định Push không xóa; nếu kích hoạt, việc push ghi đè lên thay đổi mới ở Remote sẽ yêu cầu xác nhận.</span>
+            <span>Turn on <code>--delete</code> for an exact mirror. Push never deletes by default; once enabled, pushing over newer Remote changes asks for confirmation first.</span>
           </div>
         </div>
 
@@ -105,7 +104,7 @@
           <div class="feature-icon" style="color: #14b8a6;"><i class="fa-solid fa-layer-group"></i></div>
           <div class="feature-text">
             <strong>Exclude Presets</strong>
-            <span>Cấu hình rsync exclude riêng cho Push/Pull, hỗ trợ cấu hình nhanh chỉ với 1-click: Nuxt 4, Tauri v2, Aki Default.</span>
+            <span>Separate rsync excludes for Push and Pull, with 1-click presets: Nuxt 4, Tauri v2, Aki Default.</span>
           </div>
         </div>
       </div>
@@ -117,7 +116,7 @@
           <div class="feature-icon" style="color: #00d2ff;"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-text">
             <strong>Project Tasks & Notes</strong>
-            <span>Quản lý task: Pin 📌, Wish 🕒, và Done (tự động gỡ ghim). Tích hợp thẻ ghi chú Project Notes có khả năng co giãn chiều cao native bằng CSS (`field-sizing: content`) và tự động trim khoảng trắng thừa.</span>
+            <span>Task management: Pin 📌, Wish 🕒 and Done (which auto-unpins). Includes a Project Notes card that grows natively with its content via CSS (`field-sizing: content`) and trims stray whitespace.</span>
           </div>
         </div>
 
@@ -125,7 +124,7 @@
           <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
             <strong>Open Popup & Stack Launcher</strong>
-            <span>Mở nhanh IDEs Local và Remote. Nút <strong>DEV</strong> (xanh) và <strong>BUILD</strong> (vàng) tự động theo stack, tooltip hiển thị lệnh thực thi. Quét lockfile để gọi đúng Package Manager. Mọi cửa sổ Terminal app mở ra đều tự snap 124 cột vào góc trên-phải màn hình chính.</span>
+            <span>Quick-open Local and Remote IDEs. <strong>DEV</strong> (green) and <strong>BUILD</strong> (amber) follow the detected stack, tooltip shows the exact command. Lockfile scan picks the right package manager. Every Terminal window opened snaps to 124 columns in the top-right of the main display.</span>
           </div>
         </div>
 
@@ -133,7 +132,7 @@
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-note-sticky"></i></div>
           <div class="feature-text">
             <strong>Global Note</strong>
-            <span>Tấm ghi chú toàn cục trên titlebar - icon chuyển màu vàng khi có nội dung. Không gắn với project nào, tự lưu sau 500ms vào <code>appDataDir</code>.</span>
+            <span>A global notepad on the titlebar - the icon turns amber when it has content. Not tied to any project, auto-saved after 500ms to <code>appDataDir</code>.</span>
           </div>
         </div>
 
@@ -141,15 +140,15 @@
           <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Quota thực tế: <strong>Claude Code</strong> đọc <code>rate_limits</code> Anthropic (5H + 7D) - cục bộ trên Mac này hoặc trên SSH host đang chọn - hiển thị plan tier, email, org name. <strong>Antigravity</strong> hỗ trợ trọn vẹn 3 môi trường: <code>AG</code> (Desktop App bản trắng), <code>IDE</code> (bản VS Code extension), và <code>CLI</code> (bản CLI Terminal) với cơ chế Smart Deduplicate gộp 1-pass gọn nhẹ (~40ms). Tách bạch 2 Domain Auth (IDE SQLite vs Gemini Core shared <code>~/.gemini/</code>) cùng nút Log Out theo ngữ cảnh. Cả hai agent đều xem được ở <strong>Local hoặc trên SSH host đang chọn</strong>. Hai panel hiển thị độc lập, tự khóa không cho hiện trùng nguồn. Đồng hồ đếm ngược reset real-time. Pool nào có quota 7 ngày chạm 100% thì con số 5 giờ của <em>chính pool đó</em> bị làm xám và bỏ khỏi thang màu - pool đã cạn thì số 5h không còn nói lên điều gì, để mắt nhìn thẳng vào con số còn ý nghĩa.</span>
+            <span>Real quota: <strong>Claude Code</strong> reads Anthropic's <code>rate_limits</code> (5H + 7D) - on this Mac or on any SSH host - showing plan tier, email and org name. <strong>Antigravity</strong> covers all 3 surfaces: <code>AG</code> (Desktop App), <code>IDE</code> (VS Code extension) and <code>CLI</code> (terminal), with a lightweight 1-pass Smart Deduplicate (~40ms). The two auth domains stay separate (IDE SQLite vs the shared Gemini core in <code>~/.gemini/</code>), each with its own contextual Log Out. Both agents can be watched <strong>locally or on any number of SSH hosts at once</strong>: every slot has its own host picker, so one slot watches Claude Code on host A while another watches host B under a different account. Menu ☰ → <code>Usage row:</code> picks <strong>1 row</strong> (2 slots side by side) or <strong>2 rows</strong> (4 slots). Two slots pointed at the same source is <em>allowed</em> - they share one instance and one poll instead of doubling it. Each monitor has its own power icon; switch one off and its last reading stays on screen marked as cached, switch it back on and it resumes. Reset countdowns tick in real time. When a pool's 7-day quota hits 100%, <em>that pool's</em> 5-hour number is dimmed and dropped from the colour ladder - a spent pool makes its 5h figure meaningless, so your eye goes to the number that still counts.</span>
           </div>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-cloud"></i></div>
           <div class="feature-text">
-            <strong>Sync Check & monitor Remote - các công tắc độc lập</strong>
-            <span>Icon nguồn ở cột SYNC bật/tắt riêng PUSH/PULL/SELECT + mục IDE Remote trong popup Open + check sync diff (nền + thủ công). Trong tab REMOTE của Agent Usage, mỗi tab <code>AG</code> / <code>CC</code> có icon nguồn riêng, bật/tắt độc lập monitor Antigravity và Claude Code trên host đang chọn. Tắt một công tắc không tắt lây công tắc nào khác. Cả bốn nguồn đều mặc định bật; mỗi nguồn remote đang bật tốn một lượt SSH mỗi chu kỳ refresh, tắt icon nguồn là ngưng hẳn.</span>
+            <strong>Sync Check & remote monitors - independent switches</strong>
+            <span>The power icon in the SYNC column toggles PUSH/PULL/SELECT, the remote IDE entries in the Open popup, and sync diff checks (background + manual). In Agent Usage's REMOTE tab, the <code>AG</code> and <code>CC</code> tabs each have their own power icon, toggling the Antigravity and Claude Code monitors independently. The host picker beside them belongs to <strong>that slot alone</strong>, so one slot watches Claude Code on host A while another watches host B under a different account - two machines side by side. Switching one off never switches off another. Every monitor is on by default; each active remote monitor costs one SSH round-trip per refresh cycle, and its power icon stops it completely.</span>
           </div>
         </div>
 
@@ -157,7 +156,7 @@
           <div class="feature-icon" style="color: #94a3b8;"><i class="fa-solid fa-key"></i></div>
           <div class="feature-text">
             <strong>SSH Config</strong>
-            <span>Quản lý <code>~/.ssh/config</code> có undo/redo, kiêm chọn Remote Host cho quota & logs - không cần mở terminal.</span>
+            <span>Manage <code>~/.ssh/config</code> with undo/redo - no terminal needed. The host picked here is the <strong>default</strong> for any Agent Usage slot that has not chosen its own; to change a slot's host, use the picker in that slot's header.</span>
           </div>
         </div>
 
@@ -165,7 +164,7 @@
           <div class="feature-icon" style="color: #ec4899;"><i class="fa-solid fa-rotate"></i></div>
           <div class="feature-text">
             <strong>Background Refresh</strong>
-            <span>Tự động kiểm tra Git status, sync diff, agent usage theo chu kỳ tùy cấu hình. Vòng đếm ngược (countdown ring) hiển thị tiến trình trực tiếp trên tiêu đề cột GIT và ACTIONS.</span>
+            <span>Checks Git status, sync diff and agent usage on a configurable cycle. A countdown ring shows live progress right on the GIT and ACTIONS column headers.</span>
           </div>
         </div>
 
@@ -173,7 +172,7 @@
           <div class="feature-icon" style="color: #fbbf24;"><i class="fa-solid fa-arrows-rotate"></i></div>
           <div class="feature-text">
             <strong>Refresh - 1 unit of work</strong>
-            <span>Nút Refresh riêng-project và nút Refresh tổng ở titlebar đều gọi chung <code>refreshProject()</code> (git status + sync diff + stack detection, chạy song song) - không còn reload toàn app. Trạng thái xoay icon nằm ở chính từng check, nên vòng nền cũng làm icon xoay đúng lúc.</span>
+            <span>The per-project Refresh button and the global one in the titlebar both call the same <code>refreshProject()</code> (git status + sync diff + stack detection, in parallel) - no more full app reload. Spinner state lives on each check itself, so a background cycle spins the icon at the right moment too.</span>
           </div>
         </div>
 
@@ -181,56 +180,57 @@
           <div class="feature-icon" style="color: #f87171;"><i class="fa-brands fa-git-alt"></i></div>
           <div class="feature-text">
             <strong>Git & Changelog Visual Preview</strong>
-            <span>Modal Git hiển thị log/status dạng màu sắc Terminal ANSI, hỗ trợ tiếng Việt có dấu (quotepath=false), stage & commit, fetch, push, và hiển thị Visual Changelog Preview của dự án.</span>
+            <span>The Git modal renders log/status in ANSI terminal colours, handles Vietnamese accents (quotepath=false), and supports stage & commit, fetch, push, plus a Visual Changelog Preview of the project.</span>
           </div>
         </div>
         <div class="feature-card">
           <div class="feature-icon" style="color: #10b981;"><i class="fa-solid fa-cloud-arrow-down"></i></div>
           <div class="feature-text">
             <strong>App Update Check</strong>
-            <span>Tự động kiểm tra bản cập nhật ngầm khi khởi động hoặc click thủ công trong Logo menu, hiển thị badge số hiệu và toast thông báo phiên bản mới.</span>
+            <span>Checks for updates silently on launch, or manually from the Logo menu, showing a version badge and a toast when a new release is out.</span>
           </div>
         </div>
       </div>
 
       <!-- Engineering Highlights -->
       <div class="alert-box tech mt-3">
-        <h4 class="alert-title"><i class="fa-solid fa-flask"></i> Điểm Nhấn Công Nghệ</h4>
+        <h4 class="alert-title"><i class="fa-solid fa-flask"></i> Engineering Highlights</h4>
         <ul class="custom-list">
-          <li><strong>Màu sắc Git Terminal & Unicode:</strong> Ép Git xuất màu ANSI thô (`color.status=always`), tự parse bằng Regex sang thẻ HTML span màu sắc trực quan (Red/Green/Yellow/Cyan/Bold) và tắt quotepath (`core.quotepath=false`) giúp hiển thị hoàn hảo tên file tiếng Việt có dấu.</li>
-          <li><strong>Stack Detector & Lockfile Analyzer:</strong> Tự nhận dạng Tauri vs Node và phân tích lockfiles (`pnpm`, `yarn`, `bun`, `npm`) để tự chạy lệnh chạy thử nghiệm (dev/preview) mà không cần cấu hình thủ công.</li>
-          <li><strong>Co giãn Textarea Native (CSS-only):</strong> Sử dụng thuộc tính CSS mới `field-sizing: content` giúp co giãn chiều cao của Tasks & Notes tự động theo nội dung thực tế, không tốn dù chỉ một dòng JS resize hay gây giật giao diện.</li>
-          <li><strong>Changelog Modal kế thừa:</strong> Bổ sung tham số `projectId` và tùy biến title/content giúp tái sử dụng component xem Changelog dùng chung cho cả Changelog nội bộ của từng dự án.</li>
-          <li><strong>Quota thực tế:</strong> Đọc trực tiếp `rate_limits` do server Anthropic trả về qua `statusLine` hook, không chắp vá hay giả lập request - an toàn tuyệt đối.</li>
-          <li><strong>Hybrid Patching:</strong> Khi quota chạm mốc 100%, Claude CLI ẩn `rate_limits`. Ứng dụng tự động ước lượng thời gian reset để đảm bảo giao diện luôn hiển thị chính xác.</li>
-          <li><strong>Hạn ngạch đa luồng (v1.3.0):</strong> Truy vấn song song hai endpoint Connect RPC để kéo đồng thời hạn ngạch 5H và hạn ngạch tuần (Weekly) cho cả Gemini và Claude/GPT pools, phân cụm bằng fieldset tinh gọn.</li>
-          <li><strong>Antigravity Native RPC:</strong> Bỏ qua API Google (thường trả dữ liệu trống) - quét native process + dò cổng bằng `lsof` để truy vấn Connect RPC tới local proxy, tốc độ cực nhanh (~40ms).</li>
-          <li><strong>Antigravity Log Out đúng nghĩa:</strong> Xóa Cookies/Local Storage không đủ - token đăng nhập được mã hóa bởi `safeStorage` của Electron, khóa AES nằm ở đúng một mục Keychain macOS (`"Antigravity IDE Safe Storage"`). Log Out đóng app rồi xóa đúng mục đó (không quét/dump Keychain), khiến token bị mã hóa vĩnh viễn không đọc được nữa - settings/extension/rule nằm ở file riêng nên không bị ảnh hưởng.</li>
-          <li><strong>Claude Code - một nguồn dữ liệu duy nhất:</strong> App không tự chạy <code>claude</code> để lấy usage. Luồng active cũ (force-sync, probe Haiku) đã bị xoá hẳn: nó từng làm rò 19 session mồ côi (6GB RAM + 4GB swap) trên một máy remote, và đo thật cho thấy một turn headless chỉ trả về mốc reset chứ không có phần trăm. Cache hook <code>statusLine</code> giờ là nguồn duy nhất.</li>
-          <li><strong>Statusline hai CLI, MỘT script:</strong> Cùng một file được cài y hệt vào cả Claude Code (<code>~/.claude/statusline-command.sh</code>) lẫn AGY CLI (<code>~/.gemini/antigravity-cli/statusline.sh</code>), và <strong>mỗi CLI đều được trỏ tới file đó qua khoá <code>statusLine</code> trong <code>settings.json</code> của chính nó</strong> - ghi file thôi là cài một nửa, CLI sẽ không chạy gì; nó tự nhận ra mình đang chạy cho CLI nào qua chính đường dẫn được gọi (<code>$0</code>), không đoán theo payload. Chọn target nào ghi ngay trên tiêu đề modal, đẩy song song ra nhiều host. Dòng luôn mở đầu bằng tag màu <code>CC</code>/<code>AG</code> kèm tên account để biết CLI nào và tài khoản nào in ra nó. Cache <code>rate_limits</code> nay gắn với đúng account đã ghi và tự loại mục đã hết hạn, không còn treo quota ma của phiên/account khác. Mỗi field có độ cắt riêng, các khối phân tách bằng nền sáng-tối xen kẽ (zebra) thay cho dấu <code>|</code>, và mọi lựa chọn trên modal đều có test tự động kiểm chứng là nó thật sự ra tới file. Mỗi host hiện tag <code>CC</code>/<code>AG</code> cho đúng những CLI nó có: tô đặc là statusline đang chạy được, viền rỗng là có CLI nhưng chưa nối gì.</li>
-          <li><strong>App-icon menu & window presets:</strong> Menu ☰ ở titlebar gom link GitHub/Release, check update thủ công, SSH Config, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile, Remote Control, cài AkiClaudeDoc, cùng 4 preset cửa sổ trong mục <code>AppWindow:</code> - Narrow (420px), Wide (768px), Stick Top-Left (auto-fit chiều cao theo danh sách project), Center Primary. <code>⌘1</code> = Narrow + Stick Top-Left, <code>⌘2</code> = Wide + Center Primary (bấm được cả khi chưa mở menu). Tick <strong>remember</strong> để lần mở app sau tự áp lại chiều rộng và vị trí bạn đã chọn (áp chiều rộng trước, vì Stick Top-Left tính chiều cao theo chiều rộng hiện tại).</li>
-          <li><strong>Remote Control (v1.19.0, preview):</strong> Điều khiển app từ điện thoại qua trình duyệt cùng LAN hoặc Tailscale. Menu ☰ → <strong>Remote Control</strong> → <strong>On</strong> hiện mã ghép nối 6 số và các dòng <code>IP:PORT</code> để mở trên điện thoại (bấm để copy); ghép nối một lần, các lần sau tự kết nối lại. Mac vẫn là nguồn sự thật duy nhất - điện thoại chỉ mirror trạng thái và gửi thao tác về qua một WebSocket. <strong>Off</strong> cắt toàn bộ điện thoại đang nối và ngừng phục vụ ở cổng đó; nhập sai mã 10 lần sẽ tự tắt. Cùng địa chỉ ở cả dev lẫn release (<code>:1421</code>). Lưu ý bảo mật: một thiết bị đã ghép nối gọi được mọi lệnh Tauri - không có allowlist, mã ghép nối là rào chắn duy nhất.</li>
-          <li><strong>Khắc phục lỗi mtime của `.git/`:</strong> Loại bỏ sự thay đổi mtime của thư mục khi Git dọn dẹp nội bộ khỏi kết quả dry-run, tránh việc kích hoạt nút PUSH không chính xác.</li>
-          <li><strong>Phân tách EC-3 hai chiều (Baseline Manifest):</strong> rsync không phân biệt được "remote tạo file X" vs "Local xóa file X", hay "Mac tạo file Y" vs "remote xóa file Y". Sau mỗi lần sync đầy đủ, app ghi snapshot danh sách file local vào <code>appDataDir/baselines/</code>. Lần check tiếp theo: file trong pull_list + có trong baseline + không còn ở Local → Local đã xóa → cộng vào push_count; file trong push_list + có trong baseline → remote đã xóa → loại khỏi push_count. Giải quyết hoàn toàn badge PUSH sáng nhầm khi code chủ yếu trên remote.</li>
-          <li><strong>Narrow Mode (v1.14.0):</strong> Cửa sổ dùng được xuống tới 400px (<code>minWidth</code> trong <code>tauri.conf.json</code>), một breakpoint dùng chung duy nhất (700px) và hai utility class toàn cục (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) - không component nào tự định nghĩa breakpoint riêng. Nhãn chữ ẩn đi vẫn giữ nguyên trong tooltip <code>title</code>, không nút nào bị mất cả icon lẫn nhãn.</li>
+          <li><strong>Git terminal colours & Unicode:</strong> Force Git to emit raw ANSI colour (`color.status=always`), parse it with regex into coloured HTML spans (Red/Green/Yellow/Cyan/Bold), and disable quotepath (`core.quotepath=false`) so Vietnamese filenames render perfectly.</li>
+          <li><strong>Stack Detector & Lockfile Analyzer:</strong> Detects Tauri vs Node and reads lockfiles (`pnpm`, `yarn`, `bun`, `npm`) to run the right dev/preview command with no manual config.</li>
+          <li><strong>Native textarea autogrow (CSS-only):</strong> The new `field-sizing: content` property grows Tasks & Notes to fit their actual content - not one line of JS resize code, and no layout jank.</li>
+          <li><strong>Inherited Changelog modal:</strong> A `projectId` parameter plus a custom title/content lets one shared Changelog component serve each project's own changelog too.</li>
+          <li><strong>Real quota:</strong> Reads the `rate_limits` Anthropic's server returns through the `statusLine` hook - nothing patched together, no simulated requests.</li>
+          <li><strong>Hybrid Patching:</strong> At 100% the Claude CLI hides `rate_limits`. The app estimates the reset time itself so the UI keeps showing something accurate.</li>
+          <li><strong>Parallel quota (v1.3.0):</strong> Two Connect RPC endpoints queried at once for the 5H and Weekly quotas of both the Gemini and Claude/GPT pools, grouped into compact fieldsets.</li>
+          <li><strong>Antigravity Native RPC:</strong> Skips Google's API (usually empty) - scans native processes and finds the port with `lsof` to query Connect RPC on the local proxy, ~40ms.</li>
+          <li><strong>Antigravity Log Out that really logs out:</strong> Clearing Cookies/Local Storage is not enough - the login token is encrypted by Electron's `safeStorage`, whose AES key lives in exactly one macOS Keychain item (`"Antigravity IDE Safe Storage"`). Log Out quits the app and deletes that one item (no Keychain scan or dump), leaving the token permanently unreadable - settings, extensions and rules live in separate files and are untouched.</li>
+          <li><strong>Claude Code - one source of truth:</strong> The app never runs <code>claude</code> itself to fetch usage. The old active path (force-sync, Haiku probe) is deleted outright: it once leaked 19 orphaned sessions (6GB RAM + 4GB swap) on a remote host, and a real measurement showed a headless turn returns only the reset time, never a percentage. The <code>statusLine</code> hook cache is now the only source.</li>
+          <li><strong>Two CLIs, ONE statusline script:</strong> The same file is installed for both Claude Code (<code>~/.claude/statusline-command.sh</code>) and AGY CLI (<code>~/.gemini/antigravity-cli/statusline.sh</code>), and <strong>each CLI is pointed at it through the <code>statusLine</code> key in its own <code>settings.json</code></strong> - writing the file alone is half an install and the CLI runs nothing. It works out which CLI is running it from its own path (<code>$0</code>), not by guessing from the payload. Pick the targets in the modal title, apply to several hosts in parallel. Every line opens with a coloured <code>CC</code>/<code>AG</code> tag plus the account name, so you know which CLI and which account printed it. The <code>rate_limits</code> cache is now bound to the account that wrote it and drops expired entries - no more phantom quota from another session or account. Each field has its own truncate width, blocks are separated by alternating light/dark backgrounds (zebra) instead of <code>|</code>, and every option in the modal has an automated test proving it really reaches the file. Each host shows a <code>CC</code>/<code>AG</code> tag for the CLIs it actually has: filled means the statusline is running, hollow means the CLI is there but nothing is wired up yet.</li>
+          <li><strong>App-icon menu & window presets:</strong> The ☰ titlebar menu collects GitHub/Release links, manual update check, SSH Config, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile (Local), Remote Control, the AkiClaudeDoc installer, a <code>Usage row:</code> picker for 1 row (2 slots) or 2 rows (4 slots), and 4 window presets under <code>AppWindow:</code> - Narrow (420px), Wide (768px), Stick Top-Left (auto-fits height to the project list), Center Primary. <code>⌘1</code> = Narrow + Stick Top-Left, <code>⌘2</code> = Wide + Center Primary (both work without opening the menu). Tick <strong>remember</strong> to re-apply the width and placement you chose on the next launch (width first, since Stick Top-Left fits its height to the current width).</li>
+          <li><strong>Remote Control (v1.19.0, preview):</strong> Control the app from a phone browser on the same LAN or over Tailscale. Menu ☰ → <strong>Remote Control</strong> → <strong>On</strong> shows a 6-digit pair code and the <code>IP:PORT</code> rows to open on the phone (click to copy); pair once, and it reconnects silently after that. The Mac stays the single source of truth - the phone only mirrors its state and sends gestures back over one WebSocket. <strong>Off</strong> cuts every live phone and stops serving on that port; 10 wrong codes disable it automatically. Same address in dev and release (<code>:1421</code>). The <strong>HTTPS (PWA)</strong> row serves over HTTPS via Tailscale, which is what lets the phone <em>Install</em> it as a standalone app (needs HTTPS certs enabled once in the Tailscale admin console). Security note: a paired device can invoke any Tauri command - there is no allowlist, the pair code is the only gate.<br><strong>v1.20.0:</strong> confirmation dialogs are now mirrored state - trigger a PUSH <code>--delete</code> from the phone and the "type the project name" box appears on <em>both</em> screens, answerable from either (the typed name is still verified on the Mac, so the phone cannot skip the check). Same for Remove Project, the replacement SSH host picker, and the "preview failed, continue anyway?" prompt. Also fixes task/note edits made on the phone reverting a while later: an edit used to be written straight to disk without touching the Mac's live state, so the next reconnect (screen lock, tab switch, network drop) replayed the stale copy over it.</li>
+          <li><strong>In-app terminal (v1.20.0):</strong> A <code>TERMINAL</code> tab beside the event log running a real shell on the Mac (a genuine PTY, not a command runner piping output) - so history recall with the arrow keys, <code>Ctrl+C</code> on a running command, interactive prompts and <code>vim</code> all work. <strong>One shared session:</strong> whatever you type on the Mac or on the phone lands in the same shell and both screens show identical output - which is the point, since <code>Terminal.app</code> renders nowhere but the Mac, so a phone could never drive it. The Mac stays the sole resize authority (a PTY has one size; letting the phone set it would let a narrow screen mangle output running on the Mac). A slim key row covers Esc / Tab / sticky Ctrl (tap Ctrl, then C) / the four arrows / Enter for what a phone keyboard cannot send, and recent output replays when you reopen the tab or the phone reconnects. The shell runs as a <em>login shell</em>, so it has the same <code>PATH</code> as every other Terminal window (nvm, rbenv, path_helper all load). The panel header carries <strong>CLEAR</strong> (wipes the Mac's stored scrollback, not just the screen in front of you, so the phone stays clear too and it does not come back on reconnect), <strong>RESTART</strong>, <strong>KILL</strong> and <strong>OPEN</strong> (hands the shell's <em>current</em> directory to <code>Terminal.app</code>). When the shell exits (<code>exit</code>, or a crash) the terminal prints <code>[process exited]</code> and the tab turns red instead of going quiet - typing anything starts a new one. Each project's OPEN popup also has <strong>In-App Terminal</strong>, dropping the shared shell straight into that project - the only one of the two terminal entries that works from a phone. Security: opening the terminal from a paired device adds <em>no</em> extra confirmation - that device could already run arbitrary commands via DEV/BUILD, so gating the terminal alone would be theatre and would defeat the point (you use the phone precisely when you are not at the Mac). <strong>Off</strong> still cuts every device instantly.</li>
+          <li><strong>The `.git/` mtime trap:</strong> Directory-only mtime changes from git's internal housekeeping are filtered out of the dry-run result, so the PUSH button no longer lights up for nothing.</li>
+          <li><strong>Bidirectional EC-3 disambiguation (Baseline Manifest):</strong> rsync cannot tell "remote created file X" from "Local deleted file X", or "Mac created file Y" from "remote deleted file Y". After each full sync the app writes a snapshot of the local file list to <code>appDataDir/baselines/</code>. On the next check: in pull_list + in baseline + gone from Local → Local deleted it → add to push_count; in push_list + in baseline → remote deleted it → drop from push_count. Fully solves the PUSH badge lighting up wrongly when most coding happens on the remote.</li>
+          <li><strong>Narrow Mode (v1.14.0):</strong> The window stays usable down to 420px (<code>minWidth</code> in <code>tauri.conf.json</code>), driven by one shared breakpoint (700px) and two global utility classes (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) - no component defines its own. A hidden text label survives in the <code>title</code> tooltip, and no button ever loses both its icon and its label.</li>
         </ul>
       </div>
 
       <!-- Origin Story - moved to bottom, preserved -->
       <div class="alert-box origin mt-3">
-        <h4 class="alert-title"><i class="fa-solid fa-bullseye"></i> Bối Cảnh Ra Đời</h4>
-        <p class="mb-1">Ứng dụng phát triển để phục vụ chính nhu cầu của tác giả (Lạc Việt Anh) trong việc tối ưu luồng code hàng ngày:</p>
+        <h4 class="alert-title"><i class="fa-solid fa-bullseye"></i> Origin Story</h4>
+        <p class="mb-1">Built to serve the author's own (Lạc Việt Anh) need to streamline a daily coding workflow:</p>
         <ul class="custom-list">
-          <li><strong>Local - Source of Truth:</strong> code an toàn, giữ Git, dùng <em>Antigravity Pro</em> cá nhân.</li>
-          <li><strong>Remote - AI Workspace:</strong> đẩy code lên cho <em>Claude Code / MAX</em> (tài khoản riêng) sinh code hàng loạt qua Terminal.</li>
-          <li><strong>Reverse Engineering Quota:</strong> Đo lường hạn mức Antigravity bằng cách phân tích ngược IDE - quét native process, dùng <code>lsof</code> dò cổng Connect RPC và truy vấn trực tiếp local proxy.</li>
+          <li><strong>Local - Source of Truth:</strong> code kept safe with its Git history, edited in a personal <em>Antigravity Pro</em>.</li>
+          <li><strong>Remote - AI Workspace:</strong> code pushed up for <em>Claude Code / MAX</em> (a separate account) to generate at scale from the Terminal.</li>
+          <li><strong>Reverse Engineering Quota:</strong> Antigravity's quota measured by reverse-engineering the IDE - scan native processes, find the Connect RPC port with <code>lsof</code>, query the local proxy directly.</li>
         </ul>
       </div>
     </div>
 
     <div class="modal-footer" style="justify-content: flex-end;">
       <button class="btn-tech btn-tech-primary" @click="closeIntroModal">
-        <i class="fa-solid fa-check"></i> ĐÃ HIỂU
+        <i class="fa-solid fa-check"></i> GOT IT
       </button>
     </div>
   </BaseModal>
@@ -399,14 +399,12 @@ const { showIntroModal, closeIntroModal } = useIntro();
 }
 .mb-1 { margin-bottom: 4px; }
 
-/* Long inline <code> spans (file paths, shell snippets) are the only unbreakable runs in this
-   guide - let them break instead of widening the modal. */
+/* Long inline <code> spans (file paths, shell snippets) are the only unbreakable runs in this guide - let them break instead of widening the modal. */
 .intro-content code {
   overflow-wrap: anywhere;
 }
 
-/* Narrow mode (SSoT 700px, main.css). Two feature columns leave ~135px of text each at 420px,
-   which turns every card into a ragged column of 2-3 words. One column instead. */
+/* Narrow mode (SSoT 700px, main.css). Two feature columns leave ~135px of text each at 420px, which turns every card into a ragged column of 2-3 words. One column instead. */
 @media (max-width: 700px) {
   .features-grid {
     grid-template-columns: 1fr;
