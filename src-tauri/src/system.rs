@@ -272,6 +272,30 @@ ssh() {
 }
 "#;
 
+/// Reads a file that is about to be **rewritten from its own contents**, and refuses to guess.
+///
+/// The only benign failure is `NotFound` - the file genuinely does not exist yet, so "" is the
+/// truthful prior content and creating it fresh is correct. Every other error (`PermissionDenied`,
+/// a device/IO fault, a path that is a directory, an interrupted read) means the current contents
+/// are *unknown*, and treating unknown as empty is how a read-modify-write turns into a silent
+/// truncation: the caller would append its snippet to nothing and write that over a file that was
+/// never read. `unwrap_or_default()` cannot tell those two cases apart, which is exactly why it
+/// must not be used at a read-then-rewrite site (plan §3.20).
+///
+/// Returns the error as a user-facing string, because the user's only clue otherwise arrives much
+/// later, when their next terminal opens broken.
+fn read_for_rewrite(path: &std::path::Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!(
+            "Cannot read {} ({}). Nothing was written - the file is unchanged.",
+            path.display(),
+            e
+        )),
+    }
+}
+
 /// Local-machine-only: the background swap needs to happen in the *local* shell that is launching `ssh`, so there is nothing to push to remote hosts here (unlike the statusline customizer, which does need per-host rollout).
 ///
 /// `spawn_blocking`-wrapped per CLAUDE.md's blocking-UI rule: even "just" file I/O is a synchronous syscall, and the house rule now has zero exceptions for that - every command touching disk or a subprocess goes through the blocking thread-pool, no case-by-case judgment calls about whether a given file happens to be small.
@@ -280,7 +304,8 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let home = std::env::var("HOME").map_err(|e| e.to_string())?;
         let zshrc_path = std::path::Path::new(&home).join(".zshrc");
-        let existing = std::fs::read_to_string(&zshrc_path).unwrap_or_default();
+        // Read-then-rewrite: an unreadable .zshrc must abort, never be re-created from "".
+        let existing = read_for_rewrite(&zshrc_path)?;
 
         let mut kept_lines: Vec<&str> = Vec::new();
         let mut skipping = false;
@@ -829,5 +854,57 @@ mod tests {
     #[test]
     fn shell_quote_remote_path_handles_quote_after_tilde() {
         assert_eq!(shell_quote_remote_path("~/it's"), "\"$HOME\"/'it'\\''s'");
+    }
+
+    /// A scratch path under the OS temp dir, unique per test. The rewrite tests must never touch a
+    /// real `~/.zshrc` - that file is precisely what the code under test can destroy.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("aki-devsync-test-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        dir
+    }
+
+    #[test]
+    fn read_for_rewrite_absent_file_is_empty() {
+        let dir = scratch("absent");
+        let missing = dir.join("nope.rc");
+        assert_eq!(read_for_rewrite(&missing).unwrap(), "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_for_rewrite_returns_existing_content() {
+        let dir = scratch("present");
+        let file = dir.join("some.rc");
+        std::fs::write(&file, "alias ll='ls -la'\n").unwrap();
+        assert_eq!(read_for_rewrite(&file).unwrap(), "alias ll='ls -la'\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_for_rewrite_non_notfound_error_aborts() {
+        // A directory is a portable, root-proof way to produce a read error that is NOT NotFound -
+        // the exact case `unwrap_or_default()` used to flatten into "" before overwriting the file.
+        let dir = scratch("isdir");
+        let err = read_for_rewrite(&dir).unwrap_err();
+        assert!(err.contains("Nothing was written"), "error must say no write happened: {}", err);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_for_rewrite_permission_denied_aborts() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("perm");
+        let file = dir.join("locked.rc");
+        std::fs::write(&file, "export PATH=/usr/bin\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Skip rather than fail when the test happens to run as root, where mode 000 is not enforced.
+        if std::fs::read_to_string(&file).is_err() {
+            assert!(read_for_rewrite(&file).is_err());
+        }
+        let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

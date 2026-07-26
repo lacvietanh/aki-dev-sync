@@ -96,7 +96,11 @@ async function applyMode(mode) {
       mode: 'native', endpoint: null, apiKey: null,
       modelOpus: null, modelSonnet: null, modelHaiku: null,
     });
-    currentMode.value = mode;
+    // Read the mode back from ~/.claude/settings.json instead of assuming the write did what was
+    // asked. `claudeMode` gates the local usage monitor (usageMonitorRegistry.js), so a stale or
+    // optimistic value there means the app is polling native quota numbers for a proxied CLI -
+    // the one thing that panel must never do.
+    await refreshClaudeMode();
     status.msg = mode === 'proxy'
       ? 'Proxy applied. Restart Claude Code to take effect.'
       : 'Restored to native. Restart Claude Code to take effect.';

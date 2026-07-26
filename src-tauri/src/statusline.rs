@@ -298,7 +298,18 @@ pub fn generate_statusline_script(config: &StatuslineConfig) -> Result<String, S
 
 /// Where one generated body gets written, and what else has to be patched there. Both targets take
 /// the SAME body - the script decides at run time which CLI it is speaking for.
+///
+/// Each installer is a COMPLETE, self-contained script with its own `set -e`. Two rules the shape
+/// of these strings enforces, both of them fixes for real half-applied states:
+///   1. The settings patch runs BEFORE the script file is written. `jq` is the one dependency that
+///      can be missing on a remote; patching first means a host without it fails having changed
+///      nothing, instead of leaving a statusline script no settings file points at.
+///   2. The backup is timestamped and taken on EVERY apply. The old `[ ! -f "$FILE.aki-bak" ]`
+///      guard backed up once ever, so every hand-edit made after the first Apply was destroyed
+///      with no copy anywhere.
 struct Target {
+    /// Short human label, used to say WHICH target failed in the per-host message.
+    label: &'static str,
     /// Values the frontend may send for this target.
     aliases: &'static [&'static str],
     installer: fn(&str) -> String,
@@ -306,46 +317,56 @@ struct Target {
 
 const TARGETS: &[Target] = &[
     Target {
+        label: "Claude Code",
         aliases: &["cc", "claude"],
         installer: |body| {
             format!(
-                "mkdir -p \"$HOME/.claude\"\n\
+                "set -e\n\
+                 command -v jq >/dev/null 2>&1 || {{ echo 'jq not found on PATH - install jq, then Apply again (nothing was changed)' >&2; exit 1; }}\n\
+                 mkdir -p \"$HOME/.claude\"\n\
                  FILE=\"$HOME/.claude/statusline-command.sh\"\n\
-                 if [ -f \"$FILE\" ] && [ ! -f \"$FILE.aki-bak\" ]; then cp \"$FILE\" \"$FILE.aki-bak\"; fi\n\
-                 cat > \"$FILE\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}AKI_STATUSLINE_CLAUDE_EOF\n\
-                 chmod +x \"$FILE\"\n\
                  SETTINGS=\"$HOME/.claude/settings.json\"\n\
                  [ -f \"$SETTINGS\" ] || echo '{{}}' > \"$SETTINGS\"\n\
                  tmp=$(mktemp)\n\
-                 jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS\"\n"
+                 jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS\"\n\
+                 if [ -f \"$FILE\" ]; then cp \"$FILE\" \"$FILE.aki-bak-$(date +%s)\"; fi\n\
+                 cat > \"$FILE\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}AKI_STATUSLINE_CLAUDE_EOF\n\
+                 chmod +x \"$FILE\"\n"
             )
         },
     },
     Target {
+        label: "AGY",
         aliases: &["ag", "cli"],
         installer: |body| {
             format!(
-                "mkdir -p \"$HOME/.gemini/antigravity-cli\"\n\
+                "set -e\n\
+                 command -v jq >/dev/null 2>&1 || {{ echo 'jq not found on PATH - install jq, then Apply again (nothing was changed)' >&2; exit 1; }}\n\
+                 mkdir -p \"$HOME/.gemini/antigravity-cli\"\n\
                  FILE_AGY=\"$HOME/.gemini/antigravity-cli/statusline.sh\"\n\
-                 if [ -f \"$FILE_AGY\" ] && [ ! -f \"$FILE_AGY.aki-bak\" ]; then cp \"$FILE_AGY\" \"$FILE_AGY.aki-bak\"; fi\n\
-                 cat > \"$FILE_AGY\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}AKI_STATUSLINE_AGY_EOF\n\
-                 chmod +x \"$FILE_AGY\"\n\
                  SETTINGS_AGY=\"$HOME/.gemini/antigravity-cli/settings.json\"\n\
                  [ -f \"$SETTINGS_AGY\" ] || echo '{{}}' > \"$SETTINGS_AGY\"\n\
                  tmp=$(mktemp)\n\
-                 jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS_AGY\"\n"
+                 jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS_AGY\"\n\
+                 if [ -f \"$FILE_AGY\" ]; then cp \"$FILE_AGY\" \"$FILE_AGY.aki-bak-$(date +%s)\"; fi\n\
+                 cat > \"$FILE_AGY\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}AKI_STATUSLINE_AGY_EOF\n\
+                 chmod +x \"$FILE_AGY\"\n"
             )
         },
     },
 ];
 
-/// Writes only the targets the caller actually asked for. An empty selection is an error, never an
-/// implicit "AGY anyway" - a silent fallback here is exactly how Apply ended up writing a file the
-/// user never ticked.
-fn build_installer_script(
+/// One script per target the caller actually asked for - never one concatenated script. Under a
+/// single shared `set -e` a Claude Code failure aborted the run before the AGY half was even
+/// attempted, and the user was told about neither: the host simply reported one error. Independent
+/// scripts mean one target's failure cannot swallow the other's outcome.
+///
+/// An empty selection is an error, never an implicit "AGY anyway" - a silent fallback here is
+/// exactly how Apply ended up writing a file the user never ticked.
+fn build_installer_scripts(
     config: &StatuslineConfig,
     selected_targets: &[String],
-) -> Result<String, String> {
+) -> Result<Vec<(&'static str, String)>, String> {
     let chosen: Vec<&Target> = TARGETS
         .iter()
         .filter(|t| {
@@ -358,12 +379,10 @@ fn build_installer_script(
         return Err("No statusline target selected (tick agy and/or claude).".to_string());
     }
     let body = generate_statusline_script(config)?;
-    let mut combined = String::from("set -e\n");
-    for target in chosen {
-        combined.push_str(&(target.installer)(&body));
-        combined.push('\n');
-    }
-    Ok(combined)
+    Ok(chosen
+        .into_iter()
+        .map(|t| (t.label, (t.installer)(&body)))
+        .collect())
 }
 
 /// Per CLI, because a host can have one, both or neither. Reporting a single "configured" flag made
@@ -439,7 +458,7 @@ pub async fn apply_statusline_config(
     selected_targets: Option<Vec<String>>,
 ) -> Result<Vec<HostApplyResult>, String> {
     let targets = selected_targets.unwrap_or_default();
-    let installer = std::sync::Arc::new(build_installer_script(&config, &targets)?);
+    let installers = std::sync::Arc::new(build_installer_scripts(&config, &targets)?);
 
     tauri::async_runtime::spawn_blocking(move || {
         // One OS thread per host, run concurrently - see the matching comment in
@@ -449,21 +468,34 @@ pub async fn apply_statusline_config(
         let handles: Vec<(String, std::thread::JoinHandle<HostApplyResult>)> = target_hosts
             .into_iter()
             .map(|host| {
-                let installer = installer.clone();
+                let installers = installers.clone();
                 let host_for_thread = host.clone();
                 let handle = std::thread::spawn(move || {
-                    let outcome = run_remote_script_bounded(&host_for_thread, &installer);
-                    let result = match outcome {
-                        Ok(output) => {
-                            let ok = output.status.success();
-                            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                            HostApplyResult {
-                                host: host_for_thread.clone(),
-                                ok,
-                                message: if ok { "Applied".to_string() } else { stderr },
+                    // Each target is its own script and its own verdict: a target that fails is
+                    // named, and every OTHER target still runs. The host-level `ok` is the AND of
+                    // them, so the existing single-flag UI keeps working unchanged, while the
+                    // message says which half actually landed.
+                    let mut applied: Vec<&str> = Vec::new();
+                    let mut failed: Vec<String> = Vec::new();
+                    for (label, script) in installers.iter() {
+                        match run_remote_script_bounded(&host_for_thread, script) {
+                            Ok(output) if output.status.success() => applied.push(label),
+                            Ok(output) => {
+                                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                                let why = if stderr.is_empty() {
+                                    format!("exit {}", output.status.code().unwrap_or(-1))
+                                } else {
+                                    stderr
+                                };
+                                failed.push(format!("{}: {}", label, why));
                             }
+                            Err(e) => failed.push(format!("{}: {}", label, e)),
                         }
-                        Err(e) => HostApplyResult { host: host_for_thread.clone(), ok: false, message: e },
+                    }
+                    let result = HostApplyResult {
+                        host: host_for_thread.clone(),
+                        ok: failed.is_empty(),
+                        message: apply_message(&applied, &failed),
                     };
                     crate::logger::info(
                         "STATUSLINE",
@@ -487,6 +519,19 @@ pub async fn apply_statusline_config(
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
+}
+
+/// What one host reports back. A partial apply must read as a partial apply - naming only the
+/// failure would hide that the other CLI was in fact rewritten, which is the state the user has to
+/// know about before deciding whether to retry.
+fn apply_message(applied: &[&str], failed: &[String]) -> String {
+    if failed.is_empty() {
+        return format!("Applied: {}", applied.join(", "));
+    }
+    if applied.is_empty() {
+        return failed.join(" | ");
+    }
+    format!("Applied: {} | Failed - {}", applied.join(", "), failed.join(" | "))
 }
 
 fn preview(s: &str, max: usize) -> String {
@@ -1212,15 +1257,123 @@ mod tests {
         );
     }
 
+    /// The installer scripts for a set of ticked targets.
+    fn scripts(aliases: &[&str]) -> Vec<(&'static str, String)> {
+        let sel: Vec<String> = aliases.iter().map(|a| a.to_string()).collect();
+        build_installer_scripts(&test_config(), &sel).expect("build installer scripts")
+    }
+
+    /// Every ticked target's script as one blob - for assertions about what an Apply touches
+    /// overall, as opposed to how it is split.
+    fn joined(aliases: &[&str]) -> String {
+        scripts(aliases).into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n")
+    }
+
     #[test]
     fn no_target_selected_is_an_error_not_a_silent_agy_write() {
-        let err = build_installer_script(&test_config(), &[]).unwrap_err();
+        let err = build_installer_scripts(&test_config(), &[]).unwrap_err();
         assert!(err.to_lowercase().contains("target"), "unexpected error text: {}", err);
-        let cc = build_installer_script(&test_config(), &["cc".to_string()]).unwrap();
+        let cc = joined(&["cc"]);
         assert!(cc.contains("AKI_STATUSLINE_CLAUDE_EOF"));
         assert!(!cc.contains("AKI_STATUSLINE_AGY_EOF"), "cc-only apply wrote the AGY file too");
-        let both = build_installer_script(&test_config(), &["cc".to_string(), "ag".to_string()]).unwrap();
+        let both = joined(&["cc", "ag"]);
         assert!(both.contains("AKI_STATUSLINE_CLAUDE_EOF") && both.contains("AKI_STATUSLINE_AGY_EOF"));
+    }
+
+    /// §3.19(a). The two targets must be two scripts, each independently runnable: concatenated
+    /// under one `set -e`, a Claude Code failure aborted before the AGY half was attempted and the
+    /// user was never told AGY had not been written at all.
+    #[test]
+    fn each_target_is_its_own_independent_script() {
+        let both = scripts(&["cc", "ag"]);
+        assert_eq!(both.len(), 2, "the two targets were not split into two scripts");
+        for (label, s) in &both {
+            assert!(s.starts_with("set -e\n"), "{} script does not fail fast on its own", label);
+        }
+        // Compared with the shared body removed - the body legitimately names both CLIs (it is one
+        // script that self-identifies from `$0`); what must not cross over is the INSTALLER's own
+        // commands, since that is what makes one target's failure unable to decide anything about
+        // the other.
+        let body = gen(&test_config());
+        let steps = |label: &str| -> String {
+            both.iter().find(|(l, _)| *l == label).unwrap().1.replace(body.as_str(), "")
+        };
+        assert!(!steps("Claude Code").contains("antigravity-cli"), "the CC installer touches AGY's files");
+        assert!(!steps("AGY").contains(".claude/"), "the AGY installer touches Claude Code's files");
+    }
+
+    /// §3.19(b). The settings patch is the step that can fail on a host without `jq`; running it
+    /// first means such a host ends up unchanged rather than holding a statusline script that
+    /// nothing points at.
+    #[test]
+    fn settings_are_patched_before_the_script_is_written() {
+        for alias in ["cc", "ag"] {
+            let s = joined(&[alias]);
+            let patch = s.find("jq ").expect("no jq patch");
+            let write = s.find("cat > ").expect("no script write");
+            assert!(patch < write, "{}: script is written before the settings patch", alias);
+            assert!(
+                s.contains("command -v jq"),
+                "{}: missing jq precondition - a missing jq must fail before anything is touched",
+                alias
+            );
+        }
+    }
+
+    /// §3.19(c). Every Apply keeps its own backup. The old `[ ! -f "$FILE.aki-bak" ]` guard backed
+    /// up once ever, so a statusline hand-tuned after the first Apply was destroyed with no copy.
+    #[test]
+    fn every_apply_backs_up_to_a_timestamped_file() {
+        for alias in ["cc", "ag"] {
+            let s = joined(&[alias]);
+            assert!(
+                s.contains(".aki-bak-$(date +%s)"),
+                "{}: backup is not timestamped, so a second Apply overwrites the only copy",
+                alias
+            );
+            assert!(
+                !s.contains("! -f \"$FILE.aki-bak\"") && !s.contains("! -f \"$FILE_AGY.aki-bak\""),
+                "{}: the back-up-once-ever guard is back",
+                alias
+            );
+            let backup = s.find(".aki-bak-").expect("no backup");
+            let write = s.find("cat > ").expect("no script write");
+            assert!(backup < write, "{}: backup taken after the file was overwritten", alias);
+        }
+    }
+
+    /// The installers travel through `ssh host sh`, i.e. dash on most remotes - the same contract
+    /// `npm run lint:scripts` enforces for the checked-in scripts. Only the OUTER script is checked
+    /// here; the quoted heredoc body is not parsed by this shell (it has its own bash -n test).
+    #[test]
+    fn installer_scripts_are_posix_sh_safe() {
+        for (label, script) in scripts(&["cc", "ag"]) {
+            let mut child = std::process::Command::new("sh")
+                .arg("-n")
+                .stdin(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("spawn sh");
+            use std::io::Write;
+            child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+            let out = child.wait_with_output().unwrap();
+            assert!(
+                out.status.success(),
+                "{}: sh -n failed:\n{}",
+                label,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+
+    /// A partial apply must read as partial: naming only the failure would hide that the other CLI
+    /// really was rewritten, which is what the user needs to know before retrying.
+    #[test]
+    fn apply_message_names_what_landed_and_what_did_not() {
+        assert_eq!(apply_message(&["Claude Code", "AGY"], &[]), "Applied: Claude Code, AGY");
+        let partial = apply_message(&["AGY"], &["Claude Code: jq not found".to_string()]);
+        assert!(partial.contains("AGY") && partial.contains("Claude Code: jq not found"), "{}", partial);
+        assert_eq!(apply_message(&[], &["AGY: boom".to_string()]), "AGY: boom");
     }
 
     /// Writing the script is only half an install: a CLI runs nothing until its settings point at
@@ -1236,7 +1389,7 @@ mod tests {
                 ".gemini/antigravity-cli/statusline.sh",
             ),
         ] {
-            let sh = build_installer_script(&test_config(), &[alias.to_string()]).unwrap();
+            let sh = joined(&[alias]);
             assert!(sh.contains(settings), "{} never touches {}", alias, settings);
             assert!(
                 sh.contains(r#".statusLine.type = "command""#),
@@ -1295,7 +1448,7 @@ mod tests {
     fn both_targets_receive_the_same_body() {
         // One physical script, installed at two paths - if these ever differ, the "$0 decides the
         // CLI" contract is broken and each CLI is back to having its own dialect.
-        let both = build_installer_script(&test_config(), &["cc".to_string(), "ag".to_string()]).unwrap();
+        let both = joined(&["cc", "ag"]);
         let body = gen(&test_config());
         assert_eq!(both.matches(body.as_str()).count(), 2, "the two targets got different bodies");
     }

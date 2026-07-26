@@ -9,10 +9,15 @@ import { invoke } from '../utils/tauri'
 // that look real but aren't.
 export const claudeMode = ref('native')
 
+// Called at boot, after a profile change, and on a wake self-heal (useBackgroundRefresh.js) - the
+// mode can change under the app at any time, since ~/.claude/settings.json is a file the user (or
+// another tool) may edit directly.
 export async function refreshClaudeMode() {
   try {
     claudeMode.value = await invoke('get_claude_mode')
   } catch {
-    claudeMode.value = 'native'
+    // Deliberately NOT forced back to 'native': the ref already starts at 'native', so this is
+    // identical at boot, while a later failed read no longer wipes a known-good 'proxy' reading
+    // and unlocks a usage monitor whose numbers would then be meaningless.
   }
 }
