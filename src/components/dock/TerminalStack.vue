@@ -9,20 +9,19 @@
     to a tab never re-spawns its xterm instance or re-fetches its scrollback. This loop iterates the
     FULL tab list (not the scope-filtered one) ON PURPOSE, so switching between GROUPS never
     unmounts/re-spawns an xterm either — only which chip's tab is visible changes.
-  - COLLAPSING THE STACK: unchanged from WP-A. `DockStack.vue`'s default slot only renders while
-    expanded (`v-if`/`v-else` on `collapsed`, not `v-show`), so collapsing the terminal stack still
-    unmounts every TerminalView, and expanding it re-mounts them all. `DockStack.vue` is out of this
-    package's file list (single-owner: WP-A), so changing that v-if to v-show to also survive a
-    STACK collapse is left as a follow-up rather than done here. Accepted as-is because it is exactly
-    the behaviour WP-A already documented and verified as harmless: `pty_spawn` is idempotent (T-3),
-    scrollback rehydrates on remount, and tri-state `alive` starts at `'unknown'` on every fresh
-    mount, so there is no red flash — the one thing this DOES cost with N tabs is re-mounting N
-    xterm instances (and N scrollback fetches) on every collapse→expand, instead of one.
+  - COLLAPSING THE STACK: also non-destructive since 1.21.1. `body-persist` (below) tells DockStack
+    to keep its body mounted and merely `v-show` it, so a collapse no longer disposes N xterms and
+    an expand no longer re-spawns and re-hydrates them. What it costs instead is that every mounted
+    xterm and its 5000-line scrollback is RETAINED behind a closed panel — which is what MAX_TABS
+    bounds. What it buys is that scroll position and a full-screen program's painted screen survive
+    the round-trip, rather than being rebuilt from a ring buffer that may already have trimmed the
+    escape sequences that drew them.
 -->
 <template>
   <DockStack
     :collapsed="collapsed"
     collapse-variant="close"
+    body-persist
     @update:collapsed="collapsed = $event"
   >
     <template #title>
@@ -52,13 +51,18 @@
       <!-- `template v-for` + `v-if` on the child (not both on the same node): Vue 3 gives v-if
            priority over v-for when they share a node, which would leave `t` out of scope — see
            https://vuejs.org/guide/essentials/list.html#v-for-with-v-if. -->
+      <!-- `&& !collapsed` IS the re-fit mechanism, and the reason TerminalView needs no change:
+           it already watches `active` and calls scheduleFit()+focus() on the false→true edge,
+           written for exactly this case (a container that was only shown, never resized, so the
+           ResizeObserver never fires). Collapsing drops `active` on every view; expanding raises
+           it on the active one, which re-fits it. -->
       <template v-for="t in tabs" :key="t.id">
         <TerminalView
           v-if="activatedTabs.has(t.id)"
           v-show="t.id === activeTabId"
           :tab-id="t.id"
           :cwd="t.cwd"
-          :active="t.id === activeTabId"
+          :active="t.id === activeTabId && !collapsed"
         />
       </template>
     </div>

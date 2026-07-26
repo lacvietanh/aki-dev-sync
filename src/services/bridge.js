@@ -57,6 +57,18 @@ const PING_TIMEOUT_MS = 5000
 
 const frameListeners = new Set()
 
+// PER-PAGE, starting at 1 on every page — so these ids are unique only within ONE socket, and the
+// correlation in handleMessage() is `pending.get(frame.id)` with no other check. That is sound for
+// exactly one reason: the relay addresses every `invoke_result` to the CONNECTION that sent the
+// `invoke` (src-tauri/src/web_server.rs's `dispatch`, on the `to` field services/hostInvoke.js echoes
+// from the relay-stamped `from`), and one connection is one page. A reply for someone else's id 1
+// therefore never arrives here, so there is nothing for the correlation to get wrong.
+//
+// IF THAT ADDRESSING IS EVER WIDENED — to a device, to a broadcast, to anything coarser than one
+// socket — THIS COUNTER BECOMES A SILENT-WRONG-DATA BUG, not a timeout: two pages each waiting on
+// id 1 would each resolve whichever answer arrived first, and nothing anywhere would report it.
+// Widening it means giving the id a page-scoped identity first (a per-page nonce on the frame,
+// checked here), not "it is only a duplicate".
 let nextRequestId = 1
 const pending = new Map() // id -> { resolve, reject }
 

@@ -12,20 +12,46 @@ import { action } from '../services/action'
 import { invoke } from '../utils/tauri'
 import { Toast } from './projectStore'
 
-// Mirrors src-tauri/src/pty.rs's MAX_TABS — kept in sync by comment, not by a shared constant
-// (the Rust and JS build graphs don't share one).
+// TWO CAPS, not one. The user-facing rule is the per-SCOPE one; the global one is a machine guard.
 //
-// EXPORTED because this is enforced by the CALLERS (useTerminalTabs.js), not (only) here: on a
+// EXPORTED because both are enforced by the CALLERS (useTerminalTabs.js), not (only) here: on a
 // companion `addTerminalTab`'s body never runs — action() replaces it with an RPC stub — so the
-// check below could not produce the Toast it promises, and the phone's ⌘T/+ silently did nothing.
-// The check stays here as defence in depth for the host and for any future direct caller.
-export const MAX_TABS = 8
+// checks below could not produce the Toast they promise, and the phone's ⌘T/+ silently did nothing.
+// The checks stay here as defence in depth for the host and for any future direct caller.
 
-/** The one wording for "you cannot open another tab", used by BOTH checkers (this store's own, and
- *  useTerminalTabs.js's pre-invoke one). The cap is GLOBAL across all scopes — it mirrors the Rust
- *  cap, which knows nothing about groups — so "in any group" is what tells a user sitting in a
- *  1-tab project group why the + refuses. */
-export const TAB_LIMIT_MESSAGE = `Terminal tab limit reached (${MAX_TABS}) — close a tab in any group first`
+/** How many tabs one GROUP may hold. This is the number a user is meant to have in their head: five
+ *  shells is a working set, and wanting a sixth genuinely means closing one. Frontend-only — the PTY
+ *  backend is scope-blind and has no idea what a project is. */
+export const MAX_TABS_PER_SCOPE = 5
+
+/** The global ceiling, mirroring src-tauri/src/pty.rs's MAX_TABS — kept in sync by comment on this
+ *  side and by a unit test on the Rust side (pty.rs's `constant_guards`), because the Rust and JS
+ *  build graphs don't share a constant.
+ *
+ *  DERIVED, not picked: `1 + 3 × MAX_TABS_PER_SCOPE` — the one global tab `closeTerminalTab`
+ *  guarantees can never be closed, plus three project groups each at their full per-scope cap. The
+ *  binding requirement is that a project group's FIRST tab must never be refused; a ceiling that
+ *  cannot seat a third group refuses on an empty group's first tap, for a reason living in a group
+ *  the screen is not showing. It is a resource guard, never a budget the user manages — which is why
+ *  no tooltip in this app ever states it ahead of time. */
+export const MAX_TABS = 16
+
+/** THREE refusals, three problems — deliberately not one parameterised string. Used by BOTH checkers
+ *  (this store's own, and useTerminalTabs.js's pre-invoke one) so the phone and the Mac cannot drift
+ *  apart. All interpolate their constant; none hardcodes a digit.
+ *
+ *  The first two are the SAME cause (a group is full) but cannot share wording: the per-scope cap
+ *  applies to the global group too, and that group is not a project, so naming one there would
+ *  describe something the user is not looking at. Choose with `scopeTabLimitMessage(scope)`. */
+export const PROJECT_TAB_LIMIT_MESSAGE = `This project already has ${MAX_TABS_PER_SCOPE} terminal tabs. Close one to open another.`
+export const GLOBAL_GROUP_TAB_LIMIT_MESSAGE = `The global group already has ${MAX_TABS_PER_SCOPE} terminal tabs. Close one to open another.`
+
+/** `"in any group"` is load-bearing here and ONLY here: the ceiling is the one refusal whose cause
+ *  genuinely lives somewhere the user cannot see, and the TERM column's count badges are where they
+ *  can go find it. Saying it on a per-scope refusal would send them hunting in the wrong place.
+ *  Named for the CEILING, not for the global group — the two limits are different numbers with
+ *  different causes, and a name that blurs them is how a future edit picks the wrong one. */
+export const CEILING_TAB_LIMIT_MESSAGE = `All ${MAX_TABS} terminal tabs are in use. Close one in any group first.`
 
 /** [{ id: number, title: string, projectId: string|null, cwd: string|null }] */
 export const terminalTabs = ref([])
@@ -36,6 +62,12 @@ export const terminalTabs = ref([])
 export const activeTerminalTabId = ref(0)
 
 export const GLOBAL_SCOPE = 'global'
+
+/** Which "group is full" wording a scope gets. Not a builder — it picks between two fixed strings,
+ *  because the difference is what the group IS, not a number to substitute. */
+export function scopeTabLimitMessage(scope) {
+  return scope === GLOBAL_SCOPE ? GLOBAL_GROUP_TAB_LIMIT_MESSAGE : PROJECT_TAB_LIMIT_MESSAGE
+}
 
 /** PER-SCREEN — which tab GROUP this screen is looking at ('global' | projectId). Same class of
  *  state as activeTerminalTabId: navigation, not session data. Listed in services/mirror.js's
@@ -52,8 +84,16 @@ function nextTabId() {
  *  `undefined`, which is why the caller (useTerminalTabs.js's openScopeTerminal) routes the
  *  companion case through its scope-keyed pending claim instead of this return value. */
 export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ title, projectId = null, cwd = null } = {}) => {
+  // SCOPE FIRST, THEN GLOBAL — the same order useTerminalTabs.js's capReached() applies, so the two
+  // checkers can never name different reasons for the same refusal. A user sitting in a 1-tab group
+  // who hits the GLOBAL ceiling must be told about the other groups, not told their group is full.
+  const scope = projectId || GLOBAL_SCOPE
+  if (terminalTabs.value.filter((t) => (t.projectId || GLOBAL_SCOPE) === scope).length >= MAX_TABS_PER_SCOPE) {
+    Toast.fire({ icon: 'error', title: scopeTabLimitMessage(scope) })
+    return null
+  }
   if (terminalTabs.value.length >= MAX_TABS) {
-    Toast.fire({ icon: 'error', title: TAB_LIMIT_MESSAGE })
+    Toast.fire({ icon: 'error', title: CEILING_TAB_LIMIT_MESSAGE })
     return null
   }
   const tab = { id: nextTabId(), title: title || 'Shell', projectId, cwd }

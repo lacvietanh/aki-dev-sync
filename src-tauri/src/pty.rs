@@ -6,7 +6,7 @@
 //
 // BINARY-SAFE TRANSPORT: PTY output is not guaranteed valid UTF-8 at chunk boundaries (a multi-byte UTF-8 sequence, e.g. from `ls` on a filename with accented characters, can be split across two `read()`s). This module never treats PTY bytes as a Rust `String` — it carries them as base64 end-to-end (Tauri event payload AND the WS `pty_output`/`pty_input` frames), decoding only at the very edge (`pty_write`) or not at all (scrollback is stored as raw bytes and re-encoded to base64 on read). The frontend decodes base64 to a `Uint8Array` and feeds it to `xterm.js`'s `Terminal.write()`, which accepts binary and — per its own docs — maintains a stateful UTF-8 decoder across `write()` calls, so a sequence split at a chunk boundary is reassembled correctly by xterm itself. This is why nothing in this module or in `usePtyTerminal.js` needs its own split-sequence buffering.
 //
-// NEVER-BLOCK-THE-UI (CLAUDE.md ABSOLUTE, plan §4.3): `pty_spawn`/`pty_resize`/`pty_get_scrollback` are all `async fn` wrapping their work in `spawn_blocking`, same as every other command in this app. `pty_write` is the one command that is deliberately synchronous, because after the writer-thread rework it no longer waits on anything (it decodes base64 and enqueues) and because being synchronous is what makes keystroke ORDER a structural property rather than a race — see its own doc comment, which is where that argument belongs in full. The PTY READ LOOP is the other deliberate exception — it is a dedicated `std::thread::spawn`, started once from inside `pty_spawn`'s blocking closure, NOT `spawn_blocking` and NOT a tokio task. `spawn_blocking`'s pool is sized for bounded one-shot work; parking one of its threads forever in a `reader.read()` loop for the app's whole lifetime would starve every other blocking command (`resolve_remote_path`, `check_for_updates`, `get_git_info`, …) of a slot. `portable-pty`'s reader/writer are synchronous `Read`/`Write` trait objects, not `AsyncRead`, so a tokio task would block a worker thread just as badly — a raw OS thread is the only shape that is both correct and does not starve anything else. The same reasoning covers the flusher thread each read loop starts (see `flusher_loop`). With tabs this is 3 raw threads per LIVE tab, bounded by `MAX_TABS`.
+// NEVER-BLOCK-THE-UI (CLAUDE.md ABSOLUTE, plan §4.3): `pty_spawn`/`pty_resize`/`pty_get_scrollback` are all `async fn` wrapping their work in `spawn_blocking`, same as every other command in this app. `pty_write` is the one command that is deliberately synchronous, because after the writer-thread rework it no longer waits on anything (it decodes base64 and enqueues) and because being synchronous is what makes keystroke ORDER a structural property rather than a race — see its own doc comment, which is where that argument belongs in full. The PTY READ LOOP is the other deliberate exception — it is a dedicated `std::thread::spawn`, started once from inside `pty_spawn`'s blocking closure, NOT `spawn_blocking` and NOT a tokio task. `spawn_blocking`'s pool is sized for bounded one-shot work; parking one of its threads forever in a `reader.read()` loop for the app's whole lifetime would starve every other blocking command (`resolve_remote_path`, `check_for_updates`, `get_git_info`, …) of a slot. `portable-pty`'s reader/writer are synchronous `Read`/`Write` trait objects, not `AsyncRead`, so a tokio task would block a worker thread just as badly — a raw OS thread is the only shape that is both correct and does not starve anything else. The same reasoning covers the flusher thread each read loop starts (see `flusher_loop`). With tabs this is 3 raw threads per LIVE tab, bounded by `MAX_TABS` — 48 raw threads and 2 MiB of resident ring buffer at the absolute ceiling of 16 live tabs.
 //
 // State lives in a process-global `OnceLock`, same pattern as `web_server::RELAY` and `system::PROJECT_ICONS` — a struct of `std::sync::Mutex` fields rather than one big Mutex, since the PTY sessions (writer/master/child) and the scrollback ring buffers are locked independently and at different frequencies (every keystroke vs. every read). Going multi-tab turned each of those fields into a `HashMap` keyed by `TabId` and deliberately did NOT merge them into one map behind one lock: that would have re-coupled exactly the contention profiles the split was there to keep apart.
 //
@@ -36,13 +36,29 @@ pub type TabId = u32;
 /// The tab every id-less caller lands on — see the module doc comment's backward-compatibility note.
 const DEFAULT_TAB: TabId = 0;
 
-/// How many tabs may exist at once. Each LIVE tab costs a shell process plus three raw threads
-/// (reader, flusher, writer) and up to `SCROLLBACK_CAP` of buffer, so this is a real resource bound
-/// and not a UI preference — the tab strip's own limit in the frontend mirrors this number.
-const MAX_TABS: usize = 8;
+/// How many tabs may exist at once, GLOBALLY. Each LIVE tab costs a shell process plus three raw
+/// threads (reader, flusher, writer) and up to `SCROLLBACK_CAP` of buffer, so this is a real
+/// resource bound and not a UI preference.
+///
+/// THIS IS THE MACHINE GUARD, NOT THE USER-FACING RULE. The frontend layers a per-project cap of 5
+/// on top of it (`MAX_TABS_PER_SCOPE` in `src/store/terminalTabsStore.js`); this backend is
+/// scope-blind and only ever sees flat `TabId`s, so the ceiling is derived from that cap instead:
+/// `16 = 1 + 3 × 5` — the one global tab the frontend guarantees can never be closed, plus three
+/// project groups each at their full per-project cap. `src/store/terminalTabsStore.js` mirrors this
+/// same number and must be updated in the same commit (see `constant_guards` below).
+///
+/// It is also bound to `web_server::COMPANION_QUEUE_LIMIT_BYTES` by INVARIANT R — raising it alone
+/// re-breaks a joining phone's scrollback replay. That relation is asserted in `web_server.rs`.
+pub(crate) const MAX_TABS: usize = 16;
 
 /// Scrollback ring-buffer cap, PER TAB (plan §4.3 / file table row 2): bounds memory for a long-running shared session (e.g. a `npm run build` left running for hours) without needing a UI-facing "clear scrollback" affordance in this MVP.
-const SCROLLBACK_CAP: usize = 256 * 1024;
+///
+/// 128 KiB, halved from 256 KiB, because this buffer is also what a joining companion must receive
+/// and parse: base64 turns it into ~175 KB on the wire per tab, so a full 16-tab replay is 2.67 MiB
+/// instead of 5.34 MiB. Nothing on the Mac shrinks — each mounted xterm keeps its own
+/// `scrollback: 5000` (`src/components/TerminalView.vue`); this ring only feeds a fresh mount, a
+/// companion join, and a congestion rehydrate. 128 KiB is roughly 1,000 lines at 128 columns.
+pub(crate) const SCROLLBACK_CAP: usize = 128 * 1024;
 
 /// Read-loop coalescing thresholds (plan §4.4): flush on ~20ms elapsed OR ~16KB accumulated, whichever comes first, so a build's stdout firehose does not become one WS message per `read()` syscall.
 const FLUSH_INTERVAL: Duration = Duration::from_millis(20);
@@ -319,7 +335,9 @@ fn emit_alive(app: &AppHandle, tab_id: TabId) {
 }
 
 /// End-of-session notice appended to the scrollback (so a screen that opens the tab later still sees WHY the terminal is idle) and rendered dim-red by the terminal itself via SGR. This is the fix for the 1.20.0 "ssh, exit, exit → the terminal just sits there dead" report: the shell exiting used to be completely invisible and unrecoverable.
-const EXIT_NOTICE: &[u8] = b"\r\n\x1b[2m\x1b[31m[process exited - press any key or click RESTART to start a new shell]\x1b[0m\r\n";
+///
+/// NAMES NO CONTROL THAT IS NOT ON SCREEN. It used to say "click RESTART", a button removed in the pass that introduced tab groups — sending the user hunting for something that is not there is worse than saying nothing. Problem first, then the one next action that actually works.
+const EXIT_NOTICE: &[u8] = b"\r\n\x1b[2m\x1b[31m[process exited. Press any key to start a new shell]\x1b[0m\r\n";
 
 /// The dedicated reader thread for ONE tab — see module doc comment for why this is a raw `std::thread`, not `spawn_blocking`. Runs for that PTY's whole lifetime; exits when the shell exits (EOF) or the pipe errors — at which point it TEARS DOWN that tab's session entry (guarded by `generation`) and emits `pty-exit` for that tab, so the next `pty_spawn` on the tab really spawns instead of no-opping onto a corpse.
 fn read_loop(app: AppHandle, tab_id: TabId, mut reader: Box<dyn Read + Send>, generation: u64) {
@@ -444,8 +462,8 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
     if guard.contains_key(&tab_id) {
         return Ok(());
     }
-    // Checked here, under the same lock as the insert, so two screens racing to open the 9th tab
-    // cannot both pass the test. Plain error text: the frontend already refuses past `MAX_TABS` in
+    // Checked here, under the same lock as the insert, so two screens racing to open the tab past
+    // the ceiling cannot both pass the test. Plain error text: the frontend already refuses past `MAX_TABS` in
     // its own tab strip, so reaching this is either a companion out of step or a bug, and both are
     // better served by a message than by a silent no-op.
     if guard.len() >= MAX_TABS {
@@ -807,6 +825,127 @@ pub async fn pty_get_scrollback(tab_id: Option<u32>) -> Result<PtyScrollback, St
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+/// The two constants this file shares with the frontend, guarded by a literal restated here.
+///
+/// WHY A TEST AND NOT A COMMENT. Until 1.21.1 the Rust and JS caps were the SAME number, so a drift
+/// was visible to anyone reading either file. They are deliberately different now (5 per project in
+/// JS, 16 globally in both, a ring cap only Rust states), and one of them is bound by arithmetic to
+/// a third constant in `web_server.rs`. A comment cannot check arithmetic. The frontend literals are
+/// READ FROM THE FRONTEND FILE (`include_str!`), not restated here — a restated fixture, which is what
+/// `statusline.rs`'s `VUE_DEFAULT_JSON` does, only fires when the Rust side moves and is therefore
+/// half a link: it cannot see the edit that is actually likely.
+///
+/// Not gated on `unix` like the module's other tests: these assert numbers, not PTY behaviour.
+#[cfg(test)]
+mod constant_guards {
+    use super::*;
+
+    /// The frontend file this module's cap is bound to, read AT COMPILE TIME by `include_str!` rather
+    /// than hand-copied. That is the whole point: a fixture restated in Rust only fires when the Rust
+    /// side moves, which is the direction that was never the risk — nobody edits `MAX_TABS` here
+    /// without reading the comment two lines above it. The drift that actually happens is someone
+    /// changing the JS cap alone, and only reading the real file can catch that. (`statusline.rs`'s
+    /// `VUE_DEFAULT_JSON` is this repo's precedent and is the half-link version of it; if it is ever
+    /// revisited, this is the shape to move it to.)
+    ///
+    /// `include_str!` resolves relative to THIS file, so the path walks out of `src-tauri/src/`.
+    /// A missing or moved file is a compile error here, which is the correct failure: the guard
+    /// cannot silently stop guarding.
+    const TERMINAL_TABS_STORE_JS: &str = include_str!("../../src/store/terminalTabsStore.js");
+    const TERMINAL_TABS_STORE_PATH: &str = "src/store/terminalTabsStore.js";
+
+    /// Reads `export const <name> = <integer>` out of the JS source. Deliberately dumb — the point is
+    /// to observe the literal a human would read, not to interpret JavaScript. Panics with the name it
+    /// could not find, because a renamed export is a broken link and must not pass as "nothing to
+    /// check". Anchoring on `"export const {name} = "` (with the spaces and `=`) is what keeps
+    /// `MAX_TABS` from matching the `MAX_TABS_PER_SCOPE` declaration.
+    fn js_int_const(name: &str) -> usize {
+        js_int_const_in(TERMINAL_TABS_STORE_JS, name)
+    }
+
+    fn js_int_const_in(src: &str, name: &str) -> usize {
+        let needle = format!("export const {} = ", name);
+        let rest = src.split(&needle).nth(1).unwrap_or_else(|| {
+            panic!(
+                "`export const {}` is gone from {}. The Rust cap in src-tauri/src/pty.rs is bound to it; \
+                 restore the export or move this guard to whatever replaced it, in the same commit.",
+                name, TERMINAL_TABS_STORE_PATH
+            )
+        });
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse().unwrap_or_else(|_| {
+            panic!(
+                "`export const {}` in {} is no longer a plain integer literal (found {:?}). \
+                 This guard can only compare numbers — keep it a literal, or change both sides together.",
+                name,
+                TERMINAL_TABS_STORE_PATH,
+                rest.chars().take(20).collect::<String>()
+            )
+        })
+    }
+
+    /// `MAX_TABS` is written twice — once here, once in `src/store/terminalTabsStore.js`. Nothing in
+    /// either build graph links them, so THIS TEST IS THE LINK, in both directions.
+    #[test]
+    fn max_tabs_matches_the_frontend_constant() {
+        let js_max_tabs = js_int_const("MAX_TABS");
+        assert_eq!(
+            MAX_TABS, js_max_tabs,
+            "The two terminal caps disagree: MAX_TABS is {} in src-tauri/src/pty.rs but {} in {}. \
+             They are one ceiling written in two languages and must move together in the SAME commit — \
+             and re-check INVARIANT R in src-tauri/src/web_server.rs, whose companion queue budget is \
+             derived from this number.",
+            MAX_TABS,
+            js_max_tabs,
+            TERMINAL_TABS_STORE_PATH
+        );
+
+        // The ceiling is DERIVED from the frontend's per-project cap: 1 mandatory global tab + 3 full
+        // project groups. Both inputs are read from the JS, so moving the per-project cap alone fails
+        // here instead of silently leaving the ceiling meaning something else.
+        let js_per_scope = js_int_const("MAX_TABS_PER_SCOPE");
+        assert_eq!(
+            MAX_TABS,
+            1 + 3 * js_per_scope,
+            "The ceiling no longer matches its derivation: MAX_TABS is {} but {} says \
+             MAX_TABS_PER_SCOPE = {}, and the ceiling is 1 + 3 x that = {}. The one global tab \
+             closeTerminalTab guarantees, plus three project groups at their full per-project cap. \
+             If the per-project cap moved on purpose, move MAX_TABS in both files and re-derive \
+             INVARIANT R in src-tauri/src/web_server.rs, in this same commit.",
+            MAX_TABS,
+            TERMINAL_TABS_STORE_PATH,
+            js_per_scope,
+            1 + 3 * js_per_scope
+        );
+    }
+
+    /// The reader is the load-bearing part of the guard, so it gets its own check against a fixture
+    /// rather than against the live file: a parser that silently matched the wrong declaration, or
+    /// that stopped at the first digit of a two-digit number, would make the assertions above vacuous
+    /// while still passing. The prefix case is the real hazard — `MAX_TABS` is a prefix of
+    /// `MAX_TABS_PER_SCOPE`, and the fixture puts the longer one FIRST so a sloppy match would take it.
+    #[test]
+    fn the_js_reader_picks_the_right_declaration() {
+        let fixture = "export const MAX_TABS_PER_SCOPE = 5\nexport const MAX_TABS = 16\n";
+        assert_eq!(js_int_const_in(fixture, "MAX_TABS"), 16);
+        assert_eq!(js_int_const_in(fixture, "MAX_TABS_PER_SCOPE"), 5);
+        // …and it really is reading the file, not a constant: both names resolve there too.
+        assert!(js_int_const("MAX_TABS") > 0 && js_int_const("MAX_TABS_PER_SCOPE") > 0);
+    }
+
+    /// `SCROLLBACK_CAP` is Rust-only state, but its size is what a joining phone must receive — so a
+    /// change here is a change to `web_server.rs`'s budget, not a local tuning knob.
+    #[test]
+    fn scrollback_cap_is_the_size_the_companion_budget_was_derived_from() {
+        assert_eq!(
+            SCROLLBACK_CAP,
+            128 * 1024,
+            "SCROLLBACK_CAP changed. Re-derive COMPANION_QUEUE_LIMIT_BYTES in web_server.rs (INVARIANT R) \
+             and update docs/arch/terminal-stack.md's PTY-backend contract in the same commit."
+        );
+    }
 }
 
 #[cfg(all(test, unix))]

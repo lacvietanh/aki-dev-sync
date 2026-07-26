@@ -22,16 +22,27 @@
       <i class="fa-solid fa-terminal icon-default"></i>
       <i class="fa-solid fa-xmark icon-close" @click.stop="closeTab(t.id)"></i>
     </button>
-    <button class="tab term-tab term-tab-add" title="New terminal tab in this group (⌘T)" @click="newTab">
+    <button class="tab term-tab term-tab-add" :class="{ 'is-full': scopeFull }" :title="addTitle" @click="newTab">
       <i class="fa-solid fa-plus"></i>
     </button>
   </div>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs'
+import { MAX_TABS_PER_SCOPE } from '../store/terminalTabsStore'
 
 const { scopedTabs: tabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
+
+// The per-group cap, carried by the tooltip the chip already had — no new element, no new row.
+// Never the global ceiling: that one is a machine guard and stays invisible until it fires.
+const scopeFull = computed(() => tabs.value.length >= MAX_TABS_PER_SCOPE)
+const addTitle = computed(() =>
+  scopeFull.value
+    ? `This group is full, ${tabs.value.length} of ${MAX_TABS_PER_SCOPE}. Close a tab to open another.`
+    : `New terminal tab in this group, ${tabs.value.length} of ${MAX_TABS_PER_SCOPE} (⌘T)`
+)
 
 function onChipClick(t) {
   setActiveTab(t.id)
@@ -108,5 +119,15 @@ function onChipClick(t) {
 }
 .term-tab-add:hover {
   opacity: 1;
+}
+
+/* At the group's cap the + stays where it is and keeps its resting mute on hover — DIMMED, NEVER
+   HIDDEN: a + that vanishes reads as a bug, a + that will not brighten reads as a limit. The click
+   still fires and still Toasts the reason, so the state is discoverable without a tooltip too. */
+.term-tab-add.is-full {
+  cursor: not-allowed;
+}
+.term-tab-add.is-full:hover {
+  opacity: 0.5;
 }
 </style>

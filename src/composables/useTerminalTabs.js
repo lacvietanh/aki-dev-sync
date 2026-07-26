@@ -16,7 +16,9 @@ import {
   closeTerminalTab,
   adoptTabs,
   MAX_TABS,
-  TAB_LIMIT_MESSAGE,
+  MAX_TABS_PER_SCOPE,
+  scopeTabLimitMessage,
+  CEILING_TAB_LIMIT_MESSAGE,
 } from '../store/terminalTabsStore'
 import { projects, Toast } from '../store/projectStore'
 import { invoke } from '../utils/tauri'
@@ -91,19 +93,38 @@ function forgetScopeTab(scope) {
 const pendingActivateScope = ref(null)
 const PENDING_CLAIM_TTL_MS = 15_000
 let pendingClaimAt = 0
+let pendingClaimTimer = null
 
+/** THE EXPIRY IS A REAL TIMER, and it has to be. The claim used to expire lazily inside
+ *  `pendingClaimLive()`, which is only ever reached from the `watch(terminalTabs, …)` below — i.e.
+ *  only when a tab actually arrives. In the one case the expiry exists for (the host refused the add,
+ *  so NO tab ever arrives and the list never changes) that check is never reached at all, and a
+ *  timer is the only thing that can speak. The lazy check stays as a cheap guard for the case where
+ *  some unrelated tab change beats the timer to it.
+ *
+ *  Hedged wording on purpose: the refusal reason genuinely never crossed the wire (the host's Toast
+ *  fired on the Mac), so this states a guess as a guess. It is the backstop for the stale-mirror
+ *  race only — `capReached()` is what refuses in the ordinary case. */
 function setPendingClaim(scope) {
+  clearPendingClaim()
   pendingActivateScope.value = scope
   pendingClaimAt = Date.now()
+  pendingClaimTimer = setTimeout(() => {
+    pendingClaimTimer = null
+    if (pendingActivateScope.value === null) return
+    clearPendingClaim()
+    Toast.fire({ icon: 'error', title: 'No terminal tab opened on the Mac. It may have reached a terminal limit.' })
+  }, PENDING_CLAIM_TTL_MS)
 }
 
 function clearPendingClaim() {
+  if (pendingClaimTimer) clearTimeout(pendingClaimTimer)
+  pendingClaimTimer = null
   pendingActivateScope.value = null
   pendingClaimAt = 0
 }
 
-/** Is there a claim that is still worth honouring? Expiring here (rather than on a timer) is enough:
- *  a claim can only ever do damage at the moment a tab arrives, which is exactly when this is asked. */
+/** Is there a claim that is still worth honouring? */
 function pendingClaimLive() {
   if (pendingActivateScope.value === null) return false
   if (Date.now() - pendingClaimAt > PENDING_CLAIM_TTL_MS) {
@@ -113,16 +134,29 @@ function pendingClaimLive() {
   return true
 }
 
-/** The tab cap, checked BEFORE the action is invoked — on a companion the store's own check never
- *  runs (action() replaces the body with an RPC stub), so this is the only place the phone can be
- *  told why nothing opened. The cap is GLOBAL across every group: it mirrors the Rust one, which
- *  knows nothing about groups, hence the "in any group" wording for a user sitting in a 1-tab
- *  project group. Returning true must also stop the caller from queueing a pending activation —
- *  there will be no tab to claim. The message itself is the store's (one string, two checkers). */
-function capReached() {
-  if (terminalTabs.value.length < MAX_TABS) return false
-  Toast.fire({ icon: 'error', title: TAB_LIMIT_MESSAGE })
-  return true
+/** BOTH tab caps, checked BEFORE the action is invoked — on a companion the store's own checks never
+ *  run (action() replaces the body with an RPC stub), so this is the only place the phone can be told
+ *  why nothing opened. BOTH conditions have to be replicated here, not just the per-scope one: leave
+ *  the global ceiling out and every ceiling refusal becomes host-only, and the phone's tap does
+ *  nothing at all for 15 seconds and then nothing.
+ *
+ *  Same order as the store applies them (scope, then global) so the two checkers can never name
+ *  different reasons for the same refusal. Returning true must also stop the caller from queueing a
+ *  pending activation — there will be no tab to claim. The messages themselves are the store's, picked
+ *  the same way here as there, so one wording can never reach only one of the two checkers.
+ *
+ *  Residual race, not closable here: the mirrored tab list is one round-trip stale, so the host can
+ *  still refuse an add this pre-check let through. `pendingClaimLive()`'s expiry is that backstop. */
+function capReached(scope) {
+  if (terminalTabs.value.filter((t) => scopeOf(t) === scope).length >= MAX_TABS_PER_SCOPE) {
+    Toast.fire({ icon: 'error', title: scopeTabLimitMessage(scope) })
+    return true
+  }
+  if (terminalTabs.value.length >= MAX_TABS) {
+    Toast.fire({ icon: 'error', title: CEILING_TAB_LIMIT_MESSAGE })
+    return true
+  }
+  return false
 }
 
 function markActivated(id) {
@@ -163,6 +197,11 @@ function setActiveTab(id) {
  *  @param {boolean} [opts.expandStack]       expand the dock stack first — the whole point of a click
  *         on an entry-point button, but wrong for ⌘T, which is only reachable while it is open. */
 function openScopeTerminal(scope, { title = 'Shell', cwd = null, reuse = true, expandStack = false } = {}) {
+  // Captured before anything moves: the scope switch below happens BEFORE the cap check (it has to —
+  // the per-scope check is about the target group), so a refusal would otherwise leave the user
+  // standing in the refusing group, which is empty and whose `+` will refuse too, with every other
+  // group's tabs still existing but unreachable from where they now are.
+  const priorScope = activeTerminalScope.value
   if (expandStack) expandTerminalStack()
   activeTerminalScope.value = scope // switch group BEFORE any claim is queued (companion too)
   if (reuse) {
@@ -172,7 +211,10 @@ function openScopeTerminal(scope, { title = 'Shell', cwd = null, reuse = true, e
       return
     }
   }
-  if (capReached()) return
+  if (capReached(scope)) {
+    activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
+    return
+  }
   const projectId = scope === GLOBAL_SCOPE ? null : scope
   const tab = addTerminalTab({ title, projectId, cwd })
   if (tab) setActiveTab(tab.id)

@@ -166,6 +166,17 @@ a {
   flex: none;
 }
 
+/* Body wrapper for a stack rendered with body-persist (DockStack.vue's bodyPersist prop). It sits
+   INSIDE the flex chain .dashboard-bottom → .dock-stack → [here] → .terminal-mount-wrap that
+   TerminalView.vue's fit depends on, so `min-height: 0` is load-bearing, not tidiness: without it
+   this node cannot shrink below its content height and the terminal panel grows but never shrinks. */
+.dock-stack-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .dock-stack + .dock-stack {
   border-top: 1px solid var(--border-card);
 }

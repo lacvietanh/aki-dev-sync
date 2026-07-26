@@ -21,10 +21,25 @@ import { FRAME_PTY_INPUT, FRAME_PTY_OUTPUT, FRAME_PTY_EXIT, FRAME_COMPANION_CONN
 
 let started = false
 
-/** Push EVERY tab's scrollback to every companion, one `reset` pty_output frame per tab — used both
- *  right after a companion joins (§4.4 "Scrollback replay") and by the congestion recovery below.
- *  Safe to call when no PTY has been spawned yet: `pty_list_tabs` returns an empty list and this
- *  becomes a no-op that reports success (there is nothing owed).
+/** Push EVERY tab's scrollback, one `reset` pty_output frame per tab — used both right after a
+ *  companion joins (§4.4 "Scrollback replay") and by the congestion recovery below. Safe to call
+ *  when no PTY has been spawned yet: `pty_list_tabs` returns an empty list and this becomes a no-op
+ *  that reports success (there is nothing owed).
+ *
+ *  @param {string|null} to  the ONE companion CONNECTION this replay is for (the opaque key the relay
+ *                           stamps — see constants/protocol.js), or null to reach every companion.
+ *
+ *  ADDRESS IT WHENEVER THERE IS AN ADDRESSEE. A `reset: true` frame makes the receiving xterm clear
+ *  and resize itself (usePtyTerminal.js), so broadcasting a replay meant for a screen that just joined
+ *  wiped and rebuilt every other screen, mid-command. The relay routes on the `to` field
+ *  (src-tauri/src/web_server.rs's `dispatch`); a null one keeps the pre-1.21.1 broadcast behaviour,
+ *  which is still correct for the one caller that genuinely has no single addressee.
+ *
+ *  A CONNECTION, NOT A DEVICE — and here that is a byte-budget property, not only a correctness one.
+ *  The relay emits `companion-connected` PER CONNECTION and this function answers each one with a
+ *  full 16-tab replay (~2.67 MiB). Addressed to a device, two browser tabs on one phone would put two
+ *  of those in each of their outboxes and three would put three, past the relay's whole per-companion
+ *  budget — the replay livelock INVARIANT R exists to rule out.
  *
  *  EVERY TAB, NOT THE ACTIVE ONE — this is the whole reason the function was renamed. The relay
  *  coalesces `pty_output` frames by TAG ALONE (src-tauri/src/web_server.rs), so a congestion drop
@@ -37,7 +52,7 @@ let started = false
  *  Returns true ONLY if EVERY tab's frame went out. A partial push keeps the resync owed and the
  *  retry loop running: "some tabs are fine" is not a known-good state, and treating it as one is
  *  exactly how a corrupt tab would be left permanently uncorrected. */
-async function pushAllScrollbacks() {
+async function pushAllScrollbacks(to) {
   let tabs
   try {
     tabs = await invoke('pty_list_tabs')
@@ -55,7 +70,8 @@ async function pushAllScrollbacks() {
       const { data, cols, rows, alive } = await invoke('pty_get_scrollback', { tabId })
       // Sent even when `data` is empty: a rejoining companion whose terminal is already mounted
       // still needs the authoritative size and liveness, and an empty reset is harmless.
-      if (!send({ t: FRAME_PTY_OUTPUT, tab_id: tabId, data: data || '', reset: true, cols, rows, alive })) {
+      // `to: undefined` serializes away, leaving the frame byte-identical to the pre-1.21.1 one.
+      if (!send({ t: FRAME_PTY_OUTPUT, tab_id: tabId, data: data || '', reset: true, cols, rows, alive, to: to || undefined })) {
         allSent = false
       }
     } catch (e) {
@@ -91,14 +107,26 @@ const RESYNC_RETRY_MS = 250
 // an in-flight replay cannot start a second one.
 let resyncTimer = null
 
+// THE ONE REPLAY THAT IS STILL A BROADCAST, and correctly so. This path is driven by the HOST's own
+// socket being congested (bridge.js refused the frame before it ever reached the relay), so the hole
+// it heals exists in EVERY companion's byte stream — there is no single connection to address, and
+// addressing one would leave the others corrupt. The relay's per-companion congestion path is the
+// other case and does have an addressee: it re-issues `companion-connected` for the one connection
+// that drained, which lands in the FRAME_COMPANION_CONNECTED handler below with that connection's key.
+//
+// THIS IS ALSO THE SECOND REPLAY INVARIANT R's R2 MODELS. A connection can hold its own addressed
+// replay and one of these broadcasts at the same time, so the relay's budget is sized for the pair
+// (src-tauri/src/web_server.rs, COMPANION_QUEUE_LIMIT_BYTES). Anything beyond the pair is ordinary
+// coalescing, which is recoverable by construction — but do not add a THIRD replay producer without
+// re-deriving that arithmetic.
 function scheduleResync() {
   if (resyncTimer) return
   resyncTimer = setTimeout(async () => {
     let owed = true
     try {
-      // Not connected, or still backed up — nothing to gain from replaying 256 KB into a full
-      // buffer, and the check costs nothing until the socket is actually usable again.
-      owed = connectionState.value !== 'open' || isSocketCongested() || !(await pushAllScrollbacks())
+      // Not connected, or still backed up — nothing to gain from replaying the whole ring into a
+      // full buffer, and the check costs nothing until the socket is actually usable again.
+      owed = connectionState.value !== 'open' || isSocketCongested() || !(await pushAllScrollbacks(null))
     } finally {
       resyncTimer = null
       if (owed) scheduleResync()
@@ -162,7 +190,10 @@ export function initPtyBridge() {
         console.error('[ptyBridge] pty_write failed', e)
       })
     } else if (frame && frame.t === FRAME_COMPANION_CONNECTED) {
-      pushAllScrollbacks()
+      // Addressed to the joining (or just-drained) CONNECTION alone — `frame.id` is the opaque
+      // connection key the relay puts on this frame, and it is the whole reason this tag was kept
+      // distinct from `init`. Echoed verbatim, never parsed: only the relay assigns meaning to it.
+      pushAllScrollbacks(frame.id ?? null)
     }
   })
 }

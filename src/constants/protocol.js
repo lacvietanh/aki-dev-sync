@@ -10,6 +10,40 @@
 // The relay's WS/HTTP port (dev and prod alike — see §7.1a "Dev vs prod" table).
 export const REMOTE_PORT = 1421
 
+// ── `to` / `from` — OPTIONAL ADDRESSING FIELDS ON EXISTING FRAMES (1.21.1) ────────────────────
+//
+// NO NEW FRAME TAG WAS ADDED FOR THIS; §13's freeze holds. A frame carrying neither field routes
+// exactly as it always has (broadcast), so an older companion bundle — which sets neither and reads
+// neither — is unaffected in both directions.
+//
+//   `to`   (host -> relay, optional string): the ONE companion CONNECTION this frame is for. The
+//          relay's `dispatch` enqueues it into that connection's outbox only; absent means every
+//          companion.
+//   `from` (relay -> host, optional string): the connection a companion frame arrived on. STAMPED BY
+//          THE RELAY from its own connection counter, never supplied by the companion and never shown
+//          to one, so it can be neither forged nor guessed. The host echoes it back as `to` on the
+//          reply. Treat the value as OPAQUE — echo it, never parse it, never construct one.
+//
+// A CONNECTION, NOT A DEVICE, and the difference is not academic: two browser tabs on one paired
+// phone are two connections, two outboxes, and two independent request counters that BOTH start at 1.
+// Addressing by device id leaves both of the bugs below fully alive within that one device — the
+// reply for tab A resolves tab B's unrelated id-1 call, and the joining tab's scrollback replay is
+// duplicated into every tab's outbox, which is more than the relay's per-companion byte budget can
+// hold (INVARIANT R, src-tauri/src/web_server.rs). Cross-device isolation falls out of it for free.
+//
+// ONLY TWO SENDERS SET `to`, and widening that list is a protocol decision, not a local convenience:
+//   * the scrollback replay (services/ptyBridge.js) — a `reset: true` pty_output belongs to the ONE
+//     connection that just joined or just drained a congested queue. Broadcasting it cleared and
+//     resized the xterm of every OTHER connected screen, mid-command.
+//   * `invoke_result` (services/hostInvoke.js) — a reply to one id on one PAGE's PRIVATE request
+//     counter, which starts at 1 on every page. Broadcast, two pages with an id-1 call in flight each
+//     resolved the other's answer: silent wrong data, not a timeout.
+//
+// EVERYTHING ELSE STAYS A BROADCAST ON PURPOSE. Live `pty_output` chunks (one shared PTY, every
+// screen shows the same bytes), `pty_exit` / `pty_resize` (shared liveness and size — addressing them
+// would rebuild the 1.20.0 §2.4 desync bug), `delta` (mirror state; a mirrored confirm dialog
+// answerable from any screen is a designed property), `init` (idempotent) and `ping`/`pong`.
+
 // Frame `t` values — §13.2.
 export const FRAME_INIT = 'init'                   // host -> companion: full snapshot on join
 export const FRAME_DELTA = 'delta'                 // host -> companion: changed mirrored keys
@@ -19,11 +53,15 @@ export const FRAME_INVOKE_RESULT = 'invoke_result'  // host -> companion: reply 
 export const FRAME_PING = 'ping'                    // both: liveness
 export const FRAME_PONG = 'pong'                    // both: liveness reply
 
-// relay -> host: a companion just authenticated and joined. Carries `{ id }` (the joining
-// device id) but no app state — the relay stays content-blind (§13.6); this is awareness of its
-// OWN connections, not state. The host reacts by broadcasting a full `init` to everyone. This is
-// the ONLY frame the relay originates. Distinct tag (not an overloaded `init`) so Terminal View
-// (next round) can also route per-companion PTYs by `id`.
+// relay -> host: a companion just authenticated and joined (and again whenever a companion whose
+// queue was coalesced has drained it — same frame, same handling). Carries `{ id }` and no app state
+// — the relay stays content-blind (§13.6); this is awareness of its OWN connections, not state.
+//
+// `id` IS THE CONNECTION KEY, the same opaque value the relay stamps as `from`, and it is what
+// services/ptyBridge.js echoes back as `to` on the scrollback replay. It is emitted PER CONNECTION
+// and answered with one full replay each, so it has to name a connection: a device id here fanned one
+// join's replay into every outbox that device had open. services/mirror.js consumes the tag alone
+// (broadcast a full `init`) and ignores the field.
 export const FRAME_COMPANION_CONNECTED = 'companion-connected'
 
 // In-app terminal (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4, docs/plan/remote-views-

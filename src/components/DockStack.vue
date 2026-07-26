@@ -29,7 +29,13 @@
       </div>
     </div>
     <slot v-if="collapsed" name="peek"></slot>
-    <slot v-else></slot>
+    <!-- bodyPersist (opt-in, terminal stack only): keep the body MOUNTED while collapsed and merely
+         hide it, so collapsing does not dispose every xterm. The wrapper div is unavoidable —
+         v-show sets style.display on one element and a <slot> renders a fragment. Without the prop
+         the two lines below reduce to exactly the old `v-if="collapsed" peek / v-else default`
+         pair, which is why LogStack.vue's render path is untouched. -->
+    <div v-if="bodyPersist" class="dock-stack-body" v-show="!collapsed"><slot></slot></div>
+    <slot v-else-if="!collapsed"></slot>
   </div>
 </template>
 
@@ -43,6 +49,9 @@ defineProps({
   // nodes (Extreme Narrow). The collapsed state always keeps fa-chevron-up / EXPAND regardless of
   // this prop, so the panel can be brought back from its own header either way.
   collapseVariant: { type: String, default: 'chevron' },
+  // false (default) — collapsing destroys the body, the cheap behaviour a log stack wants.
+  // true — collapsing only hides it (see the template comment); the specialization opts in.
+  bodyPersist: { type: Boolean, default: false },
 })
 defineEmits(['update:collapsed'])
 </script>

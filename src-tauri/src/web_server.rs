@@ -5,8 +5,9 @@
 // content-blind routing plus the small set of native operations the plan calls out (pairing,
 // icon scan-and-hold, confined file read, LAN/Tailscale address discovery).
 //
-// INVARIANT (§13.6): the WS relay never holds mirrored app state and never transforms a payload it
-// is asked to forward. Two deliberate, documented departures from strict content-blindness:
+// INVARIANT (§13.6): the WS relay never holds mirrored app state, and it reads a frame only for
+// ROUTING and DROP-SAFETY decisions — never for what the frame means. Three deliberate, documented
+// departures from strict content-blindness (the third also being the only one that writes):
 //
 //  1. (plan §2.3) The relay itself ORIGINATES a `{"t":"companion-connected","id":<deviceId>}` frame
 //     to the host right after a companion's token check passes, so the host knows to push an `init`
@@ -20,6 +21,28 @@
 //     is re-derivable from the host and everything else is not (see `is_coalescible`). The
 //     alternative — a content-blind cap — can only drop arbitrary frames, which is precisely the
 //     "phone renders a corrupted half-stream" outcome the policy exists to avoid.
+//  3. (per-connection addressing, 1.21.1) The relay reads a top-level `to` on frames leaving the host
+//     (`dispatch`) and STAMPS a top-level `from` on frames arriving from a companion
+//     (`handle_companion_socket`). No new frame tag: a frame carrying neither field routes exactly as
+//     it always has, so an older companion bundle is unaffected. This closed two real bugs — a second
+//     phone joining sent a `reset:true` scrollback replay to every phone, wiping the screen of one
+//     mid-command; and `invoke_result` was broadcast against a per-page request counter that starts
+//     at 1 on every companion, so two phones with an id-1 call in flight each resolved the other's
+//     answer. That second one is silent wrong data, not a timeout.
+//     THE ADDRESS IS A CONNECTION, NOT A DEVICE, because the thing that asked is a connection. Two
+//     browser tabs on one paired phone are two sockets, two outboxes and two independent request
+//     counters that BOTH start at 1, so a device-level address leaves both bugs fully alive on that
+//     one device: the reply for tab A resolves tab B's unrelated id-1 call, and the joining tab's
+//     scrollback replay is duplicated into every tab's outbox — which breaks INVARIANT R outright at
+//     two tabs and re-creates the replay livelock the 8 MiB budget was raised to remove. A connection
+//     id costs nothing extra on the wire (it replaces the device id in the same two fields) and is
+//     strictly narrower, so it is the correct unit even before the two-tab case is considered.
+//     Device-level fan-out still exists exactly where it IS the intent: `revoke_device` closes every
+//     live connection belonging to one device, matching on `CompanionHandle::device_id`.
+//     BOUNDED: the relay reads `t` to know what is re-derivable and `to`/`from` to know where a frame
+//     belongs, and nothing else. It still never reads app content, and `from` is minted by the relay
+//     from its own connection counter — a value no companion is ever told and none can guess — so it
+//     can be neither forged nor stolen.
 
 use axum::{
     body::Body,
@@ -110,11 +133,56 @@ const CLOSE_HOST_ROLE_REJECTED: u16 = 4003;
 // Under a sustained firehose the phone therefore settles into "one coherent full snapshot whenever
 // it can absorb one", which is the best a slow link can be given.
 
-/// Per-companion outbound budget. Sized so four paired phones cannot cost more than ~8 MB of the
-/// Mac's RAM between them even while all four are wedged, and so a single budget still holds
-/// several seconds of a firehosing terminal (~21 KB of base64 per flush, ~50 flushes/s) — enough
-/// that an ordinary hiccup is absorbed silently and only a genuinely stuck link ever coalesces.
-const COMPANION_QUEUE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
+/// Per-companion outbound budget. DERIVED FROM THE TERMINAL'S CAPS, not chosen independently — see
+/// `invariant_r_holds_for_a_full_scrollback_replay` below, which is the executable form of it.
+///
+/// The sizing case is a companion JOINING with every tab full. `pty.rs` stores scrollback as raw
+/// bytes and base64-encodes on read, and the base64 alphabet contains no character JSON escapes, so
+/// one tab's replay frame is `ceil(SCROLLBACK_CAP / 3) * 4` plus a ~90-byte JSON envelope (budgeted
+/// at 128): 174,892 bytes at a 128 KiB ring, times `pty::MAX_TABS` = 16 tabs = 2,798,272 bytes
+/// (2.67 MiB) for ONE full replay.
+///
+/// INVARIANT R, in two parts, because two different things can go wrong and one number cannot
+/// express both. Both are asserted below; the derivation lives with them.
+///
+/// **R1 — the recovery replay fits, with half the budget still free for frames that may NOT be
+/// dropped.** `MAX_TABS × replay_frame_bytes(SCROLLBACK_CAP) ≤ COMPANION_QUEUE_LIMIT_BYTES / 2`
+/// → 2,798,272 ≤ 4,194,304 ✅. The factor of 2 is not padding for its own sake: a replay is the
+/// RECOVERY path and shares the queue with a pending `init` and a run of `delta`s, none of which may
+/// be dropped. A recovery that can itself trip the failure it is recovering from is a livelock —
+/// exactly what the old 2 MiB budget produced, since replay frames are `pty_output`, `coalesce()`
+/// therefore ate all of them, `bytes` fell to near zero, the socket was never cut, and the resync
+/// loop re-issued the same oversized replay forever while the early tabs' scrollback never arrived.
+///
+/// R1's left-hand side is `MAX_TABS × frame` — ONE replay — only because `dispatch` addresses on the
+/// CONNECTION id. The frame that triggers a replay (`companion-connected`) is emitted per connection,
+/// and `ptyBridge.js` answers each one with a full replay, so an address matched per DEVICE would
+/// multiply that term by the number of connections the joining device happens to have open. Two
+/// browser tabs on one phone: 5,596,544 > 4,194,304, R1 broken. Three: 8,394,816 > 8,388,608, past
+/// the whole budget. Per-connection addressing is what makes R1 a property of the code rather than of
+/// how many tabs the user left open.
+///
+/// **R2 — the reachable double does not trip a coalesce at all.**
+/// `2 × MAX_TABS × replay_frame_bytes(SCROLLBACK_CAP) ≤ COMPANION_QUEUE_LIMIT_BYTES`
+/// → 5,596,544 ≤ 8,388,608 ✅ (67% of the budget). TWO replays really can sit in one outbox at once,
+/// and R1 alone does not see it: the addressed one this connection asked for, plus a BROADCAST one
+/// from `ptyBridge.js`'s `scheduleResync()`, which heals a hole the HOST's own congested socket left
+/// in every companion's byte stream and therefore has no addressee to narrow it to. Kept under the
+/// full budget, that pair costs bandwidth and nothing else.
+///
+/// WHAT NEITHER PART CLAIMS, stated so the next reader does not over-trust them: the queue's worst
+/// case is not finite. A sustained firehose can congest the host socket repeatedly, and each cycle
+/// queues another broadcast replay ~250ms later into a phone that has not drained. That is not a
+/// livelock and needs no budget to survive — those frames are `pty_output`, `coalesce()` sheds them
+/// by design, the queue returns to empty, and the addressed recovery replay that follows is the R1
+/// case again. INVARIANT R bounds the RECOVERY PATH, not the queue.
+///
+/// 8 MiB still holds several seconds of a firehosing terminal (~21 KB of base64 per flush, ~50
+/// flushes/s), so an ordinary hiccup is absorbed silently and only a genuinely stuck link coalesces.
+/// ACCEPTED COST: four paired phones wedged simultaneously now cost up to 32 MB of the Mac's RAM
+/// between them rather than ~8 MB. This is worst-case-only memory — a queue sits near-empty unless a
+/// link is genuinely stuck — and `force_close` still bounds it absolutely.
+const COMPANION_QUEUE_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 
 /// Frame tag of the ONE coalescible kind. Mirrors `FRAME_PTY_OUTPUT` in `src/constants/protocol.js`
 /// — same two-file mirroring convention as the close codes above, for the same reason (the JS
@@ -217,7 +285,8 @@ fn frame_bytes(msg: &Message) -> usize {
     }
 }
 
-/// THE ONE PLACE THE RELAY LOOKS INSIDE A FRAME (see the module header's invariant note).
+/// THE DROP-SAFETY HALF OF WHAT THE RELAY READS (see the module header's invariant note — the other
+/// half is `addressed_to` / the `from` stamp, which are about ROUTING, not about what may be dropped).
 ///
 /// COALESCIBLE — may be collapsed, because the host can regenerate the full truth on demand:
 ///   * `pty_output`. Terminal bytes, live chunks and `reset` replays alike. Their entire content is
@@ -253,6 +322,45 @@ fn is_coalescible(msg: &Message) -> bool {
     }
 }
 
+/// The routing half of what the relay reads: an optional top-level `to`, naming the ONE companion
+/// CONNECTION a host frame is meant for (`CompanionHandle::conn_key`, not a device id — see the
+/// module header's note 3). `None` (absent, null, or not a JSON object) means "everyone", which is
+/// what every frame meant before 1.21.1 and what most frames still mean — see `dispatch`.
+///
+/// COST, stated accurately because a previous version of this comment got it wrong: this runs on
+/// EVERY host->companion frame, including the `pty_output` firehose, and `serde_json::from_str` scans
+/// the whole document to find one field. It is one parse per FRAME, not per companion — `dispatch`
+/// hoists the call out of its loop — so the cost does not grow with the number of paired phones.
+fn addressed_to(msg: &Message) -> Option<String> {
+    let Message::Text(text) = msg else { return None };
+    #[derive(Deserialize)]
+    struct FrameAddress {
+        to: Option<String>,
+    }
+    serde_json::from_str::<FrameAddress>(text).ok().and_then(|f| f.to)
+}
+
+/// Stamp the sending CONNECTION's id onto one inbound companion frame, so the host can address its
+/// reply back to the one socket that asked. Returns the frame unchanged when it is not a JSON object
+/// (binary frames, malformed text) — a frame the relay cannot parse is still a frame it must forward.
+///
+/// THE COMPANION NEVER SUPPLIES THIS, and the overwrite below is UNCONDITIONAL — that is the property
+/// that makes `from` trustworthy, and it must survive every future edit to this function. The value is
+/// `CompanionHandle::conn_key`, minted by the relay from its own connection counter; unlike a device
+/// id (which a paired device knows, because it is its own) a connection key is never told to any
+/// companion at all, so it cannot be guessed either. Inbound frames are forwarded to the host and
+/// never reach `dispatch`, so a companion also cannot route anything by setting `to` itself.
+fn stamp_from(msg: Message, conn_key: &str) -> Message {
+    let Message::Text(text) = msg else { return msg };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(serde_json::Value::Object(mut map)) => {
+            map.insert("from".to_string(), serde_json::Value::String(conn_key.to_string()));
+            Message::Text(serde_json::Value::Object(map).to_string())
+        }
+        _ => Message::Text(text),
+    }
+}
+
 /// Queue one frame for a companion. NEVER blocks and never awaits: the caller is the relay's shared
 /// host loop, and anything that can make it wait on a phone is the bug this whole section exists to
 /// remove.
@@ -269,11 +377,16 @@ fn enqueue(outbox: &CompanionOutbox, msg: Message) {
 // `system::PROJECT_ICONS` — copied deliberately for consistency, not reinvented) ─────────────
 
 struct CompanionHandle {
-    /// The paired device's *persistent* id (from `companion-devices.json`), not the ephemeral
-    /// per-connection counter used as this map's key — lets `revoke_device` find and close every
-    /// live connection belonging to one device without touching any other entity (CLAUDE.md
-    /// multi-entity scoped-clear rule).
+    /// The paired device's *persistent* id (from `companion-devices.json`). NOT the wire address —
+    /// that is `conn_key`. This is here for the one operation whose intent genuinely IS device-level:
+    /// `revoke_device` finds and closes every live connection belonging to one device, without
+    /// touching any other entity (CLAUDE.md multi-entity scoped-clear rule).
     device_id: String,
+    /// THE WIRE ADDRESS — this CONNECTION's relay-minted identity, `c<conn_id>` from the same
+    /// monotonic counter that keys the map. Opaque to both ends: the host only ever echoes back what
+    /// the relay stamped, and no companion is ever shown one. See the module header's note 3 for why
+    /// the unit is a connection and not a device.
+    conn_key: String,
     outbox: CompanionOutbox,
 }
 
@@ -331,9 +444,34 @@ impl RelayState {
     // every later lock attempt panics too, so remote control is dead for the rest of the process's
     // life. Taking the inner value keeps the relay serving instead, which is the behaviour a
     // paired phone needs from a process whose whole job is to stay reachable.
-    fn broadcast_to_companions(&self, msg: Message) {
+    /// Route ONE host frame to the companions it is for: the one CONNECTION named by a top-level
+    /// `to`, or every connected companion when there is none.
+    ///
+    /// BROADCAST IS STILL THE DEFAULT AND MUST STAY THAT WAY for most kinds. `pty_output` live chunks
+    /// (one shared PTY — every screen shows the same bytes), `pty_exit` and `pty_resize` (shared
+    /// liveness and shared size; addressing those would rebuild the 1.20.0 §2.4 desync bug), `delta`
+    /// (mirror state, including a confirm dialog that is answerable from any screen by design),
+    /// `init` (idempotent, so a spurious one is waste rather than damage) and `ping`/`pong` all carry
+    /// no `to`. Only two senders set it, both in JS: the scrollback replay for a joining or resyncing
+    /// companion, and an `invoke_result`, which answers one id on one companion's private counter.
+    ///
+    /// `to` NAMES ONE CONNECTION (`CompanionHandle::conn_key`), not a paired device. Two browser tabs
+    /// on the same phone are two connections and each gets only its own frames — which is what makes
+    /// both of the bugs above actually fixed rather than fixed between devices and still live within
+    /// one. It is also what keeps INVARIANT R's left-hand side at ONE replay per outbox; see
+    /// `COMPANION_QUEUE_LIMIT_BYTES`.
+    ///
+    /// The `to` parse is deliberately hoisted OUT of the loop: this runs on every host frame,
+    /// firehose included, so it must cost one parse per frame rather than one per paired phone.
+    fn dispatch(&self, msg: Message) {
+        let to = addressed_to(&msg);
         let companions = self.companions.lock().unwrap_or_else(|e| e.into_inner());
         for handle in companions.values() {
+            if let Some(conn_key) = to.as_deref() {
+                if handle.conn_key != conn_key {
+                    continue;
+                }
+            }
             enqueue(&handle.outbox, msg.clone());
         }
     }
@@ -351,8 +489,14 @@ impl RelayState {
         }
     }
 
-    fn notify_host_companion_connected(&self, device_id: &str) {
-        let payload = serde_json::json!({ "t": "companion-connected", "id": device_id }).to_string();
+    /// `id` CARRIES THE CONNECTION KEY, not the device id. This frame is emitted per connection (on
+    /// join, and again whenever a coalesced queue has drained), and `services/ptyBridge.js` answers
+    /// each one with a full scrollback replay addressed to that same `id`. Handing it a device id
+    /// therefore fanned one connection's replay into every outbox that device had open — the term
+    /// INVARIANT R cannot absorb. Nothing else consumes the field: `services/mirror.js` reacts to the
+    /// tag alone by broadcasting a full `init`.
+    fn notify_host_companion_connected(&self, conn_key: &str) {
+        let payload = serde_json::json!({ "t": "companion-connected", "id": conn_key }).to_string();
         self.forward_to_host(Message::Text(payload));
     }
 
@@ -848,7 +992,7 @@ async fn handle_host_socket(mut socket: WebSocket) {
                 let Some(result) = incoming else { break };
                 match result {
                     Ok(msg @ (Message::Text(_) | Message::Binary(_))) => {
-                        state.broadcast_to_companions(msg);
+                        state.dispatch(msg);
                     }
                     Ok(Message::Close(_)) => break,
                     Ok(_) => {} // WS-protocol ping/pong — not app frames, nothing to forward
@@ -875,13 +1019,17 @@ async fn handle_host_socket(mut socket: WebSocket) {
 /// makes the queue's order the wire's order without any locking discipline asked of the producers.
 async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id: String) {
     let state = relay();
+    // This connection's wire identity. `conn_id` comes from the relay's own monotonic counter and is
+    // never reused inside a process, so a reload that races the old socket's `remove(&conn_id)` below
+    // produces two handles with two DISTINCT keys — the new page's replay lands in the new page's
+    // outbox alone, and the doomed one drains into a socket that is about to close.
+    let conn_key = format!("c{}", conn_id);
     let outbox: CompanionOutbox = Arc::new((StdMutex::new(Outbox::new()), Notify::new()));
-    state
-        .companions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(conn_id, CompanionHandle { device_id: device_id.clone(), outbox: Arc::clone(&outbox) });
-    state.notify_host_companion_connected(&device_id);
+    state.companions.lock().unwrap_or_else(|e| e.into_inner()).insert(
+        conn_id,
+        CompanionHandle { device_id, conn_key: conn_key.clone(), outbox: Arc::clone(&outbox) },
+    );
+    state.notify_host_companion_connected(&conn_key);
 
     let (lock, notify) = &*outbox;
     'conn: loop {
@@ -890,7 +1038,17 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
                 let Some(result) = incoming else { break };
                 match result {
                     Ok(msg @ (Message::Text(_) | Message::Binary(_))) => {
-                        state.forward_to_host(msg);
+                        // Stamped with THIS connection's relay-minted key so the host can address its
+                        // reply back to this one socket (services/hostInvoke.js echoes it as `to`).
+                        //
+                        // COST: this direction is human-paced — keystrokes, intents, invokes — so a
+                        // full `serde_json::Value` round-trip per frame is affordable here. It is NOT
+                        // the only place the relay parses: `dispatch` calls `addressed_to` on every
+                        // host->companion frame including the `pty_output` firehose, and that parse
+                        // scans the whole document too. It is bounded the only way that matters —
+                        // hoisted out of the per-companion loop, so it is one parse per frame however
+                        // many phones are paired.
+                        state.forward_to_host(stamp_from(msg, &conn_key));
                     }
                     Ok(Message::Close(_)) => break,
                     Ok(_) => {}
@@ -915,8 +1073,10 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
         }
         if wants_resync {
             // The queue is empty and the socket accepted everything in it, so this phone can absorb
-            // a snapshot now. The host answers this exactly as it answers a fresh join.
-            state.notify_host_companion_connected(&device_id);
+            // a snapshot now. The host answers this exactly as it answers a fresh join — and answers
+            // it for THIS connection only, which is what keeps the recovery replay at the one-replay
+            // size INVARIANT R is derived from.
+            state.notify_host_companion_connected(&conn_key);
         }
     }
 
@@ -1500,6 +1660,233 @@ mod tests {
         for app_code in [CLOSE_UNPAIRED, CLOSE_SERVER_DISABLED, CLOSE_HOST_ROLE_REJECTED] {
             assert_ne!(CLOSE_TOO_FAR_BEHIND, app_code);
         }
+    }
+
+    // ── Per-connection addressing ────────────────────────────────────────────────────────────
+
+    /// Registers a companion on a fresh relay state and hands back its outbox, so a test can read
+    /// exactly what `dispatch` decided to queue for it. Mints `conn_key` the same way
+    /// `handle_companion_socket` does, so the tests address connections by the real wire value.
+    fn register(state: &RelayState, conn_id: u64, device_id: &str) -> CompanionOutbox {
+        let outbox: CompanionOutbox = Arc::new((StdMutex::new(Outbox::new()), Notify::new()));
+        state.companions.lock().unwrap().insert(
+            conn_id,
+            CompanionHandle {
+                device_id: device_id.to_string(),
+                conn_key: format!("c{}", conn_id),
+                outbox: Arc::clone(&outbox),
+            },
+        );
+        outbox
+    }
+
+    fn queued(outbox: &CompanionOutbox) -> usize {
+        outbox.0.lock().unwrap().queue.len()
+    }
+
+    /// THE BACKWARD-COMPATIBILITY GUARANTEE the whole "no new frame type, frozen protocol" claim
+    /// rests on: a frame with no `to` still reaches every companion, exactly as before 1.21.1. An
+    /// older companion bundle sends and receives frames that never carry the field at all.
+    #[test]
+    fn a_frame_with_no_address_still_reaches_every_companion() {
+        let state = RelayState::new();
+        let a = register(&state, 1, "device-a");
+        let b = register(&state, 2, "device-b");
+
+        state.dispatch(text("delta", 8));
+        state.dispatch(Message::Text(r#"{"t":"pty_output","tab_id":0,"data":"x"}"#.into()));
+        // Not addressable and not parseable — must still go everywhere rather than nowhere.
+        state.dispatch(Message::Text("not json at all".into()));
+        state.dispatch(Message::Binary(vec![1, 2, 3]));
+
+        assert_eq!(queued(&a), 4, "an unaddressed frame is a broadcast, as it always was");
+        assert_eq!(queued(&b), 4);
+    }
+
+    /// Bug 2 in executable form: an `invoke_result` for one connection must not land on any other,
+    /// whose per-page request counter starts at 1 as well and would resolve the wrong call with it.
+    #[test]
+    fn an_addressed_frame_reaches_only_that_connection() {
+        let state = RelayState::new();
+        let a = register(&state, 1, "device-a");
+        let b = register(&state, 2, "device-b");
+
+        state.dispatch(Message::Text(r#"{"t":"invoke_result","id":1,"ok":true,"to":"c2"}"#.into()));
+        assert_eq!(queued(&a), 0, "no other socket may see this reply");
+        assert_eq!(queued(&b), 1);
+
+        // Bug 1: a joining phone's scrollback replay must not reset a phone that is mid-command.
+        state.dispatch(Message::Text(r#"{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"c1"}"#.into()));
+        assert_eq!(queued(&a), 1);
+        assert_eq!(queued(&b), 1, "a replay addressed elsewhere must not clear this phone's screen");
+
+        // An address nobody answers to is delivered to nobody, not to everybody.
+        state.dispatch(Message::Text(r#"{"t":"invoke_result","id":2,"to":"c99"}"#.into()));
+        assert_eq!(queued(&a), 1);
+        assert_eq!(queued(&b), 1);
+    }
+
+    /// THE TWO-TABS-ON-ONE-PHONE CASE, which a device-level address could not fix and which is the
+    /// whole reason the wire address is a connection. Two connections share `device-a`; each must see
+    /// only its own reply (bug 2 within one device — silent wrong data) and only its own scrollback
+    /// replay (bug 1 within one device — and the N-times-a-replay term INVARIANT R cannot absorb).
+    #[test]
+    fn two_connections_of_one_device_do_not_receive_each_others_frames() {
+        let state = RelayState::new();
+        let tab1 = register(&state, 1, "device-a");
+        let tab2 = register(&state, 2, "device-a");
+
+        // Both pages issued their first invoke, so both are waiting on id 1.
+        state.dispatch(Message::Text(r#"{"t":"invoke_result","id":1,"ok":"answer-for-tab2","to":"c2"}"#.into()));
+        assert_eq!(queued(&tab1), 0, "tab 1 must not resolve its own id-1 call with tab 2's answer");
+        assert_eq!(queued(&tab2), 1);
+
+        // One full scrollback replay per JOIN, and a join is per connection.
+        state.dispatch(Message::Text(r#"{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"c2"}"#.into()));
+        assert_eq!(queued(&tab1), 0, "one outbox must never receive a second connection's replay");
+        assert_eq!(queued(&tab2), 2);
+
+        // The device id is still what `revoke_device` groups on — connection addressing did not
+        // remove device grouping, it just stopped using it as the wire address.
+        let companions = state.companions.lock().unwrap();
+        assert_eq!(companions.values().filter(|h| h.device_id == "device-a").count(), 2);
+    }
+
+    /// `from` is the relay's word, not the client's — otherwise a phone could name another connection
+    /// and have the host's reply addressed away from itself. The overwrite is unconditional, and that
+    /// is the property under test.
+    #[test]
+    fn the_sender_stamp_cannot_be_forged_by_the_companion() {
+        let stamped = stamp_from(Message::Text(r#"{"t":"invoke","id":1,"from":"c99"}"#.into()), "c1");
+        let Message::Text(json) = stamped else { panic!("a text frame must stay a text frame") };
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["from"], "c1", "the relay's connection key must overwrite whatever the client claimed");
+        assert_eq!(v["t"], "invoke", "no other field may be touched");
+        assert_eq!(v["id"], 1);
+
+        // A companion cannot smuggle a `to` past the stamp either — but note the real reason it is
+        // harmless is structural: inbound frames go to `forward_to_host`, never to `dispatch`.
+        let stamped = stamp_from(Message::Text(r#"{"t":"invoke","id":1,"to":"c2"}"#.into()), "c1");
+        let Message::Text(json) = stamped else { panic!("a text frame must stay a text frame") };
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["from"], "c1");
+
+        // Anything the relay cannot parse as a JSON object is forwarded byte-for-byte.
+        assert!(matches!(stamp_from(Message::Text("not json".into()), "c1"), Message::Text(s) if s == "not json"));
+        assert!(matches!(stamp_from(Message::Text("[1,2]".into()), "c1"), Message::Text(s) if s == "[1,2]"));
+        assert!(matches!(stamp_from(Message::Binary(vec![7]), "c1"), Message::Binary(b) if b == vec![7]));
+    }
+
+    // ── INVARIANT R ──────────────────────────────────────────────────────────────────────────
+    //
+    // The only thing in this repo that can catch someone raising `pty::MAX_TABS` without noticing
+    // they just re-broke a joining phone. The three constants live in two files and two languages
+    // and are deliberately different numbers bound by arithmetic; a comment cannot check arithmetic.
+
+    /// Bytes one tab's scrollback occupies in a `pty_output` replay frame's JSON text. base64 is
+    /// `ceil(n/3) * 4`, and STANDARD base64's alphabet (`A-Z a-z 0-9 + / =`) contains no character
+    /// JSON escapes, so `JSON.stringify` expands it by nothing — this is the fact the whole estimate
+    /// turns on. 128 covers the `{"t":"pty_output","tab_id":..,"reset":true,"cols":..,...}` envelope
+    /// with room to spare (measured at ~90).
+    fn replay_frame_bytes(scrollback_cap: usize) -> usize {
+        scrollback_cap.div_ceil(3) * 4 + 128
+    }
+
+    /// One full scrollback replay, which is what ONE `companion-connected` costs one outbox. It is
+    /// one and not N only because `dispatch` addresses on the connection key — see
+    /// `an_addressed_replay_is_one_replay_per_outbox_not_one_per_connection_on_the_device`.
+    fn one_replay_bytes() -> usize {
+        crate::pty::MAX_TABS * replay_frame_bytes(crate::pty::SCROLLBACK_CAP)
+    }
+
+    /// **R1** — the recovery replay fits, with half the budget still free for frames that may not be
+    /// dropped (a pending `init`, a run of `delta`s).
+    #[test]
+    fn invariant_r1_a_recovery_replay_fits_with_room_for_undroppable_frames() {
+        let one = one_replay_bytes();
+        assert!(
+            one <= COMPANION_QUEUE_LIMIT_BYTES / 2,
+            "INVARIANT R1 broken: a {}-tab scrollback replay is {} bytes, over half the {}-byte companion budget. \
+             A replay is the RECOVERY path and shares the queue with an `init` and pending `delta`s; once it exceeds \
+             what the queue can hold, coalesce() eats it, the resync loop re-issues it, and the phone never receives \
+             the early tabs at all. Raise COMPANION_QUEUE_LIMIT_BYTES, lower pty::SCROLLBACK_CAP, or lower \
+             pty::MAX_TABS (and src/store/terminalTabsStore.js's MAX_TABS with it) — in this same commit.",
+            crate::pty::MAX_TABS,
+            one,
+            COMPANION_QUEUE_LIMIT_BYTES
+        );
+    }
+
+    /// **R2** — the worst case the code can actually put in ONE outbox at ONE time is TWO replays,
+    /// not one, and that pair must not trip a coalesce at all.
+    ///
+    /// The two are different frames arriving by different routes, which is why R1 cannot see the
+    /// second: (a) the replay this connection asked for, addressed to its `conn_key` by
+    /// `ptyBridge.js`'s `FRAME_COMPANION_CONNECTED` handler, and (b) an UNADDRESSED replay from
+    /// `ptyBridge.js`'s `scheduleResync()`, which heals a hole the HOST's own congested socket left in
+    /// every companion's byte stream and so has no single addressee to narrow it to. A phone that has
+    /// not drained (a) when (b) is queued holds both.
+    ///
+    /// Bounded against the WHOLE budget rather than half of it, deliberately: unlike R1's case, both
+    /// of these frames are `pty_output` and losing them is recoverable, so the property worth buying
+    /// here is only "this common pair costs bandwidth and nothing else". Further broadcast replays
+    /// beyond the pair are possible under a sustained firehose and are NOT modelled by any constant —
+    /// they are what `coalesce()` exists to shed, after which the queue is empty and the next
+    /// addressed replay is the R1 case again.
+    #[test]
+    fn invariant_r2_the_reachable_double_replay_does_not_trip_a_coalesce() {
+        let double = 2 * one_replay_bytes();
+        assert!(
+            double <= COMPANION_QUEUE_LIMIT_BYTES,
+            "INVARIANT R2 broken: an addressed replay plus a concurrent broadcast congestion replay is {} bytes \
+             against a {}-byte budget, so the ordinary two-replay overlap now coalesces and costs the joining phone \
+             its rehydrate. Same three dials as R1.",
+            double,
+            COMPANION_QUEUE_LIMIT_BYTES
+        );
+    }
+
+    /// R1's left-hand side is ONE replay per outbox, and this is the code property that makes that
+    /// true. `notify_host_companion_connected` fires per CONNECTION; `ptyBridge.js` answers each with
+    /// a full replay; `dispatch` delivers each to exactly one outbox. Match on the DEVICE instead and
+    /// the term becomes `N x` for N connections that device has open — at 16 tabs, 5,596,544 bytes at
+    /// two browser tabs (past R1's 4,194,304 half-budget) and 8,394,816 at three (past the whole
+    /// 8,388,608 budget), which is the replay livelock the budget raise was supposed to remove.
+    #[test]
+    fn an_addressed_replay_is_one_replay_per_outbox_not_one_per_connection_on_the_device() {
+        let state = RelayState::new();
+        let tab1 = register(&state, 1, "device-a");
+        let tab2 = register(&state, 2, "device-a");
+
+        // Three joins on one device: each answered with its own addressed replay.
+        for key in ["c1", "c2", "c1"] {
+            state.dispatch(Message::Text(
+                format!(r#"{{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"{}"}}"#, key),
+            ));
+        }
+        assert_eq!(queued(&tab1), 2, "each outbox holds exactly the replays addressed to it");
+        assert_eq!(queued(&tab2), 1);
+
+        // The arithmetic the assertion above protects, stated so a reader does not have to re-derive
+        // what a device-level address would have cost.
+        let one = one_replay_bytes();
+        assert!(2 * one > COMPANION_QUEUE_LIMIT_BYTES / 2, "two replays in one outbox would break R1");
+        assert!(3 * one > COMPANION_QUEUE_LIMIT_BYTES, "three would blow the budget outright");
+    }
+
+    /// The arithmetic above, pinned to the numbers §2.2 of the plan was written against, so a
+    /// half-edit (budget moved, ring not) is a failure here rather than a silent loss of headroom.
+    #[test]
+    fn the_budget_keeps_the_headroom_it_was_sized_for() {
+        assert_eq!(replay_frame_bytes(128 * 1024), 174_892, "base64 expansion is 4/3, not something else");
+        assert_eq!(COMPANION_QUEUE_LIMIT_BYTES, 8 * 1024 * 1024);
+        let one = one_replay_bytes();
+        assert_eq!(one, 2_798_272, "a full 16-tab replay is ~2.67 MiB on the wire");
+        assert_eq!(2 * one, 5_596_544, "R2's modelled pair is ~5.34 MiB, 67% of the budget");
+        assert!(
+            COMPANION_QUEUE_LIMIT_BYTES / one >= 2,
+            "the budget must stay at least 2x a full replay — that ratio IS invariant R1"
+        );
     }
 
     /// CLAUDE.md's serde rule: an older or truncated `companion-server.json` must degrade to "off",

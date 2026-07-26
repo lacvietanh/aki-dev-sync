@@ -105,24 +105,37 @@ export const COMPANION_ALLOWED_COMMANDS = new Set([
  *  unanswered frame, which would strand the companion on the watchdog timeout. */
 async function respondToInvoke(frame) {
   const { id, cmd, args } = frame
+  // ADDRESSED BACK TO THE ONE CONNECTION THAT ASKED, on every reply path. `from` is stamped by the
+  // relay from its own connection counter (src-tauri/src/web_server.rs), so it names the real sender
+  // and cannot be forged. It is echoed as `to` because a request `id` comes from a PER-PAGE counter
+  // starting at 1: broadcast, two pages each with an id-1 call in flight resolved each other's
+  // answers — silent wrong data, which is worse than a failure because nothing reports it.
+  //
+  // PER CONNECTION IS THE UNIT THAT MAKES THAT TRUE. The counter is per page, and one paired phone can
+  // have two pages open; a device-level reply would still cross those two pages' id-1 calls, which is
+  // the same bug at a shorter range. Echoed opaquely — this module never inspects the value.
+  // `undefined` on a frame from an older companion bundle simply serializes away, leaving a broadcast
+  // exactly as before.
+  const to = frame.from
   if (!COMPANION_ALLOWED_COMMANDS.has(cmd)) {
     // Answer with a concrete error rather than dropping the frame: silence would strand the
-    // companion on bridge.request()'s watchdog and hide the refusal from both consoles.
+    // companion on bridge.request()'s watchdog and hide the refusal from both consoles. Addressed
+    // like every other reply — a refusal delivered to the wrong phone is the same bug in a hat.
     console.error(`[hostInvoke] refused command "${cmd}" — not in COMPANION_ALLOWED_COMMANDS`)
-    send({ t: FRAME_INVOKE_RESULT, id, err: `command "${cmd}" is not allowed from a companion` })
+    send({ t: FRAME_INVOKE_RESULT, id, to, err: `command "${cmd}" is not allowed from a companion` })
     return
   }
   try {
     const ok = await invoke(cmd, args)
     // JSON.stringify drops an `undefined` value, so a void command serializes to a frame with
     // neither `ok` nor `err` — the companion reads that as resolve(undefined), which is correct.
-    send({ t: FRAME_INVOKE_RESULT, id, ok })
+    send({ t: FRAME_INVOKE_RESULT, id, to, ok })
   } catch (e) {
     // Preserve the host's real error text so the phone console shows the actual Tauri failure,
     // not a generic "rejected". Tauri command errors are usually plain strings already.
     const err = e && e.message ? e.message : String(e)
     console.error(`[hostInvoke] command "${cmd}" failed`, e)
-    send({ t: FRAME_INVOKE_RESULT, id, err })
+    send({ t: FRAME_INVOKE_RESULT, id, to, err })
   }
 }
 
