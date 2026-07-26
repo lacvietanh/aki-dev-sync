@@ -258,7 +258,7 @@ fn is_coalescible(msg: &Message) -> bool {
 /// remove.
 fn enqueue(outbox: &CompanionOutbox, msg: Message) {
     let (lock, notify) = &**outbox;
-    lock.lock().unwrap().push_within_budget(msg);
+    lock.lock().unwrap_or_else(|e| e.into_inner()).push_within_budget(msg);
     // `notify_one` stores a permit when nobody is waiting, so a notification sent while the
     // companion task is busy awaiting `socket.send` is not lost — its next `notified()` returns
     // immediately. That is what makes creating a fresh `notified()` future each loop iteration safe.
@@ -325,8 +325,14 @@ impl RelayState {
         }
     }
 
+    // Every lock in this module is taken with `.unwrap_or_else(|e| e.into_inner())`, never
+    // `.unwrap()` - the same convention `sync.rs` already uses for `SYNC_PROCS`. A `.unwrap()`
+    // here turns one panic anywhere under one of these locks into a permanently poisoned mutex:
+    // every later lock attempt panics too, so remote control is dead for the rest of the process's
+    // life. Taking the inner value keeps the relay serving instead, which is the behaviour a
+    // paired phone needs from a process whose whole job is to stay reachable.
     fn broadcast_to_companions(&self, msg: Message) {
-        let companions = self.companions.lock().unwrap();
+        let companions = self.companions.lock().unwrap_or_else(|e| e.into_inner());
         for handle in companions.values() {
             enqueue(&handle.outbox, msg.clone());
         }
@@ -339,7 +345,7 @@ impl RelayState {
     /// not one frame going to the host is re-derivable, so a bound could only drop something that
     /// matters. Bounding it would be a guard for its own sake.
     fn forward_to_host(&self, msg: Message) {
-        let host_tx = self.host_tx.lock().unwrap();
+        let host_tx = self.host_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = host_tx.as_ref() {
             let _ = tx.send(msg);
         }
@@ -360,7 +366,7 @@ impl RelayState {
             .unwrap()
             .clone()
             .ok_or_else(|| "companion-devices.json path not initialized".to_string())?;
-        let devices = self.devices.lock().unwrap().clone();
+        let devices = self.devices.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let content = serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
     }
@@ -370,7 +376,7 @@ impl RelayState {
     /// runtime must route it through `spawn_blocking`. Best-effort by design — failing to write
     /// this preference must never fail the toggle the user just asked for.
     fn persist_enabled(&self, enabled: bool) {
-        let Some(path) = self.server_state_path.lock().unwrap().clone() else {
+        let Some(path) = self.server_state_path.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
             return;
         };
         let content = serde_json::json!({ "enabled": enabled }).to_string();
@@ -483,11 +489,11 @@ pub fn init(app_handle: &AppHandle) {
             let path = dir.join("companion-devices.json");
             if let Ok(content) = std::fs::read_to_string(&path) {
                 match serde_json::from_str::<Vec<PairedDevice>>(&content) {
-                    Ok(devices) => *state.devices.lock().unwrap() = devices,
+                    Ok(devices) => *state.devices.lock().unwrap_or_else(|e| e.into_inner()) = devices,
                     Err(e) => eprintln!("[web_server] companion-devices.json is corrupt, starting empty: {}", e),
                 }
             }
-            *state.devices_path.lock().unwrap() = Some(path);
+            *state.devices_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
 
             // Restore the user's last explicit on/off choice.
             //
@@ -508,9 +514,9 @@ pub fn init(app_handle: &AppHandle) {
                 .ok()
                 .and_then(|c| serde_json::from_str::<PersistedServerState>(&c).ok())
                 .unwrap_or_default();
-            *state.server_state_path.lock().unwrap() = Some(server_state_path);
+            *state.server_state_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(server_state_path);
             if restored.enabled {
-                *state.pairing_code.lock().unwrap() = generate_pairing_code();
+                *state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()) = generate_pairing_code();
                 state.enabled.store(true, Ordering::SeqCst);
             }
         }
@@ -760,12 +766,20 @@ struct WsQuery {
     token: Option<String>,
 }
 
+/// Largest inbound frame a peer may send. Generous next to anything the protocol legitimately
+/// carries (the biggest is a full project-state resync), and far below the library default of
+/// ~64MB - which is what an unpaired-but-connected peer could otherwise push at the Mac's memory
+/// before the pairing check has even run.
+const MAX_INBOUND_FRAME: usize = 2 * 1024 * 1024;
+
 async fn ws_handler(
     ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<WsQuery>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, addr, q))
+    ws.max_message_size(MAX_INBOUND_FRAME)
+        .max_frame_size(MAX_INBOUND_FRAME)
+        .on_upgrade(move |socket| handle_socket(socket, addr, q))
 }
 
 async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
@@ -801,7 +815,7 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
             }
             let token = q.token.clone().unwrap_or_default();
             let device_id = {
-                let devices = state.devices.lock().unwrap();
+                let devices = state.devices.lock().unwrap_or_else(|e| e.into_inner());
                 devices.iter().find(|d| d.token == token).map(|d| d.id.clone())
             };
             let Some(device_id) = device_id else {
@@ -826,7 +840,7 @@ async fn close_with_code(mut socket: WebSocket, code: u16, reason: &'static str)
 async fn handle_host_socket(mut socket: WebSocket) {
     let state = relay();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-    *state.host_tx.lock().unwrap() = Some(tx);
+    *state.host_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
 
     loop {
         tokio::select! {
@@ -854,7 +868,7 @@ async fn handle_host_socket(mut socket: WebSocket) {
     // plugin already enforces that) so an unconditional clear is correct for the real case;
     // a rapid reconnect racing this cleanup is a known, accepted edge case, not silently
     // "fixed" with false confidence.
-    *state.host_tx.lock().unwrap() = None;
+    *state.host_tx.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Owns one companion's socket, and is the ONLY consumer of that companion's outbox — which is what
@@ -889,7 +903,7 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
         // Drained after EITHER branch, so nothing queued during an inbound frame waits for the next
         // notification. The lock is released before the first `await` — a producer must never find
         // this mutex held across socket I/O.
-        let (batch, wants_resync) = lock.lock().unwrap().take();
+        let (batch, wants_resync) = lock.lock().unwrap_or_else(|e| e.into_inner()).take();
         for msg in batch {
             let is_close = matches!(msg, Message::Close(_));
             if socket.send(msg).await.is_err() {
@@ -906,7 +920,7 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
         }
     }
 
-    state.companions.lock().unwrap().remove(&conn_id);
+    state.companions.lock().unwrap_or_else(|e| e.into_inner()).remove(&conn_id);
 }
 
 // ── /pair (§13.1) ──────────────────────────────────────────────────────────────────────────
@@ -931,7 +945,7 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
             .into_response();
     }
 
-    let expected = state.pairing_code.lock().unwrap().clone();
+    let expected = state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if expected.is_empty() || body.code.trim() != expected {
         let failures = state.pair_failures.fetch_add(1, Ordering::SeqCst) + 1;
         if failures >= MAX_PAIR_FAILURES {
@@ -939,7 +953,7 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
             // it back on from the header menu, which mints a fresh code — so the attacker's
             // progress through the old code space is worthless too.
             state.enabled.store(false, Ordering::SeqCst);
-            state.pairing_code.lock().unwrap().clear();
+            state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clear();
             // Persisted, so a brute-force attempt is not undone by the attacker simply waiting for
             // the app to restart. Blocking write on the async runtime → spawn_blocking, per the
             // never-block-the-UI rule that governs every other disk write in this file.
@@ -970,7 +984,7 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
 
     let device = PairedDevice { id: generate_id(), token: generate_token(), label, paired_at: now_secs() };
     let token = device.token.clone();
-    state.devices.lock().unwrap().push(device);
+    state.devices.lock().unwrap_or_else(|e| e.into_inner()).push(device);
 
     // The disk write is blocking IO; this handler runs on the same tokio runtime as the rest of
     // the app (spawned via `tauri::async_runtime::spawn` in `init`), so it goes through
@@ -984,7 +998,7 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
         // Roll back: a token that only works this session and silently stops working (and can
         // never be revoked, since it was never written) after a restart is worse than failing
         // the pairing attempt outright.
-        state.devices.lock().unwrap().retain(|d| d.token != token);
+        state.devices.lock().unwrap_or_else(|e| e.into_inner()).retain(|d| d.token != token);
         eprintln!("[web_server] failed to persist paired device: {}", e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1029,7 +1043,7 @@ pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<CompanionServerInfo, String> {
         let state = relay();
         let code = generate_pairing_code();
-        *state.pairing_code.lock().unwrap() = code.clone();
+        *state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()) = code.clone();
         state.pair_failures.store(0, Ordering::SeqCst);
         state.set_enabled(true);
         Ok(CompanionServerInfo { pairing_code: code, port: PORT })
@@ -1046,7 +1060,7 @@ pub async fn stop_companion_server() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<(), String> {
         let state = relay();
         state.set_enabled(false);
-        let mut companions = state.companions.lock().unwrap();
+        let mut companions = state.companions.lock().unwrap_or_else(|e| e.into_inner());
         for (_, handle) in companions.drain() {
             // CLOSE_SERVER_DISABLED, never CLOSE_UNPAIRED: turning the toggle off revokes nothing.
             // Sending 4001 here is exactly what made every paired phone forget its token on an Off.
@@ -1099,7 +1113,7 @@ pub async fn get_companion_status() -> Result<CompanionStatus, String> {
         let state = relay();
         Ok(CompanionStatus {
             enabled: state.enabled.load(Ordering::SeqCst),
-            pairing_code: state.pairing_code.lock().unwrap().clone(),
+            pairing_code: state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             port: PORT,
             host_token: state.host_token.clone(),
         })
@@ -1254,7 +1268,7 @@ pub async fn set_tailscale_https(enable: bool) -> Result<TailscaleHttps, String>
 #[tauri::command]
 pub async fn list_paired_devices() -> Result<Vec<PairedDeviceView>, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<Vec<PairedDeviceView>, String> {
-        let devices = relay().devices.lock().unwrap();
+        let devices = relay().devices.lock().unwrap_or_else(|e| e.into_inner());
         Ok(devices.iter().map(PairedDeviceView::from).collect())
     })
     .await
@@ -1270,7 +1284,7 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = relay();
         let removed = {
-            let mut devices = state.devices.lock().unwrap();
+            let mut devices = state.devices.lock().unwrap_or_else(|e| e.into_inner());
             let idx = devices.iter().position(|d| d.id == id);
             idx.map(|i| devices.remove(i))
         };
@@ -1280,7 +1294,7 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
         }
         state.persist_devices()?;
 
-        let mut companions = state.companions.lock().unwrap();
+        let mut companions = state.companions.lock().unwrap_or_else(|e| e.into_inner());
         let dead: Vec<u64> = companions
             .iter()
             .filter(|(_, h)| h.device_id == id)
@@ -1314,7 +1328,7 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
 pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Option<String>>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let projects = crate::projects::load_projects(app)?;
-        let cache = crate::system::get_project_icons().lock().unwrap();
+        let cache = crate::system::get_project_icons().lock().unwrap_or_else(|e| e.into_inner());
         let mut map = HashMap::with_capacity(projects.len());
         for p in &projects {
             let uri = cache
