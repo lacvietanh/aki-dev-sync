@@ -310,6 +310,18 @@ mod tests {
     }
 
     #[test]
+    fn validate_accepts_a_path_on_an_unmounted_volume() {
+        // Regression guard for the stricter empty/absolute rule: validation must judge the SHAPE
+        // of the path, never whether it exists right now. A project on an external volume that
+        // happens to be unmounted must still load and still save - refusing it here would replace
+        // the real cause ("mount the drive") with a validation error that hides it. Existence is
+        // checked at the point of use instead (sync.rs::ensure_local_path_present).
+        let p = make_project("/Volumes/NotMountedRightNow/app", "~/app", "vps01");
+        assert!(validate_project_paths(&p).is_ok());
+        assert!(validate_project(&p).is_ok());
+    }
+
+    #[test]
     fn validate_accepts_tilde_paths() {
         let p = make_project("/Users/aki/dev/app/", "~/apps/myapp", "vps01");
         assert!(validate_project(&p).is_ok());

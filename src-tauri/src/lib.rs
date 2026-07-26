@@ -73,6 +73,7 @@ pub fn run() {
             sync::run_sync,
             sync::check_sync_status,
             sync::get_sync_delete_preview,
+            sync::cancel_sync,
             sync::cleanup_legacy_baselines,
             // agent usage
             agent_usage::provision_agent_usage,
@@ -136,8 +137,11 @@ pub fn run() {
             // user left running in that shell — most damagingly a live `ssh <host>` — outlives the
             // app as an init-owned orphan and keeps its remote session (and that session's `agy`/
             // `claude`) alive indefinitely. See pty::kill_process_group.
+            // Same for a running sync: rsync and the ssh it spawned used to survive the app as
+            // init-owned orphans, still writing to a remote nobody is watching any more.
             if let tauri::RunEvent::Exit = event {
                 pty::shutdown();
+                sync::shutdown();
             }
         });
 }

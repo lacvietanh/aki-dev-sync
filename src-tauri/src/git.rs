@@ -8,6 +8,11 @@ pub struct GitInfo {
     pub remote_url: String,
     pub log: String,
     pub changed_count: usize,
+    /// True when `local_path` itself is absent - typically an external or network volume that is
+    /// not mounted. Reported separately from the `status` string because "the folder is gone" and
+    /// "the folder has no .git" used to look identical, while the user's next move differs
+    /// completely: mount the drive vs run `git init` (contract C-4).
+    pub local_path_missing: bool,
 }
 
 #[derive(Serialize)]
@@ -71,12 +76,25 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
 pub async fn get_git_info(local_path: String) -> Result<GitInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = Path::new(&local_path);
+        if !path.is_dir() {
+            return Ok(GitInfo {
+                status: "No Git".to_string(),
+                remote_url: String::new(),
+                log: format!(
+                    "Local path not found: {}\nIf it lives on an external or network volume, mount it and refresh.",
+                    local_path
+                ),
+                changed_count: 0,
+                local_path_missing: true,
+            });
+        }
         if !path.join(".git").exists() {
             return Ok(GitInfo {
                 status: "No Git".to_string(),
                 remote_url: String::new(),
                 log: "Not a git repository.".to_string(),
                 changed_count: 0,
+                local_path_missing: false,
             });
         }
 
@@ -102,7 +120,7 @@ pub async fn get_git_info(local_path: String) -> Result<GitInfo, String> {
             log.push_str(&commits);
         }
 
-        Ok(GitInfo { status, remote_url, log, changed_count })
+        Ok(GitInfo { status, remote_url, log, changed_count, local_path_missing: false })
     }).await.map_err(|e| format!("Task error: {}", e))?
 }
 
@@ -251,8 +269,12 @@ pub async fn get_file_conflict_info(
 
         let script = format!("cd \"{safe_remote}\" && {}", checks.join("; "));
 
+        // ConnectTimeout matches every other ssh hop in the sync path (sync.rs) and the usage
+        // poller, so the app has one answer to "how long before we call a host dead". Without it
+        // a blackholed host holds the pre-upload conflict check open for the kernel's TCP
+        // timeout - minutes - with the user waiting on a file picker they already answered.
         let out = create_command("ssh")
-            .args([&remote_host, &script])
+            .args(["-o", "ConnectTimeout=10", &remote_host, &script])
             .output()
             .map_err(|e| format!("Cannot reach '{}': failed to start ssh ({})", remote_host, e))?;
 
