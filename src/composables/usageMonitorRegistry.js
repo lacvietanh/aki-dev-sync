@@ -9,9 +9,9 @@
 // AgentUsageSection.vue, which is also exactly what capped the app at a single remote host. Keying
 // by identity keeps the property and removes the cap at the same time - sharing is now a
 // consequence of two slots naming the same thing, not a rule anyone has to maintain.
-import { computed, effectScope, reactive, watch } from 'vue';
+import { computed, effectScope, reactive } from 'vue';
 import { createUsageMonitor } from './usageMonitor';
-import { monitorId, isMonitorEnabled, setMonitorEnabled, monitorEnabled, LOCAL_HOST } from '../store/usageMonitorStore';
+import { monitorId, isMonitorEnabled, setMonitorEnabled, LOCAL_HOST } from '../store/usageMonitorStore';
 import { claudeMode } from '../store/claudeModeStore';
 
 const registry = new Map(); // id -> monitor
@@ -45,7 +45,14 @@ export function getMonitor(agentId, host) {
   if (existing) return existing;
 
   const locked = lockedFor(agentId, host);
-  const enabled = computed(() => !!host && isMonitorEnabled(id));
+  // Locked means "this monitor cannot say anything true right now", so it does not poll - DERIVED
+  // from the mode, never stored. Proxy mode used to force the flag off by writing `false` into the
+  // enabled map instead; the map is the object `setMonitorEnabled` spreads into localStorage, so the
+  // next toggle of ANY other monitor persisted the forced value, and leaving proxy mode (or even
+  // restarting) could no longer bring the local Claude Code monitor back. A consequence of the
+  // current mode must not be able to leak into the user's stored preference at all - the way to
+  // guarantee that is to never write it down.
+  const enabled = computed(() => !!host && !locked.value && isMonitorEnabled(id));
   const toggle = () => {
     if (locked.value) return;
     // No host chosen yet: `enabled` is pinned false, so a toggle could only persist a flag under
@@ -61,13 +68,9 @@ export function getMonitor(agentId, host) {
   return monitor;
 }
 
-// Proxy mode ON forces the local Claude Code monitor off. Proxy mode OFF only unlocks the switch;
-// it does NOT auto-restore the prior enabled state, by design (carried over from
-// AgentUsageSection.vue unchanged). Written straight into the mirrored ref rather than through
-// `setMonitorEnabled` so it is not persisted - matching the original: this is a consequence of the
-// current mode, not a preference the user expressed.
-watch(claudeMode, (mode) => {
-  if (mode !== 'proxy') return;
-  const id = monitorId('claudecode', LOCAL_HOST);
-  monitorEnabled.value = { ...monitorEnabled.value, [id]: false };
-});
+// There is deliberately no watcher on `claudeMode` here any more. Proxy mode ON stops the local
+// Claude Code monitor through `locked` → `enabled` above (a pure derivation, re-evaluated the moment
+// the mode changes), and proxy mode OFF simply lets the user's own stored preference apply again.
+// The watcher this replaces wrote a forced `false` into the shared enabled map, which is exactly the
+// multi-entity failure the project's Regression Guard is about: one monitor's transient, app-imposed
+// state riding along in the object every other monitor's toggle persists.

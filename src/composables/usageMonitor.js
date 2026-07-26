@@ -104,14 +104,29 @@ function installWakeListenersOnce() {
   window.addEventListener('focus', () => fireWake('focus'));
 
   hostInterval(() => {
-    const s = refreshSettings.value.usage_interval_s;
-    if (!(s > 0)) return;
     const now = Date.now();
     for (const sub of _wakeSubscribers) {
-      // Threshold is per-subscriber, not a flat 2×interval: a subscriber that has backed off (unreachable host) legitimately has a much larger gap between ticks, and treating that as a suspend would have the watchdog re-firing probes every 7s - defeating the very backoff meant to stop hammering that host.
-      if (now - sub.lastTickAt() > sub.gapThresholdMs()) sub.onWake('watchdog');
+      // Threshold is per-subscriber, not a flat 2×interval: a subscriber that has backed off (unreachable host) legitimately has a much larger gap between ticks, and treating that as a suspend would have the watchdog re-firing probes every 7s - defeating the very backoff meant to stop hammering that host. A subscriber whose own cycle is switched off returns Infinity and is simply never woken.
+      const threshold = sub.gapThresholdMs();
+      if (threshold > 0 && Number.isFinite(threshold) && now - sub.lastTickAt() > threshold) sub.onWake('watchdog');
     }
   }, WATCHDOG_INTERVAL_MS);
+}
+
+/**
+ * The ONE wake/self-heal mechanism in this app. Any cycle that can be silently frozen by a WKWebView
+ * suspend (usage polls, background git/diff refresh) subscribes here rather than installing its own
+ * listeners and its own heartbeat - two watchdogs would double the wake-up cost and mean two places
+ * to reason about when recovery misbehaves. Decided in docs/plan/1.20.1-flow-audit-fixes.md §3.21.
+ *
+ * `gapThresholdMs()` returning 0 or a non-finite value means "my cycle is off right now" - the
+ * watchdog skips that subscriber instead of the whole heartbeat, so one disabled cycle can never
+ * silence another's recovery.
+ */
+export function subscribeWake(sub) {
+  installWakeListenersOnce();
+  _wakeSubscribers.add(sub);
+  return () => _wakeSubscribers.delete(sub);
 }
 
 /**
@@ -157,8 +172,23 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   let pendingRecheck = false; // a poll/manual-reload arrived while a check was already in flight
   // Circuit breaker for the poll loop itself - see restartPollTimer below.
   let consecutiveFailCount = 0;
-  let pollHalted = false;
+  // A ref, not a plain flag: the slot's power icon renders amber off it (contract C-3), and the icon
+  // is the only place the user can see - or clear - a halted monitor.
+  const pollHalted = ref(false);
   const MAX_CONSECUTIVE_FAILS = 5;
+
+  /**
+   * One tick of the breaker. THE ONLY THING IT COUNTS IS REACHABILITY - never "there was no reading".
+   * A host with no cache file yet, a Claude Code window past its reset boundary, an Antigravity IDE
+   * that is not running: all of those answer, and all of them legitimately return no data. Counting
+   * them would halt polling on a perfectly healthy machine; ignoring the unreachable case (what the
+   * old shared `null` forced) is why the incident this breaker was written for could never trip it.
+   */
+  function noteUnreachable(reason) {
+    consecutiveFailCount++;
+    ulog('host unreachable', { reason, fails: consecutiveFailCount }, 'error');
+    if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) haltPolling();
+  }
 
   const provision = async () => {
     if (!enabled.value || provisioned) return;
@@ -209,9 +239,15 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     try {
       const hadData = data.value !== null;
       ulog('invoke get', { host }, 'debug');
-      const res = await invoke('get_agent_usage', { agentName: agentId, host });
-      ulog('get ok', { hasResult: res !== null }, 'debug');
-      consecutiveFailCount = 0; // host answered - reset the breaker
+      const result = await invoke('get_agent_usage', { agentName: agentId, host });
+      // `host_answered` is the whole point of the result envelope (agent_usage.rs's AgentUsageResult):
+      // "no reading" and "no host" used to arrive here as the same `null`, and this line reset the
+      // breaker on both - so a host refusing TCP (ssh exit 255 → null) cleared the very counter that
+      // was supposed to notice it, while the breaker still fired on a hang or a spawn failure.
+      const res = result?.data ?? null;
+      ulog('get ok', { answered: !!result?.host_answered, hasData: res !== null, miss: result?.miss_reason ?? null }, 'debug');
+      if (result?.host_answered) consecutiveFailCount = 0;
+      else noteUnreachable(result?.miss_reason || 'host did not answer');
 
       if (res) {
         try {
@@ -334,10 +370,12 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
         if (!isAg) provision();
       }
     } catch (e) {
-      consecutiveFailCount++;
-      ulog('IPC error', { err: String(e), fails: consecutiveFailCount }, 'error');
+      // A raised IPC error is a hang (30s script timeout) or a spawn failure - the host is not
+      // answering either. Set `error` first: haltPolling, if this is the fifth in a row, replaces it
+      // with the halt message, which is the one the user needs.
+      ulog('IPC error', { err: String(e) }, 'error');
       error.value = e.toString();
-      if (consecutiveFailCount >= MAX_CONSECUTIVE_FAILS) haltPolling();
+      noteUnreachable(String(e));
     } finally {
       loading.value = false;
       isChecking = false;
@@ -371,7 +409,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     const s = refreshSettings.value.usage_interval_s;
     ulog('poll timer restart', { interval_s: s }, 'debug');
     if (!enabled.value || !(s > 0)) return;
-    if (pollHalted) {
+    if (pollHalted.value) {
       ulog('poll halted - not restarting', { fails: consecutiveFailCount }, 'info');
       return;
     }
@@ -383,31 +421,60 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
 
   /** Trips the breaker: stops the timer and tells the user why, in the one place that shows errors. */
   function haltPolling() {
-    pollHalted = true;
+    pollHalted.value = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
-    error.value = `Host unreachable ${consecutiveFailCount}× in a row - polling stopped. Fix the host, then hit Reload.`;
-    ulog('poll halted', { fails: consecutiveFailCount }, 'error');
+    // Names the host: a slot can be pointed anywhere, so "unreachable" without a name leaves the
+    // user guessing which machine is down. The slot's power icon shows this same text as its tooltip.
+    error.value = `Host "${host}" unreachable ${consecutiveFailCount}× in a row - polling stopped. Click the power icon to retry.`;
+    ulog('poll halted', { host, fails: consecutiveFailCount }, 'error');
   }
 
   /** Clears the breaker after an explicit user action (refresh / switched back on). */
   function resumePolling() {
     consecutiveFailCount = 0;
-    pollHalted = false;
+    pollHalted.value = false;
+  }
+
+  /**
+   * The amber power icon's click (contract C-3): clear the breaker and probe once, right now.
+   *
+   * Named for what it does rather than `resume`/`reset`: it clears THIS monitor's breaker and
+   * nothing else - no other monitor, no stored preference, no cached reading.
+   */
+  function retryAfterHalt() {
+    ulog('retry after halt', { host }, 'info');
+    resumePolling();
+    error.value = null;
+    restartPollTimer();
+    checkUsage();
   }
 
   // P1 wake self-heal: triggered by visibilitychange/focus or the watchdog heartbeat (module scope, see installWakeListenersOnce above) after a suspected WKWebView suspend. Re-checks immediately and restarts the interval - a suspended setInterval does not reliably resume ticking on its own even once the page is visible/focused again.
   function onWake(reason) {
     if (!enabled.value) return; // monitoring off - nothing to recover
+    // A halted monitor stays halted. `restartPollTimer` already refuses to rebuild the interval, but
+    // `checkUsage()` below is unconditional, so a halted monitor still probed the dead host once per
+    // wake - and the watchdog manufactures a wake every `gapThresholdMs`, so "stopped polling" was in
+    // practice one probe per ~60s, forever. That is the relentless loop the breaker exists to end,
+    // reached through the back door the breaker's own comment says it must not be. `lastTickAt` is
+    // bumped so the watchdog does not re-fire (and re-log) every 7s heartbeat.
+    // Only an explicit user action resumes: the amber power icon (retryAfterHalt) or a manual refresh.
+    if (pollHalted.value) {
+      lastTickAt = Date.now();
+      ulog('wake ignored - polling halted', { reason }, 'debug');
+      return;
+    }
     ulog('wake', { reason, gap_ms: Date.now() - lastTickAt }, 'info');
     lastTickAt = Date.now(); // prevent the watchdog re-firing every heartbeat while this check is in flight
     checkUsage();
     restartPollTimer();
   }
-  installWakeListenersOnce();
-  _wakeSubscribers.add({
+  subscribeWake({
     onWake,
     lastTickAt: () => lastTickAt,
+    // 0 when usage polling is switched off entirely - the watchdog then skips this monitor, which is
+    // what the old `if (!(s > 0)) return` did for the whole heartbeat before other cycles shared it.
     gapThresholdMs: () => 2 * refreshSettings.value.usage_interval_s * 1000,
   });
 
@@ -463,6 +530,10 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     enabled,
     locked,
     toggle,
+    // Breaker state, for the power icon (contract C-3): amber while halted, and clicking it retries
+    // instead of toggling the monitor off.
+    pollHalted,
+    retryAfterHalt,
     // Readings.
     data,
     loading,

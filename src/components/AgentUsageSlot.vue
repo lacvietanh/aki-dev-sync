@@ -27,11 +27,11 @@
           :key="src.key"
           class="tab src-tab"
           :class="{ 'is-active': activeAgentKey === src.key }"
-          :title="src.monitor.locked ? `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless` : `${src.title} monitoring ${src.monitor.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`"
+          :title="powerTitle(src)"
           @click="setAgent(src.key)"
         >
-          <i class="fa-solid fa-power-off src-power" :class="[src.monitor.enabled ? 'is-on' : 'is-off', { 'is-locked': src.monitor.locked }]"
-             @click.stop="src.monitor.toggle()"></i>
+          <i class="fa-solid fa-power-off src-power" :class="[src.monitor.pollHalted ? 'is-halted' : (src.monitor.enabled ? 'is-on' : 'is-off'), { 'is-locked': src.monitor.locked }]"
+             @click.stop="onPowerClick(src.monitor)"></i>
           <img :src="src.icon" class="src-icon" alt="" />
           <span class="u-narrow-hide">{{ src.label }}</span>
         </button>
@@ -129,6 +129,26 @@ const srcTabs = computed(() => {
   ];
 });
 
+// Contract C-3 (docs/plan/1.20.1-flow-audit-fixes.md §1.1). When the circuit breaker halts a monitor
+// the existing power icon turns AMBER - a third state on the control that is already there, never a
+// new row or banner (CLAUDE.md, UI Extreme Narrow). It matters because `is-on` while nothing is
+// polling is the app lying about the one thing the user opened this card to judge: whether the
+// number in front of them is current.
+function powerTitle(src) {
+  const m = src.monitor;
+  if (m.pollHalted) return `${src.title} - ${m.error || `host "${target.value.host}" unreachable`} - click to retry now`;
+  if (m.locked) return `${src.title} monitoring locked OFF - Proxy mode active, native usage data would be meaningless`;
+  return `${src.title} monitoring ${m.enabled ? 'ON - click to turn off' : 'OFF - click to turn on'}`;
+}
+
+// A halted monitor is still switched ON, so the ordinary toggle would read the click as "turn this
+// off" - the opposite of what someone clicking an amber warning wants. While halted the icon is a
+// retry button; every other time it is the toggle it has always been.
+function onPowerClick(m) {
+  if (m.pollHalted) { m.retryAfterHalt(); return; }
+  m.toggle();
+}
+
 const activeAgentId = computed(() => target.value.agentId);
 const activeAgentName = computed(() => (activeAgentId.value === 'antigravity') ? 'Antigravity' : 'Claude Code');
 
@@ -165,12 +185,12 @@ function handleSelectAccount(keyOrEmail) {
 const slotAccountInfo = computed(() => {
   const src = monitor.value;
   if (activeAgentId.value !== 'antigravity' || !src.data) {
-    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: false };
+    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
   }
 
   const key = slotViewingEmail.value;
   if (!key) {
-    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: false };
+    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
   }
 
   // A pin names an ENTITY - `email:sourceType` - because one Google account can be signed into the
@@ -188,10 +208,10 @@ const slotAccountInfo = computed(() => {
     // below re-derive an honest state.
     const liveMatches = src.data.allAccounts.filter(isPinned);
     if (liveMatches.length === 1) {
-      return { data: liveMatches[0], isCached: false, cachedAt: null, isMissing: false };
+      return { data: liveMatches[0], isCached: false, cachedAt: null };
     }
   } else if (isPinned(src.data)) {
-    return { data: src.data, isCached: false, cachedAt: null, isMissing: false };
+    return { data: src.data, isCached: false, cachedAt: null };
   }
 
   // Fallback to the offline cache, scoped to the machine THIS slot is watching. Asking the cache
@@ -199,18 +219,22 @@ const slotAccountInfo = computed(() => {
   // old inline read matched on email alone, so a slot on host B could render host A's reading.
   const acc = loadAgAccount(key, target.value.host);
   if (acc) {
-    return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt, isMissing: false };
+    return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt };
   }
 
-  return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, isMissing: true };
-});
-
-// Defensive fallback watcher: if selected account is missing from live & offline cache once loaded, clear state
-watch(slotAccountInfo, (info) => {
-  if (info.isMissing && slotViewingEmail.value && !monitor.value.loading) {
-    slotViewingEmail.value = null;
-    localStorage.removeItem(slotViewingEmailKey);
-  }
+  // The pin does not resolve on the machine this slot is currently watching. That is the CORRECT
+  // answer, not an error: a pin is a host-free `email:sourceType` handle by design, so pointing the
+  // slot at another host is expected to miss - the account genuinely is not signed in over there.
+  // The card falls back to whatever IS live here, which labels itself with its own email, so nothing
+  // is shown under the wrong name.
+  //
+  // What used to happen instead: a watcher read this state as "stale preference" and deleted BOTH
+  // the in-memory selection and the persisted `aki-usage-slot-<id>-viewing-account` key - so merely
+  // looking at another host destroyed the user's pinned account, and pointing the slot back found
+  // nothing to restore. The preference is the user's, expressed by an explicit click; only another
+  // explicit click (handleSelectAccount) may change it. Nothing here writes to localStorage at all,
+  // and nothing here can touch any other slot's key (project Regression Guard - Multi-entity State).
+  return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
 });
 </script>
 
@@ -269,6 +293,15 @@ watch(slotAccountInfo, (info) => {
   opacity: 0.3;
   cursor: not-allowed;
   background: transparent;
+}
+
+/* Contract C-3: the third state of the power icon - polling halted by the circuit breaker. Amber,
+   between the green of "on" and the grey of "off", because that is exactly what it means: switched
+   on, but not actually polling. Defined here rather than beside .src-power in main.css because the
+   breaker only exists for usage monitors; the other users of that global class have no such state.
+   No new element is introduced (CLAUDE.md, UI Extreme Narrow) - the colour and the tooltip carry it. */
+.src-power.is-halted {
+  color: #f59e0b;
 }
 
 .src-icon {

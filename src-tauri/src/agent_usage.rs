@@ -292,6 +292,58 @@ pub struct AgentUsageResponse {
     pub file_modified_at: String,
 }
 
+/// One answer to `get_agent_usage`, and the reason there is no reading when there isn't one.
+///
+/// WHY THIS EXISTS RATHER THAN A BARE `Option`. "The host refused the connection" and "the host
+/// answered and had nothing to report" are completely different events that both used to arrive at
+/// the frontend as the same `null`. The circuit breaker in `usageMonitor.js` counts the first and
+/// must ignore the second, and with one shared `null` it could do neither: it reset its counter on
+/// every `null`, so the exact incident it was written for (host refusing TCP → `ssh` exit 255) could
+/// never trip it, while a legitimately quiet host (no cache file yet, AG IDE not running) would have
+/// tripped it if the reset were simply removed. Reachability is a property of the CALL, not of the
+/// data, so it travels beside the data instead of being inferred from its absence.
+///
+/// `data: None` with `host_answered: true` is the ordinary quiet poll and stays completely silent in
+/// the UI - this type does not turn any previously-swallowed condition into a user-facing error.
+#[derive(Serialize)]
+pub struct AgentUsageResult {
+    /// True when the host itself ran the probe and exited on its own, whatever it exited with.
+    pub host_answered: bool,
+    /// Why there is no reading. `None` when `data` is present.
+    pub miss_reason: Option<String>,
+    pub data: Option<AgentUsageResponse>,
+}
+
+impl AgentUsageResult {
+    fn hit(data: AgentUsageResponse) -> Self {
+        Self { host_answered: true, miss_reason: None, data: Some(data) }
+    }
+
+    /// The host answered; there is simply no reading this poll.
+    fn miss(reason: impl Into<String>) -> Self {
+        Self { host_answered: true, miss_reason: Some(reason.into()), data: None }
+    }
+
+    /// The call never reached the host (connection refused, DNS, auth, network unreachable).
+    fn unreachable(reason: impl Into<String>) -> Self {
+        Self { host_answered: false, miss_reason: Some(reason.into()), data: None }
+    }
+}
+
+/// Whether the HOST itself answered, given the exit status of one probe.
+///
+/// `ssh` reserves exit status 255 for its own failures - connection refused, host key, DNS, auth,
+/// network unreachable - and in every one of those cases the remote command never ran. Any other
+/// status is the remote script's own exit code, i.e. the host was there. A local probe always
+/// answers: there is no connection to fail.
+///
+/// Known edge: a remote script that itself exited 255 would be read as unreachable. Neither probe
+/// this module ships does (they exit 0, 1 or 127), and the cost of a misread is one tick on the
+/// frontend's failure counter, not a wrong number on screen.
+fn host_answered(host: &str, exit_code: i32) -> bool {
+    is_local_host(host) || exit_code != 255
+}
+
 fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -362,7 +414,7 @@ fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result<bool, Stri
 pub async fn get_agent_usage(
     agent_name: String,
     host: String,
-) -> Result<Option<AgentUsageResponse>, String> {
+) -> Result<AgentUsageResult, String> {
     // Both inner fns are fully synchronous (wait_with_output, thread::sleep). Running them directly on the async executor starves it and freezes the UI. spawn_blocking offloads to the Tauri blocking thread-pool.
     tauri::async_runtime::spawn_blocking(move || {
         if agent_name == "claudecode" {
@@ -404,7 +456,7 @@ fn ag_node_missing_once(host: &str) -> bool {
     seen.lock().unwrap().insert(host.to_string())
 }
 
-fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
+fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, String> {
     logger::debug("GET_USAGE", &format!("start host={}", host));
 
     const SCRIPT: &str = include_str!("../../scripts/get-claudecode-usage.sh");
@@ -431,19 +483,27 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
     log_shell_stderr("GET_USAGE", &stderr);
 
     if !output.status.success() {
+        // The one branch where "no reading" may mean the host was never there: an `ssh` that could
+        // not connect exits 255 having run nothing. Reported as unreachable so the frontend's
+        // breaker can see it - this used to be the same silent `null` as a quiet host, which is why
+        // a host refusing TCP could be probed at full rate for 24 minutes (docs/plan §3.8).
+        if !host_answered(host, exit_code) {
+            logger::error("GET_USAGE", &format!("host unreachable (ssh exit={})", exit_code));
+            return Ok(AgentUsageResult::unreachable(format!("ssh could not reach {} (exit 255)", host)));
+        }
         logger::error("GET_USAGE", &format!("shell exit={}", exit_code));
-        return Ok(None);
+        return Ok(AgentUsageResult::miss(format!("probe exited {}", exit_code)));
     }
 
     if stdout.trim().is_empty() {
         logger::info("GET_USAGE", "null: no cache");
-        return Ok(None);
+        return Ok(AgentUsageResult::miss("no cache"));
     }
 
     // STALE_RESET signal
     if stdout.trim() == "|||STALE_RESET|||" {
         logger::info("GET_USAGE", "null: STALE_RESET");
-        return Ok(None);
+        return Ok(AgentUsageResult::miss("STALE_RESET"));
     }
 
     logger::debug("GET_USAGE", &format!("stdout: {}", preview(&stdout, 300)));
@@ -454,7 +514,7 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
     logger::debug("GET_USAGE", &format!("mtime_parts={}", parts.len()));
     if parts.len() != 2 {
         logger::error("GET_USAGE", "no MTIME delimiter");
-        return Ok(None);
+        return Ok(AgentUsageResult::miss("malformed probe output (no MTIME delimiter)"));
     }
 
     let content_raw = parts[0].trim();
@@ -545,14 +605,14 @@ fn get_claudecode_usage(host: &str) -> Result<Option<AgentUsageResponse>, String
 
     let content = serde_json::to_string(&v).unwrap_or_default();
     logger::debug("GET_USAGE", &format!("done mtime={} b={}", mtime_sec, content.len()));
-    Ok(Some(AgentUsageResponse {
+    Ok(AgentUsageResult::hit(AgentUsageResponse {
         content,
         fetched_at: now_secs().to_string(),
         file_modified_at: mtime_sec.to_string(),
     }))
 }
 
-fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, String> {
+fn get_antigravity_usage(host: &str) -> Result<AgentUsageResult, String> {
     logger::debug("USAGE:antigravity", &format!("start host={}", host));
 
     let script = include_str!("../../scripts/get-antigravity-usage.js");
@@ -561,8 +621,12 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
     let output = match run_remote_node_timeout(host, script) {
         Ok(o) => o,
         Err(e) => {
+            // Still swallowed rather than raised as an IPC `Err` (that flickering banner every poll
+            // WAS the usage instability this funnel was built to end), but no longer indistinguishable
+            // from a quiet host: a spawn failure or a 30s timeout is the host not answering, and the
+            // breaker is entitled to count it.
             logger::debug("USAGE:antigravity", &format!("soft-miss (spawn/timeout): {}", e));
-            return Ok(None);
+            return Ok(AgentUsageResult::unreachable(e));
         }
     };
 
@@ -585,18 +649,23 @@ fn get_antigravity_usage(host: &str) -> Result<Option<AgentUsageResponse>, Strin
         } else {
             logger::debug("USAGE:antigravity", &format!("soft-miss: {}", stderr.trim()));
         }
-        return Ok(None);
+        // Exit 127 is the host answering with "no node here" - permanent, but not a reachability
+        // failure, and halting the poll loop would not help. Only ssh's own 255 counts as unreachable.
+        if !host_answered(host, exit_code) {
+            return Ok(AgentUsageResult::unreachable(format!("ssh could not reach {} (exit 255)", host)));
+        }
+        return Ok(AgentUsageResult::miss(format!("probe exited {}", exit_code)));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if stdout.trim().is_empty() {
         logger::debug("USAGE:antigravity", "done: null empty stdout");
-        return Ok(None);
+        return Ok(AgentUsageResult::miss("no live AG session"));
     }
 
     let now = now_secs().to_string();
     logger::debug("USAGE:antigravity", &format!("done: ok b={}", stdout.len()));
-    Ok(Some(AgentUsageResponse {
+    Ok(AgentUsageResult::hit(AgentUsageResponse {
         content: stdout.to_string(),
         fetched_at: now.clone(),
         file_modified_at: now,
@@ -752,4 +821,40 @@ pub async fn logout_antigravity_cli() -> Result<(), String> {
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The distinction the frontend circuit breaker is built on (docs/plan/1.20.1-flow-audit-fixes.md
+    /// §3.8): only `ssh`'s own 255 means the host never answered.
+    #[test]
+    fn ssh_255_is_the_only_unreachable_signal() {
+        assert!(!host_answered("hostB", 255), "ssh 255 = never reached the host");
+        assert!(host_answered("hostB", 0));
+        assert!(host_answered("hostB", 1), "remote script's own failure - the host answered");
+        assert!(host_answered("hostB", 127), "node missing on the remote - the host answered");
+        assert!(host_answered("hostB", -1), "no code (signalled) - not a connection failure");
+    }
+
+    #[test]
+    fn a_local_probe_always_answers() {
+        assert!(host_answered("local", 255));
+        assert!(host_answered("localhost", 255));
+    }
+
+    #[test]
+    fn result_constructors_carry_reachability() {
+        let miss = AgentUsageResult::miss("no cache");
+        assert!(miss.host_answered && miss.data.is_none());
+        let down = AgentUsageResult::unreachable("ssh could not reach hostB");
+        assert!(!down.host_answered && down.data.is_none());
+        let hit = AgentUsageResult::hit(AgentUsageResponse {
+            content: "{}".into(),
+            fetched_at: "0".into(),
+            file_modified_at: "0".into(),
+        });
+        assert!(hit.host_answered && hit.miss_reason.is_none() && hit.data.is_some());
+    }
 }
