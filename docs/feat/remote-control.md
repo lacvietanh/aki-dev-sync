@@ -335,7 +335,12 @@ Both are documented in full in `docs/plan/1.20.0-terminal-and-remote-sync.md` (�
   reconnect: screen lock, backgrounded tab, LAN blip) replayed the stale copy back over the edit.
   That is the "task note reverts after a while" report. Fixed by `remoteActions.applyTaskEdit(id, patch)`
   and `remoteActions.reorderProjects(orderedIds)`; the seven bare call sites (task add/toggle/remove,
-  notes, task title, task detail, drag-reorder) now all route through them. `saveProjectsList` carries
+  notes, task title, task detail, drag-reorder) now all route through them. **Caveat on drag-reorder:**
+  the *seam* is fixed, but the *gesture* never fires on a phone — the row uses HTML5 drag-and-drop,
+  which emits no events from touch, and `onRowDragStart` additionally requires a `mousedown`. So
+  reordering is Mac-only in practice; a reorder performed on the Mac mirrors to the phone correctly.
+  Making it work on touch is a pointer-events reimplementation, tracked as deferred debt in
+  `docs/plan/1.20.1-flow-audit-fixes.md` §4. `saveProjectsList` carries
   the invariant as a comment at its definition: it is a **host-side persist of the host's own state**
   and may only be reached from inside an action body. No guard was added inside it — by the time it
   runs the wrong array is already in hand, so a guard would police the symptom.

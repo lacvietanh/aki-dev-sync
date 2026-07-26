@@ -48,7 +48,7 @@
           <div class="feature-icon"><i class="fa-solid fa-arrow-up"></i></div>
           <div class="feature-text">
             <strong>PUSH</strong>
-            <span>Push Local → Remote with everything not listed in <code>push_excludes</code>, plus a per-project "Force Delete" setting. A folder listed only in <code>pull_excludes</code> is <strong>push-only</strong> - sent up, never pulled back, never counted as a change (<code>.git/</code> by default: the AI gets full history, and the PUSH badge stays dark through git's own housekeeping).</span>
+            <span>Push Local → Remote with everything not listed in <code>push_excludes</code>, plus a per-project "Force Delete" setting. A folder listed only in <code>pull_excludes</code> is <strong>push-only</strong> - sent up, never pulled back, never counted as a change (<code>.git/</code> by default: the AI gets full history, and the PUSH badge stays dark through git's own housekeeping). While a sync is running that project's button becomes <strong>STOP</strong> - it kills rsync and its ssh, and quitting the app kills them too.</span>
           </div>
         </div>
 
@@ -148,7 +148,7 @@
           <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-cloud"></i></div>
           <div class="feature-text">
             <strong>Sync Check & remote monitors - independent switches</strong>
-            <span>The power icon in the SYNC column toggles PUSH/PULL/SELECT, the remote IDE entries in the Open popup, and sync diff checks (background + manual). In Agent Usage's REMOTE tab, the <code>AG</code> and <code>CC</code> tabs each have their own power icon, toggling the Antigravity and Claude Code monitors independently. The host picker beside them belongs to <strong>that slot alone</strong>, so one slot watches Claude Code on host A while another watches host B under a different account - two machines side by side. Switching one off never switches off another. Every monitor is on by default; each active remote monitor costs one SSH round-trip per refresh cycle, and its power icon stops it completely.</span>
+            <span>The power icon in the SYNC column toggles PUSH/PULL/SELECT, the remote IDE entries in the Open popup, and sync diff checks (background + manual). In Agent Usage's REMOTE tab, the <code>AG</code> and <code>CC</code> tabs each have their own power icon, toggling the Antigravity and Claude Code monitors independently. The host picker beside them belongs to <strong>that slot alone</strong>, so one slot watches Claude Code on host A while another watches host B under a different account - two machines side by side. Switching one off never switches off another. Every monitor is on by default; each active remote monitor costs one SSH round-trip per refresh cycle, and its power icon stops it completely. If a host stops answering, that monitor gives up rather than probing a dead machine forever: its power icon turns <strong>amber</strong>, the tooltip names the host, and clicking it retries.</span>
           </div>
         </div>
 
