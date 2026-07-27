@@ -59,6 +59,9 @@
             <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) - Native / Proxy settings for ~/.claude/settings.json on this machine">
               <i class="fa-solid fa-sliders"></i> Claude Code Profile (Local)
             </a>
+            <a href="#" @click.prevent="showCleanupModal = true" class="icon-dropdown-item" title="Claude Code Cleanup (Local) - see what ~/.claude costs in disk and clear account, history or cache; skills, hooks, settings and agent memory are never touched">
+              <i class="fa-solid fa-broom"></i> Claude Code Cleanup (Local)
+            </a>
             </template>
             <template v-if="remoteAvailable">
               <div class="icon-dropdown-separator"></div>
@@ -285,6 +288,7 @@
         <GlobalNoteModal />
         <ClaudeSettingModal :show="showStatuslineModal" @close="showStatuslineModal = false" />
         <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
+        <ClaudeCleanupModal :show="showCleanupModal" @close="showCleanupModal = false" />
 
         <!-- Custom Traffic Lights — native-window only: on a phone companion these would be dead
              buttons (it cannot pin/minimize/close the Mac's window), so they are not rendered. -->
@@ -328,6 +332,7 @@ import UpdateModal from './modals/UpdateModal.vue';
 import GlobalNoteModal from './modals/GlobalNoteModal.vue';
 import ClaudeSettingModal from './modals/ClaudeSettingModal.vue';
 import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
+import ClaudeCleanupModal from './modals/ClaudeCleanupModal.vue';
 import TaskCountBadges from './tasks/TaskCountBadges.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
@@ -343,6 +348,7 @@ const showChangelogModal = ref(false);
 const showUpdateModal = ref(false);
 const showStatuslineModal = ref(false);
 const showProfileModal = ref(false);
+const showCleanupModal = ref(false);
 const isDev = import.meta.env.DEV;
 const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);

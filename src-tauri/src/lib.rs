@@ -1,4 +1,5 @@
 mod agent_usage;
+mod claude_cleanup;
 mod claude_profile;
 mod git;
 mod global_note;
@@ -101,6 +102,10 @@ pub fn run() {
             // claude profile switcher
             claude_profile::get_claude_mode,
             claude_profile::set_claude_profile,
+            // Claude Code cleanup (docs/plan/claudecode-cleanup.md) — host-only by design; both
+            // commands are deliberately absent from COMPANION_ALLOWED_COMMANDS.
+            claude_cleanup::scan_claude_cleanup,
+            claude_cleanup::run_claude_cleanup,
             // statusline customizer
             statusline::apply_statusline_config,
             statusline::check_statusline_status,
