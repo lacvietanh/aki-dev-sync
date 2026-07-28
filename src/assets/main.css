@@ -153,6 +153,42 @@ a {
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
 
+/* Mid-drag: the eased transition would make the panel trail the pointer by a few frames, which
+   reads as a laggy splitter rather than a smooth one. */
+.dashboard-bottom.is-dragging {
+  transition: none;
+}
+
+/* The splitter. Three pixels of actual layout, an 11px hit area via ::before — a 3px drag target is
+   a well-documented miss-fest, and growing the element itself would steal that height from the
+   terminal on every screen for the sake of a gesture used occasionally (Extreme Narrow, CLAUDE.md:
+   the affordance is an overlay on space that already exists, not a new row). */
+.dock-splitter {
+  position: relative;
+  flex: none;
+  height: 3px;
+  margin-top: -3px;
+  cursor: ns-resize;
+  background: transparent;
+  transition: background 0.15s ease;
+  touch-action: none; /* or the phone scrolls the page instead of dragging the dock */
+  z-index: 2;
+}
+
+.dock-splitter::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+
+.dock-splitter:hover,
+.dashboard-bottom.is-dragging .dock-splitter {
+  background: var(--accent-cyan);
+}
+
 /* Both stacks collapsed: the dock shrinks to just their two headers (+ the log stack's one peek
    line) instead of the old fixed 110px — each stack now dictates its own collapsed height via
    .dock-stack.is-collapsed { flex: none }, so the container itself no longer needs a floor. */

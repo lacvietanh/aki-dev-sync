@@ -946,18 +946,70 @@ pub fn count_cwd_subtree_roots(
         .collect()
 }
 
-/// Parses `ps -axo pid=,ppid=` output into pid -> ppid.
-fn parse_ps_ppids(out: &str) -> HashMap<u32, u32> {
-    let mut map = HashMap::new();
-    for line in out.lines() {
-        let mut it = line.split_whitespace();
-        if let (Some(pid), Some(ppid)) = (it.next(), it.next()) {
-            if let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) {
-                map.insert(pid, ppid);
-            }
-        }
+/// One row of the process table, as far as the external-terminal scan cares about it.
+///
+/// `count_external_terminals` only ever needed pid -> ppid; `list_external_terminals` needs enough
+/// to describe a session to a human (what is running, on which tty, for how long). Both are served
+/// by ONE `ps` invocation and ONE parser rather than two formats drifting apart - the badge and the
+/// detail modal must never be able to disagree about which processes exist.
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct PsRow {
+    pub pid: u32,
+    pub ppid: u32,
+    /// `ps` prints `??` for a process with no controlling terminal. Kept verbatim: inventing
+    /// `"none"` here would just be a second spelling of the same fact.
+    pub tty: String,
+    /// Elapsed run time exactly as `ps -o etime` formats it (`MM:SS`, `HH:MM:SS`, `D-HH:MM:SS`).
+    /// Not parsed into seconds: it is only ever displayed, and re-formatting it would be one more
+    /// place to get wrong for zero gain.
+    pub etime: String,
+    pub command: String,
+}
+
+/// Splits a `ps` line into its first `n` whitespace-delimited columns plus the untouched remainder.
+///
+/// Written as an offset walk rather than `split_whitespace().nth(n)` + `line.find(..)`: `find`
+/// returns the FIRST occurrence of that token anywhere in the line, and a command line very often
+/// repeats an earlier column (`ps` prints tty `s000` for a shell whose command contains `s000`,
+/// a pid appears inside `--pid=1234`). That would silently slice the command at the wrong byte.
+fn split_columns(line: &str, n: usize) -> Option<(Vec<&str>, &str)> {
+    let mut cols = Vec::with_capacity(n);
+    let mut rest = line.trim_start();
+    for _ in 0..n {
+        let end = rest.find(char::is_whitespace)?;
+        cols.push(&rest[..end]);
+        rest = rest[end..].trim_start();
     }
-    map
+    Some((cols, rest))
+}
+
+/// Parses `ps -axo pid=,ppid=,tty=,etime=,command=` output.
+///
+/// The first four columns never contain whitespace; the remainder is the command line verbatim,
+/// spaces and all, which is precisely what must not be tokenised (a path with a space in it is
+/// ordinary on macOS).
+fn parse_ps_rows(out: &str) -> Vec<PsRow> {
+    let mut rows = Vec::new();
+    for line in out.lines() {
+        let Some((cols, command)) = split_columns(line, 4) else {
+            continue;
+        };
+        let (Ok(pid), Ok(ppid)) = (cols[0].parse::<u32>(), cols[1].parse::<u32>()) else {
+            continue;
+        };
+        rows.push(PsRow {
+            pid,
+            ppid,
+            tty: cols[2].to_string(),
+            etime: cols[3].to_string(),
+            command: command.trim_end().to_string(),
+        });
+    }
+    rows
+}
+
+fn ppids_from_rows(rows: &[PsRow]) -> HashMap<u32, u32> {
+    rows.iter().map(|r| (r.pid, r.ppid)).collect()
 }
 
 /// Parses `lsof -F pn` output into pid -> cwd. Field lines are `p<pid>` (starts a process set) then
@@ -1015,75 +1067,281 @@ const MAX_SCANNED_PIDS: usize = 200;
 #[tauri::command]
 pub async fn count_external_terminals(paths: Vec<String>) -> Result<HashMap<String, u32>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let zero = || -> HashMap<String, u32> {
-            paths.iter().map(|p| (p.clone(), 0u32)).collect()
-        };
         if paths.is_empty() {
             return Ok(HashMap::new());
         }
-
-        #[cfg(not(target_os = "macos"))]
-        {
+        let zero = || -> HashMap<String, u32> { paths.iter().map(|p| (p.clone(), 0u32)).collect() };
+        let Some(tree) = scan_terminal_tree()? else {
             return Ok(zero());
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            let pgrep = create_command("pgrep")
-                .args(["-x", "Terminal"])
-                .output()
-                .map_err(|e| format!("Failed to look for Terminal.app: {}", e))?;
-            let terminal_pids: Vec<u32> = String::from_utf8_lossy(&pgrep.stdout)
-                .lines()
-                .filter_map(|l| l.trim().parse::<u32>().ok())
-                .collect();
-            if terminal_pids.is_empty() {
-                return Ok(zero());
-            }
-
-            let ps = create_command("ps")
-                .args(["-axo", "pid=,ppid="])
-                .output()
-                .map_err(|e| format!("Failed to enumerate processes: {}", e))?;
-            let ppid_of = parse_ps_ppids(&String::from_utf8_lossy(&ps.stdout));
-
-            let mut kids = descendants_of(&ppid_of, &terminal_pids);
-            kids.truncate(MAX_SCANNED_PIDS);
-            if kids.is_empty() {
-                return Ok(zero());
-            }
-
-            let pid_list = kids
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            // `lsof` exits non-zero when any listed pid has already died between the `ps` and this
-            // call - a completely ordinary race, so the status is ignored and stdout is parsed for
-            // whatever did resolve.
-            let lsof = create_command("lsof")
-                .args(["-a", "-d", "cwd", "-p", &pid_list, "-F", "pn"])
-                .output()
-                .map_err(|e| format!("Failed to read process directories: {}", e))?;
-            let cwd_of = parse_lsof_cwds(&String::from_utf8_lossy(&lsof.stdout));
-
-            // Canonicalised so a project stored via a symlinked path still matches the real path
-            // `lsof` reports. A path that cannot be canonicalised (removed directory) falls back to
-            // itself and simply matches nothing.
-            let wanted: Vec<String> = paths
-                .iter()
-                .map(|p| {
-                    std::fs::canonicalize(p)
-                        .map(|c| c.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| p.clone())
-                })
-                .collect();
-            let counts = count_cwd_subtree_roots(&ppid_of, &cwd_of, &wanted);
-            Ok(paths.iter().cloned().zip(counts).collect())
-        }
+        };
+        let counts = count_cwd_subtree_roots(&tree.ppid_of, &tree.cwd_of, &canonicalize_all(&paths));
+        Ok(paths.iter().cloned().zip(counts).collect())
     })
     .await
     .map_err(|e| format!("count_external_terminals task join error: {}", e))?
+}
+
+/// How many external `Terminal.app` sessions belong to NONE of `paths` right now — the complement
+/// the global-terminal button's badge shows (`docs/plan/terminal-ownership-model.md` §5, MVP floor:
+/// adoption-only, no spawn-origin tagging). A session is a subtree root, the same unit
+/// `count_cwd_subtree_roots` counts; this walks every root once rather than summing the per-path
+/// counts, so a root matching two of `paths` at once is never double-subtracted.
+#[tauri::command]
+pub async fn count_external_terminals_global(paths: Vec<String>) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(tree) = scan_terminal_tree()? else {
+            return Ok(0);
+        };
+        let wanted: std::collections::HashSet<String> = canonicalize_all(&paths)
+            .iter()
+            .map(|p| normalize_dir(p).to_string())
+            .collect();
+        let is_root = |pid: &u32| -> bool {
+            match tree.ppid_of.get(pid) {
+                Some(parent) => match (tree.cwd_of.get(pid), tree.cwd_of.get(parent)) {
+                    (Some(c), Some(pc)) => normalize_dir(c) != normalize_dir(pc),
+                    _ => true,
+                },
+                None => true,
+            }
+        };
+        let unowned = tree
+            .cwd_of
+            .iter()
+            .filter(|(pid, _)| is_root(pid))
+            .filter(|(_, cwd)| !wanted.contains(normalize_dir(cwd)))
+            .count() as u32;
+        Ok(unowned)
+    })
+    .await
+    .map_err(|e| format!("count_external_terminals_global task join error: {}", e))?
+}
+
+/// One external `Terminal.app` window/tab, as the detail modal shows it.
+///
+/// "One session" is the SAME rule the badge counts by (`count_cwd_subtree_roots`): the ROOT of a
+/// cwd subtree, i.e. the shell, not the four processes it spawned. Keeping one rule for both is what
+/// guarantees that **the sessions listed for a given project always match that project's badge** -
+/// a second, parallel definition of "a session" is exactly how the two would come to disagree.
+///
+/// The TOTALS are not comparable and are not meant to be: this list also includes sessions standing
+/// somewhere that is not a project at all (`project_path: None`), because "what else do I have
+/// open" is half the reason to open the modal. Only the per-project counts are the same fact.
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct ExternalTerminalSession {
+    pub pid: u32,
+    pub ppid: u32,
+    pub tty: String,
+    pub etime: String,
+    /// The session's own command - the login shell (`-zsh`), after `promote_past_login` has walked
+    /// down from macOS's `login -pf <user>` wrapper, which shares the shell's cwd and would
+    /// otherwise be what the subtree-root rule picks.
+    pub command: String,
+    pub cwd: String,
+    /// Which of the requested project paths this session's cwd matched, if any. `None` = a Terminal
+    /// window standing somewhere else entirely; still listed, because "what else is open" is half
+    /// the reason to open this modal.
+    pub project_path: Option<String>,
+    /// What is actually RUNNING inside this session: the root's descendants, nearest first. Empty
+    /// means an idle shell sitting at its prompt. This is the MVP stand-in for "see the screen" -
+    /// we cannot read the window's pixels, but we can say truthfully what it is executing.
+    pub running: Vec<PsRow>,
+}
+
+/// Detail behind the external-terminal badge: every `Terminal.app` session and what runs in it.
+///
+/// Same three subprocesses as `count_external_terminals`, on the blocking pool for the same reason
+/// (CLAUDE.md never-block-the-UI). Called on demand from the modal, NOT on the 5s badge cadence -
+/// this returns command lines for every process in the Terminal tree and has no business being
+/// polled.
+#[tauri::command]
+pub async fn list_external_terminals(
+    paths: Vec<String>,
+) -> Result<Vec<ExternalTerminalSession>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(tree) = scan_terminal_tree()? else {
+            return Ok(vec![]);
+        };
+        // Canonical form -> the ORIGINAL path string the caller knows the project by. The modal
+        // matches sessions back to projects on the string it already holds, so resolving the
+        // symlink here (and reporting the un-resolved name) keeps that lookup honest.
+        let canonical = canonicalize_all(&paths);
+        let mut project_of: HashMap<&str, &str> = HashMap::new();
+        for (orig, canon) in paths.iter().zip(canonical.iter()) {
+            project_of.entry(normalize_dir(canon)).or_insert(orig.as_str());
+        }
+
+        let mut sessions: Vec<ExternalTerminalSession> = Vec::new();
+        for (pid, cwd) in &tree.cwd_of {
+            // Subtree ROOT test, identical in meaning to count_cwd_subtree_roots: a process whose
+            // parent sits in the same directory is part of a session, not a session of its own.
+            let parent_same_cwd = tree
+                .ppid_of
+                .get(pid)
+                .and_then(|pp| tree.cwd_of.get(pp))
+                .map(|pc| normalize_dir(pc) == normalize_dir(cwd))
+                .unwrap_or(false);
+            if parent_same_cwd {
+                continue;
+            }
+            let Some(root_row) = tree.row_of.get(pid) else { continue };
+            // `login -pf <user>` is what Terminal.app actually spawns, and it shares its cwd with
+            // the shell underneath it - so for a session sitting in its start directory the subtree
+            // root is `login`, not `-zsh`, and the modal would name the wrapper instead of the
+            // shell while listing the shell as "running". Promote past it: describe the session by
+            // the process a person would call the terminal's shell.
+            let row = promote_past_login(&tree, root_row);
+            let running: Vec<PsRow> = descendants_of(&tree.ppid_of, &[row.pid])
+                .into_iter()
+                .filter_map(|k| tree.row_of.get(&k).cloned())
+                .collect();
+            sessions.push(ExternalTerminalSession {
+                pid: row.pid,
+                ppid: row.ppid,
+                tty: row.tty.clone(),
+                etime: row.etime.clone(),
+                command: row.command.clone(),
+                cwd: cwd.clone(),
+                project_path: project_of.get(normalize_dir(cwd)).map(|s| s.to_string()),
+                running,
+            });
+        }
+        // Sessions matching a known project first (that is what the user opened the modal for),
+        // then by pid so the list does not reshuffle between refreshes - HashMap iteration order is
+        // arbitrary and a jumping list reads as a bug.
+        sessions.sort_by(|a, b| {
+            b.project_path
+                .is_some()
+                .cmp(&a.project_path.is_some())
+                .then(a.pid.cmp(&b.pid))
+        });
+        Ok(sessions)
+    })
+    .await
+    .map_err(|e| format!("list_external_terminals task join error: {}", e))?
+}
+
+/// Is this `ps` command line macOS's `login` wrapper rather than the user's shell?
+///
+/// Matched on the executable word alone (`login`, `/usr/bin/login`), never on a substring of the
+/// whole line - a shell running `git log --oneline` or a script called `login-check.sh` must not be
+/// mistaken for it.
+fn is_login_wrapper(command: &str) -> bool {
+    let exe = command.split_whitespace().next().unwrap_or("");
+    exe == "login" || exe.ends_with("/login")
+}
+
+/// Walks down from a `login` wrapper to the shell it launched, staying inside the same cwd. Returns
+/// `row` unchanged when it is not a wrapper, or when the chain does not resolve (a `login` with no
+/// readable child is still a session, and reporting it honestly beats dropping it).
+fn promote_past_login(tree: &TerminalTree, row: &PsRow) -> PsRow {
+    let mut current = row.clone();
+    // Bounded: `login` nests at most once in practice, but a cycle in a hand-built ppid map (or a
+    // pathological tree) must not spin forever.
+    for _ in 0..4 {
+        if !is_login_wrapper(&current.command) {
+            break;
+        }
+        let cwd = tree.cwd_of.get(&current.pid);
+        let child = tree
+            .row_of
+            .values()
+            .filter(|r| r.ppid == current.pid)
+            .find(|r| match (cwd, tree.cwd_of.get(&r.pid)) {
+                (Some(a), Some(b)) => normalize_dir(a) == normalize_dir(b),
+                _ => false,
+            });
+        match child {
+            Some(c) => current = c.clone(),
+            None => break,
+        }
+    }
+    current
+}
+
+/// Canonicalised so a project stored via a symlinked path still matches the real path `lsof`
+/// reports. A path that cannot be canonicalised (removed directory, unmounted volume) falls back to
+/// itself and simply matches nothing - never an error, since "that project has no terminal open" is
+/// the correct answer in that state.
+fn canonicalize_all(paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|p| {
+            std::fs::canonicalize(p)
+                .map(|c| c.to_string_lossy().to_string())
+                .unwrap_or_else(|_| p.clone())
+        })
+        .collect()
+}
+
+/// The shared result of ONE scan of `Terminal.app`'s process tree.
+struct TerminalTree {
+    /// Every process on the machine, pid -> ppid. Full table on purpose: `descendants_of` walks
+    /// downward from Terminal and needs parents outside the tree to do it.
+    ppid_of: HashMap<u32, u32>,
+    /// Terminal descendants only, pid -> cwd.
+    cwd_of: HashMap<u32, String>,
+    /// Terminal descendants only, pid -> its `ps` row.
+    row_of: HashMap<u32, PsRow>,
+}
+
+/// `pgrep -x Terminal` + one `ps` + one batched `lsof`, shared by the badge and the detail modal.
+///
+/// `Ok(None)` means "there is nothing to report" - Terminal is not running, or its tree has no
+/// descendants. That is not an error: it is the ordinary state of a Mac with no terminal open, and
+/// both callers turn it into an empty answer rather than a failure. macOS-only: this app only ever
+/// opens `Terminal.app`, so no other terminal emulator is probed.
+fn scan_terminal_tree() -> Result<Option<TerminalTree>, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return Ok(None);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let pgrep = create_command("pgrep")
+            .args(["-x", "Terminal"])
+            .output()
+            .map_err(|e| format!("Failed to look for Terminal.app: {}", e))?;
+        let terminal_pids: Vec<u32> = String::from_utf8_lossy(&pgrep.stdout)
+            .lines()
+            .filter_map(|l| l.trim().parse::<u32>().ok())
+            .collect();
+        if terminal_pids.is_empty() {
+            return Ok(None);
+        }
+
+        let ps = create_command("ps")
+            .args(["-axo", "pid=,ppid=,tty=,etime=,command="])
+            .output()
+            .map_err(|e| format!("Failed to enumerate processes: {}", e))?;
+        let rows = parse_ps_rows(&String::from_utf8_lossy(&ps.stdout));
+        let ppid_of = ppids_from_rows(&rows);
+
+        let mut kids = descendants_of(&ppid_of, &terminal_pids);
+        kids.truncate(MAX_SCANNED_PIDS);
+        if kids.is_empty() {
+            return Ok(None);
+        }
+        let kid_set: std::collections::HashSet<u32> = kids.iter().copied().collect();
+        let row_of: HashMap<u32, PsRow> = rows
+            .into_iter()
+            .filter(|r| kid_set.contains(&r.pid))
+            .map(|r| (r.pid, r))
+            .collect();
+
+        let pid_list = kids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+        // `lsof` exits non-zero when any listed pid has already died between the `ps` and this
+        // call - a completely ordinary race, so the status is ignored and stdout is parsed for
+        // whatever did resolve.
+        let lsof = create_command("lsof")
+            .args(["-a", "-d", "cwd", "-p", &pid_list, "-F", "pn"])
+            .output()
+            .map_err(|e| format!("Failed to read process directories: {}", e))?;
+        let cwd_of = parse_lsof_cwds(&String::from_utf8_lossy(&lsof.stdout));
+
+        Ok(Some(TerminalTree { ppid_of, cwd_of, row_of }))
+    }
 }
 
 /// Six `exists()` probes plus a whole-file read, all on a user-supplied project path that may live
@@ -1363,10 +1621,43 @@ mod tests {
 
     #[test]
     fn ps_output_parses_into_pid_ppid_pairs() {
-        let map = parse_ps_ppids("  300   200\n  400   300\ngarbage\n");
+        let rows = parse_ps_rows(
+            "  300   200 s000     01:23 -zsh\n  400   300 s000  00:04 npm run dev\ngarbage\n",
+        );
+        let map = ppids_from_rows(&rows);
         assert_eq!(map.get(&300), Some(&200));
         assert_eq!(map.get(&400), Some(&300));
         assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn ps_command_column_keeps_its_own_spacing_and_is_never_cut_short() {
+        // The command repeats BOTH the tty string and a pid — the exact case a `line.find(token)`
+        // implementation slices at the wrong offset.
+        let rows = parse_ps_rows("  400   300 s000  00:04 /bin/my app/s000 --pid=400 -x\n");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tty, "s000");
+        assert_eq!(rows[0].etime, "00:04");
+        assert_eq!(rows[0].command, "/bin/my app/s000 --pid=400 -x");
+    }
+
+    #[test]
+    fn login_wrapper_is_matched_on_the_executable_not_a_substring() {
+        assert!(is_login_wrapper("login -pf aki"));
+        assert!(is_login_wrapper("/usr/bin/login -pf aki"));
+        // A shell running something that merely CONTAINS "login" is the session, not a wrapper.
+        assert!(!is_login_wrapper("-zsh"));
+        assert!(!is_login_wrapper("git log --oneline"));
+        assert!(!is_login_wrapper("./login-check.sh"));
+        assert!(!is_login_wrapper("node scripts/login.js"));
+    }
+
+    #[test]
+    fn ps_row_with_no_command_column_is_dropped_not_mangled() {
+        // A kernel thread prints an empty command; `ps` still emits the row. Four columns and
+        // nothing after them means there is no session to describe.
+        let rows = parse_ps_rows("  1   0 ??   10-00:00:01\n");
+        assert!(rows.is_empty());
     }
 
     #[test]

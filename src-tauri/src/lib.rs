@@ -97,6 +97,7 @@ pub fn run() {
             system::run_project_dev,
             system::read_project_changelog,
             system::count_external_terminals,
+            system::count_external_terminals_global,
             system::list_external_terminals,
             // global note
             global_note::read_global_note,

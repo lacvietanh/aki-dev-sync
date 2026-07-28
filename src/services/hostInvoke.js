@@ -45,6 +45,9 @@ import { FRAME_INVOKE, FRAME_INVOKE_RESULT } from '../constants/protocol'
  *   get_sync_delete_preview,
  *   get_file_conflict_info           -> only ever called from inside a host-side sync/drop flow
  *   count_external_terminals,
+ *   list_external_terminals          -> the scan reads `Terminal.app`'s process tree, which only
+ *                                       exists on the Mac; both callers are `isHost`-gated, and the
+ *                                       detail modal's own button is hidden on a companion
  *   cleanup_legacy_baselines         -> host-boot / host-gated callers only
  *   pty_write, pty_resize            -> companion keystrokes/size ride their own pty frames
  */

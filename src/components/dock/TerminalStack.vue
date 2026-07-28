@@ -38,9 +38,30 @@
       </span>
       <TerminalTabStrip />
     </template>
-    <!-- No #actions slot: CLOSE is the DockStack chevron itself (collapse-variant="close" above),
-         and CLEAR / RESTART / KILL / OPEN are gone (see docs/feat/in-app-terminal.md's migration
-         table) — reachable via the tab chip's ✕ (kill), ✕+ (restart), or the OPEN popup (external). -->
+    <!-- #actions holds only ICON buttons that act on the PANEL, never on a shell: CLEAR / RESTART /
+         KILL / OPEN stay gone (see docs/feat/in-app-terminal.md's migration table) — reachable via
+         the tab chip's ✕ (kill), ✕+ (restart), or the OPEN popup (external). CLOSE is still the
+         DockStack chevron itself (collapse-variant="close" above). -->
+    <template #actions>
+      <button
+        v-if="externalTerminalsSupported"
+        class="btn-tech btn-tech-secondary btn-terminal-action"
+        title="External Terminal.app sessions — what is running in each"
+        @click="openExternalTermModal"
+      >
+        <i class="fa-solid fa-window-maximize"></i>
+      </button>
+      <!-- Hidden when the whole dock is collapsed to its headers: CSS owns the height in that state
+           (useDockLayout.js's dockAllCollapsed), so the button would be a no-op. -->
+      <button
+        v-if="!dockAllCollapsed"
+        class="btn-tech btn-tech-secondary btn-terminal-action"
+        :title="dockMaximized ? 'Restore panel height' : 'Maximize panel'"
+        @click="toggleDockMaximized"
+      >
+        <i class="fa-solid" :class="dockMaximized ? 'fa-down-left-and-up-right-to-center' : 'fa-up-right-and-down-left-from-center'"></i>
+      </button>
+    </template>
     <!-- No #peek slot: the terminal stack collapses to header-only (unlike the log stack, there
          is no "latest line" concept worth surfacing while collapsed). -->
     <div
@@ -75,6 +96,16 @@ import DockStack from '../DockStack.vue';
 import TerminalView from '../TerminalView.vue';
 import TerminalTabStrip from '../TerminalTabStrip.vue';
 import { terminalStackCollapsed } from '../../composables/useTerminalPanel';
+import { dockAllCollapsed, dockMaximized, toggleDockMaximized } from '../../composables/useDockLayout';
+import {
+  externalTerminalsSupported,
+  openExternalTermModal,
+} from '../../composables/useExternalTerminals';
+import {
+  zoomInTerminalFont,
+  zoomOutTerminalFont,
+  resetTerminalFont,
+} from '../../composables/useTerminalFont';
 import { useTerminalTabs, activatedTabs } from '../../composables/useTerminalTabs';
 import { projectIconSrc } from '../../utils/projectIcon';
 import { iconTimestamp } from '../../store/projectStore';
@@ -102,10 +133,10 @@ const scopeIconSrc = computed(() => (scopeProject.value ? projectIconSrc(scopePr
 const scopeLabel = computed(() => (scopeProject.value ? scopeProject.value.name.slice(0, 4).toUpperCase() : 'TERMINAL'));
 const scopeTitle = computed(() => (scopeProject.value ? `Terminal group: ${scopeProject.value.name}` : 'Global terminal group'));
 
-// ⌘T / ⌘W / ⌘⇧[ / ⌘⇧] — only while focus is inside this stack's terminal area (a hidden xterm
-// textarea living inside .pty-terminal triggers the focusin/focusout above). preventDefault() ONLY
-// when a shortcut is actually recognised and handled, or e.g. ⌘W would additionally close the
-// Tauri window itself. newTab/closeTab/cycleTab are already scope-filtered (useTerminalTabs.js),
+// ⌘T / ⌘W / ⌘⇧[ / ⌘⇧] / ⌘+ / ⌘- / ⌘0 — only while focus is inside this stack's terminal area (a
+// hidden xterm textarea, or the compose input, living inside .pty-terminal triggers the
+// focusin/focusout above). preventDefault() ONLY when a shortcut is actually recognised and
+// handled, or e.g. ⌘W would additionally close the Tauri window itself. newTab/closeTab/cycleTab are already scope-filtered (useTerminalTabs.js),
 // so these bindings need no changes for scopes: ⌘T/⌘W/⌘⇧[/⌘⇧] all act within the current group only.
 const hasTerminalFocus = ref(false);
 
@@ -128,6 +159,21 @@ function onKeydown(e) {
   } else if (e.shiftKey && e.code === 'BracketRight') {
     e.preventDefault();
     cycleTab(1);
+  }
+  // ⌘+ / ⌘- / ⌘0 — VS Code's terminal zoom. `e.code` again, and for the same reason as the brackets
+  // above: ⌘+ is physically ⌘⇧= on a US layout, so `e.key` reports '+' with Shift and '=' without.
+  // The physical key is the stable test, and it also picks up the numeric keypad. No `!e.shiftKey`
+  // guard here, unlike ⌘T/⌘W: Shift is part of how ⌘+ is typed at all. These sit after the bracket
+  // branches, which they cannot shadow — BracketLeft/Right are different codes entirely.
+  else if (e.code === 'Equal' || e.code === 'NumpadAdd') {
+    e.preventDefault();
+    zoomInTerminalFont();
+  } else if (e.code === 'Minus' || e.code === 'NumpadSubtract') {
+    e.preventDefault();
+    zoomOutTerminalFont();
+  } else if (e.code === 'Digit0' || e.code === 'Numpad0') {
+    e.preventDefault();
+    resetTerminalFont();
   }
 }
 
