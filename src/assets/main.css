@@ -763,6 +763,17 @@ input:checked+.slider:before {
   border-color: rgba(255, 140, 0, 0.5);
 }
 
+/* "The data behind this button could not be read" — an unmounted volume or a git-conflicted
+   .akidevsync/notes.json. Third state alongside is-live/is-attention, communicated the same way:
+   the button's own colour plus its tooltip, never an extra element. Still clickable on purpose —
+   the modal is where the actual reason is spelled out. */
+.btn-cell-trigger.is-muted {
+  color: var(--text-muted);
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.15);
+  opacity: 0.6;
+}
+
 .btn-cell-trigger.is-attention:hover {
   color: var(--accent-amber);
   background: rgba(255, 140, 0, 0.12);
