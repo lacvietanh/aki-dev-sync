@@ -162,6 +162,14 @@ Directly under the key row sits a compose input: a plain `<input type="text">` +
 
 Deliberately not there: function keys, Alt/Meta, a configurable key row. None are load-bearing for driving a build or a dev shell.
 
+## Font zoom (1.22.0)
+
+`⌘+` / `⌘-` / `⌘0` while focus is inside the terminal (`dock/TerminalStack.vue`'s existing keydown handler, keyed on `e.code` so `⌘⇧=` and the numeric keypad both work) change the terminal's text size and reset it. On a phone the same three appear as buttons **inside the key row**, which already renders only where there is no physical keyboard — so "buttons on the browser, shortcuts on the Mac" needs no second condition and costs the Mac window no pixels.
+
+State is a **scale**, not a pixel size (`src/composables/useTerminalFont.js`), because the two surfaces still disagree about the GRID: on the Mac the size is authoritative and cols/rows follow it (zoom changes cols/rows, exactly like VS Code), while on a phone the host alone owns cols/rows (T-4). It is per-device and deliberately not mirrored — how big text should be is a fact about the screen you are looking at, not the project.
+
+Text size is native and 100% independent per screen: both surfaces compute font size identically, `BASE_FONT_SIZE (12px) × terminalFontScale`, clamped to `[4, 18]px` scaled by the zoom factor — a phone no longer measures its viewport and scales its font to fit the Mac's shared grid, so the same 100% renders the same size on both, and zooming one screen never affects the other. `⌘+`/`⌘-`/`⌘0` on the Mac and the phone's zoom buttons each move only their own device's scale.
+
 ## How the bytes move
 
 ```
@@ -192,7 +200,7 @@ Opening the terminal from a paired device adds **no extra confirmation step**, a
 ## Not in this version
 
 - Split panes (multiple tabs within one PTY-per-tab model are covered above — a split pane would be more than one *view* onto one tab, which is a different feature).
-- Font / theme / shell-profile configuration (the theme is hardcoded to the app's own CSS tokens).
+- Theme / shell-profile configuration (the theme is hardcoded to the app's own CSS tokens). Font *size* is adjustable since 1.22.0; the font *family* is not.
 - Search addon, web-links addon, ligatures.
 - SSH-into-a-remote-host inside this view.
 - **Redirecting DEV / BUILD / REPORT into it.** Those open a disposable, per-invocation window scoped to one project's directory, with real polish already invested (double-window avoidance, the 124-column top-right auto-snap). This terminal is one persistent general-purpose shell with no notion of "which project". Merging them would either drag multi-session + per-project cwd into the first version, or make build output fight your own typing in one PTY. `run_in_project_terminal` in `src-tauri/src/system.rs` is already the single funnel, so the redirect stays a one-function change when the groundwork exists. `pty_spawn` already accepts an optional `cwd` for that reason.

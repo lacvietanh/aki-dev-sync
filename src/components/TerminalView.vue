@@ -44,6 +44,29 @@
         <span v-if="k.label" class="pty-key-label">{{ k.label }}</span>
         <i v-else class="fa-solid" :class="k.icon"></i>
       </button>
+      <!--
+        Font zoom, browser-only BY CONSTRUCTION rather than by a second condition: these buttons sit
+        inside the key row, which already renders only where there is no physical keyboard. On the
+        Mac the same three actions are ⌘+ / ⌘- / ⌘0 (dock/TerminalStack.vue's keydown handler), so
+        the app window spends no pixels on a control its keyboard already has — which is the whole
+        Extreme Narrow trade.
+      -->
+      <span class="pty-key-sep" aria-hidden="true"></span>
+      <button class="pty-key" title="Smaller text" @mousedown.prevent @click="zoomOutTerminalFont">
+        <i class="fa-solid fa-magnifying-glass-minus"></i>
+      </button>
+      <button
+        class="pty-key"
+        :class="{ 'is-armed': terminalFontScale !== 1 }"
+        :title="`Reset text size (now ${Math.round(terminalFontScale * 100)}%)`"
+        @mousedown.prevent
+        @click="resetTerminalFont"
+      >
+        <span class="pty-key-label">{{ Math.round(terminalFontScale * 100) }}%</span>
+      </button>
+      <button class="pty-key" title="Larger text" @mousedown.prevent @click="zoomInTerminalFont">
+        <i class="fa-solid fa-magnifying-glass-plus"></i>
+      </button>
     </div>
     <!--
       Compose row: a real text input for phone voice-dictation / IME typing (§4.5 follow-up). Unlike
@@ -76,6 +99,12 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
+import {
+  terminalFontScale,
+  zoomInTerminalFont,
+  zoomOutTerminalFont,
+  resetTerminalFont,
+} from '../composables/useTerminalFont'
 
 // `tabId`/`active` are WP-C's multi-tab additions. `active: default true` keeps a single, undecorated
 // <TerminalView /> (any call site that predates tabs) behaving exactly as before — only
@@ -203,9 +232,7 @@ function scheduleFit() {
   })
 }
 
-// Bounds for the companion's font scaling. The floor is deliberately tiny — on a phone held in
-// portrait, an 80-column shared terminal genuinely needs ~5px text, and rendering it small is the
-// decided trade (see doFit).
+// Floor/ceiling on the rendered size, scale included — a 3× zoom of the 12px base is a legitimate 36px, so the bounds move WITH the scale rather than capping it.
 const MIN_FONT_SIZE = 4
 const MAX_FONT_SIZE = 18
 const BASE_FONT_SIZE = 12
@@ -220,16 +247,14 @@ function doFit() {
   const { width, height } = mountEl.value.getBoundingClientRect()
   if (width < 40 || height < 24) return
 
-  // T-4: THE HOST ALONE DECIDES cols/rows. A companion that fitted its own container re-wrapped
-  // the shared shell's output to phone width, which destroys exactly what someone opens the phone
-  // to read — progress bars, tables, `git status` alignment — and no amount of zooming brings that
-  // back, whereas small text can at least be zoomed. So the companion keeps the host's grid and
-  // scales the FONT until that grid fills its viewport. `ownsPtySize` is asked instead of `isHost`
-  // because this component must stay role-agnostic (ENV-1); the role lives in the composable.
-  if (!ptyApi.value?.ownsPtySize) {
-    scaleFontToFit()
-    return
-  }
+  // T-4: THE HOST ALONE DECIDES cols/rows. A companion never fits its own container against the shared grid — see docs/feat/in-app-terminal.md's "Terminal font size" for why the old measure-and-scale-to-fit behaviour (`scaleFontToFit`, removed) was wrong, not just redundant: it made the companion's font size a function of the host's grid, so the same `terminalFontScale` value rendered at different sizes on different screens.
+  // `ownsPtySize` is asked instead of `isHost` because this component must stay role-agnostic (ENV-1); the role lives in the composable.
+  //
+  // Both surfaces now do the exact same thing: BASE_FONT_SIZE × this device's own local scale, clamped. Native, 100%-independent size per device (per-device state: `useTerminalFont.js`) — never derived from, or fought over with, the other screen's viewport.
+  const wanted = clampFont(BASE_FONT_SIZE * terminalFontScale.value)
+  if (term.options.fontSize !== wanted) term.options.fontSize = wanted
+
+  if (!ptyApi.value?.ownsPtySize) return
   try {
     fitAddon.fit()
   } catch {
@@ -238,35 +263,13 @@ function doFit() {
   ptyApi.value.hostResize(term.cols, term.rows)
 }
 
-/** Companion-only: pick the font size at which the host's cols × rows grid just fits this screen.
- *
- *  Measured, not calculated: cell width is a font-metric no formula predicts reliably across
- *  fonts and DPRs, so the current render is used as the ruler — `.xterm-screen` is exactly
- *  cols × rows cells wide/high, so the ratio between the space available and the space it
- *  currently occupies is the ratio to apply to the font size. Converges in one or two frames. */
-function scaleFontToFit() {
-  const screen = mountEl.value.querySelector('.xterm-screen')
-  if (!screen) return
-  const w = screen.offsetWidth
-  const h = screen.offsetHeight
-  if (!w || !h) return
-
-  const cs = getComputedStyle(mountEl.value)
-  // Content box, minus a gutter for the viewport scrollbar — overshooting width is what would
-  // force xterm's own soft wrap back in, which is the damage this whole branch exists to avoid.
-  const availWidth = mountEl.value.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 10
-  const availHeight = mountEl.value.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
-  if (availWidth <= 0 || availHeight <= 0) return
-
-  const ratio = Math.min(availWidth / w, availHeight / h)
-  if (!Number.isFinite(ratio) || ratio <= 0) return
-
-  const current = term.options.fontSize || BASE_FONT_SIZE
-  const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, current * ratio))
-  // Sub-pixel churn would re-render the whole terminal on every observer tick for no visible gain.
-  if (Math.abs(next - current) < 0.2) return
-  term.options.fontSize = next
+function clampFont(size) {
+  const scale = terminalFontScale.value
+  return Math.min(MAX_FONT_SIZE * Math.max(1, scale), Math.max(MIN_FONT_SIZE * Math.min(1, scale), size))
 }
+
+// Re-apply on every zoom. doFit reads `terminalFontScale` on both surfaces, so one scheduleFit() is the whole implementation.
+watch(terminalFontScale, () => scheduleFit())
 
 // A v-show-hidden tab (WP-C: all tabs stay mounted, only the active one is shown) measures 0 and
 // doFit bails below the 40x24 floor, so becoming active must explicitly re-fit rather than rely on
@@ -296,11 +299,6 @@ onMounted(async () => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(mountEl.value)
-  // A companion's grid changes without its container changing (the host echoes a new cols/rows, or
-  // a scrollback hydrate applies one), and a ResizeObserver on the container cannot see that — so
-  // the font has to be re-scaled off the grid change itself. On the host this is a no-op loop:
-  // fit() emits the event, the follow-up fit finds the same size and emits nothing further.
-  term.onResize(scheduleFit)
 
   ptyApi.value = usePtyTerminal(term, props.tabId)
 
@@ -364,11 +362,16 @@ defineExpose({
   min-height: 0;
 }
 
+/* `overflow-x: auto`, not `hidden`: on a companion the grid is fixed by the host (T-4) and zoom
+   makes the FONT bigger, so a zoomed-in phone genuinely renders wider than its viewport — clipping
+   that would leave the right-hand columns unreachable, a dead end rather than a zoom. Vertical
+   stays `hidden` because xterm's own `.xterm-viewport` owns that axis. */
 .pty-terminal-mount {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: #05070c;
   padding: 4px 8px;
 }
@@ -420,6 +423,15 @@ defineExpose({
 
 .pty-key-label {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+/* Hairline between the key group and the zoom group — a 1px rule inside a row that already exists,
+   not a separator element of its own (Extreme Narrow, CLAUDE.md). */
+.pty-key-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 0 2px;
+  background: var(--border-color);
 }
 
 /* Compose row: one slim row directly under the key row — still Extreme Narrow (CLAUDE.md), just one
