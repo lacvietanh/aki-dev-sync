@@ -23,10 +23,11 @@
         @keyup.enter="submitNew"
         type="text"
         class="task-add-input"
-        placeholder="Add a new task..."
+        :placeholder="disabled ? 'Read-only — the notes file could not be read' : 'Add a new task...'"
         maxlength="200"
+        :disabled="disabled"
       />
-      <button class="btn-tech btn-tech-primary task-add-btn" :disabled="!newTitle.trim()" @click="submitNew" aria-label="Add task" title="Add task">
+      <button class="btn-tech btn-tech-primary task-add-btn" :disabled="disabled || !newTitle.trim()" @click="submitNew" aria-label="Add task" title="Add task">
         <i class="fa-solid fa-plus"></i> Add
       </button>
     </div>
@@ -52,7 +53,7 @@
               class="task-state-icon-btn pin-btn"
               :class="{ 'is-active': task.pin }"
               @click="$emit('toggle', task, 'pin')"
-              :disabled="task.done"
+              :disabled="disabled || task.done"
               title="Pin to top"
             >
               <i class="fa-solid fa-thumbtack"></i>
@@ -63,7 +64,7 @@
               class="task-state-icon-btn wish-btn"
               :class="{ 'is-active': task.wish }"
               @click="$emit('toggle', task, 'wish')"
-              :disabled="task.done"
+              :disabled="disabled || task.done"
               title="Mark as wish (do it later)"
             >
               <i class="fa-regular fa-clock"></i>
@@ -79,7 +80,7 @@
               type="text"
               class="task-title-input"
               maxlength="200"
-              :disabled="task.done"
+              :disabled="disabled || task.done"
             />
             <textarea
               :ref="(el) => setDetailEl(task.id, el)"
@@ -88,7 +89,7 @@
               class="task-detail-textarea"
               placeholder="Add detail description..."
               maxlength="500"
-              :disabled="task.done"
+              :disabled="disabled || task.done"
               rows="1"
             ></textarea>
           </div>
@@ -100,6 +101,7 @@
             class="task-check-btn"
             :class="{ 'is-completed': task.done }"
             @click="$emit('toggle', task, 'done')"
+            :disabled="disabled"
             aria-label="Toggle Done"
             :title="task.done ? 'Mark Active' : 'Mark Done'"
           >
@@ -112,7 +114,7 @@
             <i class="fa-regular fa-copy" v-else></i>
           </button>
 
-          <button class="task-del-btn" @click="$emit('remove', task)" aria-label="Delete task" title="Delete task">
+          <button class="task-del-btn" :disabled="disabled" @click="$emit('remove', task)" aria-label="Delete task" title="Delete task">
             <i class="fa-solid fa-trash-can"></i>
           </button>
         </div>
@@ -130,6 +132,11 @@ const props = defineProps({
   tasks: { type: Array, default: () => [] },
   summary: { type: Object, default: () => ({ total: 0, open: 0, doing: 0, todo: 0, done: 0 }) },
   hideCompleted: { type: Boolean, default: false },
+  /** Read-only mode: the backing `.akidevsync/notes.json` could not be read (unmounted volume,
+   *  corrupt file), so nothing here may be edited. Presentational only — this component still knows
+   *  nothing about files; it is told, not asked. COPY stays enabled deliberately: getting text OUT
+   *  is exactly what someone wants when saving is impossible. */
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['add', 'toggle', 'remove', 'update:title', 'update:detail', 'update:hideCompleted'])
@@ -138,6 +145,8 @@ const newTitle = ref('')
 const copiedTaskId = ref(null)
 
 function submitNew() {
+  // Backstop for the disabled input: `@keyup.enter` still fires on some IME/automation paths.
+  if (props.disabled) return
   const text = newTitle.value.trim()
   if (!text) return
   emit('add', text)

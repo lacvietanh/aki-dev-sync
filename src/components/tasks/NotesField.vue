@@ -3,6 +3,9 @@
     <div class="notes-header">
       <span class="notes-title"><i class="fa-regular fa-note-sticky mr-1"></i> {{ label }}</span>
     </div>
+    <!-- `readonly`, not `disabled`: the text must stay selectable and copyable. When the file could
+         not be read this field may still hold the user's unsaved words, and that is the moment they
+         most need to be able to copy them out. -->
     <textarea
       v-model="local"
       @change="handleChange"
@@ -10,6 +13,7 @@
       :placeholder="placeholder"
       :maxlength="maxlength"
       :rows="rows"
+      :readonly="readonly"
     ></textarea>
   </div>
 </template>
@@ -23,6 +27,7 @@ const props = defineProps({
   maxlength: { type: Number, default: 1500 },
   rows: { type: Number, default: 2 },
   label: { type: String, default: 'Notes' },
+  readonly: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -38,6 +43,9 @@ watch(
 )
 
 function handleChange() {
+  // Backstop for `readonly`: the attribute stops typing, but a paste-via-menu or an automation can
+  // still fire `change`. Emitting then would push an edit the store is going to refuse anyway.
+  if (props.readonly) return
   local.value = (local.value || '').trim()
   emit('update:modelValue', local.value)
 }
