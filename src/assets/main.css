@@ -121,7 +121,12 @@ a {
 .dashboard-layout {
   display: flex;
   flex-direction: column;
+  /* Three fallback tiers, each for a browser that can't do the next one - not duplication:
+     100vh for no-JS/no-dvh, 100dvh once the toolbar has settled, --vvh once
+     useVisualViewportHeight.js is live and keyboard-aware (docs/plan/terminal-mobile-keyboard-viewport.md §3.2). */
   height: 100vh;
+  height: 100dvh;
+  height: calc(var(--vvh, 100dvh));
 }
 
 .dashboard-top {
@@ -132,9 +137,12 @@ a {
   border-bottom: 1px solid var(--border-card);
 }
 
+/* `height` is set INLINE by AppConsole.vue from useDockLayout.js (drag/maximise); the 40vh here is
+   only the pre-hydration fallback and the value the `.is-all-collapsed` rule below overrides. */
 .dashboard-bottom {
   flex: none;
   height: 40vh;
+  height: calc(var(--vvh, 100vh) * 0.4);
   display: flex;
   flex-direction: column;
   min-height: 0;

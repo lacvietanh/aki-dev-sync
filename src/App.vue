@@ -18,6 +18,7 @@
       <GitModal />
       <IntroModal />
       <ProjectTasksModal />
+      <ExternalTerminalsModal />
 
       <!-- Renders the mirrored `dialogStore.pendingDialog` (docs/plan/done/remote-control.md §3.4,
            docs/plan/done/1.20.0-terminal-and-remote-sync.md §3). Mounted on BOTH roles and unconditionally:
@@ -44,6 +45,7 @@ import SshConfigModal from './components/modals/SshConfigModal.vue';
 import GitModal from './components/modals/GitModal.vue';
 import IntroModal from './components/modals/IntroModal.vue';
 import ProjectTasksModal from './components/modals/ProjectTasksModal.vue';
+import ExternalTerminalsModal from './components/modals/ExternalTerminalsModal.vue';
 import DialogHost from './components/DialogHost.vue';
 import PairingGate from './components/PairingGate.vue';
 
@@ -56,6 +58,9 @@ import { refreshProjectIcons } from './store/projectStore';
 import { initRemote } from './services';
 import { onHostBoot } from './utils/scheduler';
 import { useCompanionPairing } from './composables/useCompanionPairing';
+import { useVisualViewportHeight } from './composables/useVisualViewportHeight';
+
+useVisualViewportHeight();
 
 const { ready } = useCompanionPairing();
 const { loadData } = useProjects();
