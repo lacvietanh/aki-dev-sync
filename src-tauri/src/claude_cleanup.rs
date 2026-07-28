@@ -1,6 +1,6 @@
 //! Claude Code CLI state cleanup - sizes and deletes the CLI's leftovers under `~/.claude`.
 //!
-//! Design, invariants and the group table: `docs/plan/claudecode-cleanup.md`.
+//! Design, invariants and the group table: `docs/plan/done/claudecode-cleanup.md`.
 //! Path-by-path impact reference: `docs/ref/claudecode-cleanup-paths.md`.
 //!
 //! The one rule this module is built around: **the frontend never sends a path.** It sends catalogue
@@ -19,7 +19,7 @@ enum Kind {
     /// `~/.claude/projects/` - a directory emptied *around* the `memory/` sub-directory each project
     /// slug carries. Memory holds authored agent content rather than transcript, so it is deletable
     /// only through its own entry (`Kind::MemoryDirs`, its own group) and never as a side effect of
-    /// clearing chat history. See `docs/plan/claudecode-cleanup.md` §2.
+    /// clearing chat history. See `docs/plan/done/claudecode-cleanup.md` §2.
     ProjectsDir,
     /// Every `~/.claude/projects/<slug>/memory/`, as one entry. Separate from `ProjectsDir` so that
     /// deleting it is always a deliberate, individually-ticked act.
@@ -400,7 +400,7 @@ fn remove_entry(home: &Path, e: &CatalogEntry) -> Result<(), String> {
 }
 
 /// Deletes the given catalogue keys. Takes **keys, never paths** - an unknown key is refused rather
-/// than interpreted, which is the whole safety story (`docs/plan/claudecode-cleanup.md` §2).
+/// than interpreted, which is the whole safety story (`docs/plan/done/claudecode-cleanup.md` §2).
 ///
 /// A per-entry failure is collected and reported, not raised: one unreadable directory must not
 /// abort the rest of a cleanup the user already confirmed.

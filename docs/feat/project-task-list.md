@@ -57,38 +57,64 @@ In addition to individual tasks, a general **Project Notes** card is placed at t
 
 ## Data and persistence
 
-**Project tasks** are persisted directly inside the project record in `projects.json`, via the existing `load_projects` / `save_projects` lifecycle:
-```rust
-pub struct ProjectTask {
-    pub id: String,
-    pub title: String,
-    pub detail: String,
-    pub done: bool,
-    pub pin: bool,
-    pub wish: bool,
-    pub created_at: u64,
-    pub updated_at: u64,
-}
+### Project tasks & notes — `<local_path>/.akidevsync/notes.json` (since 1.22.0)
 
-pub struct SyncProject {
-    // ...
-    #[serde(default)]
-    pub tasks: Vec<ProjectTask>,
-    #[serde(default)]
-    pub notes: String,
+**The local repo is the source of truth for a project; a remote host is only somewhere its code runs.** Tasks and notes therefore live in the project's own working directory, not in the app's central `projects.json`. The file is meant to be committed — that is the point of the move. Design record: `docs/plan/done/1.22.0-notes-json-ssot.md`. Owner: `src-tauri/src/project_notes.rs`, the only place in the Rust tree that spells `.akidevsync/`.
+
+```json
+{
+  "about": "https://github.com/lacvietanh/aki-dev-sync",
+  "schema": 1,
+  "notes": "Staging URL, deploy notes…",
+  "tasks": [ /* shape owned by src/utils/tasks.js — opaque to Rust */ ],
+  "updated_at": 1753600000123
 }
 ```
 
-**Global tasks** are persisted in `{appDataDir}/globalnote.json`, alongside the note content (`src-tauri/src/global_note.rs`):
+`about` and `schema` are rewritten on every write, so a hand-deleted value self-heals; `updated_at` is stamped by Rust and is the staleness fence (below). Every field carries `#[serde(default)]`, so a file written by a future version — or hand-trimmed to `{"notes":"x"}` — still loads.
+
+**The read returns a STATUS, not a defaulted struct.** This is the load-bearing difference from `global_note.rs`, which may `unwrap_or_default()` a corrupt file because nothing else writes it and it lives in app data. Here the file sits in a git repo the user also edits and pulls over, on a path that may be an unmounted external volume, so "could not read it" is ordinary and recoverable:
+
+| `status` | Means | Writable? |
+| :-- | :-- | :-- |
+| `ok` | read and parsed | yes |
+| `missing` | directory readable, no file yet (fresh clone, first note) | yes — the write creates it |
+| `unavailable` | `local_path` is not a readable directory, or the file cannot be read | **no** |
+| `corrupt` | present but not valid JSON (git conflict markers) | **no** |
+
+Collapsing those four into "empty" is exactly the data-loss bug the type exists to prevent: the UI would show an empty note and then save that emptiness over the user's real one. `isProjectNotesWritable(id)` (`src/composables/useProjectNotes.js`) is the SINGLE predicate every read-only state in the UI reads — no component re-derives it. Not writable ⇒ `TaskCell` dims and drops its badges (never `0`, which would claim there are no tasks), the modal title gains the status as a suffix with the parse error in its tooltip, the notes field is `readonly` and the task controls are disabled — all on elements that already existed (Extreme Narrow).
+
+**Writes are read-modify-write under one global async mutex**, then `write_atomic` (temp + rename). `None` for a field means *leave what is on disk alone*, never *clear it* — so a `git pull` that changed `notes` survives a task-only write. Same-field races are last-write-wins but never silent: if the on-disk `updated_at` is newer than the caller's, the write still lands and reports `clobbered: true`, which raises a Toast pointing at git. No CRDT, no conflict UI — git is the recovery path.
+
+**A late read must never land on top of an edit.** The read is `spawn_blocking` precisely because it can stall for tens of seconds on an unhealthy network mount, so this sequence is reachable: modal opens → refresh starts → user edits → `applyTaskEdit` writes and re-seeds → *then* the pre-edit read resolves. Applying it would revert the edit on screen and persist that reverted content on the next save — the 1.20.0 bug in a new place. So `projectNotesStore.js` keeps a **per-id generation counter**: every mutation bumps it, every async read captures it at start and drops its own result if it is no longer current. The same counter is why a `local_path` change sets the entry to `'unknown'` **synchronously** before kicking off the re-read — until that read lands, the old directory's entry would otherwise still answer `ok`/writable while `applyTaskEdit` already writes to the new path.
+
+Writes are additionally **serialised per project id** (`queueNotesWrite` in `remoteActions.js`), so the second of two rapid edits reads a `baseUpdatedAt` that already reflects the first. Without it, every fast second edit would report `clobbered` against our own previous write — a false "someone else changed this file" alarm, which is worse than none, since that toast is the only signal telling the user to go look at git. Rust's global mutex makes the *file* safe; this queue makes the caller's view of `updated_at` *truthful*. Different halves, neither replaces the other.
+
+**One writer, one funnel.** `applyTaskEdit` (`src/store/remoteActions.js`) is the only call site of `write_project_notes`, including the migration. PERSIST-1 is unchanged: it is still an `action()`, so a phone's edit is dispatched as an intent and the whole body runs on the Mac. **That is the entire companion story** — reads reach a phone through the mirrored `src/store/projectNotesStore.js` (every `isRef` export of `src/store/*.js` is auto-mirrored), so no command was added to `COMPANION_ALLOWED_COMMANDS`. The refused-write guard runs *before* the store is mutated, or the UI would show a change that never reached disk and the next `broadcastFull()` would silently revert it — the exact shape of the 1.20.0 "task note reverts" bug.
+
+**Excludes.** `.akidevsync/` is in both `pull_excludes` and `push_excludes` by default, and a one-time `migrateNotesExcludes` adds it to existing projects. The pull side is not a preference: `delete_on_pull` defaults to `true`, mirror mode passes `--delete`, and the remote does not have the directory — so one PULL without the entry **deletes the task list**. The push side is excluded because the host is not a consumer and the notes field's own placeholder invites credentials.
+
+**Migration off `projects.json`** runs once per launch in `loadData`, after hydration, in `migrateLegacyProjectNotes`. Flagless idempotence: a record with no `tasks`/`notes` key is by definition migrated, and Rust enforces the one-way property —
+
+```rust
+#[serde(default, skip_serializing_if = "Option::is_none")] pub tasks: Option<Vec<ProjectTask>>,
+#[serde(default, skip_serializing_if = "Option::is_none")] pub notes: Option<String>,
+```
+
+so a cleared key is never re-materialized, not even by a stale companion array (the `sync_git` precedent). An on-disk file with content **wins** over the legacy fields; an `unavailable`/`corrupt` directory is skipped entirely and retried next launch. Both fields and `ProjectTask` are deleted in 1.23.0.
+
+### Global tasks — `{appDataDir}/globalnote.json`
+
+Unchanged, and deliberately not moved: the Global Note is not project-scoped, so it has no repo to live in (`src-tauri/src/global_note.rs`).
+
 ```rust
 pub struct GlobalNoteFile {
     #[serde(default)] pub content: String,
-    #[serde(default)] pub tasks: Vec<serde_json::Value>,  // opaque to Rust — see below
+    #[serde(default)] pub tasks: Vec<serde_json::Value>,  // opaque to Rust
 }
 ```
-`tasks` is `serde_json::Value`, not a typed struct — Rust never inspects or validates task shape there; `src/utils/tasks.js` is the one owner of the task schema and its migrations, for both data sources. `write_global_note(content: Option<String>, tasks: Option<Vec<Value>>)` is read-modify-write: a field left as `None` is left untouched on disk, so a notes-only save can never wipe the task list and a task-only edit can never touch the note text.
 
-Both structs use `#[serde(default)]` on every task/notes field, so an older file (project or global) missing these fields deserializes cleanly with empty defaults — no migration step, no dropped record. Timestamps are generated on the frontend via `Date.now()`.
+`tasks` is `serde_json::Value`, not a typed struct — Rust never inspects or validates task shape, for either data source; `src/utils/tasks.js` is the one owner of the task schema and its migrations. `write_global_note(content: Option<String>, tasks: Option<Vec<Value>>)` uses the same leave-`None`-alone read-modify-write contract as `write_project_notes`. Timestamps are generated on the frontend via `Date.now()`.
 
 ---
 
@@ -100,10 +126,14 @@ Both structs use `#[serde(default)]` on every task/notes field, so an older file
 - `src/composables/useProjectTasks.js` - `useProjectTaskCollection(projectRef)`, plus modal open/close state (`showTasksModal`, `tasksProject`).
 - `src/composables/useGlobalNote.js` - `useGlobalTaskCollection()`, plus `initGlobalNote`/`openGlobalNote`/`onNoteInput`.
 - `src/store/noteStore.js` - `noteContent`, `globalTasks` (mirrored), `applyGlobalNoteEdit` (the read-modify-write persist funnel).
-- `src-tauri/src/projects.rs` - `ProjectTask` struct, `notes`/`tasks` fields on `SyncProject`.
+- `src-tauri/src/project_notes.rs` - the notes file: path, schema, tagged read status, locked read-modify-write, `read_project_notes` / `read_project_notes_map` / `write_project_notes`.
+- `src/store/projectNotesStore.js` - `projectNotes` (mirrored) + the three id-scoped accessors; the companion read path.
+- `src/composables/useProjectNotes.js` - hydrate/refresh, `isProjectNotesWritable`, `projectNotesFor`, `migrateLegacyProjectNotes`.
+- `src/store/remoteActions.js` - `applyTaskEdit` (the ONE writer) and `requestProjectNotesRefresh`.
+- `src-tauri/src/projects.rs` - `ProjectTask` struct and the DEPRECATED `notes`/`tasks` `Option` fields on `SyncProject` (removed in 1.23.0).
 - `src-tauri/src/global_note.rs` - `GlobalNoteFile`, `read_global_note`/`write_global_note` commands.
 - `src/components/TaskCell.vue` - project row's trigger button, using `TaskCountBadges`.
 - `src/components/modals/ProjectTasksModal.vue`, `GlobalNoteModal.vue` - the two modals, each just header/footer + `NotesField` + `TaskListPanel`.
 - `src/components/ProjectTable.vue` - `TASKS` column placement and layout.
 - `src/components/AppHeader.vue` - Global Note button, with `TaskCountBadges` for pinned/open counts.
-- `src/composables/useProjectConfig.js` - Project initialization seeding (`tasks: []` and runtime setup).
+- `src/composables/useProjectConfig.js` - new-project defaults (including the `.akidevsync/` excludes), `migrateNotesExcludes`, and the hydrate + migrate sequence inside `loadData`.

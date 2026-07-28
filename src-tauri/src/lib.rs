@@ -4,6 +4,7 @@ mod claude_profile;
 mod git;
 mod global_note;
 mod logger;
+mod project_notes;
 mod projects;
 mod pty;
 mod ssh;
@@ -96,13 +97,18 @@ pub fn run() {
             system::run_project_dev,
             system::read_project_changelog,
             system::count_external_terminals,
+            system::list_external_terminals,
             // global note
             global_note::read_global_note,
             global_note::write_global_note,
+            // per-project tasks & notes, stored in the repo (docs/plan/done/1.22.0-notes-json-ssot.md)
+            project_notes::read_project_notes,
+            project_notes::read_project_notes_map,
+            project_notes::write_project_notes,
             // claude profile switcher
             claude_profile::get_claude_mode,
             claude_profile::set_claude_profile,
-            // Claude Code cleanup (docs/plan/claudecode-cleanup.md) — host-only by design; both
+            // Claude Code cleanup (docs/plan/done/claudecode-cleanup.md) — host-only by design; both
             // commands are deliberately absent from COMPANION_ALLOWED_COMMANDS.
             claude_cleanup::scan_claude_cleanup,
             claude_cleanup::run_claude_cleanup,

@@ -28,6 +28,13 @@ import {
   markProjectRemoved,
   isProjectRemoved,
 } from './projectStore'
+import {
+  setProjectNotesEntry,
+  getProjectNotesEntry,
+  dropProjectNotesEntry,
+  bumpProjectNotesGeneration,
+} from './projectNotesStore'
+import { isProjectNotesWritable, refreshProjectNotes } from '../composables/useProjectNotes'
 import { sshHosts, hasSshUndo, hasSshRedo } from './sshStore'
 import { appendGlobalLogLines } from './logStore'
 import { askConfirm } from './dialogStore'
@@ -182,13 +189,110 @@ export const requestRefreshAll = action('remoteActions.requestRefreshAll', () =>
  *  COMPANION's whole array to disk but never touched the HOST's reactive `projects` ref, so the
  *  next broadcastFull() (fired on every phone reconnect) replayed the host's stale copy straight
  *  back over the edit. Resolving the live project by id and assigning only `patch`'s fields keeps
- *  the mutation on the host's own reactive object, so it mirrors out AND persists correctly. */
-export const applyTaskEdit = action('remoteActions.applyTaskEdit', (projectId, patch) => {
+ *  the mutation on the host's own reactive object, so it mirrors out AND persists correctly.
+ *
+ *  SINCE 1.22.0 the data no longer lives in `projects.json` at all — it lives in the project's own
+ *  repo at `<local_path>/.akidevsync/notes.json` (docs/plan/done/1.22.0-notes-json-ssot.md). PERSIST-1
+ *  itself is unchanged and this is still the ONLY funnel: it remains an `action()`, so a phone's
+ *  edit is dispatched as an intent and this whole body runs on the Mac, against the Mac's live
+ *  project and the Mac's filesystem. That is the entire companion write story — no new command
+ *  enters COMPANION_ALLOWED_COMMANDS.
+ *
+ *  Returns the write result (`{ file, clobbered }`) on success, or `null` when the write was refused
+ *  or failed — `migrateLegacyProjectNotes` needs to know that before it deletes the legacy copy. */
+export const applyTaskEdit = action('remoteActions.applyTaskEdit', async (projectId, patch) => {
   const p = byId(projectId)
-  if (!p || !patch) return
-  if (patch.tasks !== undefined) p.tasks = patch.tasks
-  if (patch.notes !== undefined) p.notes = patch.notes
-  return saveProjectsList()
+  if (!p || !patch) return null
+
+  // REFUSED BEFORE THE STORE IS TOUCHED, not after. An unmounted volume / corrupt file cannot be
+  // written, and mutating the store first would show the user a change that never reached disk —
+  // which the next broadcastFull() would then silently revert. That is the exact shape of the
+  // 1.20.0 "task note reverts" bug, and the ordering of these two statements is what prevents it.
+  if (!isProjectNotesWritable(projectId)) {
+    Toast.fire({ icon: 'error', title: getProjectNotesEntry(projectId).error || 'Notes are not writable right now' })
+    return null
+  }
+
+  // Optimistic, and SYNCHRONOUS — the field must feel instant. Bumping the generation here is what
+  // makes any read already in flight for this id discard itself instead of landing on top of the
+  // edit a moment later (see projectNotesStore.bumpProjectNotesGeneration).
+  const before = getProjectNotesEntry(projectId)
+  bumpProjectNotesGeneration(projectId)
+  setProjectNotesEntry(projectId, {
+    ...before,
+    ...(patch.tasks !== undefined ? { tasks: patch.tasks } : {}),
+    ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+  })
+
+  return queueNotesWrite(projectId, async () => {
+    try {
+      const res = await invoke('write_project_notes', {
+        localPath: p.local_path,
+        // `undefined` → `null` over IPC = "leave this field on disk alone", never "clear it" (the
+        // multi-entity guard applied to the file's own fields). A notes-only edit must not blank the
+        // task list a `git pull` just brought in.
+        notes: patch.notes !== undefined ? patch.notes : null,
+        tasks: patch.tasks !== undefined ? patch.tasks : null,
+        // Read HERE, not from the `before` snapshot above: inside the queue the previous write for
+        // this id has already re-seeded the entry, so this is the `updated_at` we genuinely last
+        // observed on disk. Using the pre-queue snapshot instead would make every second rapid edit
+        // report `clobbered` against our OWN previous write — a false "someone else changed this
+        // file" alarm, which is worse than none: it is the one signal telling the user to go look
+        // at git, and it stops being believed the moment it cries wolf.
+        baseUpdatedAt: getProjectNotesEntry(projectId).updated_at || null,
+      })
+      bumpProjectNotesGeneration(projectId)
+      // Re-seed from what is actually on disk, not from what we hoped we wrote.
+      setProjectNotesEntry(projectId, {
+        status: 'ok',
+        notes: res.file.notes,
+        tasks: res.file.tasks,
+        updated_at: res.file.updated_at,
+        error: '',
+      })
+      if (res.clobbered) {
+        Toast.fire({
+          icon: 'warning',
+          title: 'notes.json had newer changes on disk — yours replaced them (recoverable via git)',
+        })
+      }
+      return res
+    } catch (e) {
+      // The on-screen text is the user's only remaining copy at this moment, so the store entry keeps
+      // the optimistic value rather than snapping back — losing what they just typed on top of a
+      // failed save is strictly worse than showing an unsaved edit next to an explicit error.
+      Toast.fire({ icon: 'error', title: `Could not save notes: ${e}` })
+      return null
+    }
+  })
+})
+
+/** Serialises writes PER PROJECT ID, so two quick edits cannot interleave between their read and
+ *  their rename — and so the second one reads a `baseUpdatedAt` that already reflects the first.
+ *
+ *  Per id, not global: one project's slow network mount must not stall another project's save. The
+ *  Rust side has its own global mutex around the read-modify-write, which is what makes the FILE
+ *  safe; this queue is what makes the CALLER's view of `updated_at` truthful. The two solve
+ *  different halves and neither replaces the other. */
+const notesWriteChains = new Map()
+function queueNotesWrite(projectId, run) {
+  const prev = notesWriteChains.get(projectId) || Promise.resolve()
+  // `.then(run, run)` — a failed write must not poison the chain and silently swallow every
+  // subsequent edit for that project.
+  const next = prev.then(run, run)
+  notesWriteChains.set(projectId, next.catch(() => {}))
+  return next
+}
+
+/** Re-read ONE project's notes file on the HOST (modal open, `local_path` change).
+ *
+ *  Exists as an `action()` for the same reason `applyTaskEdit` is one: `read_project_notes` is
+ *  deliberately absent from COMPANION_ALLOWED_COMMANDS (a phone has no filesystem), so a companion
+ *  asks the Mac to re-read and receives the result through the mirrored `projectNotes` store. */
+export const requestProjectNotesRefresh = action('remoteActions.requestProjectNotesRefresh', (projectId) => {
+  const p = byId(projectId)
+  if (!p) return
+  return refreshProjectNotes(p.id, p.local_path)
 })
 
 /** Reorder the WHOLE project list (drag-and-drop in ProjectTable.vue). This is the one
@@ -244,6 +348,20 @@ export const applyProjectConfig = action('remoteActions.applyProjectConfig', asy
         hasPendingPush: null,
         hasPendingPull: null,
       }
+      // THE NOTES FOLLOW THE DIRECTORY (1.22.0). `local_path` may have just changed, and the store
+      // is still holding the OLD directory's tasks — showing those against the new path, and then
+      // saving them into it, is the same empty-then-overwrite class of bug the status model exists
+      // to prevent.
+      //
+      // The invalidation is SYNCHRONOUS and the re-read is not. Kicking off `refreshProjectNotes`
+      // alone would only narrow the window, not close it: until it resolves,
+      // `getProjectNotesEntry(id)` still answers with the OLD directory's `{status:'ok', tasks}`,
+      // `isProjectNotesWritable` still says yes, and `applyTaskEdit` already uses the NEW
+      // `local_path` — so an edit in that gap writes the old directory's task list into the new
+      // directory. `'unknown'` is not writable, so the surface is correctly read-only until the real
+      // read lands.
+      setProjectNotesEntry(plain.id, { status: 'unknown' })
+      refreshProjectNotes(plain.id, plain.local_path)
     }
   } else {
     projectRuntime.value[plain.id] = {
@@ -262,6 +380,12 @@ export const applyProjectConfig = action('remoteActions.applyProjectConfig', asy
       refreshCount: 0,
     }
     projects.value.push({ ...plain })
+    // A brand-new project hydrates the same way an existing one does — normally `missing`, which is
+    // writable, so its first note creates `.akidevsync/notes.json`. Seeded `'unknown'` first for the
+    // same reason as the identity-change branch above: this id may be a REUSED one (created, removed,
+    // re-created), and a leftover entry would be writable against a directory nothing has read yet.
+    setProjectNotesEntry(plain.id, { status: 'unknown' })
+    refreshProjectNotes(plain.id, plain.local_path)
   }
 
   await saveProjectsList()
@@ -290,6 +414,10 @@ export const removeProject = action('remoteActions.removeProject', (id) => {
   // Dropping the runtime entry also cancels any in-flight status check for this id (currentEpoch
   // then reports 0, which never matches the >=1 epoch a check captured) — see projectStore.
   delete projectRuntime.value[id]
+  // THIS id's notes entry only (multi-entity guard). The FILE on disk is deliberately not deleted:
+  // removing a project from the app list has never touched the user's files, and since 1.22.0
+  // `.akidevsync/notes.json` is one of the user's files, living in their repo.
+  dropProjectNotesEntry(id)
   return saveProjectsList()
 })
 

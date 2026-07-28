@@ -76,10 +76,20 @@ pub struct SyncProject {
     pub delete_on_push: bool,
     #[serde(default)]
     pub last_sync_status: Option<String>,
-    #[serde(default)]
-    pub tasks: Vec<ProjectTask>,
-    #[serde(default)]
-    pub notes: String,
+    // DEPRECATED (1.22.0, docs/plan/done/1.22.0-notes-json-ssot.md): per-project tasks and notes now
+    // live in the project's own repo at `<local_path>/.akidevsync/notes.json` (src/project_notes.rs).
+    // Kept for ONE release cycle purely so `load_projects` can still round-trip a legacy value to
+    // the JS one-time migration (useProjectNotes.js `migrateLegacyProjectNotes`), which writes it
+    // into the repo file and then deletes the key client-side.
+    //
+    // `Option` + `skip_serializing_if` is what makes the migration ONE-WAY and flagless, exactly as
+    // for `sync_git` above: once the key is gone from a record it is never re-materialized on disk —
+    // not even by a stale companion array — so "no key" IS the already-migrated marker and no
+    // volatile flag is needed to remember it. Remove both fields (and `ProjectTask`) in 1.23.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<Vec<ProjectTask>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
     #[serde(default)]
     pub dev_cmd_override: Option<String>,
     #[serde(default)]
@@ -246,8 +256,8 @@ mod tests {
             delete_on_pull: false,
             delete_on_push: false,
             last_sync_status: None,
-            tasks: vec![],
-            notes: String::new(),
+            tasks: None,
+            notes: None,
             dev_cmd_override: None,
             build_cmd_override: None,
         }
