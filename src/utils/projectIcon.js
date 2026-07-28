@@ -14,6 +14,16 @@ export function projectIconSrc(id, timestamp) {
   if (!id) return ''
   // `assetBase` is '' on a companion — the ONE role-derived value this module needs, already
   // resolved in the Seam-T boundary (ENV-1), so no component ever reads the role marker itself.
-  if (assetBase) return `${assetBase}${id}?t=${timestamp}`
+  if (assetBase) {
+    // The host also consults `projectIcons` so an icon-less project is never requested at all —
+    // see docs/plan/hygiene-jul27.md §2 for why (WebKit logs an unsuppressible 404 on every miss).
+    //
+    // Suppress only on an explicit null: `known` is a complete map once filled, but the fill is
+    // async, so an id simply ABSENT from it must still be requested — that means "not checked yet",
+    // never "confirmed no icon".
+    const known = projectIcons.value
+    if (known && id in known && !known[id]) return ''
+    return `${assetBase}${id}?t=${timestamp}`
+  }
   return projectIcons.value?.[id] || ''
 }
