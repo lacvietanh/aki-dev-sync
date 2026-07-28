@@ -82,7 +82,9 @@ function nextTabId() {
  *  adding a tab "at the same time" can never collide — the host's array is the only place an id is
  *  ever picked). Returns the new tab object on the host; a companion's action stub returns
  *  `undefined`, which is why the caller (useTerminalTabs.js's openScopeTerminal) routes the
- *  companion case through its scope-keyed pending claim instead of this return value. */
+ *  companion case through its scope-keyed pending claim instead of this return value.
+ *
+ *  Route every new "open/duplicate a terminal" entry point through `openScopeTerminal` (useTerminalTabs.js), not this export directly — see "Companion add is fire-and-forget" in docs/arch/terminal-stack.md for why. */
 export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ title, projectId = null, cwd = null } = {}) => {
   // SCOPE FIRST, THEN GLOBAL — the same order useTerminalTabs.js's capReached() applies, so the two
   // checkers can never name different reasons for the same refusal. A user sitting in a 1-tab group

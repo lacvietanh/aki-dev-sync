@@ -211,6 +211,8 @@ function openScopeTerminal(scope, { title = 'Shell', cwd = null, reuse = true, e
       return
     }
   }
+  // Repeat-tap guard (companion only) — see "Companion add is fire-and-forget" in docs/arch/terminal-stack.md for why this is needed and what it does not cover.
+  if (reuse && pendingActivateScope.value === scope && pendingClaimLive()) return
   if (capReached(scope)) {
     activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
     return

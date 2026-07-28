@@ -19,6 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Tapping a project's terminal button when that project's group was already full no longer strands you looking at an empty group.** The view now stays on the group you were already in when the new tab is refused.
 - **A dead terminal's message no longer points at a RESTART button that was removed in an earlier release.** It now just tells you to press any key to start a new shell.
 - **A terminal tab refused on a paired phone now tells you so**, instead of the tap silently doing nothing while the phone waits on a claim that used to expire without saying why.
+- **Tapping a project's or the global group's terminal button more than once before the Mac answers no longer opens one tab per tap.** A companion's tap sends the request and gets nothing back until the Mac's reply mirrors over, with no visible feedback that it was already on its way — so a second tap, or an impatient few, each opened its own tab. A tap for a group that is already waiting on an earlier one is now a no-op. Known residual gap, not closed by this fix: two browser tabs open on the same paired phone do not share this guard, since each tab is a separate page with its own state (`docs/arch/terminal-stack.md`).
 
 ### [1.21.0] - 2026-07-27
 

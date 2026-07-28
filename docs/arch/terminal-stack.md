@@ -75,6 +75,16 @@ Invariants:
   the same fallback defensively for the companion boot / cross-screen-close cases the direct
   `closeTab` path does not cover.
 
+### Companion add is fire-and-forget — the repeat-tap guard (1.22.0)
+
+Opening a tab from a companion never gets the tab back: `addTerminalTab`'s `action()` stub (`src/services/action.js`) sends the intent and returns `undefined` immediately, so the caller only learns a tab exists once the host's mirror echoes it back. `useTerminalTabs.js`'s `openScopeTerminal` bridges that gap with a scope-keyed "queue-of-one" claim (`pendingActivateScope`, TTL'd) that the tab-list watcher resolves once the mirror arrives — full mechanism in the doc comment at its definition.
+
+Before 1.22.0 that round trip had a second cost: `resolveScopeTab`/`capReached` both read the still-stale mirrored list while it was in flight, so a repeat tap on the same scope's TERM button before the tab arrived passed both checks again and opened a second tab — nothing told the tapper the first one was already on its way. `openScopeTerminal` now no-ops a repeat call for a scope with a live claim already outstanding, so only the first tap sends an add.
+
+**Any new "open/duplicate a terminal" entry point must call `openScopeTerminal`, not `addTerminalTab` directly** — the guard lives in the caller, so bypassing `openScopeTerminal` bypasses it too.
+
+**Known gap the guard does not close:** two browser tabs open on the same phone are two separate page loads, so `pendingActivateScope` (module-scope, per page) is not shared between them. Same per-page-state root cause as the `invoke_result` cross-talk that per-connection addressing fixed in 1.21.1 (`docs/feat/remote-control.md`) — but unfixed here, since closing it needs the guard to live host-side, inside `addTerminalTab`'s own body, not in the composable.
+
 ## The capability pattern
 
 `usePtyTerminal` publishes capability flags — `ownsPtySize` (does this screen decide the shared
