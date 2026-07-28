@@ -1,11 +1,8 @@
 # Refresh Controller - one unit of work, one scheduler
 
-Status layer architecture: how a project's *derived* state (git status, remote diff, dev/build
-commands) gets refreshed, who is allowed to trigger it, where the busy indicator comes from, and
-how an in-flight check is cancelled.
+Status layer architecture: how a project's *derived* state (git status, remote diff, dev/build commands) gets refreshed, who is allowed to trigger it, where the busy indicator comes from, and how an in-flight check is cancelled.
 
-Source of truth: `src/composables/useBackgroundRefresh.js` (controller) +
-`src/store/projectStore.js` (busy counter + generation token).
+Source of truth: `src/composables/useBackgroundRefresh.js` (controller) + `src/store/projectStore.js` (busy counter + generation token).
 
 ---
 
@@ -65,32 +62,23 @@ flowchart TD
 
 Three rules hold this together:
 
-1. **One unit of work.** `refreshProject(p)` = a project's three checks, run in parallel. Nothing
-   else is "a refresh".
+1. **One unit of work.** `refreshProject(p)` = a project's three checks, run in parallel. Nothing else is "a refresh".
 2. **One scheduler.** Both timers live in `useBackgroundRefresh.js`. No component owns a timer.
-3. **Busy state belongs to the check, not to its caller.** This is the load-bearing rule - it is
-   what makes a background tick light up the per-project icons without any trigger being
-   special-cased, and what guarantees the header spinner and the row icons can never disagree
-   (they read the same counters).
+3. **Busy state belongs to the check, not to its caller.** This is the load-bearing rule - it is what makes a background tick light up the per-project icons without any trigger being special-cased, and what guarantees the header spinner and the row icons can never disagree (they read the same counters).
 
-`loadData()` is an app-load concern again - called once on mount, never by a Refresh button.
-Re-reading config from disk and refreshing derived status are different operations.
+`loadData()` is an app-load concern again - called once on mount, never by a Refresh button. Re-reading config from disk and refreshing derived status are different operations.
 
 ### Why `refreshCount` is a counter, not a boolean
 
-Three checks are in flight for the same project at once, and they finish at very different times
-(local `git` ~50ms vs. two SSH rsync dry-runs). A boolean would be cleared by whichever finished
-first, so the icon would stop spinning while the remote diff was still running.
+Three checks are in flight for the same project at once, and they finish at very different times (local `git` ~50ms vs. two SSH rsync dry-runs). A boolean would be cleared by whichever finished first, so the icon would stop spinning while the remote diff was still running.
 
 ---
 
 ## Cancellation - the generation token
 
-`invoke()` returns a plain Promise with no abort handle, so a Tauri call cannot be cancelled. It
-can only be **disowned**: let it resolve, then refuse to write its result.
+`invoke()` returns a plain Promise with no abort handle, so a Tauri call cannot be cancelled. It can only be **disowned**: let it resolve, then refuse to write its result.
 
-Each project carries `projectRuntime[id].epoch`. Every check captures it *after* `beginRefresh`
-and re-checks it after every `await`.
+Each project carries `projectRuntime[id].epoch`. Every check captures it *after* `beginRefresh` and re-checks it after every `await`.
 
 ```mermaid
 sequenceDiagram
@@ -110,11 +98,9 @@ sequenceDiagram
     Note over C: no write, no endRefresh<br/>(would underflow the new generation)
 ```
 
-`bumpEpoch()` force-resets `refreshCount` to 0, so the UI clears the instant the *cause* fires
-rather than whenever the superseded call happens to resolve.
+`bumpEpoch()` force-resets `refreshCount` to 0, so the UI clears the instant the *cause* fires rather than whenever the superseded call happens to resolve.
 
-> **This only ever cancels read-only status checks. An rsync push/pull in progress is never
-> touched.** That boundary is the whole point of cancelling at the check layer.
+> **This only ever cancels read-only status checks. An rsync push/pull in progress is never touched.** That boundary is the whole point of cancelling at the check layer.
 
 ### Who bumps the epoch
 
@@ -127,22 +113,16 @@ rather than whenever the superseded call happens to resolve.
 
 ### Invariants (breaking these silently reintroduces the bug)
 
-- **Epoch is monotonic per project.** `loadData()` writes `epoch: (prev?.epoch ?? 0) + 1` - it must
-  never reset to a fixed value, or an in-flight check could coincidentally match again.
-- **A live project's epoch is always ≥ 1.** `beginRefresh` materializes `epoch ?? 1`. A deleted
-  project's `currentEpoch()` reports `0`, which therefore can never equal a captured epoch - that
-  is how `confirmRemove()` cancels without touching the epoch at all. Do not "optimize"
-  `delete projectRuntime.value[id]` into keeping the entry around.
+- **Epoch is monotonic per project.** `loadData()` writes `epoch: (prev?.epoch ?? 0) + 1` - it must never reset to a fixed value, or an in-flight check could coincidentally match again.
+- **A live project's epoch is always ≥ 1.** `beginRefresh` materializes `epoch ?? 1`. A deleted project's `currentEpoch()` reports `0`, which therefore can never equal a captured epoch - that is how `confirmRemove()` cancels without touching the epoch at all. Do not "optimize" `delete projectRuntime.value[id]` into keeping the entry around.
 - **Capture the epoch *after* `beginRefresh`,** never before, or the ≥ 1 guarantee doesn't apply.
-- **`endRefresh` only in `finally`, only on an epoch match.** A stale run decrementing the counter
-  would underflow the new generation and freeze the icon dim forever.
+- **`endRefresh` only in `finally`, only on an epoch match.** A stale run decrementing the counter would underflow the new generation and freeze the icon dim forever.
 
 ---
 
 ## Sync-check toggle: teardown, not no-op
 
-`restartDiffTimer()` does not create its `setInterval` at all while `syncCheckEnabled` is off, and
-a `watch(syncCheckEnabled, …)` tears it down / rebuilds it on every toggle.
+`restartDiffTimer()` does not create its `setInterval` at all while `syncCheckEnabled` is off, and a `watch(syncCheckEnabled, …)` tears it down / rebuilds it on every toggle.
 
 ```mermaid
 flowchart LR
@@ -152,9 +132,7 @@ flowchart LR
     C1 --> C2["checkAllSyncStatus() immediately<br/> -  don't wait out the cycle"]
 ```
 
-Rapid on/off/on is safe by construction: `clearInterval` always precedes any create (so timers
-can't accumulate), and `bumpEpoch` resets `refreshCount` to 0 (so counters can't accumulate
-either). "Off" means the cycle does not exist, not that the leaf function silently returns.
+Rapid on/off/on is safe by construction: `clearInterval` always precedes any create (so timers can't accumulate), and `bumpEpoch` resets `refreshCount` to 0 (so counters can't accumulate either). "Off" means the cycle does not exist, not that the leaf function silently returns.
 
 ---
 

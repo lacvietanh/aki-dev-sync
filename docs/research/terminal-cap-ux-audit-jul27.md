@@ -1,18 +1,9 @@
 # Terminal cap — UX audit
 
-> **Status: reconciled finding-by-finding in `docs/plan/1.21.1-terminal-limits-and-structure.md` §2.6.**
-> Accepted and shipped: S1 (raise the global ceiling to 16), S2 (restore the prior scope on a capped
-> `openScopeTerminal`), S3 (the exit notice's dead RESTART reference), M1 (both refusals reachable
-> from a companion, including the pending-claim TTL actually speaking), M2 (the per-group count in the
-> two existing tooltips), M3 (three distinct refusal strings). Deferred, with its own reasoning: M4
-> (tinting the global group's `TERM` column header on a dead shell) — see the plan's §6.3. Left
-> alone, per this doc's own rule that `research/` content should not be edited to match new code: the
-> findings and numbers below describe the state *before* 1.21.1 and are not updated to the new ones.
+> **Status: reconciled finding-by-finding in `docs/plan/done/1.21.1-terminal-limits-and-structure.md` §2.6.**
+> Accepted and shipped: S1 (raise the global ceiling to 16), S2 (restore the prior scope on a capped `openScopeTerminal`), S3 (the exit notice's dead RESTART reference), M1 (both refusals reachable from a companion, including the pending-claim TTL actually speaking), M2 (the per-group count in the two existing tooltips), M3 (three distinct refusal strings). Deferred, with its own reasoning: M4 (tinting the global group's `TERM` column header on a dead shell) — see the plan's §6.3. Left alone, per this doc's own rule that `research/` content should not be edited to match new code: the findings and numbers below describe the state *before* 1.21.1 and are not updated to the new ones.
 >
-> Separately, worth raising with the doc's owner rather than acting on unilaterally: by `RULE-docs`
-> A2 this is an audit — an event record of a point-in-time investigation — which belongs in
-> `docs/research/`, not `docs/feat/` (which holds only current/target state). Not moved as part of
-> this pass; flagging only.
+> Separately, worth raising with the doc's owner rather than acting on unilaterally: by `RULE-docs` A2 this is an audit — an event record of a point-in-time investigation — which belongs in `docs/research/`, not `docs/feat/` (which holds only current/target state). Not moved as part of this pass; flagging only.
 
 An audit of the in-app terminal's tab cap as an *experience*, ahead of the change from one global cap of 8 to **5 per project** plus a global ceiling. Behaviour today: `docs/feat/in-app-terminal.md`. Architecture: `docs/arch/terminal-stack.md`.
 

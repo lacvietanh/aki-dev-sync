@@ -6,11 +6,8 @@
 
 ## 1. Nó thay thế việc gì
 
-Trước đó, cách duy nhất để biết một ô config có thực sự ra file hay không là: mở modal Statusline
-Customizer → tick/bỏ tick một ô → Apply → soi file `.sh` hoặc nhìn statusline thật. Mỗi ô một vòng.
-18 công tắc + 6 picker màu + 5 độ cắt + 4 ngưỡng + 2 sắc zebra là **quá nhiều để làm bằng tay**, nên
-thực tế chỉ vài ô hay dùng được kiểm — và đó chính là cách picker màu CWD ship ra mà **chết hẳn**
-(UI có ô chọn, generator không hề phát ra `COLOR_cwd`, không ai phát hiện).
+Trước đó, cách duy nhất để biết một ô config có thực sự ra file hay không là: mở modal Statusline Customizer → tick/bỏ tick một ô → Apply → soi file `.sh` hoặc nhìn statusline thật. Mỗi ô một vòng.
+18 công tắc + 6 picker màu + 5 độ cắt + 4 ngưỡng + 2 sắc zebra là **quá nhiều để làm bằng tay**, nên thực tế chỉ vài ô hay dùng được kiểm — và đó chính là cách picker màu CWD ship ra mà **chết hẳn** (UI có ô chọn, generator không hề phát ra `COLOR_cwd`, không ai phát hiện).
 
 Bộ test làm đúng vòng đó, tự động, cho **mọi** ô:
 
@@ -42,12 +39,9 @@ npm run test:statusline -- toggle    # lọc theo tên
 | `a_field_the_backend_does_not_know_is_ignored_not_fatal` | UI thêm key mới không làm gãy Apply của bản Rust cũ |
 | `a_missing_section_is_rejected_rather_than_silently_defaulted` | Payload thiếu `trunc` → **fail to lên**, đúng chủ ý bỏ `#[serde(default)]` |
 
-Bảng công tắc có **guard tự mở rộng**: nó duyệt `EN_KEYS` và fail nếu một gate mới thêm vào template
-chưa có dòng tương ứng. Thêm công tắc mà quên test là biết ngay, không im lặng lọt.
+Bảng công tắc có **guard tự mở rộng**: nó duyệt `EN_KEYS` và fail nếu một gate mới thêm vào template chưa có dòng tương ứng. Thêm công tắc mà quên test là biết ngay, không im lặng lọt.
 
-Kiểm **hai chiều**: ô bật sẵn kiểm theo hướng "tắt thì mất", ô tắt sẵn (`cache_tokens`) kiểm theo
-hướng "bật thì hiện" — chỉ kiểm một chiều thì một công tắc chết vẫn núp được sau cái default không
-bao giờ render nó.
+Kiểm **hai chiều**: ô bật sẵn kiểm theo hướng "tắt thì mất", ô tắt sẵn (`cache_tokens`) kiểm theo hướng "bật thì hiện" — chỉ kiểm một chiều thì một công tắc chết vẫn núp được sau cái default không bao giờ render nó.
 
 ### 2.2. Bất biến của generator
 
@@ -88,41 +82,27 @@ $ echo '{"model":"gemini-2.5-flash"}' | jq -r '(.model.display_name // .model.id
 jq: error: Cannot index string with string "display_name"
 ```
 
-Khi `.model` là **string** (AGY bản cũ, hoặc payload rút gọn), biểu thức này abort **cả chương trình
-jq** chứ không chỉ một field → mọi `JSON_*` rỗng → statusline trắng, và trên màn hình không có manh
-mối nào để đoán nguyên nhân. Biểu thức đó bị lặp **4 lần** ở các dòng routing quota. Sửa bằng cách
-bind một lần rồi mới dùng — hết crash và hết duplicate cùng lúc:
+Khi `.model` là **string** (AGY bản cũ, hoặc payload rút gọn), biểu thức này abort **cả chương trình jq** chứ không chỉ một field → mọi `JSON_*` rỗng → statusline trắng, và trên màn hình không có manh mối nào để đoán nguyên nhân. Biểu thức đó bị lặp **4 lần** ở các dòng routing quota. Sửa bằng cách bind một lần rồi mới dùng — hết crash và hết duplicate cùng lúc:
 
 ```jq
 (if (.model | type) == "object" then (.model.display_name // .model.id // "") else (.model // "") end | tostring) as $model_name
 | (if ($model_name | ascii_downcase | contains("gemini")) then "gemini" else "3p" end) as $pool
 | (if (.quota | type) == "object" then .quota else {} end) as $quota
-| def qfrac($k): $quota[$k] as $v
-    | if ($v|type)=="object" then ($v.remaining_fraction // -1) elif ($v|type)=="number" then $v else -1 end;
-  def qreset($k): $quota[$k] as $v
-    | if ($v|type)=="object" then ($v.reset_in_seconds // 0) else 0 end;
+| def qfrac($k): $quota[$k] as $v | if ($v|type)=="object" then ($v.remaining_fraction // -1) elif ($v|type)=="number" then $v else -1 end;
+  def qreset($k): $quota[$k] as $v | if ($v|type)=="object" then ($v.reset_in_seconds // 0) else 0 end;
 ```
 
-`qfrac`/`qreset` đóng luôn biến thể cùng loại: quota entry dạng số trần (`{"gemini-5h": 0.25}`) —
-`.remaining_fraction` trên một số cũng abort y hệt.
+`qfrac`/`qreset` đóng luôn biến thể cùng loại: quota entry dạng số trần (`{"gemini-5h": 0.25}`) — `.remaining_fraction` trên một số cũng abort y hệt.
 
-Đáng chú ý: **không kiểm tra tĩnh nào bắt được bug này.** `cargo check` cũng mù vì lỗi nằm trong
-shell. Chỉ *chạy script với payload thật* mới lộ — nên bộ test phải chạy `bash` thật, không mock.
+Đáng chú ý: **không kiểm tra tĩnh nào bắt được bug này.** `cargo check` cũng mù vì lỗi nằm trong shell. Chỉ *chạy script với payload thật* mới lộ — nên bộ test phải chạy `bash` thật, không mock.
 
 ## 4. Nó KHÔNG chứng minh được gì
 
 - **Đường ghi file và SSH của Apply.** Test dừng ở nội dung script; việc đẩy tới host thật ngoài phạm vi.
-- **Bản thân UI Vue.** Test khoá cái JSON mà UI *gửi*, không khoá việc UI có gửi đúng cái đó không —
-  đó là lý do `VUE_DEFAULT_JSON` phải copy **nguyên văn** từ `defaultLocalConfig()`; sửa default bên
-  Vue thì phải sửa chuỗi này, và đó là chủ ý.
+- **Bản thân UI Vue.** Test khoá cái JSON mà UI *gửi*, không khoá việc UI có gửi đúng cái đó không — đó là lý do `VUE_DEFAULT_JSON` phải copy **nguyên văn** từ `defaultLocalConfig()`; sửa default bên Vue thì phải sửa chuỗi này, và đó là chủ ý.
 - **Quyền IPC** trong `capabilities/default.json`.
 
-> **Ghi chú cho máy remote:** máy Linux này không build được crate `src-tauri` (thiếu
-> `webkit2gtk-4.1`/`libsoup-3.0`) nên `npm run test:statusline` chỉ chạy trên Mac. Muốn chạy tạm ở
-> remote thì dựng một crate rác **ngoài repo**, symlink `statusline.rs` + `statusline-unified.sh`
-> vào, stub 4 ký hiệu Tauri (`logger::info`, `run_remote_script_bounded`, `#[tauri::command]`
-> pass-through, `spawn_blocking`) — ~55 dòng. Đó là công cụ tình thế của người sửa code, **không
-> phải thứ nên nằm trong repo**.
+> **Ghi chú cho máy remote:** máy Linux này không build được crate `src-tauri` (thiếu `webkit2gtk-4.1`/`libsoup-3.0`) nên `npm run test:statusline` chỉ chạy trên Mac. Muốn chạy tạm ở remote thì dựng một crate rác **ngoài repo**, symlink `statusline.rs` + `statusline-unified.sh` vào, stub 4 ký hiệu Tauri (`logger::info`, `run_remote_script_bounded`, `#[tauri::command]` pass-through, `spawn_blocking`) — ~55 dòng. Đó là công cụ tình thế của người sửa code, **không phải thứ nên nằm trong repo**.
 
 ---
 

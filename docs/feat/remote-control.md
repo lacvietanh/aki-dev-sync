@@ -1,46 +1,26 @@
 # Remote Control (companion) — feature
 
-Control the Mac app from a phone (or any browser) on the same LAN or over Tailscale. The Mac
-webview stays the single source of truth; the phone is a thin mirror that shows the same state and
-sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`.
+Control the Mac app from a phone (or any browser) on the same LAN or over Tailscale. The Mac webview stays the single source of truth; the phone is a thin mirror that shows the same state and sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`.
 
-> **Status:** foundation + host entry point + **companion control (R-2)** + pairing gate shipped.
-> The Rust relay (`src-tauri/src/web_server.rs`) must be built on the Mac before it works
-> end-to-end. A phone can now push, pull, flip DRY, refresh and toggle sync-check; the full pairing
-> modal (QR + device management) is still Wave 2. Every companion state and failure case is
-> enumerated in **"Companion states — every case"** below.
+> **Status:** foundation + host entry point + **companion control (R-2)** + pairing gate shipped. The Rust relay (`src-tauri/src/web_server.rs`) must be built on the Mac before it works end-to-end. A phone can now push, pull, flip DRY, refresh and toggle sync-check; the full pairing modal (QR + device management) is still Wave 2. Every companion state and failure case is enumerated in **"Companion states — every case"** below.
 >
-> **1.20.0 adds** (code complete, unverified on a Mac): decision **dialogs are mirrored** so a
-> confirm triggered from the phone appears and is answerable on both screens; **task/note/reorder
-> edits from a phone now stick** (PERSIST-1); and a shared **in-app terminal** the phone can type
-> into. See "1.20.0 — the two classes that were still broken" below, plus
-> `docs/plan/done/1.20.0-terminal-and-remote-sync.md`.
+> **1.20.0 adds** (code complete, unverified on a Mac): decision **dialogs are mirrored** so a confirm triggered from the phone appears and is answerable on both screens; **task/note/reorder edits from a phone now stick** (PERSIST-1); and a shared **in-app terminal** the phone can type into. See "1.20.0 — the two classes that were still broken" below, plus `docs/plan/done/1.20.0-terminal-and-remote-sync.md`.
 
 ## How a user turns it on and pairs a phone
 
 1. Open the hamburger **menu** (top-left) → **Remote Control** → flip the toggle to **On**.
-   - Under the hood: `start_companion_server()` flips the relay's `enabled` gate on and mints a
-     fresh 6-digit pairing code. The TCP listener itself was bound once at app start.
+   - Under the hood: `start_companion_server()` flips the relay's `enabled` gate on and mints a fresh 6-digit pairing code. The TCP listener itself was bound once at app start.
 2. The menu now shows:
    - a **Pair code** (6 digits), and
-   - one or more **IP:PORT** rows — `lan` (e.g. `http://192.168.1.23:1421`) and, if Tailscale is up,
-     `tailscale` (e.g. `http://100.x.y.z:1421`). Click a row to copy it.
-3. On the phone, open one of those URLs in a browser. First time only, it asks for the code → type
-   the 6 digits → the Mac mints a **per-device token** the phone stores in `localStorage`.
-4. Done. That phone reconnects silently after that (no code, no QR) — across app restarts on both
-   ends — until you revoke it.
+   - one or more **IP:PORT** rows — `lan` (e.g. `http://192.168.1.23:1421`) and, if Tailscale is up, `tailscale` (e.g. `http://100.x.y.z:1421`). Click a row to copy it.
+3. On the phone, open one of those URLs in a browser. First time only, it asks for the code → type the 6 digits → the Mac mints a **per-device token** the phone stores in `localStorage`.
+4. Done. That phone reconnects silently after that (no code, no QR) — across app restarts on both ends — until you revoke it.
 
-> This promise was **not true until 1.20.0**. `enabled` started at `false` on every launch and one
-> close code (4001) covered both "your token is rejected" and "remote control is switched off", so
-> the phone read a restart as a revocation and threw its token away. Both halves are fixed: the
-> On/Off choice is persisted and restored, and the two cases now have separate close codes (see the
-> table below). A restart no longer costs anyone a walk back to the Mac.
+> This promise was **not true until 1.20.0**. `enabled` started at `false` on every launch and one close code (4001) covered both "your token is rejected" and "remote control is switched off", so the phone read a restart as a revocation and threw its token away. Both halves are fixed: the On/Off choice is persisted and restored, and the two cases now have separate close codes (see the table below). A restart no longer costs anyone a walk back to the Mac.
 
-Flip the toggle **Off** (`stop_companion_server()`) to cut every live phone immediately and reject
-new joins; the code and addresses disappear from the menu so a stale code can't be read off it.
+Flip the toggle **Off** (`stop_companion_server()`) to cut every live phone immediately and reject new joins; the code and addresses disappear from the menu so a stale code can't be read off it.
 
-The menu reflects the **relay's** real state, not the window's: reloading the app while remote control
-is on shows it still on, with the same code (`get_companion_status()`).
+The menu reflects the **relay's** real state, not the window's: reloading the app while remote control is on shows it still on, with the same code (`get_companion_status()`).
 
 ## Where it lives in code
 
@@ -64,96 +44,38 @@ is on shows it still on, with the same code (`get_companion_status()`).
 | In-app terminal — xterm surface / role wiring / host relay | `src/components/TerminalView.vue` · `src/composables/usePtyTerminal.js` · `src/services/ptyBridge.js` |
 | In-app terminal — panel tab + the "open project in the in-app terminal" gesture | `src/composables/useTerminalPanel.js` (module-level refs, deliberately **not** in `src/store/` so the mirror does not sync one screen's tab choice onto the other) |
 
-> **Why `action()` is split from `intents.js` (REGISTRY-1).** `remoteActions.js` and
-> `syncCheckStore.js` live in `src/store/` and need `action()` at their definition site. If they
-> imported it from `intents.js` — which does `import.meta.glob('../store/*.js')` — that would form a
-> hard `store → intents → (glob) → store` import cycle evaluated at bootstrap, the classic cause of
-> a blank page on the phone. `action.js` depends only on `bridge` + `protocol` (neither touches a
-> store), so `store → action → bridge` has no back-edge. The glob-based dispatch registry stays in
-> `intents.js`, which **no store imports**, and is built lazily on first dispatch for good measure.
+> **Why `action()` is split from `intents.js` (REGISTRY-1).** `remoteActions.js` and `syncCheckStore.js` live in `src/store/` and need `action()` at their definition site. If they imported it from `intents.js` — which does `import.meta.glob('../store/*.js')` — that would form a hard `store → intents → (glob) → store` import cycle evaluated at bootstrap, the classic cause of a blank page on the phone. `action.js` depends only on `bridge` + `protocol` (neither touches a store), so `store → action → bridge` has no back-edge. The glob-based dispatch registry stays in `intents.js`, which **no store imports**, and is built lazily on first dispatch for good measure.
 
 ## Security model (summary)
 
-- **Off means off.** While the toggle is off, `:1421` serves *nothing* to the LAN — not the page, not
-  (in dev) the proxied dev server. Everything returns 503 until the user turns it on. Since 1.20.0
-  the On/Off choice **survives a restart** (`companion-server.json`), which does not weaken this:
-  what is restored is always the user's own last decision, never a default the app picked — a fresh
-  install still starts off. The **pairing code is deliberately not persisted**; a restore mints a
-  new one, so a code read off the Mac's screen last week is already dead. The 10-strike lockout is
-  persisted too, so an attacker cannot clear it by waiting for a restart.
-- **A tailnet peer cannot claim `role=host`.** The host role was gated on `is_loopback()` alone, but
-  `tailscale serve` proxies every tailnet connection through `127.0.0.1` — so with HTTPS on, any
-  peer could take the host slot, cut the real Mac's mirror and feed every phone forged state. Since
-  1.20.0 the host role also requires a 128-bit token minted per process, never persisted, handed
-  only to the Tauri webview: a proxy can forge a source address, not a value it was never given.
-- The server binds all interfaces but is **useless without a token**. A stranger on the same wifi
-  hitting `:1421` gets only the pairing page; they need the 6-digit code shown on the Mac screen.
-- **10 wrong codes in a row disable remote control** and wipe the code — the guess space of a 6-digit
-  code is small enough to walk otherwise. Turn it back on from the menu for a fresh code.
-- Tokens are **per-device and revocable** (`list_paired_devices()` / `revoke_device(id)` — Wave 2 UI).
-  Revoking one device leaves every other paired device untouched (scoped-clear rule).
+- **Off means off.** While the toggle is off, `:1421` serves *nothing* to the LAN — not the page, not (in dev) the proxied dev server. Everything returns 503 until the user turns it on. Since 1.20.0 the On/Off choice **survives a restart** (`companion-server.json`), which does not weaken this: what is restored is always the user's own last decision, never a default the app picked — a fresh install still starts off. The **pairing code is deliberately not persisted**; a restore mints a new one, so a code read off the Mac's screen last week is already dead. The 10-strike lockout is persisted too, so an attacker cannot clear it by waiting for a restart.
+- **A tailnet peer cannot claim `role=host`.** The host role was gated on `is_loopback()` alone, but `tailscale serve` proxies every tailnet connection through `127.0.0.1` — so with HTTPS on, any peer could take the host slot, cut the real Mac's mirror and feed every phone forged state. Since 1.20.0 the host role also requires a 128-bit token minted per process, never persisted, handed only to the Tauri webview: a proxy can forge a source address, not a value it was never given.
+- The server binds all interfaces but is **useless without a token**. A stranger on the same wifi hitting `:1421` gets only the pairing page; they need the 6-digit code shown on the Mac screen.
+- **10 wrong codes in a row disable remote control** and wipe the code — the guess space of a 6-digit code is small enough to walk otherwise. Turn it back on from the menu for a fresh code.
+- Tokens are **per-device and revocable** (`list_paired_devices()` / `revoke_device(id)` — Wave 2 UI). Revoking one device leaves every other paired device untouched (scoped-clear rule).
 - LAN and Tailscale use the **same** token — the token is the identity, not the network path.
-- This is **not multi-tenant**: every paired device is a mirror of the one Mac session, not a
-  separate account (SCOPE-1).
+- This is **not multi-tenant**: every paired device is a mirror of the one Mac session, not a separate account (SCOPE-1).
 
 ## Platform / build notes
 
-- **One address in dev and release (PORT-1).** The phone always uses `http://<ip>:1421`. In a release
-  build axum serves the embedded frontend on 1421; in `npm run tauri dev` axum reverse-proxies the
-  page to the Vite dev server (localhost) on the same 1421, so DX matches production and hot-reload
-  still works. See `docs/plan/done/remote-control.md` §7.2.
-- macOS-only, like the rest of the app. Tailscale is only *noticed* (via `if-addrs` reading the
-  `100.64/10` CGNAT range) and offered as an address — never installed or configured for the user.
-- **Minimal PWA (install as a standalone app).** `index.html` carries the favicon (`/icon.png`),
-  the apple-* / `mobile-web-app-capable` meta tags and a `manifest.webmanifest` (`display:
-  standalone`, 192/512 icons); `public/sw.js` is a network-passthrough service worker (caches
-  nothing — this tool needs the live Mac; no stale-shell risk) registered from `main.js`
-  **companion-only + secure-context-only**. Standalone by platform: **iOS** "Add to Home Screen"
-  works over plain http (apple meta tags); **desktop Chrome** "Create shortcut → Open as window"
-  works via the favicon; **Android Chrome** needs **HTTPS** (e.g. a Tailscale funnel) for a true
-  standalone WebAPK — over plain LAN http it stays a browser shortcut. Bundled into the `.app` only
-  on a Mac rebuild (`index.html`/`public/` are Vite-built into the embedded frontend).
-- **HTTPS over Tailscale (unlocks the Android standalone PWA) — in-app toggle.** axum serves plain
-  http on 1421, so `https://100.x:1421` fails (no TLS there). `tailscale serve` terminates TLS with a
-  real cert for `<machine>.<tailnet>.ts.net` on 443 and proxies to `http://127.0.0.1:1421` (page +
-  `/ws` + `/pair`, same origin). This is wired into the app as a menu toggle:
-  - Rust: `web_server.rs` `get_tailscale_https` / `set_tailscale_https` (async + `spawn_blocking`;
-    resolve the `tailscale` binary via explicit install paths then PATH; `serve --bg http://127.0.0.1:PORT`
-    to enable, `serve --https=443 off` to disable). Registered in `lib.rs`. An enable that fails
-    because the tailnet has no HTTPS certs returns tailscale's own error (with the admin URL) verbatim.
-  - Frontend: `useRemoteControl.js` `httpsEnabled`/`httpsUrl`/`toggleHttps` + the **HTTPS (PWA)** row
-    in `AppHeader.vue`, shown only when tailscale is present. Turning Remote Control **off also turns
-    serve off** — nothing left proxying in the background.
-  - `bridge.js` `wsUrl()`/`pairDevice()` are **origin-relative** (`wss://<host>/ws` from an https
-    page, `ws://<host>:1421/ws` from http) — a hardcoded `ws://…:1421` would be blocked as mixed
-    content from the https origin. The device token is per-origin, so the `.ts.net` origin needs a
-    one-time re-pair.
-  - **The one manual step the app can't do:** enabling HTTPS certs for the tailnet is an admin-console
-    account setting (MagicDNS + HTTPS on) — done once. `scripts/tailscale-serve-https.sh` remains as a
-    CLI fallback but is no longer required once the toggle ships.
-- The host role stamp is `if (window.__TAURI_INTERNALS__) window.__AKI_ROLE__='host'` in
-  `src/boot/roleStamp.js`, imported first in `main.js` (a module, not an inline script — the host
-  CSP `script-src 'self'` blocks inline). A phone browser never has `__TAURI_INTERNALS__`, so it
-  defaults to companion. See `docs/plan/done/remote-control.md` §9 (S-1) for why this replaced the
-  originally-planned Rust init-script.
+- **One address in dev and release (PORT-1).** The phone always uses `http://<ip>:1421`. In a release build axum serves the embedded frontend on 1421; in `npm run tauri dev` axum reverse-proxies the page to the Vite dev server (localhost) on the same 1421, so DX matches production and hot-reload still works. See `docs/plan/done/remote-control.md` §7.2.
+- macOS-only, like the rest of the app. Tailscale is only *noticed* (via `if-addrs` reading the `100.64/10` CGNAT range) and offered as an address — never installed or configured for the user.
+- **Minimal PWA (install as a standalone app).** `index.html` carries the favicon (`/icon.png`), the apple-* / `mobile-web-app-capable` meta tags and a `manifest.webmanifest` (`display: standalone`, 192/512 icons); `public/sw.js` is a network-passthrough service worker (caches nothing — this tool needs the live Mac; no stale-shell risk) registered from `main.js` **companion-only + secure-context-only**. Standalone by platform: **iOS** "Add to Home Screen" works over plain http (apple meta tags); **desktop Chrome** "Create shortcut → Open as window" works via the favicon; **Android Chrome** needs **HTTPS** (e.g. a Tailscale funnel) for a true standalone WebAPK — over plain LAN http it stays a browser shortcut. Bundled into the `.app` only on a Mac rebuild (`index.html`/`public/` are Vite-built into the embedded frontend).
+- **HTTPS over Tailscale (unlocks the Android standalone PWA) — in-app toggle.** axum serves plain http on 1421, so `https://100.x:1421` fails (no TLS there). `tailscale serve` terminates TLS with a real cert for `<machine>.<tailnet>.ts.net` on 443 and proxies to `http://127.0.0.1:1421` (page + `/ws` + `/pair`, same origin). This is wired into the app as a menu toggle:
+  - Rust: `web_server.rs` `get_tailscale_https` / `set_tailscale_https` (async + `spawn_blocking`; resolve the `tailscale` binary via explicit install paths then PATH; `serve --bg http://127.0.0.1:PORT` to enable, `serve --https=443 off` to disable). Registered in `lib.rs`. An enable that fails because the tailnet has no HTTPS certs returns tailscale's own error (with the admin URL) verbatim.
+  - Frontend: `useRemoteControl.js` `httpsEnabled`/`httpsUrl`/`toggleHttps` + the **HTTPS (PWA)** row in `AppHeader.vue`, shown only when tailscale is present. Turning Remote Control **off also turns serve off** — nothing left proxying in the background.
+  - `bridge.js` `wsUrl()`/`pairDevice()` are **origin-relative** (`wss://<host>/ws` from an https page, `ws://<host>:1421/ws` from http) — a hardcoded `ws://…:1421` would be blocked as mixed content from the https origin. The device token is per-origin, so the `.ts.net` origin needs a one-time re-pair.
+  - **The one manual step the app can't do:** enabling HTTPS certs for the tailnet is an admin-console account setting (MagicDNS + HTTPS on) — done once. `scripts/tailscale-serve-https.sh` remains as a CLI fallback but is no longer required once the toggle ships.
+- The host role stamp is `if (window.__TAURI_INTERNALS__) window.__AKI_ROLE__='host'` in `src/boot/roleStamp.js`, imported first in `main.js` (a module, not an inline script — the host CSP `script-src 'self'` blocks inline). A phone browser never has `__TAURI_INTERNALS__`, so it defaults to companion. See `docs/plan/done/remote-control.md` §9 (S-1) for why this replaced the originally-planned Rust init-script.
 
 ## Backpressure — what happens when a phone cannot keep up
 
-A phone on a weak link cannot always drain what the Mac produces. A runaway command (`yes`, a noisy
-build) outruns it easily, and until 1.20.0 the queue toward each companion was unbounded — a real
-way to exhaust memory on a 16 GB machine. The producer must never be made to wait, though: blocking
-it would stall the PTY reader and, through it, the shell itself.
+A phone on a weak link cannot always drain what the Mac produces. A runaway command (`yes`, a noisy build) outruns it easily, and until 1.20.0 the queue toward each companion was unbounded — a real way to exhaust memory on a 16 GB machine. The producer must never be made to wait, though: blocking it would stall the PTY reader and, through it, the shell itself.
 
 The rule is therefore **bounded, and drop by kind rather than by age**:
 
-- Each companion has an **8 MB outbox** (1.21.1, up from 2 MB — sized against the terminal's own caps
-  via INVARIANT R in `web_server.rs`, so a companion joining with every terminal group at its tab
-  limit can receive a full scrollback replay without the replay itself tripping the budget it needs
-  to arrive through). Enqueue never blocks and never awaits.
-- Over budget → the **coalescible** backlog is dropped and the phone is flagged for re-sync. Once its
-  queue has genuinely drained, the host re-issues the existing `companion-connected` frame for that
-  device, which the normal join path answers with a full `init` plus a `reset` scrollback replay. No
-  new frame type, no timer: re-hydrating only on a drained queue is what keeps it self-limiting.
+- Each companion has an **8 MiB outbox** (1.21.1, up from 2 MiB — sized against the terminal's own caps via INVARIANT R in `web_server.rs`, so a companion joining with every terminal group at its tab limit can receive a full scrollback replay without the replay itself tripping the budget it needs to arrive through). Enqueue never blocks and never awaits.
+- Over budget → the **coalescible** backlog is dropped and the phone is flagged for re-sync. Once its queue has genuinely drained, the host re-issues the existing `companion-connected` frame for that device, which the normal join path answers with a full `init` plus a `reset` scrollback replay. No new frame type, no timer: re-hydrating only on a drained queue is what keeps it self-limiting.
 - If what remains still exceeds the budget, the socket closes **1013** (case B4c above).
 
 | Frame | Coalescible? | Why |
@@ -165,24 +87,13 @@ The rule is therefore **bounded, and drop by kind rather than by age**:
 | `pty_exit` / `pty_resize` | never | A lost liveness edge is the 1.20.0 terminal-`alive` bug. |
 | anything else | never | **Default-deny**, so a frame type added later is safe by construction. |
 
-`bridge.js` applies the same rule one hop earlier, refusing only `pty_output` while the socket's
-`bufferedAmount` is congested (1 MB high water, 128 KB low, latched so it cannot alternate).
+`bridge.js` applies the same rule one hop earlier, refusing only `pty_output` while the socket's `bufferedAmount` is congested (1 MB high water, 128 KB low, latched so it cannot alternate).
 
-**Note the deliberate departure from content-blindness.** The relay otherwise forwards
-`Message::Text` verbatim. It reads the top-level `t` — and only on frames already queued for a
-companion whose budget is blown, i.e. roughly one parse per 8 MB of overflow, never on the hot path.
-Recorded in the `web_server.rs` module header alongside the pre-existing `companion-connected`
-departure.
+**Note the deliberate departure from content-blindness.** The relay otherwise forwards `Message::Text` verbatim. It reads the top-level `t` — and only on frames already queued for a companion whose budget is blown, i.e. roughly one parse per 8 MiB of overflow, never on the hot path. Recorded in the `web_server.rs` module header alongside the pre-existing `companion-connected` departure.
 
 ## Per-connection addressing — `to` / `from` (1.21.1)
 
-A second, unrelated departure from content-blindness, also recorded in the `web_server.rs` module
-header: the relay additionally reads an optional top-level `to` on frames leaving the host, and
-stamps an optional top-level `from` (the relay's own key for the connection the frame arrived on — a
-companion cannot set, forge, or even see this) onto frames arriving from a companion. **No new frame
-type** — `docs/plan/done/remote-control.md` §13's frozen contract holds, because a frame carrying
-neither field routes exactly as it did before, and an older companion bundle that never sets or reads
-either field is unaffected in both directions.
+A second, unrelated departure from content-blindness, also recorded in the `web_server.rs` module header: the relay additionally reads an optional top-level `to` on frames leaving the host, and stamps an optional top-level `from` (the relay's own key for the connection the frame arrived on — a companion cannot set, forge, or even see this) onto frames arriving from a companion. **No new frame type** — `docs/plan/done/remote-control.md` §13's frozen contract holds, because a frame carrying neither field routes exactly as it did before, and an older companion bundle that never sets or reads either field is unaffected in both directions.
 
 | Frame kind | Routing | Why |
 | :-- | :-- | :-- |
@@ -194,31 +105,15 @@ either field is unaffected in both directions.
 | `init` | Broadcast | Idempotent (same snapshot each time), so a spurious one is waste, not damage — addressing it is a future optimization, not a fix. |
 | `ping` / `pong` | Broadcast | Liveness only. |
 
-`to`/`from` carry an **opaque per-connection key** minted by the relay, not the persistent device id.
-That unit is what makes the two bugs above actually fixed rather than fixed only between devices: two
-browser tabs open on one paired phone are two connections with two independent request counters that
-both start at 1, so a device-level address still crosses their replies. It also keeps the relay's byte
-budget honest — the relay emits its `companion-connected` frame per connection and the host answers
-each with a full scrollback replay, so a device-level address would put N copies of that replay in
-every one of that device's outboxes (see INVARIANT R in `src-tauri/src/web_server.rs`).
+`to`/`from` carry an **opaque per-connection key** minted by the relay, not the persistent device id. That unit is what makes the two bugs above actually fixed rather than fixed only between devices: two browser tabs open on one paired phone are two connections with two independent request counters that both start at 1, so a device-level address still crosses their replies. It also keeps the relay's byte budget honest — the relay emits its `companion-connected` frame per connection and the host answers each with a full scrollback replay, so a device-level address would put N copies of that replay in every one of that device's outboxes (see INVARIANT R in `src-tauri/src/web_server.rs`).
 
-Device grouping still exists where it is the actual intent: revoking a paired device closes every one
-of its live connections.
+Device grouping still exists where it is the actual intent: revoking a paired device closes every one of its live connections.
 
-**Logs are capped separately, at the store.** `logStore` keeps the last 2,000 lines per project and
-2,000 global, dropping from the head, and the mirror sends only newly appended lines with a cursor
-rather than re-encoding the whole log map per line. Before this, a 5,000-line rsync sent about twelve
-million lines of traffic to deliver five thousand. No "log truncated" row is shown: the panel
-scrolls, and a line count nobody asked for would cost a row (*UI Extreme Narrow*).
+**Logs are capped separately, at the store.** `logStore` keeps the last 2,000 lines per project and 2,000 global, dropping from the head, and the mirror sends only newly appended lines with a cursor rather than re-encoding the whole log map per line. Before this, a 5,000-line rsync sent about twelve million lines of traffic to deliver five thousand. No "log truncated" row is shown: the panel scrolls, and a line count nobody asked for would cost a row (*UI Extreme Narrow*).
 
 ## Companion states — every case
 
-Exhaustive map of what a phone/browser can be doing and what it shows. `ready = isHost ||
-connectionState === 'open'`; the whole dashboard mounts behind `v-if="ready"` (READY-1) and the
-`PairingGate` covers everything while `!ready`. **The Vite HMR websocket (`ws://<ip>:1421/?token=…`,
-no `/ws` path, no `role=`) is unrelated to any of this** — its "connection failed → fallback →
-connected" console line is a benign dev-only warning about Vite's own hot-reload channel, not the
-pairing socket (`ws://<ip>:1421/ws?role=companion&token=…`).
+Exhaustive map of what a phone/browser can be doing and what it shows. `ready = isHost || connectionState === 'open'`; the whole dashboard mounts behind `v-if="ready"` (READY-1) and the `PairingGate` covers everything while `!ready`. **The Vite HMR websocket (`ws://<ip>:1421/?token=…`, no `/ws` path, no `role=`) is unrelated to any of this** — its "connection failed → fallback → connected" console line is a benign dev-only warning about Vite's own hot-reload channel, not the pairing socket (`ws://<ip>:1421/ws?role=companion&token=…`).
 
 ### Role detection
 
@@ -245,11 +140,7 @@ pairing socket (`ws://<ip>:1421/ws?role=companion&token=…`).
 
 ### Host ↔ relay (the invisible half — a companion can't see this)
 
-The host runs its OWN websocket to the relay (`ws://127.0.0.1:1421/ws?role=host`). If that link is
-down, `host_tx` is null on the relay, so a companion connects and pairs fine but **never receives an
-`init`/`delta`** (empty dashboard) and its intents are dropped. Diagnose from the phone console:
-`[bridge] socket OPEN (role=companion)` with **no** following `[mirror] applied init — N key(s)`
-means exactly this — the host isn't feeding the relay.
+The host runs its OWN websocket to the relay (`ws://127.0.0.1:1421/ws?role=host`). If that link is down, `host_tx` is null on the relay, so a companion connects and pairs fine but **never receives an `init`/`delta`** (empty dashboard) and its intents are dropped. Diagnose from the phone console: `[bridge] socket OPEN (role=companion)` with **no** following `[mirror] applied init — N key(s)` means exactly this — the host isn't feeding the relay.
 
 | # | Situation | Result |
 | :-- | :-- | :-- |
@@ -294,12 +185,7 @@ means exactly this — the host isn't feeding the relay.
 
 ### Invoke RPC — Seam N, companion → host (both halves wired)
 
-The companion half (`utils/tauri.js`) always shipped: `invoke()` sends `{t:'invoke', cmd, args, id}`
-and awaits a matching `invoke_result`. The **host half** (`services/hostInvoke.js`, booted host-only
-in `initRemote`) is what was missing — until it existed, every companion `invoke()` (`get_agent_usage`,
-`log_frontend`, git-detail reads, `check_for_updates`, path resolves) hung until the 20 s watchdog in
-`bridge.request()` fired: the `NO invoke_result from the host … seam N: the host-side invoke responder
-is not wired` errors on the phone console.
+The companion half (`utils/tauri.js`) always shipped: `invoke()` sends `{t:'invoke', cmd, args, id}` and awaits a matching `invoke_result`. The **host half** (`services/hostInvoke.js`, booted host-only in `initRemote`) is what was missing — until it existed, every companion `invoke()` (`get_agent_usage`, `log_frontend`, git-detail reads, `check_for_updates`, path resolves) hung until the 20 s watchdog in `bridge.request()` fired: the `NO invoke_result from the host … seam N: the host-side invoke responder is not wired` errors on the phone console.
 
 | # | Situation | Result |
 | :-- | :-- | :-- |
@@ -316,34 +202,19 @@ Clear the stored token and reload — the code-entry form always returns:
 localStorage.removeItem('aki-companion-device-token')
 ```
 
-With ROBUST-1 this should never be *necessary* (a rejected token self-clears), but it is the
-one-liner to force a clean re-pair.
+With ROBUST-1 this should never be *necessary* (a rejected token self-clears), but it is the one-liner to force a clean re-pair.
 
 ---
 
 ## Control inventory — every button, cross-check matrix (SCOPE-1)
 
-The single reference to check every control against while editing. Goal (plan §0): *what the Mac
-shows, the browser shows; what the browser does, the Mac does* — one session mirrored, **no
-per-device view**. A control is correct only if it is right in BOTH columns.
+The single reference to check every control against while editing. Goal (plan §0): *what the Mac shows, the browser shows; what the browser does, the Mac does* — one session mirrored, **no per-device view**. A control is correct only if it is right in BOTH columns.
 
-**The one root-cause pattern behind every BUG below** (plan §0, ACT-1): a mutation that
-`mutate-local-copy + invoke('save_*')`. On the companion that mutates the *phone's* copy of a
-mirrored ref (which never travels back — the mirror is host→companion only) and RPC-persists to the
-Mac's **disk**, but never mutates the Mac's **reactive** ref — so nothing mirrors back and the Mac UI
-is stale until a reload re-reads disk. The fix is always the same: the data mutation must be an
-`action()` living in a `store/*.js` module (so the host runs it, mutates host reactive state, and the
-change mirrors to every screen). UI-only side effects (Toast, closeModal, field normalization) stay
-local to the clicker.
+**The one root-cause pattern behind every BUG below** (plan §0, ACT-1): a mutation that `mutate-local-copy + invoke('save_*')`. On the companion that mutates the *phone's* copy of a mirrored ref (which never travels back — the mirror is host→companion only) and RPC-persists to the Mac's **disk**, but never mutates the Mac's **reactive** ref — so nothing mirrors back and the Mac UI is stale until a reload re-reads disk. The fix is always the same: the data mutation must be an `action()` living in a `store/*.js` module (so the host runs it, mutates host reactive state, and the change mirrors to every screen). UI-only side effects (Toast, closeModal, field normalization) stay local to the clicker.
 
-**Mechanism legend** — `MIRROR` state is a mirrored `store/*.js` ref (auto H→C) · `ACTION` gesture
-wrapped in `action()` (C→H intent, runs on host) · `RPC` `invoke()` runs the command on the Mac
-one-shot · `LOCAL` browser-only effect (clipboard / open-link-in-clicker / transient modal-open).
+**Mechanism legend** — `MIRROR` state is a mirrored `store/*.js` ref (auto H→C) · `ACTION` gesture wrapped in `action()` (C→H intent, runs on host) · `RPC` `invoke()` runs the command on the Mac one-shot · `LOCAL` browser-only effect (clipboard / open-link-in-clicker / transient modal-open).
 
-**Verdict** — `OK` correct both ways · `BUG` a data change that does not reach the Mac's live UI ·
-`LOCAL-OK` an interaction surface that is legitimately local to the clicker (opens a modal the phone
-user then interacts with; the *save inside* is what must be an ACTION) · `RPC-OK` a one-shot host
-side effect with no shared state to mirror.
+**Verdict** — `OK` correct both ways · `BUG` a data change that does not reach the Mac's live UI · `LOCAL-OK` an interaction surface that is legitimately local to the clicker (opens a modal the phone user then interacts with; the *save inside* is what must be an ACTION) · `RPC-OK` a one-shot host side effect with no shared state to mirror.
 
 ### Project table (`ProjectTable.vue`) + config (`useProjectConfig.js`)
 
@@ -403,64 +274,17 @@ side effect with no shared state to mirror.
 
 Both are documented in full in `docs/plan/done/1.20.0-terminal-and-remote-sync.md` (§2, §3).
 
-- **PERSIST-1 — a companion must never write the projects array.** `saveProjectsList()` was a bare
-  `invoke('save_projects', {projects: projects.value})`, the one mutating persistence path not wrapped
-  in `action()`. From a phone it shipped the *phone's* array to disk while the Mac's reactive
-  `projects` stayed on the old value — so the next `broadcastFull()` (fired on **every** companion
-  reconnect: screen lock, backgrounded tab, LAN blip) replayed the stale copy back over the edit.
-  That is the "task note reverts after a while" report. Fixed by `remoteActions.applyTaskEdit(id, patch)`
-  and `remoteActions.reorderProjects(orderedIds)`; the seven bare call sites (task add/toggle/remove,
-  notes, task title, task detail, drag-reorder) now all route through them. **Caveat on drag-reorder:**
-  the *seam* is fixed, but the *gesture* never fires on a phone — the row uses HTML5 drag-and-drop,
-  which emits no events from touch, and `onRowDragStart` additionally requires a `mousedown`. So
-  reordering is Mac-only in practice; a reorder performed on the Mac mirrors to the phone correctly.
-  Making it work on touch is a pointer-events reimplementation, tracked as deferred debt in
-  `docs/plan/done/1.20.1-flow-audit-fixes.md` §4. `saveProjectsList` carries
-  the invariant as a comment at its definition: it is a **host-side persist of the host's own state**
-  and may only be reached from inside an action body. No guard was added inside it — by the time it
-  runs the wrong array is already in hand, so a guard would police the symptom.
-- **Dialogs are mirrored state (§3.4, designed in 1.19.0, built in 1.20.0).** Four decision dialogs
-  moved out of host-local `Swal.fire` into `store/dialogStore.js` (`pendingDialog` ref + `resolveDialog`
-  action + a host-side `askConfirm()` promise helper) rendered by `components/DialogHost.vue` on both
-  screens: the typed `--delete` confirm, the preview-failed prompt, Remove Project, and the
-  missing-SSH-host replacement picker. First-answer-wins via the id guard; the typed value travels with
-  the answer and is **re-validated on the host**, so a phone cannot skip the check. No new frame type
-  and no relay change — it rides the two existing seams. Still plain `Swal.fire` on purpose: the
-  file-picker overwrite confirm (`useSync.js`, bound to the native macOS dialog, host-only by design),
-  the Antigravity logout confirm (`AgentUsage.vue`, runs in the clicking screen's own handler), and
-  every toast.
+- **PERSIST-1 — a companion must never write the projects array.** `saveProjectsList()` was a bare `invoke('save_projects', {projects: projects.value})`, the one mutating persistence path not wrapped in `action()`. From a phone it shipped the *phone's* array to disk while the Mac's reactive `projects` stayed on the old value — so the next `broadcastFull()` (fired on **every** companion reconnect: screen lock, backgrounded tab, LAN blip) replayed the stale copy back over the edit. That is the "task note reverts after a while" report. Fixed by `remoteActions.applyTaskEdit(id, patch)` and `remoteActions.reorderProjects(orderedIds)`; the seven bare call sites (task add/toggle/remove, notes, task title, task detail, drag-reorder) now all route through them. **Caveat on drag-reorder:** the *seam* is fixed, but the *gesture* never fires on a phone — the row uses HTML5 drag-and-drop, which emits no events from touch, and `onRowDragStart` additionally requires a `mousedown`. So reordering is Mac-only in practice; a reorder performed on the Mac mirrors to the phone correctly. Making it work on touch is a pointer-events reimplementation, tracked as deferred debt in `docs/plan/done/1.20.1-flow-audit-fixes.md` §4. `saveProjectsList` carries the invariant as a comment at its definition: it is a **host-side persist of the host's own state** and may only be reached from inside an action body. No guard was added inside it — by the time it runs the wrong array is already in hand, so a guard would police the symptom.
+- **Dialogs are mirrored state (§3.4, designed in 1.19.0, built in 1.20.0).** Four decision dialogs moved out of host-local `Swal.fire` into `store/dialogStore.js` (`pendingDialog` ref + `resolveDialog` action + a host-side `askConfirm()` promise helper) rendered by `components/DialogHost.vue` on both screens: the typed `--delete` confirm, the preview-failed prompt, Remove Project, and the missing-SSH-host replacement picker. First-answer-wins via the id guard; the typed value travels with the answer and is **re-validated on the host**, so a phone cannot skip the check. No new frame type and no relay change — it rides the two existing seams. Still plain `Swal.fire` on purpose: the file-picker overwrite confirm (`useSync.js`, bound to the native macOS dialog, host-only by design), the Antigravity logout confirm (`AgentUsage.vue`, runs in the clicking screen's own handler), and every toast.
 
-Still open after 1.20.0: a companion's **Config modal does not self-close** after a remove it triggered
-(the removal itself succeeds and mirrors — only `editingProject`/`showConfigModal` are still per-screen
-composable refs, R-1). Usage numbers are still the one area the mirror does not carry (each screen
-fetches its own). `projectIcons` is still filled only at boot.
+Still open after 1.20.0: a companion's **Config modal does not self-close** after a remove it triggered (the removal itself succeeds and mirrors — only `editingProject`/`showConfigModal` are still per-screen composable refs, R-1). Usage numbers are still the one area the mirror does not carry (each screen fetches its own). `projectIcons` is still filled only at boot.
 
 ### Fix order — progress
 
 - **DONE** — Config save (`applyProjectConfig`), Remove project (`removeProject`), New-project save path.
-- **DONE** — `setTierCount` action; usage power toggles (now `usageMonitorStore` +
-  `setMonitorEnabled`, one entry per `agentId@host`); remote host select (now per-slot,
-  `usageSlotStore.setSlotTarget`).
-- **DONE (same class)** — all three former TODOs, identical pattern (data mutation → an `action()` in
-  a `store/*.js`):
-  - **`saveSshConfig`/`undoSshConfig`/`redoSshConfig`** → `remoteActions.applySshHostsChange`. The RPC
-    file writes stay on the clicker; the reactive reconcile (re-read `get_ssh_hosts` → set the
-    mirrored `sshHosts`, refresh `hasSshUndo`/`hasSshRedo`, migrate any project pinned to a
-    now-missing host + `saveProjectsList`) runs host-side. The many-to-many missing-host replacement
-    dialog is **mirrored** since 1.20.0 (`remoteActions.js:247`, `askConfirm` `kind: 'select'`): it is
-    decided host-side, as it always was, but is now visible and answerable from a companion screen
-    too. `oldHosts` is read from the live host `sshHosts`, so nothing crosses the intent wire.
-    useSsh/SshConfigModal no longer forward `saveProjectsList` (the action owns the save).
-  - **Refresh-settings interval** → `refreshStore.setRefreshSettings`. `RefreshSettingsModal.save()`
-    calls the action instead of writing `refreshSettings.value` directly; the host's existing deep
-    `watch` persists to its localStorage and the change mirrors back.
-  - **Global note** → `noteContent` moved from the composable into `store/noteStore.js` (so it mirrors
-    H→C); `noteStore.applyGlobalNoteEdit` is the C→H action that mutates it + `write_global_note` on
-    the host, patching only the fields present so a content-only save never touches the task list.
-    `useGlobalNote` re-exports `noteContent` (importers unchanged) and keeps the transient
-    `showGlobalNote`/`noteSaving`/debounce clicker-local.
-- **REVIEW (product call, documented not guessed)** — `toggleRemote` (companion toggling the server
-  it rides on → likely host-only); window/view controls (`applyView*`, pin/min/close → they act on
-  the Mac window; fine as RPC); usage *view* state (tab LOCAL/REMOTE, source AG/CC, account-shown,
-  email show/hide) — SCOPE-1 says one session mirrored, so these arguably should mirror the *shown*
-  view across screens, but that means moving per-slot view refs into a store. Decide before wiring.
+- **DONE** — `setTierCount` action; usage power toggles (now `usageMonitorStore` + `setMonitorEnabled`, one entry per `agentId@host`); remote host select (now per-slot, `usageSlotStore.setSlotTarget`).
+- **DONE (same class)** — all three former TODOs, identical pattern (data mutation → an `action()` in a `store/*.js`):
+  - **`saveSshConfig`/`undoSshConfig`/`redoSshConfig`** → `remoteActions.applySshHostsChange`. The RPC file writes stay on the clicker; the reactive reconcile (re-read `get_ssh_hosts` → set the mirrored `sshHosts`, refresh `hasSshUndo`/`hasSshRedo`, migrate any project pinned to a now-missing host + `saveProjectsList`) runs host-side. The many-to-many missing-host replacement dialog is **mirrored** since 1.20.0 (`remoteActions.js:247`, `askConfirm` `kind: 'select'`): it is decided host-side, as it always was, but is now visible and answerable from a companion screen too. `oldHosts` is read from the live host `sshHosts`, so nothing crosses the intent wire. useSsh/SshConfigModal no longer forward `saveProjectsList` (the action owns the save).
+  - **Refresh-settings interval** → `refreshStore.setRefreshSettings`. `RefreshSettingsModal.save()` calls the action instead of writing `refreshSettings.value` directly; the host's existing deep `watch` persists to its localStorage and the change mirrors back.
+  - **Global note** → `noteContent` moved from the composable into `store/noteStore.js` (so it mirrors H→C); `noteStore.applyGlobalNoteEdit` is the C→H action that mutates it + `write_global_note` on the host, patching only the fields present so a content-only save never touches the task list. `useGlobalNote` re-exports `noteContent` (importers unchanged) and keeps the transient `showGlobalNote`/`noteSaving`/debounce clicker-local.
+- **REVIEW (product call, documented not guessed)** — `toggleRemote` (companion toggling the server it rides on → likely host-only); window/view controls (`applyView*`, pin/min/close → they act on the Mac window; fine as RPC); usage *view* state (tab LOCAL/REMOTE, source AG/CC, account-shown, email show/hide) — SCOPE-1 says one session mirrored, so these arguably should mirror the *shown* view across screens, but that means moving per-slot view refs into a store. Decide before wiring.

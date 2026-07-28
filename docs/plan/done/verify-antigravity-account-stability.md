@@ -2,21 +2,9 @@
 
 Status: **DONE** - A superseded, B done, C dropped (cập nhật 2026-07-08, xem correction note ngay dưới)
 
-> **⚠️ Correction 2026-07-07:** Mục A dưới đây (kỳ vọng "header phải mất hết data / về trạng thái
-> trống, không còn hiện account X hay Y" sau logout) đã bị **PO bác bỏ và sửa lại** - đó không phải
-> bug, mà đúng là mục tiêu thật của cache multi-account (xem hiện trạng lần cuối của từng account).
-> `resetAccount()`/`clearAgStore()` viết theo kỳ vọng SAI này từng gây ra regression 1.9.3 (xóa sạch
-> lịch sử mọi account mỗi lần logout). Nguồn chân lý hiện tại:
-> `docs/arch/usage-antigravity.md` § "Log Out behavior & cache retention". **Không dùng mục A bên dưới
-> để test/verify nữa** - nó mô tả hành vi cũ đã bị đảo ngược. Mục B đã implement xong (xem ghi chú tại
-> mục B).
+> **⚠️ Correction 2026-07-07:** Mục A dưới đây (kỳ vọng "header phải mất hết data / về trạng thái trống, không còn hiện account X hay Y" sau logout) đã bị **PO bác bỏ và sửa lại** - đó không phải bug, mà đúng là mục tiêu thật của cache multi-account (xem hiện trạng lần cuối của từng account). `resetAccount()`/`clearAgStore()` viết theo kỳ vọng SAI này từng gây ra regression 1.9.3 (xóa sạch lịch sử mọi account mỗi lần logout). Nguồn chân lý hiện tại: `docs/arch/usage-antigravity.md` § "Log Out behavior & cache retention". **Không dùng mục A bên dưới để test/verify nữa** - nó mô tả hành vi cũ đã bị đảo ngược. Mục B đã implement xong (xem ghi chú tại mục B).
 >
-> **⚠️ Quyết định 2026-07-08 (PO): Mục C bị DẸP BỎ, không làm.** Lý do: mục C chỉ là phân loại lý do
-> "offline" (IDE chưa mở / mid-restart / signed-out / timeout) cho mục đích **log/diagnostic** - không
-> có bug report gốc, không có hành vi sai nào hiện tại phụ thuộc vào nó (UI đã hiển thị đúng trạng thái
-> cached/empty state dù không biết lý do chi tiết). Effort trung bình (đổi kiểu trả về IPC dùng chung
-> với Claude Code) không xứng đáng với lợi ích thuần logging. Không backlog lại trừ khi có nhu cầu cụ
-> thể mới phát sinh.
+> **⚠️ Quyết định 2026-07-08 (PO): Mục C bị DẸP BỎ, không làm.** Lý do: mục C chỉ là phân loại lý do "offline" (IDE chưa mở / mid-restart / signed-out / timeout) cho mục đích **log/diagnostic** - không có bug report gốc, không có hành vi sai nào hiện tại phụ thuộc vào nó (UI đã hiển thị đúng trạng thái cached/empty state dù không biết lý do chi tiết). Effort trung bình (đổi kiểu trả về IPC dùng chung với Claude Code) không xứng đáng với lợi ích thuần logging. Không backlog lại trừ khi có nhu cầu cụ thể mới phát sinh.
 
 Cross-refs:
 - Fix vừa commit: `a26b8f5` - `src/composables/useAgentUsage.js` (`persistAgAccount`, `resetAccount`, `pendingRecheck`), `src/components/AgentUsage.vue` (`logout-success` emit), `src/components/AgentUsageSlot.vue`
@@ -24,14 +12,9 @@ Cross-refs:
 - Code liên quan: `src-tauri/src/agent_usage.rs` (`get_antigravity_usage`, `logout_antigravity`), `scripts/get-antigravity-usage.js`, `src/composables/useAgentUsage.js`
 
 Gồm 3 việc, độc lập nhau:
-- ~~**A. Test protocol** cho fix vừa làm (item 1) - confirm hết bug thật, không phải chỉ build pass.~~
-  **SUPERSEDED** - xem correction note ở trên.
-- **B. `viewingEmail` auto-reset` (item 2) - lỗ hổng cùng loại, chưa vá.** ✅ **Đã implement**
-  (commit `b082d0d`: auto-reset `viewingEmail` khi live account đổi sang email hoàn toàn mới).
-- **C. Phân loại lý do "offline"** ở tầng Rust/script (item 3) - hiện gộp hết vào `Ok(None)`.
-  ❌ **Dẹp bỏ 2026-07-08** (quyết định PO) - thuần diagnostic/logging, không có bug thật phụ thuộc
-  vào nó, effort không xứng lợi ích. Xem mục C gốc bên dưới (giữ để tham chiếu lịch sử, không phải
-  backlog).
+- ~~**A. Test protocol** cho fix vừa làm (item 1) - confirm hết bug thật, không phải chỉ build pass.~~ **SUPERSEDED** - xem correction note ở trên.
+- **B. `viewingEmail` auto-reset` (item 2) - lỗ hổng cùng loại, chưa vá.** ✅ **Đã implement** (commit `b082d0d`: auto-reset `viewingEmail` khi live account đổi sang email hoàn toàn mới).
+- **C. Phân loại lý do "offline"** ở tầng Rust/script (item 3) - hiện gộp hết vào `Ok(None)`. ❌ **Dẹp bỏ 2026-07-08** (quyết định PO) - thuần diagnostic/logging, không có bug thật phụ thuộc vào nó, effort không xứng lợi ích. Xem mục C gốc bên dưới (giữ để tham chiếu lịch sử, không phải backlog).
 
 ---
 
@@ -56,8 +39,7 @@ Mỗi dòng log đã có timestamp `YYYYMMDD.HHMMSS.mmm` - khi báo cáo, cứ p
 
 ## A. Test protocol - xác nhận fix `a26b8f5` (item 1) - SUPERSEDED, đừng dùng để test
 
-> Kỳ vọng ghi trong A1 bên dưới ("header phải mất hết data... không còn hiện account X hay Y") đã bị
-> đảo ngược 2026-07-07 - xem correction note ở đầu file. Giữ lại nguyên văn chỉ để tham chiếu lịch sử.
+> Kỳ vọng ghi trong A1 bên dưới ("header phải mất hết data... không còn hiện account X hay Y") đã bị đảo ngược 2026-07-07 - xem correction note ở đầu file. Giữ lại nguyên văn chỉ để tham chiếu lịch sử.
 
 ### A1. Kịch bản gốc (bug report ban đầu)
 
@@ -114,16 +96,13 @@ Trong `checkUsage()`, nhánh `agentName === 'antigravity'` khi có live fetch m�
 1. Trong lúc test A/B ở trên, mỗi lần thấy `soft-miss (offline→cache)` trong log, chép nguyên message stderr đi kèm (đã có sẵn, không cần code thêm - xem `agent_usage.rs:532`, dòng log hiện tại: `soft-miss (offline→cache): <stderr>`).
 2. Gom lại xem trong thực tế các nguyên nhân gặp phải là gì (process not running / port not found / Connect API not found / signed out / parse error khác) và tần suất - nếu >90% case chỉ là "IDE not running" hoặc "signed out" (2 loại đã có message phân biệt sẵn trong script, xem `console.error(JSON.stringify({error: ...}))` các dòng khác nhau), có thể **không cần** sửa gì thêm ở Rust - chỉ cần frontend đọc `stderr` reason (hiện đang bị bỏ qua hoàn toàn, `Ok(None)` không mang theo message) nếu muốn hiển thị tinh hơn.
 
-**Đề xuất fix (chỉ làm nếu test C cho thấy cần thiết):**
-`get_antigravity_usage` đổi `Ok(None)` thành `Ok(None)` + kèm reason string (đổi kiểu trả về hoặc thêm field), để frontend `checkUsage()` có thể log/hiển thị "đang chờ AG khởi động lại" khác với "chưa đăng nhập" mà không cần đoán qua thời gian. Đây là thay đổi kiểu dữ liệu (`AgentUsageResponse` hoặc kiểu trả `Result`), cần rà lại toàn bộ chỗ gọi `get_agent_usage` (dùng chung với Claude Code) - effort trung bình, không làm nếu test C cho thấy không đáng.
+**Đề xuất fix (chỉ làm nếu test C cho thấy cần thiết):** `get_antigravity_usage` đổi `Ok(None)` thành `Ok(None)` + kèm reason string (đổi kiểu trả về hoặc thêm field), để frontend `checkUsage()` có thể log/hiển thị "đang chờ AG khởi động lại" khác với "chưa đăng nhập" mà không cần đoán qua thời gian. Đây là thay đổi kiểu dữ liệu (`AgentUsageResponse` hoặc kiểu trả `Result`), cần rà lại toàn bộ chỗ gọi `get_agent_usage` (dùng chung với Claude Code) - effort trung bình, không làm nếu test C cho thấy không đáng.
 
 ---
 
 ## Việc cần user làm
 
-**Cập nhật 2026-07-07: không còn việc nào cần user làm trong file này.** Mục A không cần test nữa
-(superseded). Mục B đã implement xong từ `b082d0d`, không cần verify riêng. Mục C là backlog kỹ
-thuật thuần túy (không có bug report gốc), chỉ làm khi có nhu cầu - không chủ động yêu cầu user test.
+**Cập nhật 2026-07-07: không còn việc nào cần user làm trong file này.** Mục A không cần test nữa (superseded). Mục B đã implement xong từ `b082d0d`, không cần verify riêng. Mục C là backlog kỹ thuật thuần túy (không có bug report gốc), chỉ làm khi có nhu cầu - không chủ động yêu cầu user test.
 
 <details><summary>Nội dung gốc (trước 2026-07-07), giữ để tham chiếu lịch sử</summary>
 

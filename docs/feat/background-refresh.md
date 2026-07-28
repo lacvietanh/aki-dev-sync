@@ -2,9 +2,7 @@
 
 Automatic background polling that keeps three independent data types fresh without user interaction. Each type has a different cost profile and refresh interval.
 
-> **Scope**: this doc covers *what* each refresh type fetches and what it costs. For *who triggers a
-> refresh, where the busy indicator comes from, and how an in-flight check is cancelled*, see
-> [docs/arch/refresh-controller.md](../arch/refresh-controller.md) (with flowcharts).
+> **Scope**: this doc covers *what* each refresh type fetches and what it costs. For *who triggers a refresh, where the busy indicator comes from, and how an in-flight check is cancelled*, see [docs/arch/refresh-controller.md](../arch/refresh-controller.md) (with flowcharts).
 
 ## The three refresh types
 
@@ -101,32 +99,18 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 ## Sleep/wake self-heal
 
-WKWebView suspends and throttles `setInterval` when the window is occluded, minimised, or the Mac
-sleeps. The timers simply stop, and nothing downstream notices: project status freezes on whatever it
-last showed, which is the app quietly lying about the state of a repo. A suspended interval does not
-reliably resume ticking on its own once the window is visible again either.
+WKWebView suspends and throttles `setInterval` when the window is occluded, minimised, or the Mac sleeps. The timers simply stop, and nothing downstream notices: project status freezes on whatever it last showed, which is the app quietly lying about the state of a repo. A suspended interval does not reliably resume ticking on its own once the window is visible again either.
 
-There is **one** wake mechanism in the app, and it lives with the usage monitor
-(`usageMonitor.js`, `subscribeWake`) because that is where it was built first. `useBackgroundRefresh`
-subscribes to it rather than running a second heartbeat — two watchdogs would double the wake-up cost
-and mean two places to reason about when recovery misbehaves. It drives recovery from two signals:
+There is **one** wake mechanism in the app, and it lives with the usage monitor (`usageMonitor.js`, `subscribeWake`) because that is where it was built first. `useBackgroundRefresh` subscribes to it rather than running a second heartbeat — two watchdogs would double the wake-up cost and mean two places to reason about when recovery misbehaves. It drives recovery from two signals:
 
 1. `visibilitychange` / `focus` — the moment the user looks back at the app.
 2. A 7 s watchdog heartbeat — catches a suspend that flips neither DOM event.
 
-**This is not refresh-on-focus.** Every path gap-checks first: a cycle re-runs only if it has actually
-missed ticks, measured at 2× its own configured interval (one missed tick is scheduler jitter, two is
-a suspend). Alt-tabbing through the app therefore costs nothing. The threshold is per-subscriber, so
-a cycle that has legitimately backed off is not mistaken for a suspend, and a cycle whose timer is
-switched off reports `0` and is skipped rather than silencing the whole heartbeat.
+**This is not refresh-on-focus.** Every path gap-checks first: a cycle re-runs only if it has actually missed ticks, measured at 2× its own configured interval (one missed tick is scheduler jitter, two is a suspend). Alt-tabbing through the app therefore costs nothing. The threshold is per-subscriber, so a cycle that has legitimately backed off is not mistaken for a suspend, and a cycle whose timer is switched off reports `0` and is skipped rather than silencing the whole heartbeat.
 
-Host-only (`utils/scheduler.js`, seam P): a companion produces nothing of its own — its status data
-arrives over the mirror, so a wake there must not start firing checks.
+Host-only (`utils/scheduler.js`, seam P): a companion produces nothing of its own — its status data arrives over the mirror, so a wake there must not start firing checks.
 
-One thing is deliberately **not** gap-gated: the Claude Code profile is re-read on every
-visibility/focus wake. It is a cheap local file read and the one piece of derived state that can
-change while the app is asleep with no event reaching it — someone editing `~/.claude/settings.json`,
-or another tool switching the profile — so without this the UI keeps claiming the old mode.
+One thing is deliberately **not** gap-gated: the Claude Code profile is re-read on every visibility/focus wake. It is a cheap local file read and the one piece of derived state that can change while the app is asleep with no event reaching it — someone editing `~/.claude/settings.json`, or another tool switching the profile — so without this the UI keeps claiming the old mode.
 
 ---
 
@@ -142,10 +126,7 @@ refreshSettings = {
 }
 ```
 
-The `useBackgroundRefresh` module-singleton already manages the git and diff timers this way - a
-`watch` per interval clears and restarts only the affected timer, and `0` disables that type. What
-is still missing is a UI to edit these values (they currently come from `refreshStore` defaults)
-and bringing the usage poll under the same roof.
+The `useBackgroundRefresh` module-singleton already manages the git and diff timers this way - a `watch` per interval clears and restarts only the affected timer, and `0` disables that type. What is still missing is a UI to edit these values (they currently come from `refreshStore` defaults) and bringing the usage poll under the same roof.
 
 A settings icon (gear) next to the Reload button in `AppHeader.vue` opens a `RefreshSettingsModal` with three numeric inputs and descriptions of what each type checks and how expensive it is.
 

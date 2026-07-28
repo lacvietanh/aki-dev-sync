@@ -69,62 +69,32 @@ sequenceDiagram
 
 ## Signed-Out Detection & usage-flow stability (fixed 2026-07-03, 1.9.1)
 
-When the user is signed out while the language server is still running, `GetUserStatus` does **not**
-reliably return `401`. On the current Antigravity build it returns **HTTP `500`** with body
-`{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` - the server answers, but has
-no session, so the account-derived model config is nil (empirically verified on this machine after
-a real logout). The earlier code assumed signed-out == `401`, so it mislabeled this as a generic
-connection failure. `get-antigravity-usage.js` still uses `Promise.allSettled` to keep the raw
-rejection reason, and now classifies **both** signatures as signed-out:
+When the user is signed out while the language server is still running, `GetUserStatus` does **not** reliably return `401`. On the current Antigravity build it returns **HTTP `500`** with body `{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` - the server answers, but has no session, so the account-derived model config is nil (empirically verified on this machine after a real logout). The earlier code assumed signed-out == `401`, so it mislabeled this as a generic connection failure. `get-antigravity-usage.js` still uses `Promise.allSettled` to keep the raw rejection reason, and now classifies **both** signatures as signed-out:
 
 - classic: HTTP `401` / `unauthorized`
 - current: HTTP `500` matching `is nil` / `GetCascadeModelConfigData`
 
-**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100%
-stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing:
-`agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"`
-/ `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port
-not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set
-`error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là
-`usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort
-monitor and the frontend already has a graceful null path (show the last cached account), so
-`get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason
-at debug level. Result: transient/offline/signed-out states show the cached account (or the
-"Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
+**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100% stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing: `agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set `error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là `usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort monitor and the frontend already has a graceful null path (show the last cached account), so `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason at debug level. Result: transient/offline/signed-out states show the cached account (or the "Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
 
 ## Log Out (fixed 2026-07-03, v1.9.x → next)
 
-Antigravity's account dropdown (in `AgentUsage.vue`, opened by clicking the email) has a **Log Out**
-row that calls the `logout_antigravity` Tauri command.
+Antigravity's account dropdown (in `AgentUsage.vue`, opened by clicking the email) has a **Log Out** row that calls the `logout_antigravity` Tauri command.
 
-**Where the credential actually lives (empirically verified on this machine).** The live OAuth
-session is stored in VS Code's globalState SQLite store,
-`User/globalStorage/state.vscdb`, in the `ItemTable` under two keys:
+**Where the credential actually lives (empirically verified on this machine).** The live OAuth session is stored in VS Code's globalState SQLite store, `User/globalStorage/state.vscdb`, in the `ItemTable` under two keys:
 
 - `antigravityUnifiedStateSync.oauthToken` (~1 KB)
 - `antigravityUnifiedStateSync.userStatus` (~8 KB - account/email/quota)
 
-These values are **not** Electron `safeStorage` ciphertext - they carry no `v10`/`v11` prefix
-(inspected without materializing the token; first byte `0x43` = base64 protobuf, the Connect-RPC
-wire form). The earlier theory that the token was `safeStorage`-encrypted and that deleting the
-`"Antigravity IDE Safe Storage"` Keychain item made it "permanently undecryptable" was **wrong**:
-because the token isn't encrypted with that key, wiping cookies + the Keychain item left the token
-fully readable, so the IDE re-read it on next launch and silently signed back in. That was the
-"logout does nothing" bug in 1.9.
+These values are **not** Electron `safeStorage` ciphertext - they carry no `v10`/`v11` prefix (inspected without materializing the token; first byte `0x43` = base64 protobuf, the Connect-RPC wire form). The earlier theory that the token was `safeStorage`-encrypted and that deleting the `"Antigravity IDE Safe Storage"` Keychain item made it "permanently undecryptable" was **wrong**: because the token isn't encrypted with that key, wiping cookies + the Keychain item left the token fully readable, so the IDE re-read it on next launch and silently signed back in. That was the "logout does nothing" bug in 1.9.
 
 `logout_antigravity` now:
 
 1. Quits the app (`osascript quit app` then `pkill -f` fallback) so nothing holds the files open.
 2. Deletes the account-only Chromium files (`ANTIGRAVITY_ACCOUNT_ONLY_PATHS`).
-3. **Deletes the two auth rows** (`ANTIGRAVITY_AUTH_KEYS`) from `state.vscdb` **and** `state.vscdb.backup`
-   (Antigravity restores from the backup if the primary is missing) via the system `/usr/bin/sqlite3`
-   - `remove_antigravity_auth_rows()`. This is what actually forces re-login. A `DELETE ... WHERE key IN (...)`
-   touches only those two rows and leaves all other globalState intact (verified: 2 keys removed, 1632 rows preserved).
-4. Deletes the `"Antigravity IDE Safe Storage"` Keychain item (defense-in-depth - harmless, and covers
-   any future build that *does* move to `safeStorage`).
+3. **Deletes the two auth rows** (`ANTIGRAVITY_AUTH_KEYS`) from `state.vscdb` **and** `state.vscdb.backup` (Antigravity restores from the backup if the primary is missing) via the system `/usr/bin/sqlite3` - `remove_antigravity_auth_rows()`. This is what actually forces re-login. A `DELETE ... WHERE key IN (...)` touches only those two rows and leaves all other globalState intact (verified: 2 keys removed, 1632 rows preserved).
+4. Deletes the `"Antigravity IDE Safe Storage"` Keychain item (defense-in-depth - harmless, and covers any future build that *does* move to `safeStorage`).
 
-`User/` (settings, keybindings, snippets, extensions, workspaceStorage) and the rest of
-`globalStorage/` are never touched, so extensions, rules, and permissions survive a logout intact.
+`User/` (settings, keybindings, snippets, extensions, workspaceStorage) and the rest of `globalStorage/` are never touched, so extensions, rules, and permissions survive a logout intact.
 
 ## Execution Environment
 
@@ -141,9 +111,7 @@ Using a login shell (`-lc`) is mandatory for desktop GUI execution since GUI app
 
 ## Per-Account Cache (localStorage) & Account Dropdown
 
-Antigravity can switch the logged-in account on the same machine, so usage is cached **per account
-per machine** in `localStorage` under `aki-antigravity-usage-cache-v3`. The whole cache is owned by
-`src/composables/agUsageCache.js` and reached only through its functions - no component parses it:
+Antigravity can switch the logged-in account on the same machine, so usage is cached **per account per machine** in `localStorage` under `aki-antigravity-usage-cache-v3`. The whole cache is owned by `src/composables/agUsageCache.js` and reached only through its functions - no component parses it:
 
 ```json
 {
@@ -156,37 +124,12 @@ per machine** in `localStorage` under `aki-antigravity-usage-cache-v3`. The whol
 }
 ```
 
-* **Why the host is in the key** (v3, 1.20.0): the same Google account is routinely signed in on the
-  Mac and on a remote host at once. v2 keyed on `email:sourceType` and carried `host` only as
-  metadata on the value, so both machines wrote the one key - whichever polled last overwrote the
-  other's reading, and the loser's host-scope check then rejected its own former entry and rendered
-  an empty card. Two records that share a key cannot be told apart by metadata; only by the key.
-  `lastActiveEmail` became per-host for the same reason, and the dropdown's dedup pass now runs
-  inside one host's partition instead of `delete`-ing across the whole store.
-* **Migration:** `aki-antigravity-usage-cache` (v1 single blob) → v2 → v3, each step once, old key
-  removed. A v2 entry is re-keyed under its recorded `host`, or `local` when it has none - the only
-  value it can have had, since the remote AG probe did not work before 1.20.0.
-* **Why it also fixes the stale-account bug:** previously the cache was one un-keyed blob. When a live
-  fetch returned `null` (the language server restarts right after an account switch - very common),
-  the null branch displayed that blob = the *previous* account; whether you saw old or new depended
-  on whether the fetch happened to succeed that tick (a race, persisted even across reload). Now the
-  null branch deterministically shows the **last-active account's** cache (labeled *Cached*), and the
-  next successful fetch overwrites it with the true current account. No more random flips.
-* **Account dropdown:** clicking the email in the AG header (`AgentUsage.vue`) opens a dropdown listing
-  every cached account with its cached-ago time and a "live" dot on the active one. Selecting a
-  non-active account **pins** the view to that account's cache (`isCached` badge shown) while the
-  background poll keeps fetching and updating the active account's cache; selecting the live account
-  returns to follow-live. **The pin lives in the slot, not in the monitor** (1.16.0 → persisted in
-  1.18.0): `AgentUsageSlot.vue` owns `slotViewingEmail` and resolves it in `slotAccountInfo`, because
-  two slots share one monitor and must be able to pin to two different accounts at once - a single
-  selection inside the monitor cannot express that. The monitor exports only what is live -
-  `accounts`, `activeEmail`, `activeEmails` - and always keeps `data` on the active account. Sau
-  refactor 1.20.0 "the composable" **không phải singleton** - mỗi monitor là một entity riêng theo
-  `monitorId(agentId, host)` (`usageMonitorRegistry.js`), nên mỗi `antigravity@<host>` giữ danh sách
-  account của riêng nó. The email-blur eye-toggle applies to dropdown rows too.
+* **Why the host is in the key** (v3, 1.20.0): the same Google account is routinely signed in on the Mac and on a remote host at once. v2 keyed on `email:sourceType` and carried `host` only as metadata on the value, so both machines wrote the one key - whichever polled last overwrote the other's reading, and the loser's host-scope check then rejected its own former entry and rendered an empty card. Two records that share a key cannot be told apart by metadata; only by the key. `lastActiveEmail` became per-host for the same reason, and the dropdown's dedup pass now runs inside one host's partition instead of `delete`-ing across the whole store.
+* **Migration:** `aki-antigravity-usage-cache` (v1 single blob) → v2 → v3, each step once, old key removed. A v2 entry is re-keyed under its recorded `host`, or `local` when it has none - the only value it can have had, since the remote AG probe did not work before 1.20.0.
+* **Why it also fixes the stale-account bug:** previously the cache was one un-keyed blob. When a live fetch returned `null` (the language server restarts right after an account switch - very common), the null branch displayed that blob = the *previous* account; whether you saw old or new depended on whether the fetch happened to succeed that tick (a race, persisted even across reload). Now the null branch deterministically shows the **last-active account's** cache (labeled *Cached*), and the next successful fetch overwrites it with the true current account. No more random flips.
+* **Account dropdown:** clicking the email in the AG header (`AgentUsage.vue`) opens a dropdown listing every cached account with its cached-ago time and a "live" dot on the active one. Selecting a non-active account **pins** the view to that account's cache (`isCached` badge shown) while the background poll keeps fetching and updating the active account's cache; selecting the live account returns to follow-live. **The pin lives in the slot, not in the monitor** (1.16.0 → persisted in 1.18.0): `AgentUsageSlot.vue` owns `slotViewingEmail` and resolves it in `slotAccountInfo`, because two slots share one monitor and must be able to pin to two different accounts at once - a single selection inside the monitor cannot express that. The monitor exports only what is live - `accounts`, `activeEmail`, `activeEmails` - and always keeps `data` on the active account. Sau refactor 1.20.0 "the composable" **không phải singleton** - mỗi monitor là một entity riêng theo `monitorId(agentId, host)` (`usageMonitorRegistry.js`), nên mỗi `antigravity@<host>` giữ danh sách account của riêng nó. The email-blur eye-toggle applies to dropdown rows too.
 
-> **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account
-> per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
+> **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
 
 ## Smart Multi-Environment Logout (`logout_antigravity` vs `logout_antigravity_cli`)
 
@@ -213,53 +156,24 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 
 ## Log Out behavior & cache retention (PO decision, chốt 2026-07-07 - nguồn chân lý)
 
-**Mục tiêu của cache multi-account**: xem được hiện trạng lần cuối (last-known state) của **từng**
-account, vì AG native chỉ hiển thị được 1 account tại 1 thời điểm. Cache tồn tại để bù đắp đúng giới
-hạn đó - không phải để "dọn dẹp" hay "ẩn" tài khoản không còn active.
+**Mục tiêu của cache multi-account**: xem được hiện trạng lần cuối (last-known state) của **từng** account, vì AG native chỉ hiển thị được 1 account tại 1 thời điểm. Cache tồn tại để bù đắp đúng giới hạn đó - không phải để "dọn dẹp" hay "ẩn" tài khoản không còn active.
 
-- **Sau khi Log Out 1 account trong app**: header hiện **như bình thường** - không có xử lý đặc biệt,
-  không blank/reset về trạng thái trống. `resetAccount()` chỉ kích một lần `checkUsage()` ngay (đẩy
-  nhanh việc phát hiện account mới nếu người dùng sắp login lại) - **không** xóa `data`, `activeEmail`,
-  `viewingEmail`, hay bất kỳ entry nào trong `accounts`. Chấm "live" (`ag-live-dot`) đã tự nhiên di
-  chuyển sang account mới active ngay khi nó có live fetch đầu tiên - không cần thêm indicator/badge
-  riêng cho "account này vừa logout".
-- **Thời hạn giữ trong dropdown: vô hạn.** Không có cơ chế dọn theo thời gian/số lượng. Một account đã
-  từng xuất hiện thì luôn có mặt trong dropdown cho tới khi bị dọn thủ công (không có UI cho việc này
-  ở v1 - nếu cần, đó là yêu cầu riêng).
-- **Hiển thị "hiện trạng lần cuối": tooltip hiện tại là đủ** (`cachedAgo`/`cachedAbsTime` trong
-  `AgentUsage.vue`) - không cần thêm timestamp tường minh ở dòng dropdown.
+- **Sau khi Log Out 1 account trong app**: header hiện **như bình thường** - không có xử lý đặc biệt, không blank/reset về trạng thái trống. `resetAccount()` chỉ kích một lần `checkUsage()` ngay (đẩy nhanh việc phát hiện account mới nếu người dùng sắp login lại) - **không** xóa `data`, `activeEmail`, `viewingEmail`, hay bất kỳ entry nào trong `accounts`. Chấm "live" (`ag-live-dot`) đã tự nhiên di chuyển sang account mới active ngay khi nó có live fetch đầu tiên - không cần thêm indicator/badge riêng cho "account này vừa logout".
+- **Thời hạn giữ trong dropdown: vô hạn.** Không có cơ chế dọn theo thời gian/số lượng. Một account đã từng xuất hiện thì luôn có mặt trong dropdown cho tới khi bị dọn thủ công (không có UI cho việc này ở v1 - nếu cần, đó là yêu cầu riêng).
+- **Hiển thị "hiện trạng lần cuối": tooltip hiện tại là đủ** (`cachedAgo`/`cachedAbsTime` trong `AgentUsage.vue`) - không cần thêm timestamp tường minh ở dòng dropdown.
 
 ### Lịch sử - vì sao mục này tồn tại (tránh tái phạm)
 
-1.9.3 (`a26b8f5` -> `b082d0d`) từng thêm `resetAccount()` gọi `clearAgStore()` để giải quyết vấn đề
-"header vẫn hiện account vừa logout" - nhưng đó **không phải là bug** theo mục tiêu thật của tính năng
-(xem đầu mục này), và cách giải quyết (xóa toàn bộ store) là một regression nghiêm trọng: mỗi lần
-logout xóa sạch lịch sử mọi account, không chỉ account vừa logout. Đã sửa 2026-07-07: `resetAccount()`
-không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi-entity State" trong
-`CLAUDE.md` (repo root) cho nguyên tắc chung rút ra từ sự việc này.
+1.9.3 (`a26b8f5` -> `b082d0d`) từng thêm `resetAccount()` gọi `clearAgStore()` để giải quyết vấn đề "header vẫn hiện account vừa logout" - nhưng đó **không phải là bug** theo mục tiêu thật của tính năng (xem đầu mục này), và cách giải quyết (xóa toàn bộ store) là một regression nghiêm trọng: mỗi lần logout xóa sạch lịch sử mọi account, không chỉ account vừa logout. Đã sửa 2026-07-07: `resetAccount()` không còn xóa gì, chỉ trigger recheck. Xem mục "Regression Guard - Multi-entity State" trong `CLAUDE.md` (repo root) cho nguyên tắc chung rút ra từ sự việc này.
 
 ### Design locks (by design - do not "fix")
 
 - **CC has no multi-account cache.** One account per remote host; do not add an AG-style store to CC.
-- **The per-slot account pin IS persisted, and self-heals rather than being cleared at boot.** Each
-  slot stores its pin under `aki-usage-slot-<id>-viewing-account` and restores it on reload (1.18.0,
-  "Persistent slot account selection") - that is what lets a two-slot side-by-side comparison of two
-  Antigravity accounts survive a restart. Do **not** add a boot-time unpin: the failure it would be
-  aimed at (a pin restored onto an account that no longer exists anywhere) is already handled, scoped
-  to the one slot, by the `slotAccountInfo.isMissing` watcher in `AgentUsageSlot.vue`, which clears
-  only that slot's key once the first fetch settles. A pin onto an account that is merely *not live*
-  but still cached deliberately keeps showing that account's last-known state - the whole purpose of
-  the cache.
-- **Header shows a character-truncated email.** `truncEmail()` in `AgentUsage.vue` cắt theo **số ký tự**
-  (12, hoặc 7 ở breakpoint narrow `window.innerWidth <= 700`) rồi thêm `…` - **không** phải lấy phần
-  trước dấu `@`. Mục đích là giữ width header ổn định khi đổi account active/cached; the full email is
-  shown in the dropdown rows and the tooltip. (Ghi chú design lock nằm ngay trên hàm.)
-- **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always
-  carries `email`; no empty-email guard is added in the live cache path.
-- **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache
-  retention" above - this is a deliberate product decision, not a gap to "fix" later.
-- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted in `prune()`, gọi từ `loadStore()` (cả hai là private trong
-  `agUsageCache.js`), to prevent indefinite accumulation of obsolete sessions.
+- **The per-slot account pin IS persisted, and self-heals rather than being cleared at boot.** Each slot stores its pin under `aki-usage-slot-<id>-viewing-account` and restores it on reload (1.18.0, "Persistent slot account selection") - that is what lets a two-slot side-by-side comparison of two Antigravity accounts survive a restart. Do **not** add a boot-time unpin: the failure it would be aimed at (a pin restored onto an account that no longer exists anywhere) is already handled, scoped to the one slot, by the `slotAccountInfo.isMissing` watcher in `AgentUsageSlot.vue`, which clears only that slot's key once the first fetch settles. A pin onto an account that is merely *not live* but still cached deliberately keeps showing that account's last-known state - the whole purpose of the cache.
+- **Header shows a character-truncated email.** `truncEmail()` in `AgentUsage.vue` cắt theo **số ký tự** (12, hoặc 7 ở breakpoint narrow `window.innerWidth <= 700`) rồi thêm `…` - **không** phải lấy phần trước dấu `@`. Mục đích là giữ width header ổn định khi đổi account active/cached; the full email is shown in the dropdown rows and the tooltip. (Ghi chú design lock nằm ngay trên hàm.)
+- **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always carries `email`; no empty-email guard is added in the live cache path.
+- **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache retention" above - this is a deliberate product decision, not a gap to "fix" later.
+- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted in `prune()`, gọi từ `loadStore()` (cả hai là private trong `agUsageCache.js`), to prevent indefinite accumulation of obsolete sessions.
 
 ---
 

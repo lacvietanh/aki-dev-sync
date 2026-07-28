@@ -9,39 +9,29 @@
 
 ## 0. Vì sao dọn
 
-Một tính năng đọc phần trăm quota đang chiếm ~2.400 dòng tài liệu và một luồng active tự gọi
-`claude` 3 lần mỗi lượt. Luồng đó gây tràn RAM một máy remote đến mức phải bỏ máy (research §4).
+Một tính năng đọc phần trăm quota đang chiếm ~2.400 dòng tài liệu và một luồng active tự gọi `claude` 3 lần mỗi lượt. Luồng đó gây tràn RAM một máy remote đến mức phải bỏ máy (research §4).
 
-Phần lớn độ phức tạp là **di sản của một hiểu lầm đã được đính chính**: người ta tin probe
-headless fire statusLine hook, nên dựng vũ điệu 3 lượt gọi để đi vòng (research §5.3).
+Phần lớn độ phức tạp là **di sản của một hiểu lầm đã được đính chính**: người ta tin probe headless fire statusLine hook, nên dựng vũ điệu 3 lượt gọi để đi vòng (research §5.3).
 
-Đo thật 2026-07-20 khép lại câu chuyện: turn headless **chỉ trả mốc reset, không có phần trăm**
-(§1.5). Toàn bộ luồng active vì thế đổi lấy gần như không gì - nên xoá hẳn, không rút gọn.
+Đo thật 2026-07-20 khép lại câu chuyện: turn headless **chỉ trả mốc reset, không có phần trăm** (§1.5). Toàn bộ luồng active vì thế đổi lấy gần như không gì - nên xoá hẳn, không rút gọn.
 
-Hai thứ được thêm vào ngày 2026-07-20 (`FORCE_SYNC_TIMEOUT_SECS = 180`, sửa pattern
-`ORPHAN_PATTERNS`) là **vá chống đỡ cho code lẽ ra phải xoá**. Plan này gỡ chính chúng.
+Hai thứ được thêm vào ngày 2026-07-20 (`FORCE_SYNC_TIMEOUT_SECS = 180`, sửa pattern `ORPHAN_PATTERNS`) là **vá chống đỡ cho code lẽ ra phải xoá**. Plan này gỡ chính chúng.
 
 ---
 
 ## 1. Code - thứ tự thực thi
 
-Quyết định chốt 2026-07-20: **xoá hẳn luồng active**, không rút gọn. Căn cứ: đo thật cho thấy
-turn headless chỉ trả mốc reset, không có phần trăm (research §1.5) → đổi lấy quá ít so với việc
-nó là nguồn gốc của cả ba lỗi gây tràn RAM.
+Quyết định chốt 2026-07-20: **xoá hẳn luồng active**, không rút gọn. Căn cứ: đo thật cho thấy turn headless chỉ trả mốc reset, không có phần trăm (research §1.5) → đổi lấy quá ít so với việc nó là nguồn gốc của cả ba lỗi gây tràn RAM.
 
 ### B1. Xoá toàn bộ force-sync
 
 **Xoá file:** `scripts/force-sync-claudecode.sh`, `scripts/force-sync-parse.py`
 
-**`src-tauri/src/agent_usage.rs`** - xoá lệnh `force_sync_agent_usage`, `force_sync_agent_usage_sync`,
-`FORCE_SYNC_TIMEOUT_SECS`, `run_remote_script_long()`, mọi tag log `FORCE_SYNC`.
+**`src-tauri/src/agent_usage.rs`** - xoá lệnh `force_sync_agent_usage`, `force_sync_agent_usage_sync`, `FORCE_SYNC_TIMEOUT_SECS`, `run_remote_script_long()`, mọi tag log `FORCE_SYNC`.
 
-**`src/composables/useAgentUsage.js`** - xoá `forceSync()`, `isSyncing`, `forceSyncFailCount`,
-`MAX_FORCESYNC_RETRIES`, `initialSyncDone`, `staleResetSyncDone`, `showForceSyncDebugAlert()`,
-hằng `FORCE_SYNC_PROMPT`, và nhánh gọi force-sync trong `checkUsage()`.
+**`src/composables/useAgentUsage.js`** - xoá `forceSync()`, `isSyncing`, `forceSyncFailCount`, `MAX_FORCESYNC_RETRIES`, `initialSyncDone`, `staleResetSyncDone`, `showForceSyncDebugAlert()`, hằng `FORCE_SYNC_PROMPT`, và nhánh gọi force-sync trong `checkUsage()`.
 
-**`src/components/AgentUsage.vue`** - xoá nút Force Sync và emit `force-sync`.
-Xoá luôn chuỗi truyền emit ở component cha.
+**`src/components/AgentUsage.vue`** - xoá nút Force Sync và emit `force-sync`. Xoá luôn chuỗi truyền emit ở component cha.
 
 *Gỡ theo:* `src-tauri/capabilities/default.json` nếu có entry riêng cho lệnh này.
 
@@ -49,39 +39,33 @@ Xoá luôn chuỗi truyền emit ở component cha.
 
 **`src/composables/useAgentUsage.js`**
 
-Hiện tại `|||STALE_RESET|||` → `data = null` → UI trắng. Đổi thành: giữ nguyên `data`, bật
-`isCached = true`, `cachedAt = lastFetchedAt` - **đúng cơ chế AG đang dùng**, không viết mới.
+Hiện tại `|||STALE_RESET|||` → `data = null` → UI trắng. Đổi thành: giữ nguyên `data`, bật `isCached = true`, `cachedAt = lastFetchedAt` - **đúng cơ chế AG đang dùng**, không viết mới.
 
 **`src/components/AgentUsage.vue`** - ở trạng thái cached hiện thêm một dòng:
 
 > `Waiting for next Claude Code session`
 
-Một dòng, thay đúng vào chỗ nút Force Sync vừa bị xoá. Không thêm phần tử nào so với hiện tại
-(tuân thủ nguyên tắc Extreme Narrow trong CLAUDE.md).
+Một dòng, thay đúng vào chỗ nút Force Sync vừa bị xoá. Không thêm phần tử nào so với hiện tại (tuân thủ nguyên tắc Extreme Narrow trong CLAUDE.md).
 
 ### B3. Xoá cơ chế dọn rác
 
-**`src-tauri/src/agent_usage.rs`** - xoá `cleanup_orphan()`, `ORPHAN_PATTERNS`,
-`wait_with_timeout()`, `CLEANUP_TIMEOUT_SECS`, lời gọi cleanup trong nhánh timeout.
+**`src-tauri/src/agent_usage.rs`** - xoá `cleanup_orphan()`, `ORPHAN_PATTERNS`, `wait_with_timeout()`, `CLEANUP_TIMEOUT_SECS`, lời gọi cleanup trong nhánh timeout.
 
 Sau B1 app không còn tự chạy `claude` ở đâu → không có rác để dọn.
 
 ### B4. Gỡ khối OAuth HTTP
 
-**`scripts/get-claudecode-usage.sh`** - xoá khối Python gọi
-`GET https://api.anthropic.com/api/oauth/usage`, marker `aki-oauth-last-attempt`, gate 60s.
+**`scripts/get-claudecode-usage.sh`** - xoá khối Python gọi `GET https://api.anthropic.com/api/oauth/usage`, marker `aki-oauth-last-attempt`, gate 60s.
 
 Lý do đầy đủ: research §3.
 
 Sau bước này poll = đọc `rate-limits-cache.json` + `claude auth status`. Không gọi mạng.
 
-**Đánh đổi ghi vào CHANGELOG:** mất khả năng thấy quota tiêu bởi Claude app/Cowork. Có chủ đích,
-không phải hồi quy.
+**Đánh đổi ghi vào CHANGELOG:** mất khả năng thấy quota tiêu bởi Claude app/Cowork. Có chủ đích, không phải hồi quy.
 
 ### B5. Giữ nguyên
 
-- `AKI_CLAUDE_TMO` (bound `claude` phía remote) - vẫn cần cho `claude auth status`, lệnh `claude`
-  duy nhất còn lại.
+- `AKI_CLAUDE_TMO` (bound `claude` phía remote) - vẫn cần cho `claude auth status`, lệnh `claude` duy nhất còn lại.
 - `haltPolling()` sau 5 lần hỏng liên tiếp.
 - `ConnectTimeout` / `ServerAlive` / `BatchMode`.
 - `provision-claudecode.sh` - cài statusLine hook, giờ là nguồn dữ liệu **duy nhất**.
@@ -111,12 +95,8 @@ docs/plan/done/fix-usage-monitor-freeze.md                     (287)
 
 **Giữ lại, không đụng:**
 
-- `docs/research/aki-dev-sync-ag-cc-usage-flow.md` - bài đối ngoại cho dev.akitao.com, thể loại
-  khác, không phải nhật ký nội bộ. **Nhưng phải sửa một chỗ:** nó quảng cáo tiêu chí "An toàn  - 
-  không vi phạm ToS" trong khi code khi đó đang gọi endpoint nội bộ. Sau B5 câu đó mới thành
-  đúng; kiểm lại lúc dọn.
-- `docs/plan/done/fix-to-1.3.1.md` - audit toàn codebase, không riêng CC usage. Xoá sẽ mất phần
-  không liên quan.
+- `docs/research/aki-dev-sync-ag-cc-usage-flow.md` - bài đối ngoại cho dev.akitao.com, thể loại khác, không phải nhật ký nội bộ. **Nhưng phải sửa một chỗ:** nó quảng cáo tiêu chí "An toàn - không vi phạm ToS" trong khi code khi đó đang gọi endpoint nội bộ. Sau B5 câu đó mới thành đúng; kiểm lại lúc dọn.
+- `docs/plan/done/fix-to-1.3.1.md` - audit toàn codebase, không riêng CC usage. Xoá sẽ mất phần không liên quan.
 
 Ước tính: **~2.400 → ~400 dòng**.
 
@@ -140,8 +120,7 @@ Ràng buộc môi trường: **không tự build, không tự chụp hình** - u
 
 ## 4. Việc còn nợ, cố ý không làm trong plan này
 
-1. **`bien` đã chết vì tràn RAM, không cứu.** Không còn máy remote để kiểm chứng đường SSH  - 
-   đường remote sẽ ship mà chưa ai chạy thật. Ghi rõ ở đây, không giấu.
+1. **`bien` đã chết vì tràn RAM, không cứu.** Không còn máy remote để kiểm chứng đường SSH - đường remote sẽ ship mà chưa ai chạy thật. Ghi rõ ở đây, không giấu.
 2. **Điểm mù Claude app.** Đóng lại như đánh đổi có chủ đích (research §3), không phải TODO.
 
 ---
@@ -150,9 +129,7 @@ Ràng buộc môi trường: **không tự build, không tự chụp hình** - u
 
 Docs là SSOT: docs mô tả trạng thái đích, code chạy theo sau để khớp.
 
-⚠️ **Từ 2026-07-20 docs đã mô tả trạng thái SAU khi dọn, còn code thì CHƯA.** Đây là lệch có
-chủ đích trong khoảng thời gian giữa hai session, không phải docs sai. Session làm code phải
-đưa code về khớp đúng `docs/arch/usage-claudecode.md`.
+⚠️ **Từ 2026-07-20 docs đã mô tả trạng thái SAU khi dọn, còn code thì CHƯA.** Đây là lệch có chủ đích trong khoảng thời gian giữa hai session, không phải docs sai. Session làm code phải đưa code về khớp đúng `docs/arch/usage-claudecode.md`.
 
 ```
 D1  research FINAL                    ✅ xong
@@ -168,3 +145,4 @@ D6  CHANGELOG: ghi đánh đổi B4          ✅ xong
 D7  sửa bài đối ngoại (xem §2)          ✅ xong
 D8  plan này → docs/plan/done/          ✅ xong (file này)
 ```
+

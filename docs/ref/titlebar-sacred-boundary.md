@@ -3,8 +3,7 @@
 ## Context
 
 This app runs with `"decorations": false` and `"transparent": true` in `tauri.conf.json`.
-That removes the native OS titlebar entirely. A custom `<header>` element with `data-tauri-drag-region`
-takes its place at the top of the window.
+That removes the native OS titlebar entirely. A custom `<header>` element with `data-tauri-drag-region` takes its place at the top of the window.
 
 The header has a fixed height of **42px** and is always the topmost element in the visual hierarchy.
 
@@ -12,8 +11,7 @@ The header has a fixed height of **42px** and is always the topmost element in t
 
 **The titlebar zone (top 42px) is a sacred boundary. No UI element may overlap, cover, or intrude into it.**
 
-This is not a soft guideline. Violating it breaks drag-to-move, hides critical controls, and creates
-a confusing UX where users cannot drag the window or access minimize/close.
+This is not a soft guideline. Violating it breaks drag-to-move, hides critical controls, and creates a confusing UX where users cannot drag the window or access minimize/close.
 
 ## What "intrude" means
 
@@ -31,8 +29,7 @@ a confusing UX where users cannot drag the window or access minimize/close.
 The app uses SweetAlert2 (Swal) for dialogs. SweetAlert2 centers modals in the viewport by default.
 On a typical window height (≥400px), the modal content always starts well below 42px. **No override needed.**
 
-If you add a `customClass` or position override to any Swal call, verify it does not push the backdrop
-or the box above y=42.
+If you add a `customClass` or position override to any Swal call, verify it does not push the backdrop or the box above y=42.
 
 ## CSS enforcement pattern
 

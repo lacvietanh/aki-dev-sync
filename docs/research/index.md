@@ -1,17 +1,5 @@
 # Research docs — schema note
 
-Every doc in `docs/research/` written **before 2026-07** predates the current schema
-(`RULE-docs` B2) and does not fully follow it: some do not carry the full required field set
-(Start time, Initial purpose, Strategy, Checklist, Result with Verification/Corroborating links,
-Decision), and two additionally broke the supersede chain the schema requires — a research doc is
-an **immutable event record**, never rewritten in place; a superseded conclusion gets a **new** doc
-plus a `Status: superseded by <path>` line on the old one. `claudecode-usage-FINAL.md` instead
-deleted its ten predecessor docs outright, and `statusline-multi-cli-account-isolation.md` had its
-§3 rewritten in place rather than superseded. These are recorded here as known pre-schema drift,
-not retroactively fixed — fixing them now would itself violate the immutability rule the schema
-exists to protect.
+Every doc in `docs/research/` written **before 2026-07** predates the current schema (`RULE-docs` B2) and does not fully follow it: some do not carry the full required field set (Start time, Initial purpose, Strategy, Checklist, Result with Verification/Corroborating links, Decision), and two additionally broke the supersede chain the schema requires — a research doc is an **immutable event record**, never rewritten in place; a superseded conclusion gets a **new** doc plus a `Status: superseded by <path>` line on the old one. `claudecode-usage-FINAL.md` instead deleted its ten predecessor docs outright, and `statusline-multi-cli-account-isolation.md` had its §3 rewritten in place rather than superseded. These are recorded here as known pre-schema drift, not retroactively fixed — fixing them now would itself violate the immutability rule the schema exists to protect.
 
-**Every new research doc must follow the full B2 schema**: Start time · Initial purpose · Strategy
-· Checklist · Result (with Verification and Corroborating links) · Decision (Action / No action /
-Follow-up research / Rejected-closed, plus Cross-references). See `RULE-docs.md` §B2 for the
-complete spec.
+**Every new research doc must follow the full B2 schema**: Start time · Initial purpose · Strategy · Checklist · Result (with Verification and Corroborating links) · Decision (Action / No action / Follow-up research / Rejected-closed, plus Cross-references). See `RULE-docs.md` §B2 for the complete spec.

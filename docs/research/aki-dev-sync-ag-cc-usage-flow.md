@@ -60,17 +60,13 @@ Giải pháp của Antigravity được hiện thực hóa thông qua tệp mã 
 
 Thay vì sử dụng cách can thiệp proxy thô bạo (MITM) của các công cụ như `9router`, Aki-Dev-Sync chọn cách giao tiếp trực tiếp với Language Server của Antigravity đang chạy cục bộ thông qua **gRPC-Web/Connect-RPC**:
 
-* **Quét Tiến Trình Không Bị Cắt Cụm (No Truncation):** 
-  Sử dụng lệnh `ps auxww` trên macOS thay vì `ps aux` thông thường. Điều này đảm bảo toàn bộ tham số khởi chạy của tiến trình (bao gồm cả mã token bảo mật `--csrf_token` dài) được ghi nhận đầy đủ, không bị cắt ngắn bởi giới hạn cột của shell.
+* **Quét Tiến Trình Không Bị Cắt Cụm (No Truncation):** Sử dụng lệnh `ps auxww` trên macOS thay vì `ps aux` thông thường. Điều này đảm bảo toàn bộ tham số khởi chạy của tiến trình (bao gồm cả mã token bảo mật `--csrf_token` dài) được ghi nhận đầy đủ, không bị cắt ngắn bởi giới hạn cột của shell.
   
-* **Lọc Tiến Trình Gốc (Precise Binary Targeting):** 
-  Chỉ nhắm mục tiêu vào các tên tệp thực thi nhị phân chính thức của Antigravity (`language_server_macos_arm`, `language_server_macos_x64`,...). Giải pháp này triệt tiêu hoàn toàn lỗi nhận diện nhầm thường thấy ở các thư viện NPM khi quét các tiến trình Node.js của Volar (Vue Language Server) hay CSS Language Server.
+* **Lọc Tiến Trình Gốc (Precise Binary Targeting):** Chỉ nhắm mục tiêu vào các tên tệp thực thi nhị phân chính thức của Antigravity (`language_server_macos_arm`, `language_server_macos_x64`,...). Giải pháp này triệt tiêu hoàn toàn lỗi nhận diện nhầm thường thấy ở các thư viện NPM khi quét các tiến trình Node.js của Volar (Vue Language Server) hay CSS Language Server.
   
-* **Dò Cổng Động Thông Minh (Port Discovery):** 
-  Chạy lệnh `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` để lấy chính xác cổng TCP cục bộ mà tiến trình đang lắng nghe. Đồng thời kết hợp nạp thêm cổng mặc định và cổng kế tiếp làm "seed" dự phòng để tối ưu hóa thời gian dò.
+* **Dò Cổng Động Thông Minh (Port Discovery):** Chạy lệnh `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` để lấy chính xác cổng TCP cục bộ mà tiến trình đang lắng nghe. Đồng thời kết hợp nạp thêm cổng mặc định và cổng kế tiếp làm "seed" dự phòng để tối ưu hóa thời gian dò.
   
-* **Giao Thức Connect-RPC An Toàn:** 
-  Thực hiện gửi yêu cầu `POST /exa.language_server_pb.LanguageServerService/GetUserStatus` đính kèm tiêu đề xác thực `X-Codeium-Csrf-Token`. Dữ liệu quota thực tế được giải mã trực tiếp từ payload JSON trả về của IDE:
+* **Giao Thức Connect-RPC An Toàn:** Thực hiện gửi yêu cầu `POST /exa.language_server_pb.LanguageServerService/GetUserStatus` đính kèm tiêu đề xác thực `X-Codeium-Csrf-Token`. Dữ liệu quota thực tế được giải mã trực tiếp từ payload JSON trả về của IDE:
   ```json
   "quotaInfo": {
     "remainingFraction": 0.85,

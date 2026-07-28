@@ -103,8 +103,7 @@ Trong production (không có `--debug`): Webview console im lặng hoàn toàn, 
 ```
 
 Timestamp UTC (Rust), local time (JS). Compact format - ~10 bytes saved per line vs old `YYYY-MM-DD HH:MM:SS.mmm`.
-Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của script) or `USAGE:<monitorId>`
-(frontend) - `monitorId` = `<agentId>@<host>`, ví dụ `USAGE:claudecode@local`, `USAGE:antigravity@hostB`.
+Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của script) or `USAGE:<monitorId>` (frontend) - `monitorId` = `<agentId>@<host>`, ví dụ `USAGE:claudecode@local`, `USAGE:antigravity@hostB`.
 
 ---
 

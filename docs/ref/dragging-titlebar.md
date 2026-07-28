@@ -88,5 +88,4 @@ function startDragging() {
 ```
 
 ---
-**💡 Bài học rút ra:** 
-Luôn kiểm tra `capabilities/default.json` trước tiên khi bất kỳ API native nào của Tauri v2 gọi từ Frontend không phản hồi. Các lỗi "kéo thả không được" hay "nút bấm vô hiệu" hầu hết đều bắt nguồn từ việc thiếu quyền IPC.
+**💡 Bài học rút ra:** Luôn kiểm tra `capabilities/default.json` trước tiên khi bất kỳ API native nào của Tauri v2 gọi từ Frontend không phản hồi. Các lỗi "kéo thả không được" hay "nút bấm vô hiệu" hầu hết đều bắt nguồn từ việc thiếu quyền IPC.

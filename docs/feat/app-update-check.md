@@ -59,8 +59,7 @@ The feature is split into backend extraction and frontend comparison to avoid CO
   }
   ```
 - The `--connect-timeout 5 --max-time 15` flags bound the request on both ends: `spawn_blocking` keeps a hung request off the UI thread, but without a timeout it would still pin one OS thread forever, and this command runs on every app launch.
-- It executes `curl` to fetch release info from GitHub's API:
-  `https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest`
+- It executes `curl` to fetch release info from GitHub's API: `https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest`
 - Uses `create_command` (defined in `system.rs`) to inject correct path environments (e.g. `/opt/homebrew/bin:/usr/local/bin`), preventing `executable not found` errors when running the application as a standalone GUI macOS bundle.
 
 ### 2. Frontend Parsing & Comparison (Vue/JS)

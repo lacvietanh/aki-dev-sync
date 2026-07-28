@@ -1,12 +1,10 @@
 # Nghiên cứu: Đo lường / giám sát quota Claude Code & Antigravity
 
-> Tài liệu tổng hợp các phương pháp đo quota từ repo công khai, độ ổn định và edge case của
-> từng cách, để đối chiếu với 9router. Soạn ngày 2026-06-23.
+> Tài liệu tổng hợp các phương pháp đo quota từ repo công khai, độ ổn định và edge case của từng cách, để đối chiếu với 9router. Soạn ngày 2026-06-23.
 
 ## Về độ tin cậy của nguồn
 
-Dữ liệu trích từ phase fetch + adversarial-verify của một harness deep-research (104 agent,
-~1.43M token). Nhãn độ tin cậy dùng trong tài liệu:
+Dữ liệu trích từ phase fetch + adversarial-verify của một harness deep-research (104 agent, ~1.43M token). Nhãn độ tin cậy dùng trong tài liệu:
 
 - **[3-0]** - đã qua adversarial verify 3 phiếu thuận.
 - **[trích quote]** - có quote gốc từ README/docs nhưng chưa thấy verdict cuối.
@@ -72,47 +70,27 @@ Mọi công cụ đều rơi vào 1 trong 5 cơ chế. Đây là khung đánh gi
 
 ### Mâu thuẫn cần kiểm chứng
 
-Tài liệu 9router (mục 5) nói AG dùng MITM hosts-redirect `cloudcode-pa.googleapis.com`. Nhưng
-**0/104 agent** nhắc tới `cloudcode-pa.googleapis.com` / `~/.gemini`. Bằng chứng cộng đồng nghiêng
-mạnh về flow Codeium LS `127.0.0.1` + `exa.language_server_pb`, không phải googleapis. Có thể cả
-hai cùng tồn tại (proxy cloud cấp credits vs local IDE state). Cần đọc thẳng source 9router +
-ag-telemetry để chốt.
+Tài liệu 9router (mục 5) nói AG dùng MITM hosts-redirect `cloudcode-pa.googleapis.com`. Nhưng **0/104 agent** nhắc tới `cloudcode-pa.googleapis.com` / `~/.gemini`. Bằng chứng cộng đồng nghiêng mạnh về flow Codeium LS `127.0.0.1` + `exa.language_server_pb`, không phải googleapis. Có thể cả hai cùng tồn tại (proxy cloud cấp credits vs local IDE state). Cần đọc thẳng source 9router + ag-telemetry để chốt.
 
 ---
 
 ## 5. 9router (#6) đặt vào đâu
 
-Repo [`decolua/9router`](https://github.com/decolua/9router) (local proxy/gateway + dashboard;
-fork phổ biến [`n9router`](https://github.com/nightwalker89/n9router)). Tài liệu kỹ thuật auto-gen:
-[deepwiki.com/decolua/9router](https://deepwiki.com/decolua/9router).
+Repo [`decolua/9router`](https://github.com/decolua/9router) (local proxy/gateway + dashboard; fork phổ biến [`n9router`](https://github.com/nightwalker89/n9router)). Tài liệu kỹ thuật auto-gen: [deepwiki.com/decolua/9router](https://deepwiki.com/decolua/9router).
 
-- **Claude Code:** họ **P3** - OAuth login + auto refresh token (buffer 5'), đếm token từ
-  **response body** (`normalizeUsage`), tự theo dõi cửa sổ reset 5h/weekly. Lưu credential vào
-  `db.json` riêng (KHÔNG đọc `~/.claude`).
-- **Antigravity:** họ **P5 (MITM)** - sửa hosts redirect `cloudcode-pa.googleapis.com` /
-  `daily-cloudcode-pa` → `127.0.0.1:443`, TLS giả mạo (root CA tự cài), parse cooldown/429 từ
-  **error body**, xoay account (round-robin / sticky).
-- **Ổn định:** trung bình-thấp; phụ thuộc endpoint OAuth không công khai của Anthropic
-  ([claude-code #31637](https://github.com/anthropics/claude-code/issues/31637): 429 không kèm
-  `Retry-After`) + hostname/proto cứng cho MITM.
+- **Claude Code:** họ **P3** - OAuth login + auto refresh token (buffer 5'), đếm token từ **response body** (`normalizeUsage`), tự theo dõi cửa sổ reset 5h/weekly. Lưu credential vào `db.json` riêng (KHÔNG đọc `~/.claude`).
+- **Antigravity:** họ **P5 (MITM)** - sửa hosts redirect `cloudcode-pa.googleapis.com` / `daily-cloudcode-pa` → `127.0.0.1:443`, TLS giả mạo (root CA tự cài), parse cooldown/429 từ **error body**, xoay account (round-robin / sticky).
+- **Ổn định:** trung bình-thấp; phụ thuộc endpoint OAuth không công khai của Anthropic ([claude-code #31637](https://github.com/anthropics/claude-code/issues/31637): 429 không kèm `Retry-After`) + hostname/proto cứng cho MITM.
 
-**Khác biệt cốt lõi:** 9router là **proxy nằm trên đường request** (đo bằng cách *đi qua* lưu
-lượng), trong khi đa số repo còn lại là **observer thụ động** (đọc file/stdin/LS endpoint, không
-chen vào request). Proxy cho token-count thật nhất nhưng đánh đổi độ bền + rủi ro ToS lớn nhất.
+**Khác biệt cốt lõi:** 9router là **proxy nằm trên đường request** (đo bằng cách *đi qua* lưu lượng), trong khi đa số repo còn lại là **observer thụ động** (đọc file/stdin/LS endpoint, không chen vào request). Proxy cho token-count thật nhất nhưng đánh đổi độ bền + rủi ro ToS lớn nhất.
 
 ---
 
 ## 6. Kết luận & khuyến nghị
 
-- **Claude Code - ổn định nhất:** **P1 (stdin `rate_limits.*`)** kiểu `ohugonnot/claude-code-statusline`,
-  fallback **P3 `oauth/usage`** (xác nhận chéo 3 nguồn độc lập: aiedwardyi, jens-duttke, Maciek #202).
-  Tránh phụ thuộc duy nhất P2 vì chỉ là ước lượng.
-- **Antigravity - đúng nguồn nhất:** **P4 local LS `GetUserStatus`** (ag-telemetry, tuckiestudio).
-  Cho quota thật per-model, nhưng phải xử lý port động + CSRF + version-drift của schema. MITM (P5,
-  như 9router) chỉ nên dùng khi cần *can thiệp* request, không phải chỉ để *đọc* quota.
-- **Việc nên làm tiếp:** kiểm chứng mâu thuẫn ở mục 4 - AG thực sự đi qua
-  `cloudcode-pa.googleapis.com` (9router) hay LS `127.0.0.1/exa.language_server_pb` (cộng đồng)?
-  Đọc trực tiếp source là cách duy nhất chốt.
+- **Claude Code - ổn định nhất:** **P1 (stdin `rate_limits.*`)** kiểu `ohugonnot/claude-code-statusline`, fallback **P3 `oauth/usage`** (xác nhận chéo 3 nguồn độc lập: aiedwardyi, jens-duttke, Maciek #202). Tránh phụ thuộc duy nhất P2 vì chỉ là ước lượng.
+- **Antigravity - đúng nguồn nhất:** **P4 local LS `GetUserStatus`** (ag-telemetry, tuckiestudio). Cho quota thật per-model, nhưng phải xử lý port động + CSRF + version-drift của schema. MITM (P5, như 9router) chỉ nên dùng khi cần *can thiệp* request, không phải chỉ để *đọc* quota.
+- **Việc nên làm tiếp:** kiểm chứng mâu thuẫn ở mục 4 - AG thực sự đi qua `cloudcode-pa.googleapis.com` (9router) hay LS `127.0.0.1/exa.language_server_pb` (cộng đồng)? Đọc trực tiếp source là cách duy nhất chốt.
 
 ---
 

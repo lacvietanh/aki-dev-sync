@@ -25,9 +25,7 @@ Kịch bản không đọc file từ đĩa cứng mà nhận dữ liệu JSON tr
 | **Account** | `.account.email` | `.account.email` / `.user.email` | `.account.email // .user.email // .email // ""` |
 
 ### Cơ chế Fallback Account Email:
-Không CLI nào đặt email vào payload, nên khi `JSON_ACCOUNT_EMAIL` rỗng phải fallback xuống đĩa —
-**tách hẳn 2 nhánh theo CLI, không thử lần lượt**: máy có cả 2 file thì file nào tồn tại sẽ thắng và
-tag hiện nhầm account của CLI kia.
+Không CLI nào đặt email vào payload, nên khi `JSON_ACCOUNT_EMAIL` rỗng phải fallback xuống đĩa — **tách hẳn 2 nhánh theo CLI, không thử lần lượt**: máy có cả 2 file thì file nào tồn tại sẽ thắng và tag hiện nhầm account của CLI kia.
 
 | CLI | Nguồn fallback |
 |---|---|
@@ -41,8 +39,7 @@ tag hiện nhầm account của CLI kia.
 | Claude Code | `.rate_limits.five_hour.resets_at` / `.seven_day.resets_at` | epoch tuyệt đối |
 | AGY | `.quota[*].reset_in_seconds` | đếm ngược tương đối |
 
-Script phải quy CC về cùng thang tương đối (`resets_at - now`) trước khi format. Bỏ sót bước này
-chính là lý do statusline CC **chưa bao giờ** hiện ETA reset (bug phát hiện 2026-07-23).
+Script phải quy CC về cùng thang tương đối (`resets_at - now`) trước khi format. Bỏ sót bước này chính là lý do statusline CC **chưa bao giờ** hiện ETA reset (bug phát hiện 2026-07-23).
 
 ---
 
@@ -109,18 +106,11 @@ Phân loại đối tượng Quota dựa trên hai tầng kiểm tra:
 
 ## 7. Hiện trạng thực địa trên máy dev (xác minh 2026-07-23, đọc runtime output — không đọc `statusline.rs`)
 
-`diff` trực tiếp 2 file đã cài (342 dòng CC vs 330 dòng AGY) cho thấy **chỉ khác đúng 1 khối 12 dòng**
-— chính khối `aki-rlcache` (persist `rate_limits`, chỉ CC cần). Toàn bộ phần còn lại — màu ANSI,
-`cli_tag`, bảng jq trích field, quota branching, session/cache/git/account/RAM, assemble output —
-**giống hệt nhau, byte-for-byte**.
+`diff` trực tiếp 2 file đã cài (342 dòng CC vs 330 dòng AGY) cho thấy **chỉ khác đúng 1 khối 12 dòng** — chính khối `aki-rlcache` (persist `rate_limits`, chỉ CC cần). Toàn bộ phần còn lại — màu ANSI, `cli_tag`, bảng jq trích field, quota branching, session/cache/git/account/RAM, assemble output — **giống hệt nhau, byte-for-byte**.
 
-> **Lịch sử — bảng dưới mô tả generator ở thời điểm 2026-07-23, TRƯỚC Phase 2.2.** Kiến trúc
-> `StatuslineTarget` Adapter (mỗi target sinh một nội dung script riêng) đã bị xoá: giờ chỉ còn **một
-> body duy nhất** ghi ra cả 2 đường dẫn, sinh bằng cách patch template — xem §8.3b. Giữ bảng này vì nó
-> là bằng chứng thực địa dẫn tới quyết định đó.
+> **Lịch sử — bảng dưới mô tả generator ở thời điểm 2026-07-23, TRƯỚC Phase 2.2.** Kiến trúc `StatuslineTarget` Adapter (mỗi target sinh một nội dung script riêng) đã bị xoá: giờ chỉ còn **một body duy nhất** ghi ra cả 2 đường dẫn, sinh bằng cách patch template — xem §8.3b. Giữ bảng này vì nó là bằng chứng thực địa dẫn tới quyết định đó.
 
-Nội dung 2 file cài trên máy khi đó **không khớp** với hành vi mà generator (`StatuslineTarget`
-Adapter trong `statusline.rs`) sinh ra:
+Nội dung 2 file cài trên máy khi đó **không khớp** với hành vi mà generator (`StatuslineTarget` Adapter trong `statusline.rs`) sinh ra:
 
 | Điểm khác biệt | File đang cài trên máy | Generator hiện tại (theo docs) |
 |---|---|---|
@@ -129,17 +119,11 @@ Adapter trong `statusline.rs`) sinh ra:
 | Account fallback | **Cả 2 file dùng chung 1 nhánh** `~/.gemini/google_accounts.json` (kể cả file CC) | CC phải fallback `~/.claude.json` → `.oauthAccount.emailAddress` (P0-2); AGY fallback `google_accounts.json` (P0-3) — 2 nhánh khác nhau theo target |
 | `cli_tag` | **Tự nhận diện lúc chạy** (comment tiếng Việt "Nhận diện tự động CLI"): `$JSON_MODEL` chứa `"claude"` hoặc `$JSON_CLAUDE_5H_USED != -1` → `CC`, ngược lại → `AG` | Field pin cứng theo target lúc generate, không tự suy luận từ payload (xem `docs/feat/statusline-customizer.md` §"pinned `cli_tag` field") |
 
-**Kết luận:** file cài trên máy này thuộc dòng **sửa tay tiền-1.18.0** (đúng hiện tượng "3 bản script
-khác nhau" mà `1.18.0-statusline-apply-correctness.md` §0 đã ghi nhận), **chưa từng được Apply lại**
-bằng generator mới — khớp đúng với mục còn mở trong plan đó: *"step 5 (real Apply on the Mac +
-`cargo test`) still pending"*.
+**Kết luận:** file cài trên máy này thuộc dòng **sửa tay tiền-1.18.0** (đúng hiện tượng "3 bản script khác nhau" mà `1.18.0-statusline-apply-correctness.md` §0 đã ghi nhận), **chưa từng được Apply lại** bằng generator mới — khớp đúng với mục còn mở trong plan đó: *"step 5 (real Apply on the Mac + `cargo test`) still pending"*.
 
 **Hệ quả đang chạy thật trên máy, cho tới khi Apply lại:**
-- Field Account trên statusline **Claude Code** (nếu bật) đang đọc `~/.gemini/google_accounts.json`
-  thay vì `~/.claude.json` → hiển thị email tài khoản Google/AGY đang active, không phải tài khoản
-  Claude — P0-2 coi như chưa có hiệu lực trên máy này dù plan ghi là đã fix ở tầng code.
-- `aki-rlcache v3` không có 2 gate (account scope + expiry) → bug quota ma P0-5 (`7d 45%` từ account/
-  session khác, đã hết hạn từ lâu) **vẫn có thể tái diễn** trên máy này.
+- Field Account trên statusline **Claude Code** (nếu bật) đang đọc `~/.gemini/google_accounts.json` thay vì `~/.claude.json` → hiển thị email tài khoản Google/AGY đang active, không phải tài khoản Claude — P0-2 coi như chưa có hiệu lực trên máy này dù plan ghi là đã fix ở tầng code.
+- `aki-rlcache v3` không có 2 gate (account scope + expiry) → bug quota ma P0-5 (`7d 45%` từ account/session khác, đã hết hạn từ lâu) **vẫn có thể tái diễn** trên máy này.
 
 ---
 
@@ -157,26 +141,19 @@ case "$0" in
 esac
 ```
 
-`CLI` quyết định 3 chỗ: (1) chạy hay bỏ khối `aki-rlcache`, (2) chọn nguồn fallback account, (3) nhãn
-`CC`/`AG` trên tag.
+`CLI` quyết định 3 chỗ: (1) chạy hay bỏ khối `aki-rlcache`, (2) chọn nguồn fallback account, (3) nhãn `CC`/`AG` trên tag.
 
-**Vì sao bỏ đề xuất `.model | type == "object"` (nội dung cũ của mục này):** payload thật của Claude
-Code 2.1.217 cho thấy `.model` của **CC cũng là object** — gate đó sẽ nhận nhầm CC thành AGY và tắt
-rlcache đúng lúc CC cần. Đường dẫn cài đặt là dữ kiện chắc chắn, không phụ thuộc field nào trong
-payload, nên không thể sai kiểu này.
+**Vì sao bỏ đề xuất `.model | type == "object"` (nội dung cũ của mục này):** payload thật của Claude Code 2.1.217 cho thấy `.model` của **CC cũng là object** — gate đó sẽ nhận nhầm CC thành AGY và tắt rlcache đúng lúc CC cần. Đường dẫn cài đặt là dữ kiện chắc chắn, không phụ thuộc field nào trong payload, nên không thể sai kiểu này.
 
-Gate `$0` cũng thay luôn đoạn tự nhận diện cũ (`$JSON_MODEL` chứa `"claude"` → CC), vốn gắn nhãn sai
-thành `CC` khi chạy model Claude **bên trong** AGY.
+Gate `$0` cũng thay luôn đoạn tự nhận diện cũ (`$JSON_MODEL` chứa `"claude"` → CC), vốn gắn nhãn sai thành `CC` khi chạy model Claude **bên trong** AGY.
 
 ### 8.2. Default color & thứ tự field — giữ nguyên hiện trạng
 
-Bảng dưới là **default đã chốt**, đúng bằng giá trị đang chạy — Phase 1 không đổi màu, không đổi vị
-trí field nào.
+Bảng dưới là **default đã chốt**, đúng bằng giá trị đang chạy — Phase 1 không đổi màu, không đổi vị trí field nào.
 
 Thứ tự khối: `tag` → `identity` → `cwd` → `model` → `context` → `cache` → `quota` → `session` → `git` → `ram`.
 
-`cache` đứng ngay sau `context` vì hai số này đọc cùng nhau (bao nhiêu token, trong đó bao nhiêu %
-đến từ cache). Model và effort **dính liền, không có khoảng trắng** (`Opus4.8med`).
+`cache` đứng ngay sau `context` vì hai số này đọc cùng nhau (bao nhiêu token, trong đó bao nhiêu % đến từ cache). Model và effort **dính liền, không có khoảng trắng** (`Opus4.8med`).
 
 | Thang | Ngưỡng | Màu |
 |---|---|---|
@@ -199,35 +176,21 @@ Thứ tự khối: `tag` → `identity` → `cwd` → `model` → `context` → 
 | Nền zebra khối A | `48;5;16` (đen tuyệt đối) |
 | Nền zebra khối B | `48;5;235` (xám rất tối) |
 
-**Không còn ký tự phân cách.** Các khối tô nền xen kẽ 2 sắc độ (`16` / `235`), ranh giới
-do chính chỗ đổi sắc độ vẽ ra — không `|`, không khoảng trắng đệm giữa 2 khối.
+**Không còn ký tự phân cách.** Các khối tô nền xen kẽ 2 sắc độ (`16` / `235`), ranh giới do chính chỗ đổi sắc độ vẽ ra — không `|`, không khoảng trắng đệm giữa 2 khối.
 
-Chọn từ **dải xám trung tính 232-255**: xám không có hue nên không bao giờ chọi hue với màu chữ người
-dùng tự đặt; chỉ còn phải canh độ sáng, tức việc kiểm tra rút về **một chiều** thay vì phải duyệt mọi
-cặp nền×chữ.
+Chọn từ **dải xám trung tính 232-255**: xám không có hue nên không bao giờ chọi hue với màu chữ người dùng tự đặt; chỉ còn phải canh độ sáng, tức việc kiểm tra rút về **một chiều** thay vì phải duyệt mọi cặp nền×chữ.
 
-Cảnh báo "`BOLD_BLUE` (`01;34`) khá tối" ở bản trước đã thành hiện thực và **được xử lý ở 1.19.0**:
-nấc đáy đổi sang `BOLD_CALM` = `\033[01;38;5;86m` (xterm 86, aquamarine). Sáng hơn hẳn trên nền tối
-nhưng vẫn lạnh hơn nấc `green` kế trên, nên ladder vẫn đọc được như một thang nhiệt độ. Vì `38;5;N`
-trỏ thẳng vào bảng 256 màu nên nấc này không còn phụ thuộc palette của từng terminal.
+Cảnh báo "`BOLD_BLUE` (`01;34`) khá tối" ở bản trước đã thành hiện thực và **được xử lý ở 1.19.0**: nấc đáy đổi sang `BOLD_CALM` = `\033[01;38;5;86m` (xterm 86, aquamarine). Sáng hơn hẳn trên nền tối nhưng vẫn lạnh hơn nấc `green` kế trên, nên ladder vẫn đọc được như một thang nhiệt độ. Vì `38;5;N` trỏ thẳng vào bảng 256 màu nên nấc này không còn phụ thuộc palette của từng terminal.
 
-Nguồn sự thật cho toàn bộ mã màu (cả ladder lẫn 8 màu người dùng chọn được) là
-`src/utils/statuslineColors.js` — mỗi màu một bản ghi `{ key, ansi, hex }`, trong đó `hex` là màu
-xterm thật của đúng mã ANSI đó. `ansi_for()` trong `statusline.rs` và khối `BOLD_*`/`WHITE`/`GREY`
-trong `statusline-unified.sh` là **bản sao** (Rust/shell không import được JS): sửa file JS trước,
-rồi mới sửa hai chỗ kia.
+Nguồn sự thật cho toàn bộ mã màu (cả ladder lẫn 8 màu người dùng chọn được) là `src/utils/statuslineColors.js` — mỗi màu một bản ghi `{ key, ansi, hex }`, trong đó `hex` là màu xterm thật của đúng mã ANSI đó. `ansi_for()` trong `statusline.rs` và khối `BOLD_*`/`WHITE`/`GREY` trong `statusline-unified-spec.sh` là **bản sao** (Rust/shell không import được JS): sửa file JS trước, rồi mới sửa hai chỗ kia.
 
 Mốc thang: context tô màu theo **200k = 100%** (không hiện %), cost theo `COST_FULL_USD=30`.
 
-`fmt_k` làm tròn về số nguyên, không phần thập phân: `126k`, `250k`, `1M` — không phải `125.2k` /
-`250.0k` / `1.0M`.
+`fmt_k` làm tròn về số nguyên, không phần thập phân: `126k`, `250k`, `1M` — không phải `125.2k` / `250.0k` / `1.0M`.
 
 #### Độ dài truncate — mỗi field một tham số riêng
 
-Mỗi giá trị dưới đây là **một ô nhập số trên UI Customizer**. Sàn là 3 cho tất cả, nhưng
-**trần không đồng nhất**: tên thư mục và tên branch cần nhiều chỗ hơn mới còn nhận ra được, nên 2 field
-đó lên 15, còn lại giữ 12. Script giữ chúng thành biến riêng (`TRUNC_*`) ở đầu file, không nhúng thẳng
-số vào chuỗi cắt, để generator chỉ phải thay 1 con số; script tự clamp phòng khi nhận giá trị hỏng.
+Mỗi giá trị dưới đây là **một ô nhập số trên UI Customizer**. Sàn là 3 cho tất cả, nhưng **trần không đồng nhất**: tên thư mục và tên branch cần nhiều chỗ hơn mới còn nhận ra được, nên 2 field đó lên 15, còn lại giữ 12. Script giữ chúng thành biến riêng (`TRUNC_*`) ở đầu file, không nhúng thẳng số vào chuỗi cắt, để generator chỉ phải thay 1 con số; script tự clamp phòng khi nhận giá trị hỏng.
 
 | Field | Biến | Default | Miền |
 |---|---|---|---|
@@ -237,9 +200,7 @@ số vào chuỗi cắt, để generator chỉ phải thay 1 con số; script t�
 | CWD | `TRUNC_CWD` | **12** | 3..**15** |
 | Git branch | `TRUNC_BRANCH` | **10** | 3..**15** |
 
-**Account phải bỏ domain TRƯỚC khi cắt** (`${email%%@*}`). AGY gửi địa chỉ đầy đủ trong payload, nên
-cắt thô 4 ký tự của `lva@akitao.com` ra `lva@` — vô nghĩa. Cắt local part trước rồi mới truncate:
-`lva`.
+**Account phải bỏ domain TRƯỚC khi cắt** (`${email%%@*}`). AGY gửi địa chỉ đầy đủ trong payload, nên cắt thô 4 ký tự của `lva@akitao.com` ra `lva@` — vô nghĩa. Cắt local part trước rồi mới truncate: `lva`.
 
 ### 8.3. Xác minh sống (2026-07-23, máy remote Linux, payload thật)
 
@@ -261,11 +222,8 @@ AG lva   guest@roscy-  Aki-Dev-Sync  3.6Flashmed   ctx133k/1M    ↬0%    5h:0%4
 Đã kiểm chứng bằng md5 trước/sau: chạy nhánh AGY **không** đụng `~/.claude/rate-limits-cache.json`.
 
 **Fixture AGY thật (§8.5-8.6) xác nhận thêm 2 điều quyết định:**
-- **AGY cũng gửi `.model` dạng object.** Nên gate `.model | type` cũ không chỉ sai chiều mà **không
-  phân biệt được gì cả** — cả 2 CLI đều object → luôn ra AG → rlcache không bao giờ chạy. Đây là bằng
-  chứng cuối cùng cho việc phải gate bằng `$0`.
-- **AGY có `email` ngay trong payload root** → nhánh AGY thực tế không cần đọc
-  `google_accounts.json`; file đó chỉ còn là dự phòng. Chỉ CC mới thật sự phụ thuộc fallback đĩa.
+- **AGY cũng gửi `.model` dạng object.** Nên gate `.model | type` cũ không chỉ sai chiều mà **không phân biệt được gì cả** — cả 2 CLI đều object → luôn ra AG → rlcache không bao giờ chạy. Đây là bằng chứng cuối cùng cho việc phải gate bằng `$0`.
+- **AGY có `email` ngay trong payload root** → nhánh AGY thực tế không cần đọc `google_accounts.json`; file đó chỉ còn là dự phòng. Chỉ CC mới thật sự phụ thuộc fallback đĩa.
 
 ### 8.3b. Hợp đồng generator (Phase 2.2 — ĐÃ CHỐT)
 
@@ -279,17 +237,9 @@ bằng `include_str!` và khi Apply chỉ thay **đúng vùng** giữa 2 marker:
 
 Ngoài vùng đó, từng byte của script được ship nguyên vẹn. Hệ quả — và đây là lý do chọn kiểu này:
 
-- **Không thể drift.** Không còn "script trong docs" và "script sinh ra từ Rust" là 2 thứ khác nhau.
-  Test `generated_defaults_match_template` sinh script từ default của Vue và so **byte-for-byte** với
-  chính file này; lệch một ký tự là fail.
-- **Rust không giữ default nào.** `default_config()` và command `get_default_statusline_config` đã bị
-  xoá. SSOT là `defaultLocalConfig()` trong `ClaudeSettingModal.vue`; vùng config trong file .sh chỉ
-  là bản chép của chính giá trị đó để file vẫn chạy/test được độc lập.
-- **Một body, hai đích.** Cùng một chuỗi script được ghi vào cả 2 đường dẫn, và **mỗi đích đều phải
-  patch `settings.json` của CLI đó** — ghi file thôi là cài một nửa, CLI không chạy gì cho tới khi
-  settings trỏ tới file. AGY mặc định có `statusLine: {type: "", command: "", enabled: true}` (sẵn
-  sàng nhưng không trỏ vào đâu); bỏ nửa này chính là lý do Apply cho AGY từng ra statusline không
-  bao giờ hiện. AGY nhận đường dẫn tuyệt đối, không dùng `~/…` vì không có gì bảo đảm nó expand tilde.
+- **Không thể drift.** Không còn "script trong docs" và "script sinh ra từ Rust" là 2 thứ khác nhau. Test `generated_defaults_match_template` sinh script từ default của Vue và so **byte-for-byte** với chính file này; lệch một ký tự là fail.
+- **Rust không giữ default nào.** `default_config()` và command `get_default_statusline_config` đã bị xoá. SSOT là `defaultLocalConfig()` trong `ClaudeSettingModal.vue`; vùng config trong file .sh chỉ là bản chép của chính giá trị đó để file vẫn chạy/test được độc lập.
+- **Một body, hai đích.** Cùng một chuỗi script được ghi vào cả 2 đường dẫn, và **mỗi đích đều phải patch `settings.json` của CLI đó** — ghi file thôi là cài một nửa, CLI không chạy gì cho tới khi settings trỏ tới file. AGY mặc định có `statusLine: {type: "", command: "", enabled: true}` (sẵn sàng nhưng không trỏ vào đâu); bỏ nửa này chính là lý do Apply cho AGY từng ra statusline không bao giờ hiện. AGY nhận đường dẫn tuyệt đối, không dùng `~/…` vì không có gì bảo đảm nó expand tilde.
 
 Vùng generated chứa đúng 6 nhóm biến, không có logic:
 
@@ -302,15 +252,9 @@ Vùng generated chứa đúng 6 nhóm biến, không có logic:
 | Zebra | `BG_ZEBRA_A/B`, `SEPARATE_BLOCKS` | 2 swatch + checkbox separate |
 | Thứ tự | `BLOCK_ORDER` | thứ tự kéo-thả hàng, gộp về tên khối |
 
-**Gated fieldset — resolve ở generator, không ở shell.** `EN_effort`, `EN_rate_reset_*`,
-`EN_cache_*` được Rust tính sẵn theo bảng `DEPENDS` (bản sao của `DEPENDS` trong Vue): cha tắt thì con
-ra `0`. Config lưu của con **không bị sửa** — bật cha lại là con trở về đúng như cũ. Không gate nào
-trong shell phải hỏi lại cha.
+**Gated fieldset — resolve ở generator, không ở shell.** `EN_effort`, `EN_rate_reset_*`, `EN_cache_*` được Rust tính sẵn theo bảng `DEPENDS` (bản sao của `DEPENDS` trong Vue): cha tắt thì con ra `0`. Config lưu của con **không bị sửa** — bật cha lại là con trở về đúng như cũ. Không gate nào trong shell phải hỏi lại cha.
 
-**Bất biến được test khoá lại** (cách chạy bộ test này trên máy không build được Tauri:
-`docs/research/statusline-generator-test-suite.md`): mọi `EN_`/`COLOR_` mà thân script đọc đều
-phải nằm trong `EN_KEYS`/`COLOR_KEYS` và ngược lại. Đây chính là cái bắt được bug `COLOR_cwd` (khai báo nhưng khối vẽ nhúng
-cứng màu) — một picker chết trên UI.
+**Bất biến được test khoá lại** (cách chạy bộ test này trên máy không build được Tauri: `docs/research/statusline-generator-test-suite.md`): mọi `EN_`/`COLOR_` mà thân script đọc đều phải nằm trong `EN_KEYS`/`COLOR_KEYS` và ngược lại. Đây chính là cái bắt được bug `COLOR_cwd` (khai báo nhưng khối vẽ nhúng cứng màu) — một picker chết trên UI.
 
 ### 8.4. Fixture payload thật — Claude Code 2.1.217
 
@@ -332,9 +276,7 @@ cứng màu) — một picker chết trên UI.
 }
 ```
 
-Ca "CC thiếu `rate_limits`" = đúng payload trên, bỏ key `rate_limits`. Lưu ý khi bắt fixture mới:
-dòng dump phải nằm **trước** khối rlcache merge, nếu không mọi dump đều có `rate_limits` kể cả turn
-CLI không gửi.
+Ca "CC thiếu `rate_limits`" = đúng payload trên, bỏ key `rate_limits`. Lưu ý khi bắt fixture mới: dòng dump phải nằm **trước** khối rlcache merge, nếu không mọi dump đều có `rate_limits` kể cả turn CLI không gửi.
 
 ---
 
@@ -433,30 +375,15 @@ CLI không gửi.
 
 *Giữ lại để hiểu vì sao gate đổi. Kết luận của mục này SAI, xem 8.1.*
 
-Vì 2 file hiện tại giống nhau ~97% (mục 7), việc gộp thành **đúng 1 file** dùng chung cho cả 2 đường
-dẫn cài đặt là khả thi. Rào cản duy nhất còn lại: khối `aki-rlcache` ghi **không điều kiện** vào
-`$HOME/.claude/rate-limits-cache.json` — nếu dùng chung 1 file vật lý, mỗi lần AGY gọi script cũng sẽ
-đụng vào cache của Claude Code (vô hại về mặt dữ liệu vì payload AGY không có `.rate_limits`, nhưng
-sai về mặt ngữ nghĩa: 1 process AGY không nên ghi file thuộc về CC).
+Vì 2 file hiện tại giống nhau ~97% (mục 7), việc gộp thành **đúng 1 file** dùng chung cho cả 2 đường dẫn cài đặt là khả thi. Rào cản duy nhất còn lại: khối `aki-rlcache` ghi **không điều kiện** vào `$HOME/.claude/rate-limits-cache.json` — nếu dùng chung 1 file vật lý, mỗi lần AGY gọi script cũng sẽ đụng vào cache của Claude Code (vô hại về mặt dữ liệu vì payload AGY không có `.rate_limits`, nhưng sai về mặt ngữ nghĩa: 1 process AGY không nên ghi file thuộc về CC).
 
 **Tín hiệu gate đề xuất — kiểm tra `.model | type`:**
 - AGY luôn gửi `.model` dạng **object** (`.model.id` / `.model.display_name`).
 - Claude Code luôn gửi `.model` dạng **string** (theo bảng ánh xạ mục 2).
-- → `if (.model | type) == "object")` → đang chạy dưới AGY → **bỏ qua** khối rlcache; ngược lại (string
-  hoặc null) → đang chạy dưới CC → chạy rlcache như cũ.
+- → `if (.model | type) == "object")` → đang chạy dưới AGY → **bỏ qua** khối rlcache; ngược lại (string hoặc null) → đang chạy dưới CC → chạy rlcache như cũ.
 
-**Vì sao không gate theo `.rate_limits` (trực giác ban đầu nhưng sai):** CC chỉ gửi `.rate_limits`
-"trên một số turn" (xem `docs/arch/usage-claudecode.md` §1) — chính những turn **thiếu** `.rate_limits`
-lại là lúc rlcache cần chạy nhất (để phục hồi số liệu cũ từ file cache). Gate theo sự hiện diện của
-`.rate_limits` sẽ tắt đúng khối cần bật nhiều nhất. `.model` type ổn định qua mọi turn của cả 2 CLI,
-không phụ thuộc việc quota có mặt hay không — đây là lý do nó là tín hiệu đáng tin hơn.
+**Vì sao không gate theo `.rate_limits` (trực giác ban đầu nhưng sai):** CC chỉ gửi `.rate_limits` "trên một số turn" (xem `docs/arch/usage-claudecode.md` §1) — chính những turn **thiếu** `.rate_limits` lại là lúc rlcache cần chạy nhất (để phục hồi số liệu cũ từ file cache). Gate theo sự hiện diện của `.rate_limits` sẽ tắt đúng khối cần bật nhiều nhất. `.model` type ổn định qua mọi turn của cả 2 CLI, không phụ thuộc việc quota có mặt hay không — đây là lý do nó là tín hiệu đáng tin hơn.
 
-Việc này **không** thay đổi kiến trúc `StatuslineTarget` Adapter (vẫn 1 config Rust, vẫn có khái niệm
-2 target) — chỉ thay đổi ở khâu cuối: thay vì sinh 2 nội dung script khác nhau cho 2 target, sinh
-**1 nội dung duy nhất** (đã gate rlcache theo `.model` type) rồi ghi ra cả 2 đường dẫn.
+Việc này **không** thay đổi kiến trúc `StatuslineTarget` Adapter (vẫn 1 config Rust, vẫn có khái niệm 2 target) — chỉ thay đổi ở khâu cuối: thay vì sinh 2 nội dung script khác nhau cho 2 target, sinh **1 nội dung duy nhất** (đã gate rlcache theo `.model` type) rồi ghi ra cả 2 đường dẫn.
 
-> **Kết cục (Phase 2.2):** ý "1 nội dung duy nhất ghi ra 2 đường dẫn" đã được giữ lại và làm tới cùng —
-> nhưng gate là `$0` chứ không phải `.model | type` (payload thật cho thấy **cả 2 CLI** đều gửi `.model`
-> dạng object nên gate đó không phân biệt được gì), và trait `StatuslineTarget` đã bị xoá hẳn: hai
-> target giờ chỉ khác nhau ở đoạn cài đặt (đường dẫn + patch `settings.json`), không còn khác ở nội dung
-> script. Xem §8.1 và §8.3b.
+> **Kết cục (Phase 2.2):** ý "1 nội dung duy nhất ghi ra 2 đường dẫn" đã được giữ lại và làm tới cùng — nhưng gate là `$0` chứ không phải `.model | type` (payload thật cho thấy **cả 2 CLI** đều gửi `.model` dạng object nên gate đó không phân biệt được gì), và trait `StatuslineTarget` đã bị xoá hẳn: hai target giờ chỉ khác nhau ở đoạn cài đặt (đường dẫn + patch `settings.json`), không còn khác ở nội dung script. Xem §8.1 và §8.3b.

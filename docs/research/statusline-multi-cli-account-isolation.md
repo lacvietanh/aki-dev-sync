@@ -40,22 +40,11 @@ This research analyzes how account identity is retrieved, process isolation guar
 
 ## 3. Architecture - SUPERSEDED (2026-07-23, Phase 2.2)
 
-> **This section described the `StatuslineTarget` Adapter, which no longer exists.** It is kept
-> because the account-isolation findings above are what forced the redesign.
+> **This section described the `StatuslineTarget` Adapter, which no longer exists.** It is kept because the account-isolation findings above are what forced the redesign.
 >
-> **What replaced it:** there is no longer one script *per target*. ONE physical script is installed
-> byte-identically at both paths and works out which CLI is running it from its own invocation path
-> (`$0` contains `/.gemini/` -> AGY, otherwise Claude Code). The per-CLI account fallback in §2 is a
-> single `if` inside that script, not two Rust code paths. `statusline.rs` no longer generates shell
-> at all: it patches a config region into the checked-in template `src-tauri/src/statusline-unified.sh`.
-> See `docs/feat/statusline-customizer.md` and `docs/ref/statusline-unified-spec.md` §8.
+> **What replaced it:** there is no longer one script *per target*. ONE physical script is installed byte-identically at both paths and works out which CLI is running it from its own invocation path (`$0` contains `/.gemini/` -> AGY, otherwise Claude Code). The per-CLI account fallback in §2 is a single `if` inside that script, not two Rust code paths. `statusline.rs` no longer generates shell at all: it patches a config region into the checked-in template `src-tauri/src/statusline-unified.sh`. See `docs/feat/statusline-customizer.md` and `docs/ref/statusline-unified-spec.md` §8.
 >
-> **Why the adapter had to go.** Its premise - "each target needs its own JQ extraction and its own
-> account branch" - turned out to be false: a live `diff` of the two deployed scripts found they
-> differed by exactly one 12-line block. Two near-identical generators meant every fix had to be
-> written twice, and one copy kept getting missed - the `3p-*` quota branch existed in one and not
-> the other, and `resets_at` was parsed but never displayed. The Open/Closed argument below bought
-> extensibility the product never used, at the price of the drift it actually suffered from.
+> **Why the adapter had to go.** Its premise - "each target needs its own JQ extraction and its own account branch" - turned out to be false: a live `diff` of the two deployed scripts found they differed by exactly one 12-line block. Two near-identical generators meant every fix had to be written twice, and one copy kept getting missed - the `3p-*` quota branch existed in one and not the other, and `resets_at` was parsed but never displayed. The Open/Closed argument below bought extensibility the product never used, at the price of the drift it actually suffered from.
 
 The superseded design, for the record:
 
