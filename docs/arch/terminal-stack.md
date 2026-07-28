@@ -1,79 +1,28 @@
 # Terminal stack — architecture
 
-How the in-app terminal's frontend is layered, and how terminal v2's SCOPES (tab groups) sit on
-top of it without touching Rust. User-facing behaviour: `docs/feat/in-app-terminal.md`.
+How the in-app terminal's frontend is layered, and how terminal v2's SCOPES (tab groups) sit on top of it without touching Rust. User-facing behaviour: `docs/feat/in-app-terminal.md`.
 
 ## The layering
 
 Four layers, each with a single job:
 
-- **Shared session state** — `src/store/terminalTabsStore.js`. Holds `terminalTabs` (the list),
-  mutated only through `action()`-wrapped functions so a companion's gesture (tap a tab's ✕ on the
-  phone) executes on the host, whose state change then mirrors back to every screen.
-  `services/mirror.js` auto-discovers every `isRef` export under `src/store/` (SSOT-1); the two
-  navigation refs — `activeTerminalTabId` and `activeTerminalScope` — opt out via
-  `PER_SCREEN_KEYS`, because which tab/group a screen is looking at is that screen's own
-  navigation, not session data.
-- **Per-screen glue** — `src/composables/useTerminalTabs.js`. Liveness (`tabAlive`, re-exported
-  from `usePtyTerminal`'s module-level tracker), `activatedTabs` (which tabs this screen has ever
-  mounted), `lastTabByScope` (which tab each scope was last looking at, VSCode-group style), and
-  the companion's pending-activation claim (scope-keyed, with a short TTL so a claim the host
-  refuses cannot strand and later steal focus). None of this is
-  mirrored — the file says why per ref, since each is either screen-local navigation or something
-  a companion's own PTY event stream already reconstructs.
-- **Panel chrome** — `DockStack.vue` (presentational base) + the specializations `dock/LogStack.vue`
-  and `dock/TerminalStack.vue`, each owning its own per-screen collapse ref.
-  This is **composition with a shared presentational base and slot-injected content**, not class
-  inheritance — `DockStack` renders the header/body/peek chrome and emits `update:collapsed`;
-  each specialization fills its own `#title` / `#actions` / `#peek` slots and owns its own script.
-  The one configuration point terminal v2 added here is `collapseVariant` (`'chevron' | 'close'`) —
-  `TerminalStack` passes `'close'` so its one header button reads CLOSE/EXPAND instead of
-  COLLAPSE/EXPAND; `LogStack` keeps the default and is otherwise untouched.
-- **PTY surface** — `usePtyTerminal.js` + `TerminalView.vue`. One `usePtyTerminal(term, tabId)`
-  instance per mounted `TerminalView`, filtering Tauri events and companion frames by `tab_id`.
+- **Shared session state** — `src/store/terminalTabsStore.js`. Holds `terminalTabs` (the list), mutated only through `action()`-wrapped functions so a companion's gesture (tap a tab's ✕ on the phone) executes on the host, whose state change then mirrors back to every screen. `services/mirror.js` auto-discovers every `isRef` export under `src/store/` (SSOT-1); the two navigation refs — `activeTerminalTabId` and `activeTerminalScope` — opt out via `PER_SCREEN_KEYS`, because which tab/group a screen is looking at is that screen's own navigation, not session data.
+- **Per-screen glue** — `src/composables/useTerminalTabs.js`. Liveness (`tabAlive`, re-exported from `usePtyTerminal`'s module-level tracker), `activatedTabs` (which tabs this screen has ever mounted), `lastTabByScope` (which tab each scope was last looking at, VSCode-group style), and the companion's pending-activation claim (scope-keyed, with a short TTL so a claim the host refuses cannot strand and later steal focus). None of this is mirrored — the file says why per ref, since each is either screen-local navigation or something a companion's own PTY event stream already reconstructs.
+- **Panel chrome** — `DockStack.vue` (presentational base) + the specializations `dock/LogStack.vue` and `dock/TerminalStack.vue`, each owning its own per-screen collapse ref. This is **composition with a shared presentational base and slot-injected content**, not class inheritance — `DockStack` renders the header/body/peek chrome and emits `update:collapsed`; each specialization fills its own `#title` / `#actions` / `#peek` slots and owns its own script. The one configuration point terminal v2 added here is `collapseVariant` (`'chevron' | 'close'`) — `TerminalStack` passes `'close'` so its one header button reads CLOSE/EXPAND instead of COLLAPSE/EXPAND; `LogStack` keeps the default and is otherwise untouched.
+- **PTY surface** — `usePtyTerminal.js` + `TerminalView.vue`. One `usePtyTerminal(term, tabId)` instance per mounted `TerminalView`, filtering Tauri events and companion frames by `tab_id`.
 
 ## Scope as the aggregate root
 
-A **scope** is a tab group. Its key is `scopeOf(tab) = tab.projectId || GLOBAL_SCOPE` — grouping
-is derived entirely from a field the tab record already carried (`projectId`); nothing new went on
-the wire for the tab list itself. A scope owns its tabs; a tab's membership in one is nothing more
-than that field.
+A **scope** is a tab group. Its key is `scopeOf(tab) = tab.projectId || GLOBAL_SCOPE` — grouping is derived entirely from a field the tab record already carried (`projectId`); nothing new went on the wire for the tab list itself. A scope owns its tabs; a tab's membership in one is nothing more than that field.
 
 Invariants:
 
-- The **global** scope (`projectId == null`) is the only one with a non-empty floor: it must always
-  keep at least one tab (`terminalTabsStore.js`'s `closeTerminalTab` guard). A **project** scope may
-  go to zero — the group simply stops existing until its TERM cell is clicked again, at which point
-  `openProjectTerminal` creates a fresh tab in that project's directory.
-- **Two caps, not one (1.21.1).** `MAX_TABS_PER_SCOPE = 5` is the user-facing rule: a group (a
-  project, or the global group) refuses its 6th tab, and the refusal names that number. `MAX_TABS =
-  16` is a separate, **global**, machine guard underneath it — it mirrors `src-tauri/src/pty.rs`'s
-  `MAX_TABS` by comment, not a shared constant (the Rust and JS build graphs do not share one),
-  because the Rust side has no notion of groups; it only ever sees a flat set of `tab_id`s, so the
-  per-scope cap is a pure frontend rule layered above a backend that stays scope-blind.
-  `addTerminalTab`/`capReached()` both check **scope first, then global** — a user in a 1-tab group
-  who hits the global ceiling is told about the *other* groups, not told their own group is full.
-- `MAX_TABS` is **derived**, not picked: `16 = 1 + 3 × MAX_TABS_PER_SCOPE` — the one global tab
-  `closeTerminalTab` guarantees can never be closed, plus three project groups each at their full
-  per-scope cap. The binding requirement is that a project group's *first* tab must never be
-  refused; a lower ceiling (e.g. one that only fits two full groups) refuses on an empty group's
-  first tap, for a reason living in a group the screen is not showing — the worst possible shape for
-  a refusal.
-- `MAX_TABS` also binds `web_server.rs`'s `COMPANION_QUEUE_LIMIT_BYTES` via **INVARIANT R**
-  (`MAX_TABS × (base64_len(SCROLLBACK_CAP) + ~128) ≤ COMPANION_QUEUE_LIMIT_BYTES / 2`), asserted by a
-  Rust unit test rather than left to a comment: the two-file mirroring that sufficed when the caps
-  were the same number cannot check arithmetic between four constants that are now deliberately
-  different. Raising `MAX_TABS` without re-deriving the other two re-breaks a joining phone's
-  scrollback replay; the test exists to catch exactly that.
-- The three refusal strings (per-project, global-group, global-ceiling) each interpolate their own
-  constant and never hardcode a digit; only the global-ceiling one says "in any group", because it is
-  the one refusal whose cause genuinely lives somewhere off-screen — see `terminalTabsStore.js`.
-- **Scope-empty ⇒ fall back to global.** Closing a project scope's last tab forgets that scope's
-  remembered tab (`forgetScopeTab`, multi-entity guard: scoped to the ONE scope, never clears the
-  whole map), resets `activeTerminalScope` to `GLOBAL_SCOPE`, and activates the global group's
-  remembered (or most recent) tab. The stale-id reconcile watcher in `useTerminalTabs.js` performs
-  the same fallback defensively for the companion boot / cross-screen-close cases the direct
-  `closeTab` path does not cover.
+- **No scope has a floor, global included (2026-07-28).** Every group — a project's, or the global one — may go to zero tabs; it simply stops existing until its terminal button is clicked again, at which point `openScopeTerminal` (via `openProjectTerminal` / `openGlobalTerminal`) creates a fresh tab. Global used to be pinned to a permanent one-tab minimum (seeded at boot by `initTerminalTabs`, enforced on close by `terminalTabsStore.js`'s `closeTerminalTab`); that was removed because it was the actual mechanism behind a real bug, not just an inconsistency — a dev-server HMR reload re-runs the boot seed, and a `pty_list_tabs()` call racing the backend into reporting an empty list (even with a shell already live) would seed another tab on top of it, piling up phantom "Shell" chips across repeated reloads. Every scope is now symmetric: opened on demand, closeable to zero, no special case.
+- **Two caps, not one (1.21.1).** `MAX_TABS_PER_SCOPE = 5` is the user-facing rule: a group (a project, or the global group) refuses its 6th tab, and the refusal names that number. `MAX_TABS = 16` is a separate, **global**, machine guard underneath it — it mirrors `src-tauri/src/pty.rs`'s `MAX_TABS` by comment, not a shared constant (the Rust and JS build graphs do not share one), because the Rust side has no notion of groups; it only ever sees a flat set of `tab_id`s, so the per-scope cap is a pure frontend rule layered above a backend that stays scope-blind. `addTerminalTab`/`capReached()` both check **scope first, then global** — a user in a 1-tab group who hits the global ceiling is told about the *other* groups, not told their own group is full.
+- `MAX_TABS` is a **generous shared ceiling, not a per-scope multiple.** It happens to equal `1 + 3 × MAX_TABS_PER_SCOPE`, but that arithmetic is no longer load-bearing (it used to be justified by global's old guaranteed one-tab minimum, which is gone — see above). Nothing enforces "at most 3 project groups plus global" as a real limit; a 4th or 5th project group filling up alongside a full global group can legitimately hit the ceiling before its own per-scope cap. That is an accepted, rare edge of a **resource guard, never a budget the user manages** (the existing rule that no tooltip states this number ahead of time) — raising it is a one-line change plus re-checking **INVARIANT R** below, not an architectural one.
+- `MAX_TABS` also binds `web_server.rs`'s `COMPANION_QUEUE_LIMIT_BYTES` via **INVARIANT R** (`MAX_TABS × (base64_len(SCROLLBACK_CAP) + ~128) ≤ COMPANION_QUEUE_LIMIT_BYTES / 2`), asserted by a Rust unit test rather than left to a comment: the two-file mirroring that sufficed when the caps were the same number cannot check arithmetic between four constants that are now deliberately different. Raising `MAX_TABS` without re-deriving the other two re-breaks a joining phone's scrollback replay; the test exists to catch exactly that.
+- The three refusal strings (per-project, global-group, global-ceiling) each interpolate their own constant and never hardcode a digit; only the global-ceiling one says "in any group", because it is the one refusal whose cause genuinely lives somewhere off-screen — see `terminalTabsStore.js`.
+- **Scope-empty ⇒ fall back to global — the SAME rule for every scope, global included.** Closing any scope's last tab forgets that scope's remembered tab (`forgetScopeTab`, multi-entity guard: scoped to the ONE scope, never clears the whole map), resets `activeTerminalScope` to `GLOBAL_SCOPE`, and activates the global group's remembered (or most recent) tab if it has one. Global closing its own last tab is simply the identity case of this rule: `activeTerminalScope` is already `GLOBAL_SCOPE`, and if it has no remaining tab either, the group just renders empty — the same "click the terminal button again to open a fresh one" state a project group has always had. The stale-id reconcile watcher in `useTerminalTabs.js` performs the same fallback defensively for the companion boot / cross-screen-close cases the direct `closeTab` path does not cover, and is itself a no-op when no scope anywhere has a tab left.
 
 ### Companion add is fire-and-forget — the repeat-tap guard (1.22.0)
 
@@ -87,65 +36,34 @@ Before 1.22.0 that round trip had a second cost: `resolveScopeTab`/`capReached` 
 
 ## The capability pattern
 
-`usePtyTerminal` publishes capability flags — `ownsPtySize` (does this screen decide the shared
-PTY's cols/rows?) and `showKeyRow` (does this surface need the synthetic Esc/Tab/arrow/Ctrl row?) —
-instead of exposing a role flag; `TerminalView.vue` asks the capability, never `isHost`. Scope adds
-no new capability: grouping is pure frontend navigation, invisible to the PTY layer entirely.
+`usePtyTerminal` publishes capability flags — `ownsPtySize` (does this screen decide the shared PTY's cols/rows?) and `showKeyRow` (does this surface need the synthetic Esc/Tab/arrow/Ctrl row?) — instead of exposing a role flag; `TerminalView.vue` asks the capability, never `isHost`. Scope adds no new capability: grouping is pure frontend navigation, invisible to the PTY layer entirely.
 
 ## PTY backend contract
 
-One PTY per `tab_id`; `pty_spawn` is idempotent; liveness travels on `pty_output` / `pty_exit`,
-never on the mirror (there is deliberately no `alive` field on the `terminalTabs` record —
-mirroring one would be a second, competing source of truth for a fact the PTY events already carry
-with lower latency); `pty_close_tab` requires its `tab_id` argument (a defaultable "close" is
-exactly the accidental-blast-radius shape the multi-entity regression guard forbids); each live tab
-costs roughly three raw OS threads, bounded by `MAX_TABS` (1.21.1: 16, i.e. 48 raw threads and 2 MiB
-of resident ring buffer at the absolute ceiling); the app-exit hook kills every tab's process group.
+One PTY per `tab_id`; `pty_spawn` is idempotent; liveness travels on `pty_output` / `pty_exit`, never on the mirror (there is deliberately no `alive` field on the `terminalTabs` record — mirroring one would be a second, competing source of truth for a fact the PTY events already carry with lower latency); `pty_close_tab` requires its `tab_id` argument (a defaultable "close" is exactly the accidental-blast-radius shape the multi-entity regression guard forbids); each live tab costs roughly three raw OS threads, bounded by `MAX_TABS` (1.21.1: 16, i.e. 48 raw threads and 2 MiB of resident ring buffer at the absolute ceiling); the app-exit hook kills every tab's process group.
 
-**Terminal v2 required zero Rust changes.** The backend was already tab-keyed and knows nothing
-about "projects" or "groups" — scope is a pure frontend grouping over `projectId`, a field the tab
-list already carried before this work. If any part of this feature had needed a Rust change, that
-would have meant the frontend-only premise was wrong.
+**Terminal v2 required zero Rust changes.** The backend was already tab-keyed and knows nothing about "projects" or "groups" — scope is a pure frontend grouping over `projectId`, a field the tab list already carried before this work. If any part of this feature had needed a Rust change, that would have meant the frontend-only premise was wrong.
 
 ## Mount semantics
 
-`TerminalStack.vue`'s mount loop (`v-for="t in tabs"`, the FULL unfiltered list) iterates every tab
-regardless of scope, on purpose: `v-if="activatedTabs.has(t.id)"` mounts a `TerminalView` lazily on
-first activation and keeps it mounted afterward, and only `v-show="t.id === activeTabId"` changes
-when the visible tab or the visible scope changes. Filtering the mount loop by scope would unmount
-and re-spawn xterms on every group switch — the tab strip (`TerminalTabStrip.vue`) is what is scope-
-filtered (`scopedTabs`), not the mount loop.
+`TerminalStack.vue`'s mount loop (`v-for="t in tabs"`, the FULL unfiltered list) iterates every tab regardless of scope, on purpose: `v-if="activatedTabs.has(t.id)"` mounts a `TerminalView` lazily on first activation and keeps it mounted afterward, and only `v-show="t.id === activeTabId"` changes when the visible tab or the visible scope changes. Filtering the mount loop by scope would unmount and re-spawn xterms on every group switch — the tab strip (`TerminalTabStrip.vue`) is what is scope-filtered (`scopedTabs`), not the mount loop.
 
-A stack **collapse** no longer unmounts anything either (1.21.1). `DockStack.vue` takes a
-`bodyPersist` prop that only `TerminalStack.vue` passes: with it the default slot is wrapped in
-`.dock-stack-body` and hidden with `v-show` instead of removed with `v-if`, so a collapse→expand
-round-trip disposes and re-spawns nothing, and scroll position and a full-screen program's painted
-screen survive it. `LogStack.vue` does not pass the prop and keeps the old destroy-on-collapse path.
-The re-fit on expand is not a new code path: `TerminalStack.vue` passes `active` as
-`t.id === activeTabId && !collapsed`, and `TerminalView.vue`'s existing `watch(() => props.active)`
-re-fits and refocuses on the false→true edge. While hidden the container measures 0 and `doFit()`'s
-`width < 40 || height < 24` floor discards the measurement, so nothing resizes the live PTY.
-The cost is retention: every mounted xterm keeps its 5000-line scrollback while the panel is closed,
-which is what `MAX_TABS` bounds.
+A stack **collapse** no longer unmounts anything either (1.21.1). `DockStack.vue` takes a `bodyPersist` prop that only `TerminalStack.vue` passes: with it the default slot is wrapped in `.dock-stack-body` and hidden with `v-show` instead of removed with `v-if`, so a collapse→expand round-trip disposes and re-spawns nothing, and scroll position and a full-screen program's painted screen survive it. `LogStack.vue` does not pass the prop and keeps the old destroy-on-collapse path.
+
+The re-fit on expand is not a new code path: `TerminalStack.vue` passes `active` as `t.id === activeTabId && !collapsed`, and `TerminalView.vue`'s existing `watch(() => props.active)` re-fits and refocuses on the false→true edge. While hidden the container measures 0 and `doFit()`'s `width < 40 || height < 24` floor discards the measurement, so nothing resizes the live PTY.
+
+The cost is retention: every mounted xterm keeps its 5000-line scrollback while the panel is closed, which is what `MAX_TABS` bounds.
 
 ## External `Terminal.app` count — derived, never remembered
 
-The `TERM` cell's bottom (slate) badge is **not** part of the PTY stack at all: it counts *external*
-`Terminal.app` windows/tabs standing in a project's directory, and it is a **live scan, not a
-tally**. That is the whole architectural point — the app can observe itself opening a window but
-never observes the user closing one, so any remembered counter can only grow and eventually lies.
+The `TERM` cell's bottom (slate) badge is **not** part of the PTY stack at all: it counts *external* `Terminal.app` windows/tabs standing in a project's directory, and it is a **live scan, not a tally**. That is the whole architectural point — the app can observe itself opening a window but never observes the user closing one, so any remembered counter can only grow and eventually lies.
 
-One producer, host-only (seam P): `composables/useExternalTerminals.js` calls the
-`count_external_terminals` command (`src-tauri/src/system.rs`) every **5 s**, plus once ~800 ms after
-the app opens a Terminal window. Each scan is three short local subprocesses on the blocking pool —
-`pgrep -x Terminal`, one `ps -axo pid=,ppid=` walked into Terminal's descendant set, one batched
-`lsof -a -d cwd -p <pids> -F pn` (capped at 200 pids). The counting rule is **roots of matching
-subtrees** (`count_cwd_subtree_roots`, unit-tested with no subprocess): a process counts only if its
-cwd is the project directory *and its parent's cwd is not*, so one window running a dev server
-(shell → npm → node, all sharing the cwd) counts once. Match is exact — a subdirectory is not the
-project.
+One producer, host-only (seam P): `composables/useExternalTerminals.js` calls the `count_external_terminals` command (`src-tauri/src/system.rs`) every **5 s**, plus once ~800 ms after the app opens a Terminal window. Each scan is three short local subprocesses on the blocking pool — `pgrep -x Terminal`, one `ps -axo pid=,ppid=,tty=,etime=,command=` walked into Terminal's descendant set, one batched `lsof -a -d cwd -p <pids> -F pn` (capped at 200 pids). The counting rule is **roots of matching subtrees** (`count_cwd_subtree_roots`, unit-tested with no subprocess): a process counts only if its cwd is the project directory *and its parent's cwd is not*, so one window running a dev server (shell → npm → node, all sharing the cwd) counts once. Match is exact — a subdirectory is not the project.
 
-The result replaces `projectStore.externalTermCounts` wholesale each tick, keyed by project id. That
-is not a multi-entity "clear": every key is rewritten from the same single scan, and no function
-resets part of it. Being a store ref, the mirror carries the snapshot to every companion for free —
-the phone must never poll, since Terminal's process table exists only on the Mac.
+The result replaces `projectStore.externalTermCounts` wholesale each tick, keyed by project id. That is not a multi-entity "clear": every key is rewritten from the same single scan, and no function resets part of it. Being a store ref, the mirror carries the snapshot to every companion for free — the phone must never poll, since Terminal's process table exists only on the Mac.
+
+### The detail modal shares the scan, not just the idea (1.22.0)
+
+`list_external_terminals` answers "which sessions, and what is running in them" and is the same pipeline: both commands go through `scan_terminal_tree`, which owns the three subprocesses and hands back `(ppid_of, cwd_of, row_of)`. The subtree-root test is applied identically on both sides, so the modal's row count and the badge's number are the same fact computed once — a second, parallel definition of "one session" is precisely how the two would come to disagree.
+
+The split is in *cadence*, not in logic: the badge polls every 5 s and needs only a count; the modal is on-demand and returns a command line per process, which must never ride the poll. Both are host-only and neither is in `COMPANION_ALLOWED_COMMANDS`; the badge reaches a phone through the mirrored `externalTermCounts` snapshot, and the modal's button simply does not render there (`externalTerminalsSupported`, published as a capability rather than an `isHost` read at the call site, in keeping with the capability pattern above).

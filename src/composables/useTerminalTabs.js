@@ -295,30 +295,27 @@ export function useTerminalTabs() {
     const list = scopedTabs.value
     const idx = list.findIndex((t) => t.id === id)
     if (idx === -1) return // not in this scope (shouldn't happen from the strip, but be safe)
-    const isGlobal = activeTerminalScope.value === GLOBAL_SCOPE
-    if (isGlobal && list.length <= 1) {
-      // Never close the last GLOBAL tab (the store enforces this too — the dock must always have
-      // one). Say so: ⌘W used to do nothing at all here, with no feedback of any kind.
-      Toast.fire({ icon: 'info', title: 'The last global terminal tab stays open' })
-      return
-    }
     // Pick the fallback BEFORE closing: on a companion the list itself only updates once the
     // mirror echoes the removal back, so this cannot be derived from the post-close array.
     let fallbackId = null
-    let fallbackToGlobal = false
+    let scopeEmptied = false
     if (activeTabId.value === id) {
       const neighbor = list[idx + 1] || list[idx - 1]
       if (neighbor) {
         fallbackId = neighbor.id
-      } else if (!isGlobal) {
-        // Last tab of a PROJECT scope closing — the group empties, fall back to global.
-        fallbackToGlobal = true
+      } else {
+        // Last tab of THIS scope closing — global included, symmetric with every project scope
+        // now (docs/arch/terminal-stack.md's "scope-empty ⇒ fall back to global"; the old
+        // never-close-the-last-global-tab special case is gone, see closeTerminalTab's doc
+        // comment). Global closing its own last tab is simply the identity case of the same
+        // rule: it ends up empty, exactly like a project group does today.
+        scopeEmptied = true
       }
     }
     closeTerminalTab(id)
     if (fallbackId != null) {
       setActiveTab(fallbackId)
-    } else if (fallbackToGlobal) {
+    } else if (scopeEmptied) {
       forgetScopeTab(activeTerminalScope.value)
       activeTerminalScope.value = GLOBAL_SCOPE
       const target = resolveScopeTab(GLOBAL_SCOPE)
@@ -362,7 +359,15 @@ export function useTerminalTabs() {
 let initStarted = false
 
 /** HOST BOOT ONLY (src/App.vue's onHostBoot, WP-C's one call there). Re-adopts orphan shells a
- *  frontend reload left running on the backend, else seeds tab 0 so the dock always has one tab. */
+ *  frontend reload left running on the backend. A truly fresh boot with nothing to adopt leaves the
+ *  tab list EMPTY — no seeded "Shell 0" tab. Global stopped being a special case that must always
+ *  show one tab (2026-07-28, see closeTerminalTab's doc comment): it now opens its first tab on
+ *  demand via `openGlobalTerminal`, exactly like a project's group opens its first tab via
+ *  `openProjectTerminal`. Seeding here was also the actual mechanism behind a real bug — a dev-server
+ *  HMR reload re-runs this function, and a `pty_list_tabs()` call that raced the backend into
+ *  reporting an empty list (even though a shell already existed) would seed ANOTHER tab on top,
+ *  piling up phantom "Shell" chips over repeated reloads. Not seeding removes the failure mode
+ *  entirely rather than papering over the race. */
 export async function initTerminalTabs() {
   if (initStarted) return
   initStarted = true
@@ -375,8 +380,6 @@ export async function initTerminalTabs() {
   if (Array.isArray(list) && list.length > 0) {
     adoptTabs(list)
     seedTabLiveness(list) // list still carries each tab's raw `alive` — adoptTabs' own mapped shape drops it
-  } else {
-    addTerminalTab({ title: 'Shell', projectId: null, cwd: null })
   }
   activeTerminalScope.value = GLOBAL_SCOPE // defensive: setActiveTab would derive the same, but boot should not depend on it
   const first = terminalTabs.value[0]

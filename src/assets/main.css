@@ -808,6 +808,13 @@ input:checked+.slider:before {
   bottom: -6px;
 }
 
+/* Opt-in corner override: sits left instead of the default right (WS-F follow-up — push/pull's
+   delete indicator needs opposite corners so neither points at the shared DRY toggle between them). */
+.cell-badge-left {
+  left: -6px;
+  right: auto;
+}
+
 .terminal-header {
   display: flex;
   justify-content: space-between;

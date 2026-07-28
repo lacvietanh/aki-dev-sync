@@ -69,22 +69,24 @@
       </button>
     </div>
     <!--
-      Compose row: a real text input for phone voice-dictation / IME typing (§4.5 follow-up). Unlike
-      the key row's buttons, this input MUST keep native focus so the phone's dictation/Telex IME can
-      compose into it — no `.prevent` on it, ever.
+      Compose row: a real text input that composes a whole line before anything reaches the PTY.
+      Shown on EVERY surface since 1.22.0, not just the phone — see `composePlaceholder` in the
+      script for why the Mac needs it just as much (Vietnamese IME + a no-local-echo terminal).
+      Unlike the key row's buttons, this input MUST keep native focus so an IME can compose into it —
+      no `.prevent` on it, ever.
     -->
-    <div v-if="ptyApi?.showKeyRow" class="pty-compose-row">
+    <div class="pty-compose-row">
       <input
         ref="composeInputEl"
         v-model="composeText"
         type="text"
         class="pty-compose-input"
-        placeholder="message…"
+        :placeholder="composePlaceholder"
         autocapitalize="off"
         autocomplete="off"
         autocorrect="off"
         spellcheck="false"
-        @keydown.enter="onComposeSend"
+        @keydown.enter="onComposeKeydown"
       />
       <button class="pty-key pty-compose-send" title="Send" @mousedown.prevent @click="onComposeSend">
         <i class="fa-solid fa-paper-plane"></i>
@@ -99,6 +101,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
+import { useWkImeGuard } from '../composables/useWkImeGuard'
+import { renameTerminalTab } from '../store/terminalTabsStore'
 import {
   terminalFontScale,
   zoomInTerminalFont,
@@ -117,15 +121,46 @@ const props = defineProps({
 
 const mountEl = ref(null)
 let term = null
+let imeGuard = null
 let fitAddon = null
 let resizeObserver = null
 const ptyApi = ref(null)
 
-// Compose row (§4.5 follow-up): a real `<input>` under the key row so a phone's voice dictation or
-// its browser IME (e.g. Telex) can compose a full command before it is sent, instead of the app
-// receiving keystroke-at-a-time IME edits through xterm's own hidden textarea.
+// Compose row: a real `<input>` under the key row so an IME can compose a full command before it is
+// sent, instead of the terminal receiving keystroke-at-a-time IME edits through xterm's own hidden
+// textarea.
+//
+// WHY IT IS NO LONGER PHONE-ONLY (1.22.0), REVISED. The original 1.22.0 rationale here blamed the
+// terminal's no-local-echo design (T-5) for all Vietnamese breakage. The full investigation
+// (docs/research/terminal-vietnamese-ime-root-cause-jul27.md, then -2.md) split that into TWO
+// causes:
+//   1. OpenKey/EVKey (CGEventTap key-injection engines, no real composition) break because
+//      WKWebView tags their synthetic keys keyCode 229 and xterm 5.5.0's IME fallback paths drop
+//      or collapse them (upstream, unfixed: xterm.js #5887/#5894). NOT an echo-latency problem —
+//      the PTY consumes keys in order, so nothing open-loop can overshoot. Fixed for direct typing
+//      by useWkImeGuard.js (v2 — v1's post-mortem is the -2 doc; its `__akiIme` console API is
+//      how you tell whether the guard, and which of its channels, is doing the work).
+//   2. TRUE composing IMEs (macOS's built-in Vietnamese input, marked-text preedit) still fight
+//      both WKWebView's composition-event quirks (#5704) and the no-local-echo screen the preedit
+//      is drawn against. For those, composing in a plain `<input>` — where the IME owns the text
+//      and gets synchronous feedback — and sending only the finished line remains the supported
+//      path. That is why the row renders on the Mac too.
 const composeInputEl = ref(null)
 const composeText = ref('')
+
+// Named per surface: on a phone the row's job is dictation, on the Mac it is the IME path above.
+const composePlaceholder = computed(() =>
+  ptyApi.value?.showKeyRow ? 'message…' : 'type here for Vietnamese / IME input…'
+)
+
+/** Enter must not send MID-COMPOSITION. A composing IME fires `keydown` with `isComposing` true
+ *  (legacy engines report `keyCode` 229) for the Enter that COMMITS the syllable — acting on it
+ *  would fire the half-finished line and swallow the commit, which is the same class of bug this
+ *  whole row exists to remove. */
+function onComposeKeydown(e) {
+  if (e.isComposing || e.keyCode === 229) return
+  onComposeSend()
+}
 
 function onComposeSend() {
   if (!ptyApi.value) return
@@ -299,6 +334,17 @@ onMounted(async () => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(mountEl.value)
+  // Direct Vietnamese typing (OpenKey-style engines) under WKWebView — must attach after open()
+  // so term.element exists. See useWkImeGuard.js's header for the whole story.
+  imeGuard = useWkImeGuard(term)
+
+  // The tab strip's chip already gets a title "for free" the same way an OS terminal window does:
+  // xterm parses the shell's OSC 0/2 title escapes (every shell emits these on `cd`/running a
+  // command/etc.) and fires onTitleChange. `auto: true` so a user's own rename (tab-strip context
+  // menu) is never clobbered by the next prompt redraw.
+  term.onTitleChange((title) => {
+    if (title) renameTerminalTab(props.tabId, title, { auto: true })
+  })
 
   ptyApi.value = usePtyTerminal(term, props.tabId)
 
@@ -326,6 +372,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (fitFrame) cancelAnimationFrame(fitFrame)
   if (resizeObserver) resizeObserver.disconnect()
+  if (imeGuard) imeGuard.dispose()
   if (term) term.dispose()
 })
 
@@ -390,9 +437,12 @@ defineExpose({
    no separators/banners. Mirrors .terminal-actions sizing in AppConsole.vue. */
 .pty-key-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 8px;
+  /* No wrap: a phone's own narrow width is exactly where losing width to gap/padding forces this
+     row onto two lines ("nhảy hàng") — flat and tight is what keeps it on one. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 2px;
+  padding: 2px 4px;
   border-top: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.02);
   flex-shrink: 0;
@@ -400,7 +450,7 @@ defineExpose({
 
 .pty-key {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  padding: 3px 5px;
   font-size: 10px;
   line-height: 1;
   background: var(--bg-tertiary);
@@ -430,7 +480,7 @@ defineExpose({
 .pty-key-sep {
   align-self: stretch;
   width: 1px;
-  margin: 0 2px;
+  margin: 0 1px;
   background: var(--border-color);
 }
 

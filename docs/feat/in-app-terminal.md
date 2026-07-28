@@ -25,54 +25,25 @@ It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a r
 
 ## Groups
 
-A **group** is a set of tabs that share one identity: either one project, or the **global** group
-(not tied to any project). Two ways to enter one:
+A **group** is a set of tabs that share one identity: either one project, or the **global** group (not tied to any project). Two ways to enter one:
 
-- A project row's `TERM` cell — switches the stack to that project's group and reuses its
-  last-active tab, or opens a fresh one already `cd`'d into that project's directory if the group
-  is currently empty.
+- A project row's `TERM` cell — switches the stack to that project's group and reuses its last-active tab, or opens a fresh one already `cd`'d into that project's directory if the group is currently empty.
 - The `TERM` column **header** icon — the same entry point for the **global** group.
 
-The stack header always shows which group you are in: a project icon (or a plain terminal glyph for
-global) plus a 4-character name (`TERM` for global). The tab strip next to it is that group's tabs
-only — chips from other groups are not shown, but they still exist and keep running; switching
-groups never re-spawns or loses any shell's scrollback. `+` opens a new tab **in the current group**;
-a chip's ✕ kills that one shell.
+The stack header always shows which group you are in: a project icon (or a plain terminal glyph for global) plus a 4-character name (`TERM` for global). The tab strip next to it is that group's tabs only — chips from other groups are not shown, but they still exist and keep running; switching groups never re-spawns or loses any shell's scrollback. `+` opens a new tab **in the current group**; a chip's ✕ kills that one shell.
 
-`⌘T` / `⌘W` / `⌘⇧[` / `⌘⇧]` all act **within the current group only** — ⌘T in a project's group opens
-a shell already `cd`'d into that project, ⌘⇧[ / ⌘⇧] cycle only that group's tabs, and ⌘W closes only
-the active tab of the group you are looking at.
+`⌘T` / `⌘W` / `⌘⇧[` / `⌘⇧]` all act **within the current group only** — ⌘T in a project's group opens a shell already `cd`'d into that project, ⌘⇧[ / ⌘⇧] cycle only that group's tabs, and ⌘W closes only the active tab of the group you are looking at.
 
-**CLOSE** (the panel header's one right-side button, replacing the old chevron-only affordance)
-hides the whole panel — every shell keeps running untouched, and (1.21.1) so does every mounted
-terminal view itself: collapsing no longer disposes and re-spawns each xterm, it only hides them, so
-scroll position and whatever a full-screen program (`vim`, a TUI) had painted survive a collapse and
-re-expand instead of being reconstructed from the scrollback ring. Re-open it via the same button
-(now reading EXPAND), any project's `TERM` cell, the header terminal icon, or the OPEN popup's
-**In-App Terminal** item. The event log stack's own collapse is unchanged — it still hides by
-unmounting.
+**CLOSE** (the panel header's one right-side button, replacing the old chevron-only affordance) hides the whole panel — every shell keeps running untouched, and (1.21.1) so does every mounted terminal view itself: collapsing no longer disposes and re-spawns each xterm, it only hides them, so scroll position and whatever a full-screen program (`vim`, a TUI) had painted survive a collapse and re-expand instead of being reconstructed from the scrollback ring. Re-open it via the same button (now reading EXPAND), any project's `TERM` cell, the header terminal icon, or the OPEN popup's **In-App Terminal** item. The event log stack's own collapse is unchanged — it still hides by unmounting.
 
-**The `TERM` cell's two badges**, honestly labelled by what they can and cannot know:
+**The `TERM` cell's two badges** (the header's global terminal button carries the same two, see "External `Terminal.app` sessions" below), honestly labelled by what they can and cannot know:
 
-- **Top (cyan, red if one has exited)** — how many in-app tabs exist in that project's group right
-  now. Turns red the moment any one of them has exited; the count itself does not change (a dead
-  shell is still a tab until you close it or a new command respawns it).
-- **Bottom (slate)** — how many **external** `Terminal.app` windows/tabs are standing in that
-  project's directory **right now**. A live count, not a tally: open a window and it rises, close
-  that window and it falls back within a tick.
+- **Top (cyan, red if one has exited)** — how many in-app tabs exist in that project's group right now. Turns red the moment any one of them has exited; the count itself does not change (a dead shell is still a tab until you close it or a new command respawns it).
+- **Bottom (slate)** — how many **external** `Terminal.app` windows/tabs are standing in that project's directory **right now**. A live count, not a tally: open a window and it rises, close that window and it falls back within a tick.
 
-  *Mechanism.* The host runs `count_external_terminals` (`src-tauri/src/system.rs`) every **5 s**,
-  plus once ~800 ms after the app itself opens a Terminal window so the badge moves immediately.
-  One scan is three short local subprocesses: `pgrep -x Terminal` (absent → every count is 0), one
-  `ps -axo pid=,ppid=` to walk Terminal's whole descendant tree, and one batched
-  `lsof -a -d cwd -p <pids> -F pn` (capped at 200 pids) for their working directories. The counting
-  rule is **roots of matching subtrees**: a process counts only if its cwd is the project directory
-  *and its parent's cwd is not* — so one window running `npm run dev` (shell → npm → node, all
-  sharing the cwd) counts once, not three times, without having to know which executables are
-  shells. Match is **exact** in v1: a shell in `<project>/src` does not count.
+  *Mechanism.* The host runs `count_external_terminals` (`src-tauri/src/system.rs`) every **5 s**, plus once ~800 ms after the app itself opens a Terminal window so the badge moves immediately. One scan is three short local subprocesses: `pgrep -x Terminal` (absent → every count is 0), one `ps -axo pid=,ppid=` to walk Terminal's whole descendant tree, and one batched `lsof -a -d cwd -p <pids> -F pn` (capped at 200 pids) for their working directories. The counting rule is **roots of matching subtrees**: a process counts only if its cwd is the project directory *and its parent's cwd is not* — so one window running `npm run dev` (shell → npm → node, all sharing the cwd) counts once, not three times, without having to know which executables are shells. Match is **exact** in v1: a shell in `<project>/src` does not count.
 
-  Host-only. The scan needs `Terminal.app`'s process tree, which exists only on the Mac; the
-  companion never polls, it receives the snapshot (`externalTermCounts`) over the state mirror.
+  Host-only. The scan needs `Terminal.app`'s process tree, which exists only on the Mac; the companion never polls, it receives the snapshot (`externalTermCounts`) over the state mirror.
 
 **Moved / removed vs. the old single-panel version:**
 
@@ -89,30 +60,14 @@ unmounting.
 
 Two caps, checked in this order, and both reachable from a paired phone as well as the Mac:
 
-- **Per group: 5 tabs.** The number a user is meant to have in their head — five shells is a working
-  set, and wanting a sixth genuinely means closing one. Hitting it in a project's group shows *"This
-  project already has 5 terminal tabs. Close one to open another."*; hitting it in the global group
-  shows the same wording for *"The global group"*. The `TERM` cell's tooltip and the tab strip's `+`
-  button both show the live count against this number, and the `+` dims (never hides) once the group
-  is full.
-- **Global ceiling: 16 tabs, across every group.** A resource guard, not a budget — it is never shown
-  ahead of time, and the app is built so it should essentially never fire in normal use: it is derived
-  from the per-group cap (`1 + 3 × 5`, the one tab the global group can never drop below, plus three
-  full project groups) so that a *third* project's terminal never refuses on its very first tap. Hit
-  it anyway and the message is *"All 16 terminal tabs are in use. Close one in any group first."* —
-  the only refusal that says "in any group", because it is the only one whose cause can genuinely be
-  sitting in a group the screen is not showing.
+- **Per group: 5 tabs.** The number a user is meant to have in their head — five shells is a working set, and wanting a sixth genuinely means closing one. Hitting it in a project's group shows *"This project already has 5 terminal tabs. Close one to open another."*; hitting it in the global group shows the same wording for *"The global group"*. The `TERM` cell's tooltip and the tab strip's `+` button both show the live count against this number, and the `+` dims (never hides) once the group is full.
+- **Global ceiling: 16 tabs, across every group.** A resource guard, not a budget — it is never shown ahead of time, and the app is built so it should essentially never fire in normal use. It happens to equal `1 + 3 × 5`, but that arithmetic stopped being load-bearing on 2026-07-28 when the global group's own permanent one-tab minimum was removed (see below) — it is simply a generous shared ceiling, not a guarantee that any particular number of full groups can always coexist. Hit it anyway and the message is *"All 16 terminal tabs are in use. Close one in any group first."* — the only refusal that says "in any group", because it is the only one whose cause can genuinely be sitting in a group the screen is not showing.
 
-A refusal in one group never touches any other group's tabs. Opening a project's `TERM` cell that
-turns out to be full also no longer strands you looking at that empty group: the screen returns to
-whichever group you were in before the tap.
+A refusal in one group never touches any other group's tabs. Opening a project's `TERM` cell that turns out to be full also no longer strands you looking at that empty group: the screen returns to whichever group you were in before the tap.
 
-Raising the global ceiling costs real resources rather than being a UI preference: each live tab is a
-shell process plus three raw OS threads and up to 128KB of scrollback ring buffer, so 16 tabs is
-roughly 48 threads and 2MB of resident buffer at the absolute ceiling — see
-`docs/arch/terminal-stack.md` for the full derivation, including why the per-tab scrollback ring was
-halved (256KB to 128KB) alongside the phone's replay budget being raised, and why a phone joining with
-every group full used to never fully catch up rather than simply disconnecting.
+Tapping a project's `TERM` cell (or the header's global icon) again while an earlier tap for that same group is still waiting on the Mac to answer is now a no-op instead of opening another tab (1.22.0) — a companion tap gets nothing back until the Mac's reply mirrors over, so with no visible feedback, a second tap (or an impatient few) each used to open its own tab. Mechanism: `docs/arch/terminal-stack.md`'s "Companion add is fire-and-forget" section.
+
+Raising the global ceiling costs real resources rather than being a UI preference: each live tab is a shell process plus three raw OS threads and up to 128 KiB of scrollback ring buffer, so 16 tabs is roughly 48 threads and 2 MiB of resident buffer at the absolute ceiling — see `docs/arch/terminal-stack.md` for the full derivation, including why the per-tab scrollback ring was halved (256 KiB to 128 KiB) alongside the phone's replay budget being raised, and why a phone joining with every group full used to never fully catch up rather than simply disconnecting.
 
 ## In-App Terminal from the OPEN popup
 
@@ -130,9 +85,11 @@ The dock is now two independently collapsible stacks — `TerminalStack` above `
 
 **Resync.** `pushScrollback()` became `pushAllScrollbacks(to)` in `src/services/ptyBridge.js`: on a fresh companion connect or a scheduled resync, it calls `pty_list_tabs()` then replays every tab's scrollback, not just tab 0's — the same congestion that forces a resync would otherwise leave every tab past the first silently un-replayed on the device that just reconnected. The companion-join path passes the joining device's id so only that phone receives the replay; the host's own congestion-recovery path still broadcasts, because that hole exists in every companion's byte stream at once and there is no single device to address it to.
 
-**Frontend.** `usePtyTerminal(term, tabId)` takes a tab id and filters both its Tauri-event and companion-frame listeners by it (`if ((payload.tab_id ?? 0) !== tabId) return`) — one listener is wired per mounted `TerminalView`, and every one of them otherwise receives every tab's bytes. Liveness is now three-state (`'unknown' | true | false`): a fresh mount or a failed invoke sets `'unknown'`, never `false`, so a terminal never paints its header red before a real exit is confirmed — the "TERMINAL - EXITED" false-positive flash this replaced. `terminalTabsStore.js` holds the shared tab list (mirrored, since which tabs exist is genuinely cross-screen state); `useTerminalTabs.js` holds the per-screen liveness map and "has this tab ever been shown" bookkeeping locally, never mirrored, since each screen's PTY event stream is its own. Closing a tab (`closeTerminalTab`) splices exactly one entry and tells the backend to drop that one tab's session + scrollback (`drop_tab_state`) — every other tab's shell and scrollback survive untouched. The floor is now **scope-aware** (see "Groups" above): the global group never drops below one tab, but a project's group may empty out entirely — it simply stops existing until its `TERM` cell is clicked again.
+**Frontend.** `usePtyTerminal(term, tabId)` takes a tab id and filters both its Tauri-event and companion-frame listeners by it (`if ((payload.tab_id ?? 0) !== tabId) return`) — one listener is wired per mounted `TerminalView`, and every one of them otherwise receives every tab's bytes. Liveness is now three-state (`'unknown' | true | false`): a fresh mount or a failed invoke sets `'unknown'`, never `false`, so a terminal never paints its header red before a real exit is confirmed — the "TERMINAL - EXITED" false-positive flash this replaced. `terminalTabsStore.js` holds the shared tab list (mirrored, since which tabs exist is genuinely cross-screen state); `useTerminalTabs.js` holds the per-screen liveness map and "has this tab ever been shown" bookkeeping locally, never mirrored, since each screen's PTY event stream is its own. Closing a tab (`closeTerminalTab`) splices exactly one entry and tells the backend to drop that one tab's session + scrollback (`drop_tab_state`) — every other tab's shell and scrollback survive untouched. No group has a floor (2026-07-28; see "Groups" above) — a project's group, or the global group, may empty out entirely, and simply stops existing until its `TERM` cell (or the header's global terminal icon) is clicked again. Global used to be pinned to a permanent one-tab minimum; that turned out to be the actual mechanism behind phantom "Shell" tabs piling up across dev-server HMR reloads, not just an inconsistency, so it was removed rather than patched.
 
 **On-screen key row.** Now companion-only (`showKeyRow: !isHost` in `usePtyTerminal.js`) — the Mac has a real keyboard and never needs it; only a paired phone does.
+
+**Tab titles follow the shell, or rename by hand (2026-07-28).** A chip's title is no longer always "Shell" — xterm parses the shell's own OSC 0/2 title escapes (the same ones an external `Terminal.app` window's titlebar already shows) and retitles the chip automatically (`TerminalView.vue`'s `onTitleChange`). Right-click a chip to rename it directly in place; a manual rename sticks (`terminalTabsStore.js`'s `titleLocked`) and is never overwritten by the shell's own retitling afterward. No context-menu component was added for this — right-click enters the rename directly, since renaming is the only action a menu here would ever offer.
 
 ### Restart cannot orphan or clobber a session
 
@@ -158,17 +115,39 @@ One slim row of icon buttons covers what a phone keyboard cannot produce:
 
 Sticky Shift (`armShift`/`shiftArmed` in `usePtyTerminal.js`, same armed styling as Ctrl) modifies the *next key-row button press*, not the next typed character — unlike Ctrl, which arms the next real keystroke via `term.onData`. Tab becomes `\x1b[Z` (backtab — Claude Code and other AI agents use Shift+Tab constantly for mode cycling); the arrows become CSI modifier-2 sequences (`\x1b[1;2A/B/C/D` for Up/Down/Right/Left). Enter/Esc and anything else pass through unaffected, and Shift disarms after any key-row press regardless of whether that key had a shift variant. Ctrl and Shift are independent: Ctrl still only ever affects a following typed letter, so "Ctrl wins for letters" is unchanged, and arming both before tapping Tab sends Shift+Tab.
 
-Directly under the key row sits a compose input: a plain `<input type="text">` + a send button. Typing (voice dictation, the Telex IME) composes there instead of keystroke-at-a-time into xterm; Enter or the send button does `sendRaw(text + '\r')`, clears the field, and keeps focus in it so consecutive commands can be typed without re-tapping.
+Directly under the key row sits a compose input: a plain `<input type="text">` + a send button. Typing (voice dictation, an IME) composes there instead of keystroke-at-a-time into xterm; Enter or the send button does `sendRaw(text + '\r')`, clears the field, and keeps focus in it so consecutive commands can be typed without re-tapping. Enter is ignored while `isComposing` (or `keyCode === 229`), so the Enter that COMMITS an IME syllable does not fire a half-finished line.
 
-Deliberately not there: function keys, Alt/Meta, a configurable key row. None are load-bearing for driving a build or a dev shell.
+### Vietnamese input (1.22.0): a direct-typing guard for OpenKey-style engines, the compose row for true IMEs
 
-## Font zoom (1.22.0)
+The row used to be phone-only; it now renders on every surface. The original 1.22.0 rationale blamed the terminal's no-local-echo design (T-5) for all Vietnamese breakage — the full investigation (`docs/research/terminal-vietnamese-ime-root-cause-jul27.md`) split it into two distinct causes:
 
-`⌘+` / `⌘-` / `⌘0` while focus is inside the terminal (`dock/TerminalStack.vue`'s existing keydown handler, keyed on `e.code` so `⌘⇧=` and the numeric keypad both work) change the terminal's text size and reset it. On a phone the same three appear as buttons **inside the key row**, which already renders only where there is no physical keyboard — so "buttons on the browser, shortcuts on the Mac" needs no second condition and costs the Mac window no pixels.
+- **OpenKey/EVKey (CGEventTap key-injection engines — most Vietnamese devs).** These are not IMEs: they retype each syllable as a burst of raw synthetic keydowns (N backspaces + corrected chars), open-loop, no composition events. The PTY consumes keys in order, so echo latency alone could never corrupt this — what actually broke it is that **WKWebView tags the synthetic keys `keyCode 229`**, shunting them into xterm 5.5.0 IME-fallback paths that drop, collapse (a backspace burst → one `DEL`), or duplicate them (upstream, unfixed: xterm.js #5887/#5894). Chromium doesn't do the tagging, which is the entire "VS Code works" difference. Handled for direct typing by `src/composables/useWkImeGuard.js` (v2) — a capture-phase guard that classifies each keydown (229-tagged direct key, or the multi-char unicode-string carrier OpenKey uses to send a whole corrected syllable as one event) and gives every delivery shape exactly one claimant — the full matrix is in `docs/research/terminal-vietnamese-ime-root-cause-2.md` (v1, which vetoed xterm's keypress without covering all delivery shapes, made the loss worse and is post-mortemed there). Diagnostics are pull-based, not console-based: the guard records every key/composition/input event it sees into a bounded ring, always, and the Web Inspector console reads it back with `__akiIme.status()` / `.tail(40)` / `.dump()` (returned values, so no log filter or late-attached inspector can hide them; `__akiIme.help()` lists the calls). `__akiIme.debug(true)` additionally mirrors to the console live. `localStorage['aki-ime-guard']='off'` + reopening the tab disables the guard — that is the A/B that attributes a behaviour change to it. The earlier console-flag-only design produced no evidence at all on the Mac; why, and the rule that replaced it, are in the research doc's §Crux.
+- **True composing IMEs (macOS's built-in Vietnamese input, marked-text preedit).** These do fight both WKWebView's broken composition-event delivery (xterm.js #5704) and the no-local-echo screen the preedit is drawn against. For them, composing in a plain `<input>` — where the IME owns the text and gets synchronous feedback — and sending only the finished line remains the supported path. That is why the compose row is on the Mac too.
+
+## Panel size and font zoom (1.22.0)
+
+Two VS Code affordances, split by which surface has a keyboard:
+
+- **Panel height** — drag the dock's top edge (`.dock-splitter` in `AppConsole.vue`, pointer events + `setPointerCapture` so one path covers trackpad, mouse and touch), clamped to 15–85% of the window; double-click resets to 40%. **MAXIMIZE** in the stack header goes to `calc(100vh - var(--titlebar-h))`, leaving the app header on screen. State: `src/composables/useDockLayout.js` — per-screen (a composable, not a `src/store/*.js` module, so `mirror.js` never discovers it: a phone dragging its dock must not resize the Mac's layout). The dragged height persists to `localStorage`; **MAXIMIZE deliberately does not**, because a dock restored maximised on launch hides the project table and reads as broken rather than configured. Both the splitter and the MAXIMIZE button hide themselves when both stacks are collapsed, where CSS owns the height and the gesture would be inert.
+- **Font size** — `⌘+` / `⌘-` / `⌘0` while focus is inside the terminal (`dock/TerminalStack.vue`'s existing keydown handler, keyed on `e.code` so `⌘⇧=` and the numeric keypad both work). On a phone the same three appear as buttons **inside the key row**, which already renders only where there is no physical keyboard — so "buttons on the browser, shortcuts on the Mac" needs no second condition and costs the Mac window no pixels.
 
 State is a **scale**, not a pixel size (`src/composables/useTerminalFont.js`), because the two surfaces still disagree about the GRID: on the Mac the size is authoritative and cols/rows follow it (zoom changes cols/rows, exactly like VS Code), while on a phone the host alone owns cols/rows (T-4). It is per-device and deliberately not mirrored — how big text should be is a fact about the screen you are looking at, not the project.
 
-Text size is native and 100% independent per screen: both surfaces compute font size identically, `BASE_FONT_SIZE (12px) × terminalFontScale`, clamped to `[4, 18]px` scaled by the zoom factor — a phone no longer measures its viewport and scales its font to fit the Mac's shared grid, so the same 100% renders the same size on both, and zooming one screen never affects the other. `⌘+`/`⌘-`/`⌘0` on the Mac and the phone's zoom buttons each move only their own device's scale.
+### Terminal font size — native, not fitted to the grid (1.22.0)
+
+Before this, a companion's font size was *derived*: `TerminalView.vue`'s `scaleFontToFit` measured the host's cols × rows grid against the phone's own viewport and picked whatever size made that grid fill the screen, then multiplied the result by `terminalFontScale`. At the same 100% zoom, that meant the Mac and a companion never actually agreed on text size — the companion's "100%" was however big its screen happened to make the shared grid, not the same 12px base the Mac renders.
+
+`scaleFontToFit` is removed. Both surfaces now compute font size identically: `BASE_FONT_SIZE (12px) × terminalFontScale`, clamped to `[4, 18]px` scaled by the zoom factor. `terminalFontScale` was already per-device (localStorage, never mirrored — see above), so this was already local state; the fix is that it is no longer *derived from* the other screen's grid or viewport in the first place. `⌘+`/`⌘-`/`⌘0` on the Mac and the phone's zoom buttons each move only their own device's scale, and 100% now means the same rendered size on both.
+
+## External `Terminal.app` sessions (1.22.0)
+
+A button in the stack header opens a modal listing every external `Terminal.app` window/tab: the directory it stands in, its pid/tty, how long it has run, and **what is executing inside it** — which is the actual question ("which window has the dev server?"). It cannot show their screens; no app can read another application's window contents, and the MVP does not pretend otherwise.
+
+`list_external_terminals` (`src-tauri/src/system.rs`) shares `scan_terminal_tree` with the badge's `count_external_terminals` — same `pgrep`/`ps`/`lsof` pipeline, same subtree-root definition of "one session", so the modal can never list a different number than the badge above it claims. On demand only, never on the badge's 5s cadence: it returns a command line per process, which has no business being polled. Host-only, and deliberately absent from `COMPANION_ALLOWED_COMMANDS` — the scan reads the Mac's process table, so on a phone the button would only ever open an error; it hides itself there instead.
+
+**The global terminal button (the `TERM` column header icon) now carries both badges too (2026-07-28)** — previously silent on both, unlike every per-project button. Top (cyan) is the global group's own in-app tab count, same rule as a project's. Bottom (slate) is `count_external_terminals_global` (`src-tauri/src/system.rs`), a live count of external `Terminal.app` sessions standing in **none** of the listed projects' directories — the complement of every project's own bottom badge, computed as one pass over the same scan (`unowned = all subtree roots − roots matching any listed project`), so a session can never be silently missing from both a project's badge and the global one, nor double-subtracted if two projects share a directory. This is the adoption-only reading: it answers "where is this session's cwd right now", not "which project's button was clicked to open it" — a window that `cd`s away from a project after opening, or an SSH session opened from a project's popup, is not (yet) attributed back to that project. Spawn-origin tracking that would close that gap is designed in `docs/plan/terminal-ownership-model.md` but deferred — it needs an on-Mac AppleScript read-back behavior this environment cannot verify, and the adoption-only badge is the documented MVP floor if that mechanism never lands.
+
+Deliberately not there: function keys, Alt/Meta, a configurable key row. None are load-bearing for driving a build or a dev shell.
 
 ## How the bytes move
 
@@ -212,3 +191,5 @@ Compilation is no longer open: `cargo check` is clean and `cargo test --lib` pas
 Still open: a `npm run build:rmud` linking `portable-pty` against `universal-apple-darwin` (the unit suite builds only the dev profile for this host), and all live behaviour — typing from each side, `Ctrl+C` via the sticky modifier, resize propagation, scrollback replay after a phone lock, and whether a real `npm run build`'s output volume stays inside the coalescing thresholds. Two things specifically want eyes because they are timing properties no unit test here covers: that a keystroke echoed less than 20ms after the previous flush now appears immediately (the flusher thread added in 1.20.0), and that quitting the app really does take an `ssh` session down with it.
 
 Specific to the fix round: the terminal must fill the panel at first open **and** after collapsing and re-expanding the dock; `exit` must show `[process exited]` on both screens; RESTART must give a working prompt (and be safe to double-tap); CLEAR must leave the phone's screen empty too, and stay empty after the phone reconnects; OPEN must land `Terminal.app` in the directory you last `cd`'d to, which is the one path here that depends on `/usr/sbin/lsof` output format.
+
+Specific to 1.22.0, all runtime-only: that DIRECT Vietnamese typing with OpenKey now survives the in-app terminal (`useWkImeGuard.js` — type `tieengs vieejt as` fast and slow; A/B with `localStorage['aki-ime-guard']='off'`; watch events via `aki-ime-debug='1'` in Safari Web Inspector) and that plain fast English typing did not regress under the guard; that Vietnamese input through the compose row actually behaves (both OpenKey and macOS's built-in Vietnamese input, and that Enter mid-composition commits rather than sends); that the splitter tracks the pointer without the dock oscillating, and that the terminal re-fits to each new height; that `⌘+`/`⌘-` change cols/rows on the Mac and that the phone's zoom buttons change its own font size independently, with no grid re-fit or oscillation; and that `list_external_terminals` parses real `ps -axo pid=,ppid=,tty=,etime=,command=` output (the column walk is unit-tested against synthetic lines, not against the real `ps`).

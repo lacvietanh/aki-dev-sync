@@ -23,11 +23,13 @@
         </div>
         <div class="grid-header-cell col-terminal" title="TERMINAL">
           <button
-            class="th-term-btn"
+            class="btn-cell-trigger th-term-btn"
+            :class="{ 'is-live': globalTabCount > 0 }"
             @click="openGlobalTerminal()"
-            title="Global terminal (not tied to a project)"
+            :title="globalTermTitle"
             aria-label="Global terminal">
             <i class="fa-solid fa-terminal"></i>
+            <TerminalCountBadges :tabs="globalTabCount" :external="externalTermGlobalCount" :exited="globalHasExited" />
           </button>
         </div>
         <div class="grid-header-cell col-action" title="OPEN / SELECT-PUSH">ACTION</div>
@@ -258,7 +260,10 @@
                 <fieldset :disabled="!syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
                   <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                     <div class="dry-group-left">
-                      <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0">
+                      <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0"
+                                       :delete-armed="p.delete_on_push && !isStop(p, 'push')"
+                                       delete-side="left"
+                                       delete-title="Mirror: files on the remote that are not here will be deleted.">
                         <button
                                 class="btn-tech btn-tech-push"
                                 :class="{
@@ -287,7 +292,9 @@
                     </div>
 
                     <div class="dry-group-right">
-                      <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0">
+                      <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0"
+                                       :delete-armed="p.delete_on_pull && !isStop(p, 'pull')"
+                                       delete-title="Mirror: files here that are not on the remote will be deleted.">
                         <button
                                 class="btn-tech btn-tech-pull"
                                 :class="{
@@ -333,17 +340,18 @@
 </template>
 
 <script setup>
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
-import { useTerminalTabs } from '../composables/useTerminalTabs';
+import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs';
 import { useAppWindow } from '../composables/useAppWindow';
 import { refreshIdeAvailability } from '../composables/useProjectConfig';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
-import { Toast, ideAvailability, iconTimestamp, isRefreshing, pokeExternalTermCounts } from '../store/projectStore';
+import { Toast, ideAvailability, iconTimestamp, isRefreshing, pokeExternalTermCounts, externalTermGlobalCount } from '../store/projectStore';
+import { terminalTabs, MAX_TABS_PER_SCOPE } from '../store/terminalTabsStore';
 import { projectIconSrc } from '../utils/projectIcon';
 import { copyText } from '../utils/clipboard';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
@@ -353,12 +361,29 @@ import { requestSync, requestSelectPush, setDryRun, requestRefresh, reorderProje
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import TerminalCell from './TerminalCell.vue';
+import TerminalCountBadges from './terminal/TerminalCountBadges.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
 
 const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
 const { openGlobalTerminal, openProjectTerminal } = useTerminalTabs();
+
+// Global-scope mirror of TerminalCell.vue's own badge computeds (docs/plan/terminal-ownership-model.md
+// §7 — Rule-of-Three found only two real instances, so this stays inline rather than spawning a
+// TerminalButton abstraction for two call sites; `TerminalCountBadges` itself is already scope-agnostic).
+const globalTabCount = computed(() => terminalTabs.value.filter((t) => t.projectId == null).length)
+const globalHasExited = computed(() => terminalTabs.value.some((t) => t.projectId == null && tabAlive.value[t.id] === false))
+const globalTermTitle = computed(() => {
+  const lines = [
+    globalTabCount.value === 0
+      ? 'Global terminal (not tied to a project)'
+      : `Global terminal, ${globalTabCount.value} of ${MAX_TABS_PER_SCOPE} tabs in this group`,
+  ]
+  if (externalTermGlobalCount.value > 0) lines.push(`${externalTermGlobalCount.value} external Terminal window(s) not standing in any listed project`)
+  if (globalHasExited.value) lines.push('A shell in this group has exited')
+  return lines.join('\n')
+})
 // `false` on a companion — see openReportHtml.
 const { nativeWindow } = useAppWindow();
 
@@ -839,11 +864,14 @@ function formatTimeAgo(timestamp) {
 
 /* The TERM header label IS the global-terminal button (R1) — same colour/size as the other header
    labels, no button chrome until hover. */
+/* Now the exact same `.btn-cell-trigger` (main.css) every per-project TerminalCell.vue button uses
+   — same box, same badge anchoring, so the header instance cannot visually drift from the cell
+   instance the way the old icon-only `.th-term-btn` did (its glyph-sized box put .cell-badge's
+   -6px corner overlay squarely on top of the icon instead of outside it). Only override: sit
+   centered in the header cell rather than carrying the row cell's own margin/spacing, if any. */
 .th-term-btn {
-  background: none; border: 0; padding: 0; cursor: pointer;
-  color: inherit; font-size: 12px; line-height: 1;
+  margin: 0 auto;
 }
-.th-term-btn:hover { color: var(--accent-cyan); }
 
 .grid-header-cell:first-child,
 .grid-row-cell:first-child {

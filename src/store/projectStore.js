@@ -38,6 +38,12 @@ export const projectRuntime = ref({})
 // and its process table exist only on the Mac).
 export const externalTermCounts = ref({})
 
+/** Sibling of `externalTermCounts`: how many external `Terminal.app` sessions belong to NONE of the
+ *  listed projects — the global-terminal header button's bottom badge
+ *  (`docs/plan/terminal-ownership-model.md` §5, adoption-only MVP floor). Same mirroring, same
+ *  re-derived-never-remembered discipline; see `useExternalTerminals.js`. */
+export const externalTermGlobalCount = ref(0)
+
 /** Ask the host to re-scan shortly after it opened an external Terminal, so the badge moves at once
  *  instead of on the next 5s tick. An `action()` because a companion's OPEN → Terminal must poke the
  *  HOST's scan (the companion has no process table of its own); the new count returns via the mirror.

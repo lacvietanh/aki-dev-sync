@@ -28,12 +28,14 @@ export const MAX_TABS_PER_SCOPE = 5
  *  side and by a unit test on the Rust side (pty.rs's `constant_guards`), because the Rust and JS
  *  build graphs don't share a constant.
  *
- *  DERIVED, not picked: `1 + 3 × MAX_TABS_PER_SCOPE` — the one global tab `closeTerminalTab`
- *  guarantees can never be closed, plus three project groups each at their full per-scope cap. The
- *  binding requirement is that a project group's FIRST tab must never be refused; a ceiling that
- *  cannot seat a third group refuses on an empty group's first tap, for a reason living in a group
- *  the screen is not showing. It is a resource guard, never a budget the user manages — which is why
- *  no tooltip in this app ever states it ahead of time. */
+ *  A GENEROUS SHARED CEILING, not a per-scope multiple with a binding derivation. It happens to
+ *  equal `1 + 3 × MAX_TABS_PER_SCOPE`, a story that used to rest on the global group's old permanent
+ *  one-tab minimum (removed 2026-07-28 — see `closeTerminalTab`'s doc comment) and is no longer
+ *  load-bearing: nothing now enforces "at most 3 project groups plus global" as a real limit, so a
+ *  4th or 5th full group can in principle hit this ceiling before its own per-scope cap. Accepted:
+ *  it is a resource guard, never a budget the user manages — which is why no tooltip in this app
+ *  ever states it ahead of time, and why a rare edge here is fine where a silent falsehood in the
+ *  comment would not be. */
 export const MAX_TABS = 16
 
 /** THREE refusals, three problems — deliberately not one parameterised string. Used by BOTH checkers
@@ -53,7 +55,7 @@ export const GLOBAL_GROUP_TAB_LIMIT_MESSAGE = `The global group already has ${MA
  *  different causes, and a name that blurs them is how a future edit picks the wrong one. */
 export const CEILING_TAB_LIMIT_MESSAGE = `All ${MAX_TABS} terminal tabs are in use. Close one in any group first.`
 
-/** [{ id: number, title: string, projectId: string|null, cwd: string|null }] */
+/** [{ id: number, title: string, projectId: string|null, cwd: string|null, titleLocked?: boolean }] */
 export const terminalTabs = ref([])
 
 /** PER-SCREEN — which tab THIS screen is looking at, exactly like logStore.activeLogProjectId.
@@ -104,19 +106,20 @@ export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ titl
 })
 
 /** Closes ONE tab — named by its scope (Regression Guard - Multi-entity State, CLAUDE.md). Splices
- *  EXACTLY one entry. The floor is scope-aware, not "never below one tab" globally: the GLOBAL
- *  group (projectId == null) must always keep at least one tab (the dock's floor — initTerminalTabs
- *  seeds it and adoptTabs feeds it); a PROJECT group may go to zero — the group simply stops
- *  existing until its terminal button is clicked again. Also tells the host PTY to forget that
- *  tab's session+scrollback (`pty_close_tab` REQUIRES its tab_id argument on purpose — see
+ *  EXACTLY one entry. No floor, on any scope, global included: every group may go to zero — it
+ *  simply stops existing until its terminal button is clicked again (`openScopeTerminal`).
+ *  Global used to be pinned to a permanent one-tab minimum, enforced here and re-seeded at boot by
+ *  `initTerminalTabs`; that special case is gone (2026-07-28) — it was the source of phantom
+ *  "Shell" tabs piling up in the global group across dev-server HMR reloads (each reload re-ran the
+ *  boot seed against a `pty_list_tabs()` call that could race the backend, adding one more tab it
+ *  had no way to tell was already accounted for) and made global behave differently from every
+ *  project group for no benefit anyone asked for. Also tells the host PTY to forget that tab's
+ *  session+scrollback (`pty_close_tab` REQUIRES its tab_id argument on purpose — see
  *  usePtyTerminal.js's `close()` doc comment). */
 export const closeTerminalTab = action('terminalTabsStore.closeTerminalTab', (id) => {
   const list = terminalTabs.value
-  const tab = list.find((t) => t.id === id)
-  if (!tab) return
-  const isGlobal = !tab.projectId
-  if (isGlobal && list.filter((t) => !t.projectId).length <= 1) return
   const idx = list.findIndex((t) => t.id === id)
+  if (idx === -1) return
   terminalTabs.value = [...list.slice(0, idx), ...list.slice(idx + 1)]
   // The list removal stays OPTIMISTIC (the chip disappears on the click, which is what a close
   // should feel like), but a failed invoke leaves a live shell with no chip to reach it — an orphan
@@ -125,6 +128,25 @@ export const closeTerminalTab = action('terminalTabsStore.closeTerminalTab', (id
     console.error('[terminalTabsStore] pty_close_tab failed', e)
     Toast.fire({ icon: 'error', title: 'Tab closed, but its shell may still be running on the Mac' })
   })
+})
+
+/** Renames ONE tab (Regression Guard - Multi-entity State, CLAUDE.md: scoped to the one id, never a
+ *  wholesale rewrite of the list). Two callers, one function:
+ *  - `auto: true` — the shell itself retitled (xterm's OSC title, TerminalView.vue's
+ *    `onTitleChange`). Skipped once the user has manually renamed the tab (`titleLocked`), so a
+ *    chosen name does not get clobbered by the next `cd` or prompt redraw.
+ *  - `auto: false` (default) — the user renamed it via the tab strip's context menu. Always wins,
+ *    and locks the tab against further auto-titling. */
+export const renameTerminalTab = action('terminalTabsStore.renameTerminalTab', (id, title, { auto = false } = {}) => {
+  const trimmed = (title || '').trim()
+  if (!trimmed) return
+  const idx = terminalTabs.value.findIndex((t) => t.id === id)
+  if (idx === -1) return
+  const tab = terminalTabs.value[idx]
+  if (auto && tab.titleLocked) return
+  const next = { ...tab, title: trimmed }
+  if (!auto) next.titleLocked = true
+  terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
 })
 
 /** HOST BOOT ONLY: seed the tab list from `pty_list_tabs()` so a frontend reload re-adopts shells
