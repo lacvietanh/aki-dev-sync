@@ -7,20 +7,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 #### Added
 - **Claude Code Cleanup, a new item in the app-icon menu**, showing what Claude Code's own files cost you in disk and letting you tick exactly what goes. Every individual path has its own checkbox; the group checkbox above it is just a select-all for that group and shows a dash when only part of it is picked. The groups are Account (signs you out), Data (transcripts, prompt history, file-undo snapshots), Agent memory, and Cache (safe, regenerates), plus a **Kept** group listed with sizes but no checkboxes, so what survives is visible rather than promised. **Preserved**: your skills, hooks, `settings.json` and `CLAUDE.md` files are not deletable through this feature at all - the app can only touch paths it names literally in code, and the window sends categories rather than file paths, so nothing outside that list is expressible. Anything the app does not recognise is likewise kept, and shown under "Unlisted" rather than swept up. Agent memory *is* deletable, but only from its own group, so clearing chat history can never take it along by accident: clearing transcripts empties each project folder around its `memory/`, and ticking memory as well removes both and the now-empty folder. Sizes use the same units Finder does. Mac window only, not available from a paired phone.
+
+- **A project's tasks and notes now live in the project itself**, at `<project>/.akidevsync/notes.json`, instead of inside the app's own settings file. They travel with the repo: clone it on another Mac, or open it with someone else, and the task list is there. The file always carries an `about` link back to this app's repo so anyone who finds it knows what wrote it, and it is pretty-printed so a change shows up as a readable diff. Existing projects are moved across automatically on the next launch, once, and the app never writes tasks or notes back into its settings file afterwards. **Preserved**: the file already in a repo always wins over the app's old copy, so a checkout that someone else already filled in is never overwritten; and if a project's folder cannot be read right now, that project is skipped entirely and retried next launch rather than migrated against a directory we could not see.
+- **`.akidevsync/` is now excluded from both PUSH and PULL by default**, on existing projects as well as new ones. This is the guard that makes the location above safe: a mirroring PULL deletes anything the remote does not have, and the remote does not have this folder - without the exclude, one PULL would erase the project's task list. It is also not pushed, since the notes field invites credentials and the server has no use for them.
+- **A project whose folder is not reachable now says so instead of showing an empty task list.** An unmounted external drive, a renamed folder, or a `notes.json` left with git conflict markers all make the TASKS button dim, drop its count badges (rather than showing `0`, which would claim there are no tasks), and open a read-only modal naming the reason. Nothing can be typed and nothing can be saved in that state - which is the point: the old behaviour would have shown an empty note and then saved that emptiness over the real one. Reopening the modal re-reads the file, so plugging the drive back in is enough to recover.
+- **Terminal panel: drag the top edge to resize it, or MAXIMIZE it**, like VS Code. Double-click the edge to go back to the default height. The height you drag to is remembered between launches; MAXIMIZE deliberately is not, so the app never starts up with the project list hidden.
 - **Terminal font zoom**: `⌘+` / `⌘-` to change the terminal's text size and `⌘0` to reset, while the terminal has focus. On a phone the same three controls appear as buttons in the key row (showing the current percentage), since there is no `⌘` key there; on the Mac they stay keyboard-only, so the panel spends no space on them. Text size is native and 100% independent per screen: a phone no longer measures its viewport and scales its font to fit the Mac's shared grid, so the same 100% renders the same size on both, and zooming one screen never affects the other.
+- **The type-a-line input under the terminal now appears on the Mac too**, not only on the phone. It is the supported path for macOS's own Vietnamese input (a true composing IME): the terminal draws nothing until the Mac's shell echoes it back, and a composing IME's preedit cannot live on a screen that lags a round-trip behind. Composing the line in a real text field and sending it whole side-steps that entirely. (OpenKey-style engines turned out to be a different problem with a direct fix - see Fixed below.)
+- **New button in the terminal panel header: what your `Terminal.app` windows are doing.** It lists each open window or tab, the project folder it is standing in, how long it has been there, and what is running inside it right now - which is the thing you actually want when you are looking for "the window with the dev server in it". It cannot show you their screens; the app has no way to read another application's window.
+- **PUSH and PULL now show a small red trash icon when that direction runs with `--delete`.** `delete_on_pull` defaults on for a new project, `delete_on_push` defaults off, so the more destructive direction was previously armed with nothing on the button saying so. It disappears entirely for an unarmed direction, and hides while that button reads STOP so a running sync never looks like the deletion is what's happening. Kept deliberately subtle - a bare glyph on a faint white chip, sized under the count badge - and split to opposite corners (PUSH bottom-left, PULL bottom-right) so neither points at the shared DRY toggle between them.
+- **A terminal tab's title now follows the shell**, the same way an external `Terminal.app` window's titlebar already does - `cd`-ing or running a command retitles its chip automatically. Right-click a chip to rename it by hand instead; a manual rename sticks and is never overwritten by the shell's own retitling afterward.
+- **The global terminal button (the TERMINAL column's header icon) now shows both count badges** the per-project terminal buttons already had: the cyan in-app tab count for the global group, and a slate badge for every external `Terminal.app` window not standing in any listed project. Previously silent on both. The external count is the adoption-only reading (a window's cwd exact-matches a listed project or it doesn't) - it does not yet track *which* project a window was launched from if it later `cd`s away or runs over SSH; that spawn-origin tracking is designed in `docs/plan/terminal-ownership-model.md` but deferred, since it needs an on-Mac AppleScript behavior this environment cannot verify.
 
 #### Changed
+- **Terminal tabs are now ~3x wider and show a truncated title plus an always-visible close button**, instead of an icon-only square that only revealed its close-x on hover of the already-active tab. Tabs flex to share the strip's width evenly (min 84px, max 160px) rather than staying pinned to a fixed square.
+- **The companion's synthetic key row (Esc/Tab/Ctrl/arrows + zoom) no longer wraps to a second line on a narrow phone.** Padding and gaps were tightened and the row now scrolls horizontally instead of wrapping, so it stays flat and predictable at phone width.
 - **The terminal tab limit is now per project instead of one shared number.** Each project's group (and the global group) allows up to 5 tabs before it asks you to close one; a separate ceiling of 16 tabs total still exists underneath as a resource guard and is not shown ahead of time, since normal use should essentially never reach it. The TERM cell's tooltip and the tab strip's + button now show the live count against the 5 tab limit, so the cap is visible before you hit it, not only after. **Preserved**: a refusal in one project's group leaves every other group's tabs completely untouched.
 - **Collapsing the terminal panel no longer throws away your open shells.** It hides the panel instead of tearing down and rebuilding every terminal on reopen, so scroll position and whatever a full-screen program (vim, a running TUI) had drawn survive the round trip. **Preserved**: the event log panel's own collapse is unchanged and still works the old way.
 
 #### Fixed
+- **On a phone, opening the on-screen keyboard no longer covers the terminal's compose input.** The whole app shell was sized in the CSS `vh` unit, which iOS Safari does not shrink when the keyboard opens (only the visual viewport does) - so a fixed-height layout never adjusted and the keyboard simply covered whatever sat at its bottom edge, which was always the compose input the user had just tapped. A `visualViewport`-driven CSS variable now feeds every `vh`-based height (`main.css`, the dock's height/maximize math) and tracks the keyboard on iOS Safari, iOS "Add to Home Screen", and Android Chrome alike; the Mac host window is unaffected since it has no on-screen keyboard to react to. Real-device confirmation across all three phone surfaces is still outstanding (`docs/plan/terminal-mobile-keyboard-viewport.md`).
+- **Typing Vietnamese with OpenKey/EVKey directly into the in-app terminal no longer drops or half-deletes characters.** The cause was never this app's no-echo design: those engines retype a syllable as a burst of raw synthetic keystrokes, and Tauri's WKWebView tags every one of them as an "IME key" (keyCode 229), which routes them into xterm.js 5.5.0 fallback code that loses keys in fast bursts and collapses a run of backspaces into a single delete (upstream and still unfixed there - xterm.js #5887/#5894; Chromium does no such tagging, which is why VS Code was fine all along). A capture-phase guard now claims those keystrokes before xterm's fallbacks can touch them - including OpenKey's habit of sending a whole corrected syllable as ONE synthetic key event, which xterm used to truncate to its first character. **Preserved**: real composing IMEs (macOS's built-in Vietnamese input, Japanese, Chinese) are untouched - the guard stands down whenever an actual composition is active, and the compose row remains their path; plain English typing takes the normal xterm path exactly as before. Escape hatches, from the Web Inspector console: `localStorage['aki-ime-guard']='off'` disables the guard on the next tab, and `__akiIme.status()` / `__akiIme.tail()` report what the guard actually saw and did. Root-cause record: `docs/research/terminal-vietnamese-ime-root-cause-jul27.md` and `-2.md` (the delivery-shape matrix the guard implements).
+- **A project with no icon no longer asks for one on every render.** The app already knows which projects have an icon and which do not, but it built a URL for them either way, so each icon-less project produced a failed request in the browser's network log every time the list drew. That message came from WebKit's own network layer, not from the app, so it could never be silenced from the app's side - the fix is simply to stop asking a question whose answer was already in hand. The Rust fallback that served those requests is unchanged.
 - **A phone joining the remote terminal no longer wipes the screen of a phone already using it.** Reconnecting or pairing a second device used to send its own catch-up data to every paired phone, clearing and resizing terminals that were mid-command elsewhere. That catch-up now goes only to the screen that needs it, which also covers two browser tabs open on the same phone.
 - **Two screens issuing terminal or remote commands at the same time could silently swap results.** Each page counted its own requests starting from 1, so an in-flight call from one could resolve with another's answer instead of its own, a wrong result that looked correct rather than failing visibly. Replies are now addressed back to the one screen that asked, so two browser tabs on a single phone stay separate too.
 - **A phone joining when every terminal group was full used to never fully catch up**, only ever receiving a partial history that kept being retried and never completed. The per-tab history size and the amount a phone can be sent at once are now sized so a full catch-up fits with room to spare.
 - **Tapping a project's terminal button when that project's group was already full no longer strands you looking at an empty group.** The view now stays on the group you were already in when the new tab is refused.
 - **A dead terminal's message no longer points at a RESTART button that was removed in an earlier release.** It now just tells you to press any key to start a new shell.
 - **A terminal tab refused on a paired phone now tells you so**, instead of the tap silently doing nothing while the phone waits on a claim that used to expire without saying why.
+- **The What's New window no longer claims Remote Control has no command allowlist.** That was true before 1.21.0 and was fixed in it; the description was never updated, so the app was telling users about a hole it had already closed.
 - **Tapping a project's or the global group's terminal button more than once before the Mac answers no longer opens one tab per tap.** A companion's tap sends the request and gets nothing back until the Mac's reply mirrors over, with no visible feedback that it was already on its way — so a second tap, or an impatient few, each opened its own tab. A tap for a group that is already waiting on an earlier one is now a no-op. Known residual gap, not closed by this fix: two browser tabs open on the same paired phone do not share this guard, since each tab is a separate page with its own state (`docs/arch/terminal-stack.md`).
+- **The global terminal group no longer piles up phantom "Shell" tabs across dev-server reloads.** The global group used to be pinned to a permanent one-tab minimum, re-seeded at boot whenever the frontend's tab list came back empty; that seed could race the backend's own re-adoption of an already-live shell, and each race added one more tab nothing could tell was already accounted for. The floor is removed entirely - the global group is now symmetric with every project's group: it opens on demand and can close down to zero tabs, exactly like a project's group already could.
 
 ### [1.21.0] - 2026-07-27
 
@@ -158,7 +175,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - Statusline Apply is more reliable: each CLI installs and reports independently, settings are patched before scripts are written, and every Apply keeps a timestamped backup of what was there before.
 - Project status now recovers correctly after the Mac sleeps; the Claude Code profile display updates immediately instead of at next launch.
 - `~/.zshrc` is no longer overwritten as empty when it can't be read due to a permissions problem — only a genuinely missing file counts as empty.
-- A slow phone can no longer grow the Mac's memory without bound; terminal output past a 2MB per-phone budget is dropped (confirmations and state updates never are).
+- A slow phone can no longer grow the Mac's memory without bound; terminal output past a 2 MiB per-phone budget is dropped (confirmations and state updates never are). *(Budget raised to 8 MiB in 1.21.1.)*
 - Keystrokes sent quickly from one screen now arrive at the shell in the order typed.
 - Drag-reordering projects from a phone is now documented as not working (the gesture emits nothing on touch) instead of implied to work.
 - A remote path containing `$(...)` could still run as a command during the Upload conflict-check; it now goes through the same shared quoting function as every other path.
@@ -1040,60 +1057,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ### [1.2.2] - 2026-06-23
 
 #### Fixed
-- **Push/Pull buttons no longer falsely light up on startup**: `hasPendingPush` and
-  `hasPendingPull` are now initialized to `null` instead of `undefined`. Buttons
-  display a visually distinct "checking" state (very faint outline) while the background
-  sync-status check is in flight, then resolve to fully lit (pending changes) or muted
-  (clean) once the live fetch completes. No disk caching needed - background fetch is
-  the source of truth.
+- **Push/Pull buttons no longer falsely light up on startup**: `hasPendingPush` and `hasPendingPull` are now initialized to `null` instead of `undefined`. Buttons display a visually distinct "checking" state (very faint outline) while the background sync-status check is in flight, then resolve to fully lit (pending changes) or muted (clean) once the live fetch completes. No disk caching needed - background fetch is the source of truth.
 
 ---
 
 ### [1.2.1] - 2026-06-23
 
 #### Changed
-- **IPC open consolidation**: replaced 7 thin Rust wrapper commands (`open_url`, `open_local_dir`,
-  `open_in_terminal`, `open_antigravity_app`, `open_ide_local`, `open_ide_remote` vscode arms,
-  `open_remote_terminal`) with a single `macos_open(args: Vec<String>)` command. JS now builds
-  the arg list directly (`['-a', 'Visual Studio Code', path]`, `[url]`, etc.) - macOS `open` is
-  called once per intent, no Rust matching required. Subprocess-only cases (AppleScript SSH
-  terminal, `antigravity-ide --remote`) remain in Rust as `open_remote_subprocess`.
+- **IPC open consolidation**: replaced 7 thin Rust wrapper commands (`open_url`, `open_local_dir`, `open_in_terminal`, `open_antigravity_app`, `open_ide_local`, `open_ide_remote` vscode arms, `open_remote_terminal`) with a single `macos_open(args: Vec<String>)` command. JS now builds the arg list directly (`['-a', 'Visual Studio Code', path]`, `[url]`, etc.) - macOS `open` is called once per intent, no Rust matching required. Subprocess-only cases (AppleScript SSH terminal, `antigravity-ide --remote`) remain in Rust as `open_remote_subprocess`.
 - **Removed dead command** `open_remote_terminal` - no callers since the hub refactor (v1.2.0).
-- **Test coverage updated**: `validate_ssh_host` tests replaced by equivalent `validate_remote_host`
-  tests (the active validation function); `applescript_escape` tests unchanged.
+- **Test coverage updated**: `validate_ssh_host` tests replaced by equivalent `validate_remote_host` tests (the active validation function); `applescript_escape` tests unchanged.
 
 ---
 
 ### [1.2.0] - 2026-06-23
 
 #### Added
-- **Project Open Hub**: hovering over the project icon now reveals a floating menu with three
-  sections - LOCAL (Finder, Terminal, VSCode, VSCode Insiders, Antigravity IDE), REMOTE SSH
-  (SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote), and LINKS (Open
-  Production Site). IDE items are automatically greyed out when the application is not installed,
-  checked once per session via the new `check_ide_availability` Tauri command.
-- **`check_ide_availability` command**: detects presence of VSCode, VSCode Insiders, and
-  Antigravity in `/Applications/` on macOS. Result cached in-session - only one IPC call per
-  app lifecycle regardless of how many projects are hovered.
-- **`open_ide_local` command**: unified local-open replacing separate `open_in_vscode` and
-  `open_antigravity_app` commands. Accepts `ide_name` (`finder` | `terminal` | `vscode` |
-  `vscode_insiders` | `antigravity`) and opens the given path with the matching application.
-- **`open_ide_remote` command**: opens a remote project via SSH. Terminal uses AppleScript,
-  VSCode/Insiders use the `vscode://vscode-remote/ssh-remote+<host><path>` URL scheme,
-  Antigravity uses `antigravity-ide --remote`. Host validated to allow `user@host` format.
-- **Remote Git URL in Git modal**: the project's remote git URL is now shown as a clickable link
-  inside the Git modal, replacing the icon that was previously shown next to the project name.
+- **Project Open Hub**: hovering over the project icon now reveals a floating menu with three sections - LOCAL (Finder, Terminal, VSCode, VSCode Insiders, Antigravity IDE), REMOTE SSH (SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote), and LINKS (Open Production Site). IDE items are automatically greyed out when the application is not installed, checked once per session via the new `check_ide_availability` Tauri command.
+- **`check_ide_availability` command**: detects presence of VSCode, VSCode Insiders, and Antigravity in `/Applications/` on macOS. Result cached in-session - only one IPC call per app lifecycle regardless of how many projects are hovered.
+- **`open_ide_local` command**: unified local-open replacing separate `open_in_vscode` and `open_antigravity_app` commands. Accepts `ide_name` (`finder` | `terminal` | `vscode` | `vscode_insiders` | `antigravity`) and opens the given path with the matching application.
+- **`open_ide_remote` command**: opens a remote project via SSH. Terminal uses AppleScript, VSCode/Insiders use the `vscode://vscode-remote/ssh-remote+<host><path>` URL scheme, Antigravity uses `antigravity-ide --remote`. Host validated to allow `user@host` format.
+- **Remote Git URL in Git modal**: the project's remote git URL is now shown as a clickable link inside the Git modal, replacing the icon that was previously shown next to the project name.
 
 #### Changed
-- **ACTIONS column cleaned up**: removed standalone Terminal (`>_`) and VSCode buttons - these
-  actions are now available through the Project Open Hub. Remaining actions: GIT, PUSH SPECIAL,
-  PUSH/DRY/PULL group, LOG, CONFIG.
-- **Path labels no longer clickable**: local path and remote path text in the project row no
-  longer have click handlers. All open actions are consolidated into the hub.
-- **Production URL moved to hub**: the globe icon (Open Production Site) is removed from the
-  project name row and now lives in the hub's LINKS section.
-- **Remote path display**: the remote path label is now hidden when a project has no `remote_host`
-  configured, eliminating the empty `:` display.
+- **ACTIONS column cleaned up**: removed standalone Terminal (`>_`) and VSCode buttons - these actions are now available through the Project Open Hub. Remaining actions: GIT, PUSH SPECIAL, PUSH/DRY/PULL group, LOG, CONFIG.
+- **Path labels no longer clickable**: local path and remote path text in the project row no longer have click handlers. All open actions are consolidated into the hub.
+- **Production URL moved to hub**: the globe icon (Open Production Site) is removed from the project name row and now lives in the hub's LINKS section.
+- **Remote path display**: the remote path label is now hidden when a project has no `remote_host` configured, eliminating the empty `:` display.
 - **Rebranding**: Project officially renamed to **Aki Dev Sync**. All UI texts, window titles, and documentation have been updated to reflect the new identity.
 - **Build Process**: Output release binaries (e.g. `.dmg`) are now automatically renamed post-build using `scripts/rename-artifacts.js` to match the standard format `Aki-DevSync-vX.X.X-arch.dmg` (Kebab-case with version) for better DX and URL distribution without spaces.
 - **Source of Truth Versioning**: Updated `tauri.conf.json` to read the app version directly from `package.json` via `"version": "../package.json"`. Resolved the previous bug where compiled files were incorrectly labeled as v1.1.1.
@@ -1103,86 +1093,50 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ### [1.1.3] - 2026-06-23
 
 #### Added
-- **Background Refresh**: a new settings panel (⚙ icon next to REFRESH) lets you configure
-  independent auto-refresh intervals for Git Status, Remote Diff, and Agent Usage. Settings
-  persist across sessions; set any interval to 0 to disable that type.
-- **REFRESH button** (renamed from RELOAD): triggers all three refresh types simultaneously  - 
-  git status, remote diff, and agent usage - in one click. Grouped with the ⚙ settings icon
-  as a paired control.
+- **Background Refresh**: a new settings panel (⚙ icon next to REFRESH) lets you configure independent auto-refresh intervals for Git Status, Remote Diff, and Agent Usage. Settings persist across sessions; set any interval to 0 to disable that type.
+- **REFRESH button** (renamed from RELOAD): triggers all three refresh types simultaneously - git status, remote diff, and agent usage - in one click. Grouped with the ⚙ settings icon as a paired control.
 
 #### Changed
-- **`BaseModal` component**: extracted shared modal scaffolding (overlay, drag handle, header,
-  close button, ESC listener, backdrop click) into a single reusable `BaseModal.vue`. All 5 modals
-  now use it, removing ~80 lines of duplicated boilerplate each.
-- **Log panel ESC**: pressing Escape in an expanded log panel now collapses the panel and returns
-  to the Global Event Log in one keystroke. Has no effect when a modal is open - modal ESC takes
-  priority.
-- **Push button dirty state**: the Push button no longer stays permanently lit when `sync_git` is
-  enabled. Directory entries (e.g. `.git/`) are now filtered from the rsync dry-run change count  - 
-  previously a routine `git status` call was enough to flip the button to dirty.
-- **UI language**: completed a full English pass - all remaining Vietnamese strings replaced across
-  `AppHeader`, `UsageProgressBar`, `useSsh.js`, and `useSync.js`.
-- **Version display**: `package.json` is now the single source of truth for the app version. Version
-  is injected at build time via Vite (same pattern as build date), replacing a `getVersion()` call
-  that read from `Cargo.toml` and required manual updates in two separate files to stay in sync.
+- **`BaseModal` component**: extracted shared modal scaffolding (overlay, drag handle, header, close button, ESC listener, backdrop click) into a single reusable `BaseModal.vue`. All 5 modals now use it, removing ~80 lines of duplicated boilerplate each.
+- **Log panel ESC**: pressing Escape in an expanded log panel now collapses the panel and returns to the Global Event Log in one keystroke. Has no effect when a modal is open - modal ESC takes priority.
+- **Push button dirty state**: the Push button no longer stays permanently lit when `sync_git` is enabled. Directory entries (e.g. `.git/`) are now filtered from the rsync dry-run change count - previously a routine `git status` call was enough to flip the button to dirty.
+- **UI language**: completed a full English pass - all remaining Vietnamese strings replaced across `AppHeader`, `UsageProgressBar`, `useSsh.js`, and `useSync.js`.
+- **Version display**: `package.json` is now the single source of truth for the app version. Version is injected at build time via Vite (same pattern as build date), replacing a `getVersion()` call that read from `Cargo.toml` and required manual updates in two separate files to stay in sync.
 
 #### Fixed
-- **Agent Usage - percentage display**: fixed floating-point noise rendering values like
-  `7.000000000000001%`. Percentages are now always displayed as whole numbers.
-- **Agent Usage - stale indicator**: the "Stale" badge now reflects the actual current age of
-  the cached data rather than its age at the time of the last fetch. The badge also no longer
-  flickers (disappearing and reappearing) on every refresh cycle.
-- **Agent Usage - auto-setup on first use**: when no usage cache is found on a remote host,
-  the app now automatically provisions the host in the background - patching Claude Code's
-  statusline hook so rate-limit data is cached on every session. No manual setup required.
+- **Agent Usage - percentage display**: fixed floating-point noise rendering values like `7.000000000000001%`. Percentages are now always displayed as whole numbers.
+- **Agent Usage - stale indicator**: the "Stale" badge now reflects the actual current age of the cached data rather than its age at the time of the last fetch. The badge also no longer flickers (disappearing and reappearing) on every refresh cycle.
+- **Agent Usage - auto-setup on first use**: when no usage cache is found on a remote host, the app now automatically provisions the host in the background - patching Claude Code's statusline hook so rate-limit data is cached on every session. No manual setup required.
 - **Modal backdrop**: clicking outside any modal now dismisses it, equivalent to pressing Cancel.
-- **Git modal stale data**: the Git modal now fetches fresh data from the backend on every open
-  instead of showing a potentially stale cached snapshot. A loading state is shown while in flight.
-- **Project Config preset notification**: the success toast after applying a preset was silently
-  failing due to an unresolved reference. Now fires correctly.
-- **Push Special modal width**: the modal was rendering at 800px instead of the intended 600px
-  after the `BaseModal` refactor. Corrected by passing the right container class.
+- **Git modal stale data**: the Git modal now fetches fresh data from the backend on every open instead of showing a potentially stale cached snapshot. A loading state is shown while in flight.
+- **Project Config preset notification**: the success toast after applying a preset was silently failing due to an unresolved reference. Now fires correctly.
+- **Push Special modal width**: the modal was rendering at 800px instead of the intended 600px after the `BaseModal` refactor. Corrected by passing the right container class.
 
 ---
 
 ### [1.1.2] - 2026-06-23
 
 #### Added
-- **`ignore_hook_errors` flag** on `SyncHooks`: when enabled, a hook that exits non-zero emits a
-  `[WARN]` log line and allows the sync to continue instead of aborting. Useful for post-sync
-  scripts that may fail on the first push (e.g. directory not yet created on remote, optional
-  install steps). Toggle available in Project Config modal under the hooks section.
-- **Sync status indicator**: Push/Pull buttons now show visual state based on real-time rsync dry-run
-  checks. Buttons appear muted (`.btn-sync-clean`) when no changes are pending in that direction.
-  Background polling every 60s keeps status fresh. New `check_sync_status` Tauri command runs
-  `rsync --dry-run` for both directions and returns `has_local_changes` / `has_remote_changes`.
+- **`ignore_hook_errors` flag** on `SyncHooks`: when enabled, a hook that exits non-zero emits a `[WARN]` log line and allows the sync to continue instead of aborting. Useful for post-sync scripts that may fail on the first push (e.g. directory not yet created on remote, optional install steps). Toggle available in Project Config modal under the hooks section.
+- **Sync status indicator**: Push/Pull buttons now show visual state based on real-time rsync dry-run checks. Buttons appear muted (`.btn-sync-clean`) when no changes are pending in that direction. Background polling every 60s keeps status fresh. New `check_sync_status` Tauri command runs `rsync --dry-run` for both directions and returns `has_local_changes` / `has_remote_changes`.
 
 #### Fixed
-- **Titlebar sacred boundary**: Modal overlays now start at `top: 42px` instead of `top: 0` to never
-  cover the custom titlebar drag region. Added `--titlebar-h` CSS variable and documentation at
-  `docs/ref/titlebar-sacred-boundary.md` to enforce the rule for all future fixed-position UI.
+- **Titlebar sacred boundary**: Modal overlays now start at `top: 42px` instead of `top: 0` to never cover the custom titlebar drag region. Added `--titlebar-h` CSS variable and documentation at `docs/ref/titlebar-sacred-boundary.md` to enforce the rule for all future fixed-position UI.
 
 ---
 
 ### [1.1.1] - 2026-06-23
 
 #### Changed
-- Internal: major DRY pass on `sync.rs` (`spawn_and_stream`, `run_hook_phase`, `build_rsync_args`),
-  `git.rs` (`git_capture`), `ssh.rs` (`ssh_config_path`), `projects.rs` (`validate_path_segment`).
+- Internal: major DRY pass on `sync.rs` (`spawn_and_stream`, `run_hook_phase`, `build_rsync_args`), `git.rs` (`git_capture`), `ssh.rs` (`ssh_config_path`), `projects.rs` (`validate_path_segment`).
 - `get_project_files` moved from `projects.rs` to `git.rs` (co-located with all git porcelain parsing).
 - All `scripts/` now fully external (`get-claudecode-usage.sh` extracted); `include_str!` at every call site.
 
 #### Fixed
-- **UI freeze on Push/Pull**: `run_sync` restored to `async fn` with internal `spawn_blocking` for
-  subprocess work. Previous patch incorrectly changed it to a sync `fn`, causing Tauri's IPC
-  dispatch to block briefly before returning a Promise to JS - making the UI appear frozen on every
-  sync action. Now truly non-blocking end-to-end.
-- **Corrupt projects.json now surfaces error**: previously a bad JSON file silently returned an
-  empty project list, making users think all projects were lost. Now returns a clear error message.
-- **Remote mkdir failure now caught**: SSH `mkdir -p` exit status was not checked - a permission
-  error would silently proceed into rsync and fail with a confusing message. Now reported immediately.
-- **JSON field injection** in agent usage now uses `serde_json::Value` instead of string
-  concatenation, safe for values containing quotes.
+- **UI freeze on Push/Pull**: `run_sync` restored to `async fn` with internal `spawn_blocking` for subprocess work. Previous patch incorrectly changed it to a sync `fn`, causing Tauri's IPC dispatch to block briefly before returning a Promise to JS - making the UI appear frozen on every sync action. Now truly non-blocking end-to-end.
+- **Corrupt projects.json now surfaces error**: previously a bad JSON file silently returned an empty project list, making users think all projects were lost. Now returns a clear error message.
+- **Remote mkdir failure now caught**: SSH `mkdir -p` exit status was not checked - a permission error would silently proceed into rsync and fail with a confusing message. Now reported immediately.
+- **JSON field injection** in agent usage now uses `serde_json::Value` instead of string concatenation, safe for values containing quotes.
 
 ---
 
