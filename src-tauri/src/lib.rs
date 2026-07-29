@@ -7,6 +7,7 @@ mod logger;
 mod project_notes;
 mod projects;
 mod pty;
+mod remote_shell;
 mod ssh;
 mod statusline;
 mod sync;

@@ -58,14 +58,14 @@ Pool quota Pro/Max **dùng chung** cho claude.ai web, Desktop, mobile, Cowork v�
 
 ## 2. Local hay remote - cùng một script
 
-`run_interpreter_timeout()` (`agent_usage.rs`) kiểm tra `is_local_host(host)` (`"local"`/`"localhost"`) rồi rẽ nhánh:
+`run_remote_shell()` (`remote_shell.rs`) kiểm tra `is_local_host(host)` (`"local"`/`"localhost"`) rồi rẽ nhánh:
 
-| | Claude Code (`Interpreter::Sh`) | Antigravity (`Interpreter::Node`) |
+| | Claude Code (`Shell::Plain`) | Antigravity (`Shell::Plain`) |
 |---|---|---|
-| Local | `sh` | `zsh -lc node` (login shell - resolve `node` qua nvm) |
-| Remote | `ssh host sh` | `ssh host node` |
+| Local | `sh` | `sh` |
+| Remote | `ssh host sh` | `ssh host sh` |
 
-Cùng một script POSIX chạy được cả hai đường vì nó chỉ đụng `$HOME`.
+Cùng một script POSIX running over `sh` / `ssh host sh` cho cả hai agent.
 
 Ở tầng UI, mỗi cặp `(agent, máy)` là một **UsageMonitor** riêng, định danh `agentId@host` và tạo qua `usageMonitorRegistry.getMonitor()`. Vì máy là một nửa định danh chứ không phải một tham số đổi được, "Claude Code trên host A" và "Claude Code trên host B" là hai thực thể tồn tại song song - theo dõi hai host cùng lúc, mỗi host một tài khoản. Mỗi monitor có công tắc riêng, lưu theo id trong `store/usageMonitorStore.js`, độc lập với sync check - xem `docs/feat/sync-check-and-usage-switches.md` và `docs/plan/done/usage-monitor-entity-refactor.md`.
 
@@ -212,7 +212,8 @@ Format: `[YYYYMMDD.HHMMSS.mmm][TAG] event key=value`.
 
 | File | Vai trò |
 |---|---|
-| `src-tauri/src/agent_usage.rs` | IPC, funnel spawn, preamble, timeout |
+| `src-tauri/src/remote_shell.rs` | Script transport funnel (`run_remote_shell`), SSH lock, timeouts |
+| `src-tauri/src/agent_usage/` | Submodules for IPC commands, probe result types, and agent probes |
 | `scripts/get-claudecode-usage.sh` | Đọc cache + auth, phát hiện STALE_RESET |
 | `scripts/provision-claudecode.sh` | Vá statusLine hook |
 | `scripts/lint-remote-scripts.js` | Gác bashism trong script gửi qua SSH |

@@ -20,10 +20,11 @@ import { dirname, join } from 'node:path';
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
 // Scripts that are include_str!'d in Rust and piped to `ssh host sh`.
-// Keep in sync with `include_str!(... .sh)` calls in src-tauri/src/agent_usage.rs.
+// Keep in sync with `include_str!(... .sh)` calls in src-tauri/src/agent_usage/ and remote_shell.rs.
 const REMOTE_SCRIPTS = [
   'get-claudecode-usage.sh',
   'provision-claudecode.sh',
+  'get-antigravity-usage.sh',
 ];
 
 // Runtime bashisms that `dash -n` (syntax-only) will NOT flag but that break dash.

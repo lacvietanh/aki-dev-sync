@@ -12,36 +12,35 @@ Instead of making external network requests to Google Cloud Code APIs (which ret
 
 ## Flow of Action
 
-Quota retrieval is executed by the self-contained Node.js script [get-antigravity-usage.js](../../scripts/get-antigravity-usage.js) compiled directly into the Tauri Rust backend.
+Quota retrieval is executed by the self-contained POSIX shell script [get-antigravity-usage.sh](../../scripts/get-antigravity-usage.sh) compiled directly into the Tauri Rust backend.
 
 ```mermaid
 sequenceDiagram
     participant Rust as Tauri Rust Backend
-    participant Node as Node (Login Shell)
+    participant Shell as POSIX sh (sh / ssh)
     participant OS as OS Process Table (ps)
-    participant LSOF as lsof (Port Scan)
+    participant PORT as lsof / ss / netstat (Port Scan)
     participant AG as Antigravity Language Server
     
-    Rust->>Node: Pipe get-antigravity-usage.js contents
-    Node->>OS: Execute 'ps auxww'
-    OS-->>Node: Process list stdout
-    Node->>Node: Match language_server binary & extract CSRF token / seed port
-    Node->>LSOF: Execute 'lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>'
-    LSOF-->>Node: List of listening TCP ports
-    Node->>AG: Probe ports (POST /GetUnleashData with CSRF)
-    AG-->>Node: Response 200/401 (identifies active port)
+    Rust->>Shell: Pipe get-antigravity-usage.sh contents
+    Shell->>OS: Execute 'ps auxww'
+    OS-->>Shell: Process list stdout
+    Shell->>Shell: Match language_server binary & extract CSRF token / seed port
+    Shell->>PORT: Execute 'lsof' (macOS) or 'ss'/'netstat' (Linux)
+    PORT-->>Shell: List of listening TCP ports
+    Shell->>AG: Probe ports via curl (POST /GetUnleashData with CSRF)
+    AG-->>Shell: Response 200/401 (identifies active port)
     
     rect rgb(20, 30, 40)
-        Note over Node,AG: Parallel Connect RPC Query
-        Node->>AG: Query GetUserStatus (POST)
-        Node->>AG: Query RetrieveUserQuotaSummary (POST)
-        AG-->>Node: Return email & plan status
-        AG-->>Node: Return detailed groups/buckets quota
+        Note over Shell,AG: Connect RPC Queries
+        Shell->>AG: Query GetUserStatus (POST via curl)
+        Shell->>AG: Query RetrieveUserQuotaSummary (POST via curl)
+        AG-->>Shell: Return email & plan status
+        AG-->>Shell: Return detailed groups/buckets quota
     end
 
-    Node->>Node: Standardize JSON output (Merge email & quota summary)
-    Node-->>Rust: Print JSON output to stdout
-    Rust-->>Rust: Parse & return to Vue Frontend
+    Shell->>Rust: Output delimited JSON frames (|||AGPROC|||...)
+    Rust->>Rust: Parse frames & serialize for Vue Frontend
 ```
 
 ### 1. Process Detection (Multi-Instance: IDE & CLI agy)
@@ -69,12 +68,12 @@ sequenceDiagram
 
 ## Signed-Out Detection & usage-flow stability (fixed 2026-07-03, 1.9.1)
 
-When the user is signed out while the language server is still running, `GetUserStatus` does **not** reliably return `401`. On the current Antigravity build it returns **HTTP `500`** with body `{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` - the server answers, but has no session, so the account-derived model config is nil (empirically verified on this machine after a real logout). The earlier code assumed signed-out == `401`, so it mislabeled this as a generic connection failure. `get-antigravity-usage.js` still uses `Promise.allSettled` to keep the raw rejection reason, and now classifies **both** signatures as signed-out:
+When the user is signed out while the language server is still running, `GetUserStatus` does **not** reliably return `401`. On the current Antigravity build it returns **HTTP `500`** with body `{"code":"unknown","message":"GetCascadeModelConfigData() is nil"}` - the server answers, but has no session, so the account-derived model config is nil (empirically verified on this machine after a real logout). The earlier code assumed signed-out == `401`, so it mislabeled this as a generic connection failure. `get-antigravity-usage.sh` sends raw RPC responses inside delimited frames,
 
 - classic: HTTP `401` / `unauthorized`
 - current: HTTP `500` matching `is nil` / `GetCascadeModelConfigData`
 
-**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100% stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing: `agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set `error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là `usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort monitor and the frontend already has a graceful null path (show the last cached account), so `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason at debug level. Result: transient/offline/signed-out states show the cached account (or the "Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
+**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100% stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing: `get_antigravity_usage` in `agent_usage/antigravity.rs` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set `error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là `usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort monitor and the frontend already has a graceful null path (show the last cached account), so `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason at debug level. Result: transient/offline/signed-out states show the cached account (or the "Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
 
 ## Log Out (fixed 2026-07-03, v1.9.x → next)
 
@@ -98,14 +97,12 @@ These values are **not** Electron `safeStorage` ciphertext - they carry no `v10`
 
 ## Execution Environment
 
-The script is compiled into the Tauri binary via `include_str!` inside [agent_usage.rs](../../src-tauri/src/agent_usage.rs) and executed in a shell using `zsh -lc node` for local targets or `ssh <host> node` for remote targets. 
-
-Using a login shell (`-lc`) is mandatory for desktop GUI execution since GUI apps launched from Finder/Launchpad do not inherit the user's shell profile `PATH` where Node.js is located.
+The script is compiled into the Tauri binary via `include_str!` inside [antigravity.rs](../../src-tauri/src/agent_usage/antigravity.rs) and executed in a POSIX shell using `sh` for local targets or `ssh <host> sh` for remote targets.
 
 ## Stability and Performance
 
 * **Zero Plugin Conflicts:** By targeting the native binary `language_server_` names rather than a generic `"language-server"` search, it avoids false matches with external plugins like Volar's `language-server.js` or `cssServerMain` which run inside the Antigravity IDE directory.
-* **Zero CLI Startup Latency:** Directly executing our raw JS script avoids spawning `npx` or updating the NPM package index over the network, bringing detection time down to ~40ms.
+* **Zero CLI Startup Latency:** Directly executing our raw shell script avoids spawning `npx` or Node interpreters over remote shells, bringing detection time down to ~40ms.
 
 ---
 
@@ -180,8 +177,9 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 ## Related Source Files
 
 - **Backend / Scripts:**
-  - [get-antigravity-usage.js](../../scripts/get-antigravity-usage.js) - Node.js script to probe and fetch Connect RPC metrics.
-  - [agent_usage.rs](../../src-tauri/src/agent_usage.rs) - Tauri Rust backend executor command handlers (`logout_antigravity`, `logout_antigravity_cli`).
+  - [get-antigravity-usage.sh](../../scripts/get-antigravity-usage.sh) - POSIX shell script to probe and fetch Connect RPC metrics.
+  - [remote_shell.rs](../../src-tauri/src/remote_shell.rs) - Shared script-transport funnel and SSH lock management.
+  - [agent_usage/](../../src-tauri/src/agent_usage/) - Domain modules for usage IPC handlers, probe result types, and Antigravity/Claude Code probes.
 - **Frontend Stores & Composables:**
   - [usageMonitor.js](../../src/composables/usageMonitor.js) - One monitor entity: poll loop, circuit breaker, wake self-heal, multi-account view state. Its agent and machine are immutable identity.
   - [usageMonitorRegistry.js](../../src/composables/usageMonitorRegistry.js) - Multiton keyed `agentId@host`; two slots naming the same pair share one monitor and one poll.

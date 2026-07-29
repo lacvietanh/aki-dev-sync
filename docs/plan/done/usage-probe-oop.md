@@ -1,6 +1,6 @@
 # WS-C — Usage probe OOP: AG probe to shell, `Interpreter::Node` deleted, `agent_usage.rs` decomposed
 
-Status: planning · Opened 2026-07-27 · Tracker: `docs/plan/backlog-jul27.md` (WS-C) · Owner: Architect
+Status: implemented · Opened 2026-07-27 · Tracker: `docs/plan/backlog-jul27.md` (WS-C) · Owner: Architect
 
 ## 0. Why this exists — the accident being corrected
 

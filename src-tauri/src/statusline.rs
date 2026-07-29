@@ -9,7 +9,7 @@
 // into the other. A default table here would be a second source of truth, which is exactly the
 // drift Phase 2 removed - do not reintroduce one.
 
-use crate::agent_usage::run_remote_script_bounded;
+use crate::remote_shell::run_remote_script_bounded;
 use serde::{Deserialize, Serialize};
 
 /// The script itself, compiled in verbatim. It is a runnable, checked-in reference as well as the
