@@ -17,7 +17,7 @@
 -->
 <template>
   <div class="pty-terminal">
-    <div ref="mountEl" class="pty-terminal-mount"></div>
+    <div ref="mountEl" class="pty-terminal-mount" @click="onMountClick"></div>
     <!--
       `@mousedown.prevent` + `@touchstart.prevent` are the fix for "every tap closes the soft
       keyboard": the default action of both is to move focus to the button, which blurs xterm's
@@ -101,6 +101,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
+import { useTerminalInput } from '../composables/useTerminalInput'
 import { useWkImeGuard } from '../composables/useWkImeGuard'
 import { renameTerminalTab } from '../store/terminalTabsStore'
 import {
@@ -122,6 +123,7 @@ const props = defineProps({
 const mountEl = ref(null)
 let term = null
 let imeGuard = null
+let termInput = null
 let fitAddon = null
 let resizeObserver = null
 const ptyApi = ref(null)
@@ -138,8 +140,8 @@ const ptyApi = ref(null)
 //      WKWebView tags their synthetic keys keyCode 229 and xterm 5.5.0's IME fallback paths drop
 //      or collapse them (upstream, unfixed: xterm.js #5887/#5894). NOT an echo-latency problem —
 //      the PTY consumes keys in order, so nothing open-loop can overshoot. Fixed for direct typing
-//      by useWkImeGuard.js (v2 — v1's post-mortem is the -2 doc; its `__akiIme` console API is
-//      how you tell whether the guard, and which of its channels, is doing the work).
+//      by the old guard (useWkImeGuard.js v2, now the legacy fallback; its `__akiIme` was the
+//      diagnostic — replaced by `__akiTermInput`).
 //   2. TRUE composing IMEs (macOS's built-in Vietnamese input, marked-text preedit) still fight
 //      both WKWebView's composition-event quirks (#5704) and the no-local-echo screen the preedit
 //      is drawn against. For those, composing in a plain `<input>` — where the IME owns the text
@@ -229,6 +231,13 @@ function onKeyClick(k) {
   fireKey(k)
 }
 
+/** Clicking the terminal mount area focuses the overlay textarea so the user can type. The
+ *  textarea has pointer-events:none so mouse clicks go straight through to xterm (selection,
+ *  right-click); this handler is how focus gets set at all on the new input layer. */
+function onMountClick() {
+  if (termInput) termInput.focus()
+}
+
 // Hardcoded to the app's existing dark palette (src/assets/main.css :root tokens) — no theme
 // config UI, per the task brief.
 const THEME = {
@@ -314,11 +323,17 @@ watch(
   (isActive) => {
     if (!isActive) return
     scheduleFit()
-    term?.focus()
+    if (termInput) termInput.focus()
+    else term?.focus()
   }
 )
 
 onMounted(async () => {
+  // Input-layer separation (docs/plan/terminal-ime-input-layer-separation.md):
+  // disableStdin prevents xterm from firing onData from its own textarea. An app-owned
+  // textarea overlay captures all keyboard input and sends committed text via sendRaw().
+  // Escape hatch: localStorage['aki-input-mode']='legacy' reverts to old guard.
+  const useLegacyInput = localStorage.getItem('aki-input-mode') === 'legacy'
   term = new Terminal({
     theme: THEME,
     fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace',
@@ -327,16 +342,25 @@ onMounted(async () => {
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: true,
-    // T-5: no local echo — SSOT is the PTY. xterm's own convertEol/etc. defaults are fine as-is;
-    // "no local echo" here means we never write typed input back into the terminal ourselves
-    // (see usePtyTerminal.js's wireInput — it only ever sends, never writes).
+    disableStdin: !useLegacyInput,
   })
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(mountEl.value)
-  // Direct Vietnamese typing (OpenKey-style engines) under WKWebView — must attach after open()
-  // so term.element exists. See useWkImeGuard.js's header for the whole story.
-  imeGuard = useWkImeGuard(term)
+
+  if (useLegacyInput) {
+    imeGuard = useWkImeGuard(term)
+  } else {
+    // Lazy callback: ptyApi is populated later in this function (usePtyTerminal below), so
+    // we wire through a closure that resolves on demand. The textarea mount happens now
+    // so it can receive keyboard focus immediately; ptyApi is guaranteed set by the first
+    // keystroke because the user cannot type faster than start() resolves.
+    const onData = (text) => ptyApi.value?.sendRaw(text)
+    termInput = useTerminalInput(onData, {
+      getSelection: () => term.getSelection(),
+    })
+    termInput.mount(mountEl.value)
+  }
 
   // The tab strip's chip already gets a title "for free" the same way an OS terminal window does:
   // xterm parses the shell's OSC 0/2 title escapes (every shell emits these on `cd`/running a
@@ -366,13 +390,17 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(scheduleFit)
   resizeObserver.observe(mountEl.value)
 
-  if (props.active) term.focus()
+  if (props.active) {
+    if (termInput) termInput.focus()
+    else term.focus()
+  }
 })
 
 onBeforeUnmount(() => {
   if (fitFrame) cancelAnimationFrame(fitFrame)
   if (resizeObserver) resizeObserver.disconnect()
   if (imeGuard) imeGuard.dispose()
+  if (termInput) termInput.dispose()
   if (term) term.dispose()
 })
 
@@ -388,7 +416,7 @@ defineExpose({
   kill: () => ptyApi.value?.kill(),
   close: () => ptyApi.value?.close(),
   openExternal: () => ptyApi.value?.openExternal(),
-  focus: () => term?.focus(),
+  focus: () => termInput ? termInput.focus() : term?.focus(),
 })
 </script>
 
@@ -426,6 +454,37 @@ defineExpose({
 /* xterm sizes its own canvas/DOM rows against this element; it must actually fill the mount. */
 .pty-terminal-mount :deep(.xterm) {
   height: 100%;
+}
+
+/* Hide xterm's internal textarea — keyboard input goes through the app-owned overlay
+   (useTerminalInput.js). */
+.pty-terminal-mount :deep(.xterm-helper-textarea) {
+  display: none !important;
+}
+
+/* App-owned textarea overlay — invisible but focusable, covers the entire mount area.
+   pointer-events:none so it never intercepts mouse interaction (selection, right-click).
+   Focus is set programmatically via termInput.focus() on mount, tab switch, and click
+   on the mount area. Ref: docs/plan/terminal-ime-input-layer-separation.md */
+.aki-term-input-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  caret-color: transparent;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: transparent;
+  z-index: 1;
+  pointer-events: none;
+  -webkit-appearance: none;
 }
 
 .pty-terminal-mount :deep(.xterm-viewport) {
