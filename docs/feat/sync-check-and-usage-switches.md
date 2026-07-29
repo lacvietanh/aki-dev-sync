@@ -30,7 +30,7 @@ Later changes extended the same shape rather than adding new mechanisms:
 
 Each remote monitor's switch gates that monitor's polling - nothing else, and nothing about any other monitor. A remote monitor is switched exactly like a local one: one entry in `usageMonitorStore`'s map, toggled through `setMonitorEnabled(monitorId(agentId, host), value)`. The monitor object itself (its poll loop, breaker, cache) is `src/composables/usageMonitor.js`, handed out per identity by `src/composables/usageMonitorRegistry.js`'s `getMonitor(agentId, host)`, whose `toggle` closure is what the power icon calls.
 
-Remote AG needed no Rust at all: `get_agent_usage('antigravity', host)` already routes a non-empty host through `run_remote_node_timeout` → `ssh <host> node` (`src-tauri/src/agent_usage.rs`), and `provision_agent_usage` is a no-op for Antigravity.
+Remote AG needed no Rust at all: `get_agent_usage('antigravity', host)` already routes a non-empty host through `run_remote_shell()` → `ssh <host> sh` (`src-tauri/src/remote_shell.rs`), and `provision_agent_usage` is a no-op for Antigravity.
 
 **UI (1.19.0)**: the REMOTE tab now carries the same `AG | CC` tab pair as LOCAL, each tab with its own power icon doubling as that monitor's on/off state - one shared `v-for` in `src/components/AgentUsageSlot.vue`, not two hand-copied templates. The SSH host picker sits beside them, deliberately narrow.
 

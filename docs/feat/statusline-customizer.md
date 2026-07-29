@@ -223,10 +223,10 @@ The two CLIs also report reset time on **different scales**: Claude Code sends a
 
 ## Rollout to hosts
 
-`check_statusline_status` (probe) and `apply_statusline_config` are both `async` commands whose work runs under `spawn_blocking`, with one thread per host - hosts do not wait on each other. Everything goes through `run_remote_script_bounded()` in `agent_usage.rs`, which adds two guarantees on top of the shared execution funnel:
+`check_statusline_status` (probe) and `apply_statusline_config` are both `async` commands whose work runs under `spawn_blocking`, with one thread per host - hosts do not wait on each other. Everything goes through `run_remote_script_bounded()` in `remote_shell.rs`, which adds two guarantees on top of the shared execution funnel:
 
 - **5s local cap / 4s remote self-bound.** The remote shell wraps itself in `timeout`/`gtimeout`/a `perl -e alarm` fallback, so killing the local SSH client cannot leave an unbounded orphan process on the remote host.
-- **One lock per host** (`host_lock()`), taken inside `run_interpreter_timeout()` - so *every* feature that talks to a host (statusline probe, Apply, usage polling, git info) serializes against the others on that host, while different hosts stay fully parallel.
+- **One lock per host** (`host_lock()`), taken inside `run_remote_shell()` — so *every* feature that talks to a host (statusline probe, Apply, usage polling, git info) serializes against the others on that host, while different hosts stay fully parallel.
 
 Each target's installer keeps a one-time `.aki-bak` of the script it replaces. `settings.json` is not backed up: it is patched key-by-key with `jq`, so everything else in the file survives untouched.
 

@@ -107,7 +107,7 @@ Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của 
 
 ---
 
-## Level map hiện tại (`agent_usage.rs`)
+## Level map hiện tại (`agent_usage/` + `remote_shell.rs`)
 
 **GET_USAGE** (mỗi poll tick ~30s):
 - `debug`: start, ssh_result, stdout_preview, parse steps, rate_limits summary, done
@@ -124,6 +124,6 @@ Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của 
 ## Liên quan
 
 - `src-tauri/src/logger.rs` - implementation: `error`, `info`, `debug`, `log_frontend`
-- `src-tauri/src/agent_usage.rs` - caller dọp nhất hiện tại
+- `src-tauri/src/remote_shell.rs` + `src-tauri/src/agent_usage/` — primary callers
 - `src/composables/usageMonitor.js` - frontend logger (`makeLogger`, `ulog`, dual-path); the tag carries the monitor's full identity (`USAGE:claudecode@hostB`) so two hosts are separable in one log
 - `docs/arch/usage-claudecode.md` - §“Cách đọc log khi debug”
