@@ -775,7 +775,16 @@ function formatTimeAgo(timestamp) {
 .projects-table-container {
   width: 100%;
   /* project-info | tasks | git | last-sync | action (OPEN + select-push) | sync (PUSH/DRY/PULL + LOG + gear) */
-  --grid-cols: 12rem 2.5rem 2.5rem 2.5rem 7rem 1fr;
+  /* Extra width goes mostly to the project name/path column (2fr) instead of all of it to sync as
+     before: the name and the two paths are what actually get ellipsis-truncated. Sync keeps a
+     plain 1fr share rather than a fixed px so its real button cluster (PUSH/DRY/PULL + LOG + gear)
+     can never be clipped by a guessed number - a bare `1fr` track is `minmax(auto, 1fr)` under the
+     hood, so its floor is the cluster's own min-content width, not a guessed rem value. An earlier
+     revision spelled this out as `minmax(6rem, 1fr)`, but an explicit length there REPLACES that
+     auto floor instead of adding to it - once the project column above started actually competing
+     for space (2fr), sync was regularly squeezed below 6rem's worth of guessed content, and the
+     buttons/badges inside it visibly crowded and overlapped. */
+  --grid-cols: minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr;
   --grid-gap: 0.5rem;
 }
 
@@ -1294,8 +1303,10 @@ fieldset:disabled .switch {
        GIT column: 2.5rem -> 1.7rem read as too tight against LAST, opened back up to 2.1rem.
        TASKS column trimmed a touch (2.5rem -> 2.1rem) - it's just an icon+badge, was carrying
        more blank space than it needed. Action column (OPEN + select-push) also narrows since
-       OPEN's label now hides at the same 700px breakpoint via u-narrow-hide. */
-    --grid-cols: 6.5rem 2.1rem 1.9rem 2.5rem 4.2rem 1fr;
+       OPEN's label now hides at the same 700px breakpoint via u-narrow-hide.
+       Project column floor raised 6.5rem -> 7.5rem, and it now carries the flex weight (2fr) so a
+       wider phone/window spends the extra width on the name+paths, not on the sync cluster. */
+    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem minmax(4.5rem, 1fr);
     --grid-gap: 0.4rem;
   }
 
