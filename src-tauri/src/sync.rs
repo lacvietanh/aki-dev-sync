@@ -1177,8 +1177,8 @@ mod tests {
             delete_on_pull: false,
             delete_on_push: false,
             last_sync_status: None,
-            tasks: vec![],
-            notes: String::new(),
+            tasks: None,
+            notes: None,
             dev_cmd_override: None,
             build_cmd_override: None,
         }
