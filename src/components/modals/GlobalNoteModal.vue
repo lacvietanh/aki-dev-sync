@@ -64,10 +64,21 @@ const collection = useGlobalTaskCollection()
 }
 
 .global-notes-field :deep(.project-notes-textarea) {
-  /* No min-height override here: NotesField's own textarea (field-sizing: content, no min-height)
-     sizes natively off the `:rows="2"` this file passes it - ~2 lines of text by default. Any
-     explicit min-height here would floor the box past what 2 rows asks for, same bug as the old
-     320px/190px floors. max-height/resize stay, so more room is one drag away. */
+  /* min-height is derived, not guessed: font-size 13px x line-height 1.6 = 20.8px per line;
+     2 lines (this file's `:rows="2"`) = 41.6px, rounded up to 42px. The textarea itself has zero
+     padding/border (NotesField.vue's base rule), so that's the exact content-box floor for 2 rows -
+     not a round number like the old 320px/190px.
+     field-sizing is reset to `fixed` (the property's initial value), overriding NotesField's base
+     `field-sizing: content`. That base value is inert here anyway - WKWebView (this app's Tauri
+     runtime is WebKit/Safari, not Chromium) does not implement `field-sizing` - but resetting it
+     removes any dependency on that support existing, now or in a future WebKit version, since an
+     auto-content-sizing textarea is exactly the kind of box that can fight a manual `resize` drag.
+     Sizing here is deliberately driven only by min-height/max-height/resize, the same mechanism
+     this file always used successfully (only the floor's px value was ever wrong) - dropping the
+     floor outright (rows="2" + no min-height at all, tried previously) left the box with no
+     explicit CSS height for `resize` to use as its drag baseline, which is what broke dragging. */
+  field-sizing: fixed;
+  min-height: 42px;
   max-height: 60vh;
   color: #e2e8f0;
   font-size: 13px;

@@ -155,18 +155,23 @@ nothing to fix there.
 narrow-mode width breakpoint above. Keep it a separate line item from #11a even though both live in
 the same file.
 
-**Current mechanism.** `src/components/tasks/NotesField.vue:77-85` (the base component) has no
-`min-height` at all by default — `resize: none; field-sizing: content` (native CSS auto-grow to
-content) — and accepts a `:rows` prop (default 2) as its sizing hint.
-`src/components/modals/GlobalNoteModal.vue` passes `:rows="2"` and its own `:deep()` override sets
-only `max-height: 60vh; resize: vertical;` — no `min-height`, so the base component's native
-`field-sizing: content` + `rows="2"` sizing is what actually determines the floor (~2 lines).
+**Current mechanism.** `src/components/tasks/NotesField.vue:77-91` (the base component) has no
+`min-height` at all by default — `resize: none; overflow-y: hidden; field-sizing: content;` — and
+accepts a `:rows` prop (default 2) as its sizing hint. `field-sizing: content` is a Chromium-only
+property; WKWebView (this app's Tauri runtime is WebKit/Safari) does not implement it, so it is
+inert there — but inert is not the same as absent, and a box relying on it for its only sizing
+signal has no explicit CSS height for `resize` to use as a drag baseline in engines that ignore it.
 
-**Fix applied.** Dropped the `min-height` override entirely instead of re-tuning its px value, and
-lowered `rows` from 8 to 2 to match the "starts small" requirement. `max-height: 60vh` and
-`resize: vertical` stay, so a user who wants more room still gets it by dragging.
+**First fix attempt (reverted, see below).** Dropped `min-height` entirely and lowered `rows` from
+8 to 2, relying on `field-sizing: content` + `rows="2"` alone to size the box. This broke the
+resize-drag handle in practice (WKWebView) on top of not reliably landing at 2 rows either.
 
-**Unverified at runtime:** exact replacement px is a visual call, needs a Mac check.
+**Fix applied.** `src/components/modals/GlobalNoteModal.vue`'s `:deep()` override now sets a
+*derived* `min-height: 42px` (13px font-size x 1.6 line-height x 2 rows = 41.6px, rounded up — not
+a guessed round number like the old 320px/190px) and resets `field-sizing: fixed` for this box only,
+so sizing is driven solely by `min-height`/`max-height: 60vh`/`resize: vertical` — the same
+mechanism this file always used successfully; only the floor's px value, and the accidental
+dependence on an unsupported auto-sizing property, were ever wrong.
 
 ---
 
