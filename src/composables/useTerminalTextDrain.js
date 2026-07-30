@@ -44,10 +44,6 @@
 // emitted before it attached, and the Develop menu lists the inspector's OWN UI as a target, so a
 // flag can read back "1" in the wrong origin and be invisible to the app. `__akiTermInput.status()`
 // reports `page`, which must read the app's own title.
-//
-// Escape hatch: localStorage['aki-input-mode'] = 'legacy' -> TerminalView.vue does not install this
-// at all and xterm runs stock. That is the A/B that proves whether this file is what makes typing
-// work; the CSS that used to hide xterm's textarea is gone, so the fallback is genuinely reachable.
 
 const RING_MAX = 400
 const ring = []
@@ -78,10 +74,8 @@ if (typeof window !== 'undefined' && !window.__akiTermInput) {
   window.__akiTermInput = {
     /** Is the drain attached, and is this even the right page? */
     status() {
-      let flagMode = null
       let flagDebug = null
       try {
-        flagMode = localStorage.getItem('aki-input-mode')
         flagDebug = localStorage.getItem('aki-term-input-debug')
       } catch {
         /* localStorage can throw in exotic contexts; the rest of status is still useful */
@@ -91,7 +85,7 @@ if (typeof window !== 'undefined' && !window.__akiTermInput) {
         version: 3,
         instances,
         debugMirroring: debugOn,
-        flags: { 'aki-input-mode': flagMode, 'aki-term-input-debug': flagDebug },
+        flags: { 'aki-term-input-debug': flagDebug },
         eventsRecorded: ring.length,
         counts: { ...counts },
       }
@@ -119,7 +113,6 @@ if (typeof window !== 'undefined' && !window.__akiTermInput) {
         '__akiTermInput.dump()      — the whole ring',
         '__akiTermInput.debug(true) — also mirror events to the console from now on',
         '__akiTermInput.clear()     — reset ring + counters before a clean repro',
-        "localStorage['aki-input-mode']='legacy' then reopen the tab — A/B the drain itself",
       ]
     },
   }

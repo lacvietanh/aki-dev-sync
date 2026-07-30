@@ -126,19 +126,6 @@ const props = defineProps({
   active: { type: Boolean, default: true },
 })
 
-// Runtime A/B escape hatch: `localStorage['aki-input-mode'] = 'legacy'` runs xterm completely stock
-// (no text drain at all), which is the falsifier that proves whether the drain is what makes
-// Vietnamese typing work. Read ONCE at setup. There is no CSS half to this flag any more — nothing
-// hides xterm's own textarea now, so the fallback is genuinely reachable rather than reverting the
-// JavaScript onto an unfocusable terminal.
-const legacyInput = (() => {
-  try {
-    return localStorage.getItem('aki-input-mode') === 'legacy'
-  } catch {
-    return false
-  }
-})()
-
 const mountEl = ref(null)
 let term = null
 let textDrain = null
@@ -427,7 +414,7 @@ onMounted(async () => {
   term.open(mountEl.value)
 
   // After open(): `term.textarea` / `term.element` do not exist before it.
-  if (!legacyInput) textDrain = useTerminalTextDrain(term)
+  textDrain = useTerminalTextDrain(term)
 
   // The tab strip's chip already gets a title "for free" the same way an OS terminal window does:
   // xterm parses the shell's OSC 0/2 title escapes (every shell emits these on `cd`/running a

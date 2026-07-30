@@ -101,20 +101,30 @@ phím phone sẽ hiện trên Mac, tức phá D9 vốn vừa PASS. Ghi lại th�
 
 ---
 
-## 4. Việc phải làm ngay, không cần chờ hội đồng
+## 4. Việc phải làm ngay, không cần chờ hội đồng — ĐÃ XONG 2026-07-31
 
 **Gỡ escape hatch `aki-input-mode='legacy'`.** Chủ sở hữu yêu cầu rõ: đường legacy vốn đầy lỗi, giữ
 lại chỉ làm code rộng, rối, thành rác (research §5.6).
 
-Phạm vi gỡ:
-- `TerminalView.vue`: hằng `legacyInput` đọc từ `localStorage` lúc setup, và nhánh rẽ dựa trên nó.
-- `useTerminalTextDrain.js`: nhắc tới `aki-input-mode` trong comment đầu file, trong `status()`
-  (`flags`) và trong `help()`.
+Đã gỡ:
+- `TerminalView.vue`: hằng `legacyInput` (IIFE đọc `localStorage.getItem('aki-input-mode')` lúc
+  setup) cùng đoạn comment giải thích nó, và nhánh rẽ `if (!legacyInput) textDrain = …` —
+  `useTerminalTextDrain` giờ cài đặt vô điều kiện.
+- `useTerminalTextDrain.js`: đoạn "Escape hatch:" ở cuối comment đầu file, mục `'aki-input-mode'`
+  trong object `flags` trả về từ `status()`, và dòng nhắc `localStorage['aki-input-mode']='legacy'`
+  trong `help()`.
 
-Giữ lại: `__akiTermInput` (ring buffer, `status`/`tail`/`dump`/`clear`) và cờ
-`aki-term-input-debug` — chúng là công cụ chẩn đoán cho chính mục 2.1, không phải nhánh code thứ hai.
+Đã giữ nguyên, không đụng tới: toàn bộ `__akiTermInput` (ring buffer, `status()`, `dump()`,
+`tail()`, `debug()`, `clear()`, `help()`, các lệnh gọi `record()` rải khắp file) và cờ
+`aki-term-input-debug` (`debugOn`) — chúng là công cụ chẩn đoán cho chính mục 2.1, không phải nhánh
+code thứ hai.
 
-Đây là điều kiện tiên quyết của phiên hội đồng: hội đồng nên đọc **một** đường đi, không phải hai.
+Xác minh: `node`/`vue/compiler-sfc` syntax-check cả hai file sạch, và
+`grep -rn "aki-input-mode\|legacyInput" src/` không còn khớp gì. Hành vi runtime **chưa được chạy
+lại** sau thay đổi này — đây là gỡ code chết (dead branch), không phải một fix hành vi, nên không
+cần chạy máy thật, nhưng phiên hội đồng vẫn nên biết điều đó.
+
+Đây là điều kiện tiên quyết của phiên hội đồng: hội đồng nay đọc **một** đường đi, không phải hai.
 
 ---
 
