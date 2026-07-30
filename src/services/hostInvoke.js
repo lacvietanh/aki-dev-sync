@@ -89,8 +89,6 @@ export const COMPANION_ALLOWED_COMMANDS = new Set([
   'macos_open',
   'open_local_terminal',
   'open_remote_subprocess',
-  'run_project_command',
-  'run_project_dev',
   // Git modal — fetch/pull/push/commit from the phone.
   'run_git_command',
   // SSH config editor: composables/useSsh.js documents these writes as running from the clicker,

@@ -193,7 +193,7 @@ export function usePtyTerminal(term, tabId = 0) {
     if (typeof value === 'boolean') alive.value = value
   }
 
-  /** #7 (docs/plan/dev-build-in-app-launch.md) — the single funnel that dispatches a DEV/BUILD
+  /** #7 (docs/plan/done/dev-build-in-app-launch.md) — the single funnel that dispatches a DEV/BUILD
    *  command into a PTY, exactly once. Two triggers feed it and they are handled differently on
    *  purpose (this split is the fix for a real triple-echo bug, kept here so it is not
    *  reintroduced):

@@ -87,7 +87,12 @@ function nextTabId() {
  *  companion case through its scope-keyed pending claim instead of this return value.
  *
  *  Route every new "open/duplicate a terminal" entry point through `openScopeTerminal` (useTerminalTabs.js), not this export directly — see "Companion add is fire-and-forget" in docs/arch/terminal-stack.md for why. */
-export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ title, projectId = null, cwd = null } = {}) => {
+/** `runKind` and `pendingCmd` (docs/plan/done/dev-build-in-app-launch.md, #7): a DEV/BUILD press tags its
+ *  new tab with which command it is and stashes the literal command text to be typed once, so a
+ *  second click in the same scope can find "the dev tab" specifically instead of any tab in scope,
+ *  and a fresh tab knows what to run without a second round-trip. `null` for every ordinary tab —
+ *  this is purely additive to the existing shape. */
+export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ title, projectId = null, cwd = null, runKind = null, pendingCmd = null } = {}) => {
   // SCOPE FIRST, THEN GLOBAL — the same order useTerminalTabs.js's capReached() applies, so the two
   // checkers can never name different reasons for the same refusal. A user sitting in a 1-tab group
   // who hits the GLOBAL ceiling must be told about the other groups, not told their group is full.
@@ -100,9 +105,33 @@ export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ titl
     Toast.fire({ icon: 'error', title: CEILING_TAB_LIMIT_MESSAGE })
     return null
   }
-  const tab = { id: nextTabId(), title: title || 'Shell', projectId, cwd }
+  const tab = { id: nextTabId(), title: title || 'Shell', projectId, cwd, runKind, pendingCmd }
   terminalTabs.value = [...terminalTabs.value, tab]
   return tab
+})
+
+/** Re-arms an EXISTING tab's pending command — the dead-tab branch of DEV/BUILD's second-press
+ *  rule (a matching tab exists but exited, so it gets respawned and re-sent, never a new tab).
+ *  Scoped to the one id (Regression Guard - Multi-entity State, CLAUDE.md). */
+export const setTabPendingCmd = action('terminalTabsStore.setTabPendingCmd', (id, cmd) => {
+  const idx = terminalTabs.value.findIndex((t) => t.id === id)
+  if (idx === -1) return
+  const next = { ...terminalTabs.value[idx], pendingCmd: cmd }
+  terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
+})
+
+/** Reads and clears ONE tab's pending command in a single step — "consumed once" means the read
+ *  and the clear can never be two operations with a gap between them where a second reader (a
+ *  second screen mounting the same tab) could see the still-set field and type it twice. Returns
+ *  `null` when there is nothing to consume (the ordinary-tab, ordinary-open case). */
+export const consumeTabPendingCmd = action('terminalTabsStore.consumeTabPendingCmd', (id) => {
+  const idx = terminalTabs.value.findIndex((t) => t.id === id)
+  if (idx === -1) return null
+  const cmd = terminalTabs.value[idx].pendingCmd
+  if (!cmd) return null
+  const next = { ...terminalTabs.value[idx], pendingCmd: null }
+  terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
+  return cmd
 })
 
 /** Closes ONE tab — named by its scope (Regression Guard - Multi-entity State, CLAUDE.md). Splices

@@ -19,6 +19,7 @@ import {
   MAX_TABS_PER_SCOPE,
   scopeTabLimitMessage,
   CEILING_TAB_LIMIT_MESSAGE,
+  setTabPendingCmd,
 } from '../store/terminalTabsStore'
 import { projects, Toast } from '../store/projectStore'
 import { invoke } from '../utils/tauri'
@@ -345,6 +346,47 @@ export function useTerminalTabs() {
     openScopeTerminal(GLOBAL_SCOPE, { title: 'Shell', expandStack: true })
   }
 
+  /** DEV/BUILD launch (docs/plan/done/dev-build-in-app-launch.md, #7) — a dedicated entry point, not a
+   *  variant of openScopeTerminal, because it dedups by (scope, runKind) instead of "any tab in
+   *  scope": a project can have an ordinary shell AND a running dev server open at once, and
+   *  pressing BUILD must never touch DEV's tab or vice versa.
+   *
+   *  1. A LIVE tab with this runKind already exists -> focus it, send nothing. A build that
+   *     already finished with output on screen must not be silently re-triggered by a stray click,
+   *     and a running dev server must not have its command re-typed into it.
+   *  2. A matching tab exists but its shell exited -> focus it, re-arm its pending command, and
+   *     ask the backend to respawn (`pty_spawn` is idempotent, T-3). usePtyTerminal.js's own
+   *     alive-transition watcher picks up the re-armed command once the respawn broadcasts
+   *     alive:true — equivalent to "RESTART, then re-type," automatic.
+   *  3. No matching tab -> a brand NEW tab, never the scope's last-active shell — interleaving
+   *     build/dev output with whatever the user is mid-typing there is exactly what this avoids. */
+  function openRunCommand(project, cmd, kind) {
+    if (!project || !cmd) return
+    const scope = project.id
+    expandTerminalStack()
+    activeTerminalScope.value = scope
+    const existing = terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === kind)
+    if (existing) {
+      setActiveTab(existing.id)
+      if (tabLiveness.value[existing.id] === false) {
+        setTabPendingCmd(existing.id, cmd)
+        invoke('pty_spawn', { tabId: existing.id, cwd: project.local_path }).catch((e) =>
+          console.error('[useTerminalTabs] openRunCommand respawn failed', e)
+        )
+      }
+      return
+    }
+    const tab = addTerminalTab({
+      title: kind === 'dev' ? 'DEV' : 'BUILD',
+      projectId: scope,
+      cwd: project.local_path,
+      runKind: kind,
+      pendingCmd: cmd,
+    })
+    if (tab) setActiveTab(tab.id)
+    else setPendingClaim(scope) // companion fallback — same mechanism openScopeTerminal uses
+  }
+
   return {
     tabs,            // FULL list — mount loop only
     scopedTabs,      // the strip, cycling, and the close-fallback use this
@@ -353,6 +395,7 @@ export function useTerminalTabs() {
     newTab, closeTab, cycleTab,
     openProjectTerminal,   // scope-aware
     openGlobalTerminal,
+    openRunCommand,
   }
 }
 

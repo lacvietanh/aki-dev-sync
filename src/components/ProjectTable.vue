@@ -194,11 +194,16 @@
                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
                       </div>
-                      <div v-if="getDevCmd(p) || getBuildCmd(p)" class="popup-run-row">
-                        <div v-if="getDevCmd(p)" class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) }" @click="runProjectDev(p, getDevCmd(p))" :title="localTitle(p) || getDevCmd(p)">
+                      <!-- DEV/BUILD are ALWAYS rendered, disabled when nothing resolves - they used
+                           to be v-if'd out of the DOM, which silently removed the affordance from
+                           every project outside the three stacks system.rs detects a command for,
+                           with no visible route back to Project Settings' RUN COMMANDS field.
+                           docs/plan/done/dev-build-visibility.md -->
+                      <div class="popup-run-row">
+                        <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getDevCmd(p) }" @click="!localBlocked(p) && getDevCmd(p) && runProjectDev(p, getDevCmd(p))" :title="runCmdTitle(p, getDevCmd(p), 'dev')">
                           <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
                         </div>
-                        <div v-if="getBuildCmd(p)" class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) }" @click="runProjectCommand(p, getBuildCmd(p))" :title="localTitle(p) || getBuildCmd(p)">
+                        <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getBuildCmd(p) }" @click="!localBlocked(p) && getBuildCmd(p) && runProjectCommand(p, getBuildCmd(p))" :title="runCmdTitle(p, getBuildCmd(p), 'build')">
                           <i class="fa-solid fa-hammer" style="width:14px; color: #f59e0b;"></i> BUILD
                         </div>
                       </div>
@@ -367,7 +372,7 @@ import CountBadgeWrap from './CountBadgeWrap.vue';
 const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
-const { openGlobalTerminal, openProjectTerminal } = useTerminalTabs();
+const { openGlobalTerminal, openProjectTerminal, openRunCommand } = useTerminalTabs();
 
 // Global-scope mirror of TerminalCell.vue's own badge computeds (docs/plan/terminal-ownership-model.md
 // §7 — Rule-of-Three found only two real instances, so this stays inline rather than spawning a
@@ -609,7 +614,7 @@ const IDE_LOCAL_ARGS = {
 async function openIdeLocal(ideName, path) {
   try {
     // Terminal goes through a dedicated command (not `open -a Terminal <path>`) so it gets the
-    // same cold-start double-window fix as SSH terminal / run_project_command.
+    // same cold-start double-window fix as the SSH terminal.
     if (ideName === 'terminal') {
       await invoke('open_local_terminal', { localPath: path });
       // The badge is a live scan, not a tally, so nothing is incremented here — this only asks the
@@ -627,36 +632,18 @@ async function openIdeLocal(ideName, path) {
   }
 }
 
-// Project ids with a DEV/BUILD invoke still in flight. Both commands open a Terminal window and
-// take a moment to answer, and nothing in the popup changes meanwhile — an impatient second click
-// used to open a second window running the same build. No spinner, no new element: the second
-// click is simply ignored until the first settles (Extreme Narrow).
-const runningProjectIds = ref(new Set());
-
-// Shared invoke/Toast wrapper for the popup's run-commands row - BUILD and DEV differ only by
-// which Tauri command they call and the success wording.
-async function invokeProjectRun(command, project, cmd, successTitle) {
-  if (runningProjectIds.value.has(project.id)) return;
-  runningProjectIds.value = new Set(runningProjectIds.value).add(project.id);
-  try {
-    await invoke(command, { localPath: project.local_path, cmd });
-    Toast.fire({ icon: 'success', title: successTitle });
-  } catch (e) {
-    console.error(`Failed to run project command (${command}):`, e);
-    Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
-  } finally {
-    const next = new Set(runningProjectIds.value);
-    next.delete(project.id);
-    runningProjectIds.value = next;
-  }
+// DEV/BUILD launch into the in-app terminal (docs/plan/done/dev-build-in-app-launch.md, #7) — no
+// invoke, no Toast, no in-flight guard: `openRunCommand` is synchronous frontend state plus a
+// `pty_write`, and its own (scope, runKind) dedup is what makes a repeat click safe (focuses the
+// existing DEV/BUILD tab instead of relaunching), which is a stronger guarantee than the old
+// per-project in-flight Set ever gave (that guard reset the instant the invoke settled, so a
+// second click a moment later still opened a second window).
+function runProjectCommand(project, cmd) {
+  openRunCommand(project, cmd, 'build');
 }
 
-async function runProjectCommand(project, cmd) {
-  return invokeProjectRun('run_project_command', project, cmd, 'Command started in Terminal!');
-}
-
-async function runProjectDev(project, cmd) {
-  return invokeProjectRun('run_project_dev', project, cmd, 'Command started in Terminal!');
+function runProjectDev(project, cmd) {
+  openRunCommand(project, cmd, 'dev');
 }
 
 // (host, path) -> absolute path. The remote $HOME never changes within a session, so a
@@ -753,12 +740,23 @@ async function openUrl(url) {
   try { await invoke('macos_open', { args: [url] }); } catch (e) { console.error(e); }
 }
 
+// resolved = (override ?? '').trim() || stackDefault || ''. A present-but-blank override is the
+// same as no override: the text field in Project Settings cannot express null once touched, so
+// typing then deleting persists Some(""), and that must keep falling through to the detected stack
+// default. docs/plan/done/dev-build-visibility.md
 function getDevCmd(p) {
-  return p.dev_cmd_override || projectRuntime.value[p.id]?.stack_info?.dev_cmd || ''
+  return (p.dev_cmd_override ?? '').trim() || projectRuntime.value[p.id]?.stack_info?.dev_cmd || ''
 }
 
 function getBuildCmd(p) {
-  return p.build_cmd_override || projectRuntime.value[p.id]?.stack_info?.build_cmd || ''
+  return (p.build_cmd_override ?? '').trim() || projectRuntime.value[p.id]?.stack_info?.build_cmd || ''
+}
+
+// Tooltip is the only thing carrying WHY a run button is dead (UI Extreme Narrow: no extra label).
+// Missing local folder wins over "no command" - it blocks every LOCAL item, and its wording must
+// stay identical to the other blocked items'.
+function runCmdTitle(p, cmd, kind) {
+  return localTitle(p) || cmd || `No ${kind} command detected — set one in Project Settings`
 }
 
 function formatTimeAgo(timestamp) {
@@ -1217,6 +1215,20 @@ fieldset:disabled .switch {
   filter: grayscale(1) opacity(0.35);
   cursor: not-allowed;
   pointer-events: none;
+}
+
+/* DEV/BUILD are the one disabled state whose reason is NOT self-evident from the row itself ("no
+   command detected" vs. a missing folder that greys the whole LOCAL list), so their `title` has to
+   survive: `pointer-events: none` above removes the element from hit-testing entirely, which also
+   suppresses the native tooltip. Both click handlers no-op on the same condition, so remaining
+   hit-testable cannot run anything. */
+.popup-item.popup-run-btn.popup-disabled {
+  pointer-events: auto;
+}
+
+.popup-item.popup-run-btn.popup-disabled:hover {
+  background: none;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .popup-run-row {

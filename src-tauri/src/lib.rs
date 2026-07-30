@@ -1,6 +1,7 @@
 mod agent_usage;
 mod claude_cleanup;
 mod claude_profile;
+mod gemini_allowlist;
 mod git;
 mod global_note;
 mod logger;
@@ -94,8 +95,6 @@ pub fn run() {
             system::check_for_updates,
             system::find_in_downloads,
             system::check_project_stack,
-            system::run_project_command,
-            system::run_project_dev,
             system::read_project_changelog,
             system::count_external_terminals,
             system::count_external_terminals_global,
@@ -117,6 +116,8 @@ pub fn run() {
             // statusline customizer
             statusline::apply_statusline_config,
             statusline::check_statusline_status,
+            // agy allowlist preload
+            gemini_allowlist::apply_gemini_allowlist,
             // logger / debug
             logger::is_debug_mode,
             logger::get_log_path,
