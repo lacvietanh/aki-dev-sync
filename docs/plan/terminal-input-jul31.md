@@ -155,5 +155,6 @@ Cây làm việc sạch. Toàn bộ công việc terminal của phiên này đã
 - `0a6d314` — gỡ escape hatch `aki-input-mode='legacy'` (§4).
 
 **Mốc lùi cho hội đồng nếu việc truy §2.1 (double space) đi sai hướng: `4851f40`.** Đó là commit
-mang kiến trúc text-drain đang chạy; lùi về đó bỏ được cả fix hiển thị lẫn việc gỡ escape hatch mà
-không đụng tới kiến trúc gốc.
+mang kiến trúc text-drain đang chạy, và fix hiển thị `shallowRef` (§2.3) đã nằm sẵn TRONG chính
+commit này (amend trước khi push) nên lùi về đó **vẫn giữ** fix hiển thị. Thứ duy nhất mất đi là
+việc gỡ escape hatch (`0a6d314`) và các commit doc nằm trên nó.
