@@ -1,6 +1,6 @@
 use crate::agent_usage::probe_result::AgentUsageResponse;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Parses raw framed output from `get-antigravity-usage.sh` and assembles the unified AG snapshot payload.
 pub(crate) fn parse_antigravity_frames(raw_output: &str, now: i64) -> Result<Option<AgentUsageResponse>, String> {
@@ -55,7 +55,7 @@ pub(crate) fn parse_antigravity_frames(raw_output: &str, now: i64) -> Result<Opt
             obj.insert("sourceType".to_string(), json!(source_type));
         }
 
-        let instance_key = format!("{}:{}", email, source_type);
+        let instance_key = email.to_string();
         if !seen_instance_keys.contains(&instance_key) {
             seen_instance_keys.insert(instance_key);
             snapshots.push(snapshot);
@@ -66,27 +66,7 @@ pub(crate) fn parse_antigravity_frames(raw_output: &str, now: i64) -> Result<Opt
         return Ok(None);
     }
 
-    // Collapse shared desktop + cli sessions on same email (P36)
-    let mut final_snapshots: Vec<Value> = Vec::new();
-    let mut core_map: HashMap<String, usize> = HashMap::new();
-
-    for s in snapshots {
-        let source_type = s.get("sourceType").and_then(|v| v.as_str()).unwrap_or("ide").to_string();
-        let email = s.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string();
-
-        if source_type == "desktop" || source_type == "cli" {
-            if let Some(&idx) = core_map.get(&email) {
-                if let Some(existing_obj) = final_snapshots[idx].as_object_mut() {
-                    existing_obj.insert("sourceType".to_string(), json!("desktop_cli"));
-                }
-            } else {
-                core_map.insert(email, final_snapshots.len());
-                final_snapshots.push(s);
-            }
-        } else {
-            final_snapshots.push(s);
-        }
-    }
+    let final_snapshots = snapshots;
 
     if final_snapshots.is_empty() {
         return Ok(None);
@@ -149,7 +129,7 @@ fn parse_frame_chunk(chunk: &str) -> ParsedFrameChunk {
         } else if let Some(val) = line.strip_prefix("|||STATUS|||") {
             current_tag = "STATUS";
             current_buf = val.to_string();
-        } else if let Some(val) = line.strip_prefix("|||SUMMARYCODE|||") {
+        } else if let Some(_) = line.strip_prefix("|||SUMMARYCODE|||") {
             if current_tag == "STATUS" {
                 status_body = current_buf.clone();
             }
@@ -310,7 +290,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 
 fn format_iso_timestamp(now_secs: i64) -> String {
     // Simple UTC ISO timestamp string formatting
-    let (year, month, day, hour, min, sec) = civil_from_days(now_secs / 86400);
+    let (year, month, day) = civil_from_days(now_secs / 86400);
     let rem = now_secs % 86400;
     let rem = if rem < 0 { rem + 86400 } else { rem };
     let hour = rem / 3600;

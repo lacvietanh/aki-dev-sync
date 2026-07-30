@@ -337,18 +337,10 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
             const liveList = [];
             if (Array.isArray(parsed?.allAccounts) && parsed.allAccounts.length > 0) {
               for (const a of parsed.allAccounts) {
-                if (a.email) {
-                  liveList.push(a.email);
-                  if (a.sourceType) {
-                    liveList.push(`${a.email}:${a.sourceType}`);
-                  }
-                }
+                if (a.email) liveList.push(a.email);
               }
             } else if (parsed?.email) {
               liveList.push(parsed.email);
-              if (parsed.sourceType) {
-                liveList.push(`${parsed.email}:${parsed.sourceType}`);
-              }
             }
             persistAgAccount(parsed, fetchedAt, host);
             set({
@@ -356,9 +348,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
               activeEmail: nextActiveEmail,
               activeEmails: new Set(liveList),
               accounts: listAgAccounts(host),
-              data: Array.isArray(parsed?.allAccounts)
-                ? (parsed.allAccounts.find(a => a.email === nextActiveEmail) || parsed)
-                : parsed,
+              data: parsed,
               isCached: false,
               cachedAt: null,
             });

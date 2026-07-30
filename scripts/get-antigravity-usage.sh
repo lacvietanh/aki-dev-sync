@@ -143,53 +143,55 @@ while IFS= read -r line; do
                 fi
 
                 # ── 4. Connect RPC Probe ────────────────────────────────────
+                # Probe directly against the real RPC endpoint instead of root `/`.
+                # Root `/` returns 404 on new Antigravity IDE builds even when the
+                # RPC server is healthy, causing false "could not connect" failures.
                 found_base_url=""
                 hdr_csrf=""
                 if [ -n "$csrf_token" ]; then
                     hdr_csrf="-H X-Codeium-Csrf-Token:$csrf_token"
                 fi
 
-                # Protocol detection is independent of which port answers: try every
-                # candidate port over HTTPS first, then only if none answered, retry
-                # every candidate port over HTTP. A per-port HTTPS-then-HTTP loop was
-                # wrong because it stops at the FIRST port that fails both protocols
-                # (e.g. ext_port itself refusing HTTPS) instead of moving on to try
-                # HTTPS on the next candidate port (e.g. ext_port+1, where the IDE
-                # actually listens) - it never got there.
+                RPC_PATH="/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
+                RPC_BODY='{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en"}}'
+
+                # Try HTTPS first across all candidate ports, then HTTP.
                 for p in $clean_ports; do
-                    code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
+                    code=$(curl -sk --max-time 1 -o /dev/null -w "%{http_code}" -X POST \
+                        -H "Accept: application/json" \
                         -H "Content-Type: application/json" \
                         -H "Connect-Protocol-Version: 1" \
                         $hdr_csrf \
-                        -d '{"wrapper_data":{}}' \
-                        "https://127.0.0.1:$p" 2>/dev/null || echo "000")
+                        -d "$RPC_BODY" \
+                        "https://127.0.0.1:$p${RPC_PATH}" 2>/dev/null || echo "000")
 
                     if [ "$code" = "200" ] || [ "$code" = "401" ]; then
                         found_base_url="https://127.0.0.1:$p"
-                        _log "port $p responded successfully with status $code via HTTPS"
+                        _log "port $p RPC probe: status $code via HTTPS"
                         break
                     fi
                 done
 
                 if [ -z "$found_base_url" ]; then
                     for p in $clean_ports; do
-                        code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
+                        code=$(curl -sk --max-time 1 -o /dev/null -w "%{http_code}" -X POST \
+                            -H "Accept: application/json" \
                             -H "Content-Type: application/json" \
                             -H "Connect-Protocol-Version: 1" \
                             $hdr_csrf \
-                            -d '{"wrapper_data":{}}' \
-                            "http://127.0.0.1:$p" 2>/dev/null || echo "000")
+                            -d "$RPC_BODY" \
+                            "http://127.0.0.1:$p${RPC_PATH}" 2>/dev/null || echo "000")
 
                         if [ "$code" = "200" ] || [ "$code" = "401" ]; then
                             found_base_url="http://127.0.0.1:$p"
-                            _log "port $p responded successfully with status $code via HTTP"
+                            _log "port $p RPC probe: status $code via HTTP"
                             break
                         fi
                     done
                 fi
 
                 if [ -z "$found_base_url" ]; then
-                    _log "could not connect to Connect API on PID $pid"
+                    _log "could not connect to RPC on PID $pid — trying next process"
                     continue
                 fi
 
@@ -320,47 +322,48 @@ while IFS= read -r line; do
 
                         found_base_url=""
 
-                        # Protocol detection is independent of which port answers: try every
-                        # candidate port over HTTPS first, then only if none answered, retry
-                        # every candidate port over HTTP. A per-port HTTPS-then-HTTP loop was
-                        # wrong because it stops at the FIRST port that fails both protocols
-                        # (e.g. ext_port itself refusing HTTPS) instead of moving on to try
-                        # HTTPS on the next candidate port (e.g. ext_port+1, where the process
-                        # actually listens) - it never got there.
+                        # Same direct-RPC probe as the IDE/Desktop branch above.
+                        # Root `/` returns 404 on new Antigravity builds — probe the
+                        # real endpoint so 404 on `/` no longer blocks detection.
+                        RPC_PATH="/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
+                        RPC_BODY='{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en"}}'
+
                         for p in $clean_ports; do
-                            code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
+                            code=$(curl -sk --max-time 1 -o /dev/null -w "%{http_code}" -X POST \
+                                -H "Accept: application/json" \
                                 -H "Content-Type: application/json" \
                                 -H "Connect-Protocol-Version: 1" \
                                 $hdr_csrf \
-                                -d '{"wrapper_data":{}}' \
-                                "https://127.0.0.1:$p" 2>/dev/null || echo "000")
+                                -d "$RPC_BODY" \
+                                "https://127.0.0.1:$p${RPC_PATH}" 2>/dev/null || echo "000")
 
                             if [ "$code" = "200" ] || [ "$code" = "401" ]; then
                                 found_base_url="https://127.0.0.1:$p"
-                                _log "CLI port $p responded successfully with status $code via HTTPS"
+                                _log "CLI port $p RPC probe: status $code via HTTPS"
                                 break
                             fi
                         done
 
                         if [ -z "$found_base_url" ]; then
                             for p in $clean_ports; do
-                                code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
+                                code=$(curl -sk --max-time 1 -o /dev/null -w "%{http_code}" -X POST \
+                                    -H "Accept: application/json" \
                                     -H "Content-Type: application/json" \
                                     -H "Connect-Protocol-Version: 1" \
                                     $hdr_csrf \
-                                    -d '{"wrapper_data":{}}' \
-                                    "http://127.0.0.1:$p" 2>/dev/null || echo "000")
+                                    -d "$RPC_BODY" \
+                                    "http://127.0.0.1:$p${RPC_PATH}" 2>/dev/null || echo "000")
 
                                 if [ "$code" = "200" ] || [ "$code" = "401" ]; then
                                     found_base_url="http://127.0.0.1:$p"
-                                    _log "CLI port $p responded successfully with status $code via HTTP"
+                                    _log "CLI port $p RPC probe: status $code via HTTP"
                                     break
                                 fi
                             done
                         fi
 
                         if [ -z "$found_base_url" ]; then
-                            _log "could not connect to Connect API on CLI PID $pid"
+                            _log "could not connect to RPC on CLI PID $pid — trying next process"
                             continue
                         fi
 
