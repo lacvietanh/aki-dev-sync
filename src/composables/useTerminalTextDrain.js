@@ -23,9 +23,15 @@
 // specification guarantee: preventDefault on a key event suppresses the textarea mutation, and
 // therefore the `input` event. Against xterm 5.5.0:
 //
-//   physical printable   `_keyPress` sends it and cancels -> textarea never mutates -> no `input`
-//   multi-char carrier   keypress vetoed -> xterm sends nothing, does not cancel -> browser inserts
-//                        the full string -> the drain sends it once
+//   ANY keypress        vetoed unconditionally -> xterm sends nothing and does NOT preventDefault ->
+//                        the browser inserts -> the drain sends it once. This row used to read
+//                        "`_keyPress` sends it and cancels -> textarea never mutates", which was
+//                        FALSE and is what produced the jul31 double-space blocker: `_keyPress`
+//                        cancels without `force` (Terminal.ts:1133) and `cancel()` is a no-op unless
+//                        `cancelEvents` is on (Terminal.ts:1308) — so for space (keyCode 32, fails
+//                        Keyboard.ts:381) and uppercase A-Z (caps-lock HACK, Terminal.ts:1052) xterm
+//                        sent the char AND the browser inserted it, and the drain sent it again.
+//                        See docs/research/terminal-input-jul31.md §5.2 and the council verdict.
 //   229 key, not composing  xterm bails without cancelling and schedules a setTimeout(0) textarea
 //                        diff; the drain reads and empties SYNCHRONOUSLY, so that diff then compares
 //                        '' vs '' and is a structural no-op
@@ -123,6 +129,14 @@ if (typeof window !== 'undefined' && !window.__akiTermInput) {
  *  over-deletion bug (OpenKey#95) is what failing to absorb them looks like. */
 const SENTINELS = /[\u202F\u200C]/g
 
+/** Hex codepoints of a drained chunk, for the ring only. Vietnamese arrives either precomposed
+ *  (U+1EA1 etc.) or decomposed (base + combining mark), and the two render nearly alike \u2014 a report
+ *  that says "the accent looks off" is unanswerable without this. Capped: the ring is a debug buffer,
+ *  not a transcript. */
+function codepoints(s) {
+  return Array.from(s.slice(0, 16), c => c.codePointAt(0).toString(16).padStart(4, '0')).join(' ')
+}
+
 /** WebKit fires `compositionend` BEFORE `keydown`, the reverse of Chromium, so the usual
  *  `isComposing` guard does not cover the Enter that commits a composition. CodeMirror 6 (100 ms)
  *  and ProseMirror (500 ms) both solve it with exactly this timestamp window. 100 ms is CodeMirror's
@@ -201,7 +215,10 @@ export function useTerminalTextDrain(term) {
     }
     counts.drained++
     counts.drainedChars += text.length
-    record('drained', { inputType, text, length: text.length })
+    // `cp` records the codepoints, not just the glyphs: a decomposed "á" (a + U+0301) and a
+    // precomposed one (U+00E1) are indistinguishable in a copy-pasted bug report but behave
+    // differently in the terminal, so the ring has to say which one actually arrived.
+    record('drained', { inputType, text, length: text.length, cp: codepoints(text) })
     // Through `term.input`, i.e. into xterm's own `onData` — which is where the sticky-modifier
     // funnel lives (usePtyTerminal.js `emitKey`). A multi-character chunk leaves an armed Ctrl
     // latched rather than eating it.
@@ -241,23 +258,30 @@ export function useTerminalTextDrain(term) {
     }
   }
 
-  /** Veto xterm's keypress for the multi-character carrier ONLY. `ev.key.length > 1` with
-   *  `ev.charCode === ev.key.codePointAt(0)` is the carrier / dead-key signature — the same
-   *  discriminator sotasan/piyo's Tauri-targeted addon uses. Returning `false` skips xterm's
-   *  processing WITHOUT preventDefault, so the browser's own insertion proceeds and lands in the
-   *  drain. (Guard v1 got this backwards and vetoed WITH preventDefault, destroying the insertion:
-   *  "ăn gì" -> "ăn ".)
+  /** Veto xterm's `keypress` handling for EVERY keypress, so text has exactly one route to the PTY:
+   *  the drain. Returning `false` skips xterm's `_keyPress` WITHOUT preventDefault, so the browser's
+   *  own insertion still lands in the textarea and the drain claims it. (Guard v1 got this backwards
+   *  and vetoed WITH preventDefault, destroying the insertion: "ăn gì" -> "ăn ".)
+   *
+   *  Why ALL of them, not just the multi-character carrier this used to match: xterm's `cancel()` is
+   *  a no-op unless `cancelEvents` is on (Terminal.ts:1308, OptionsService.ts:56 — we don't set it),
+   *  and `_keyPress` cancels WITHOUT `force` (Terminal.ts:1133). So for any key that `_keyDown` lets
+   *  through without a forced cancel, `_keyPress` sends the char AND the browser still mutates the
+   *  textarea — the drain then sends it a second time. That set is exactly {space, uppercase A-Z}:
+   *  space is keyCode 32 and fails Keyboard.ts:381's `keyCode >= 48` test, and A-Z exits early via
+   *  the caps-lock HACK at Terminal.ts:1052-1056. Everything else (arrows, F-keys, Ctrl/Alt combos)
+   *  is force-cancelled in `_keyDown`, so no keypress ever reaches here. xterm's own anti-double
+   *  guard `_keyPressHandled` cannot save us: it lives in `_inputEvent`, bound to the textarea
+   *  itself (Terminal.ts:384), and our capture-phase `stopPropagation()` on the ancestor keeps that
+   *  handler from ever running. Confirmed on hardware 2026-07-31: "TEST" arrived as "TTEÉTT".
    *
    *  NOTE: this claims the terminal's single custom key handler slot. Nothing else in the app uses
    *  it — window-level ⌘ shortcuts live in dock/TerminalStack.vue. */
   function customKeyEventHandler(ev) {
     if (ev.type !== 'keypress') return true
-    if (typeof ev.key === 'string' && ev.key.length > 1 && ev.charCode === ev.key.codePointAt(0)) {
-      counts.keypressVetoed++
-      record('keypress-vetoed', { key: ev.key, charCode: ev.charCode })
-      return false
-    }
-    return true
+    counts.keypressVetoed++
+    record('keypress-vetoed', { key: ev.key, charCode: ev.charCode })
+    return false
   }
   term.attachCustomKeyEventHandler(customKeyEventHandler)
 
