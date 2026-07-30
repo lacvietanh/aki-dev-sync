@@ -149,8 +149,14 @@ while IFS= read -r line; do
                     hdr_csrf="-H X-Codeium-Csrf-Token:$csrf_token"
                 fi
 
+                # Protocol detection is independent of which port answers: try every
+                # candidate port over HTTPS first, then only if none answered, retry
+                # every candidate port over HTTP. A per-port HTTPS-then-HTTP loop was
+                # wrong because it stops at the FIRST port that fails both protocols
+                # (e.g. ext_port itself refusing HTTPS) instead of moving on to try
+                # HTTPS on the next candidate port (e.g. ext_port+1, where the IDE
+                # actually listens) - it never got there.
                 for p in $clean_ports; do
-                    # Try HTTPS first
                     code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
                         -H "Content-Type: application/json" \
                         -H "Connect-Protocol-Version: 1" \
@@ -163,21 +169,24 @@ while IFS= read -r line; do
                         _log "port $p responded successfully with status $code via HTTPS"
                         break
                     fi
-
-                    # Try HTTP
-                    code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
-                        -H "Content-Type: application/json" \
-                        -H "Connect-Protocol-Version: 1" \
-                        $hdr_csrf \
-                        -d '{"wrapper_data":{}}' \
-                        "http://127.0.0.1:$p" 2>/dev/null || echo "000")
-
-                    if [ "$code" = "200" ] || [ "$code" = "401" ]; then
-                        found_base_url="http://127.0.0.1:$p"
-                        _log "port $p responded successfully with status $code via HTTP"
-                        break
-                    fi
                 done
+
+                if [ -z "$found_base_url" ]; then
+                    for p in $clean_ports; do
+                        code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
+                            -H "Content-Type: application/json" \
+                            -H "Connect-Protocol-Version: 1" \
+                            $hdr_csrf \
+                            -d '{"wrapper_data":{}}' \
+                            "http://127.0.0.1:$p" 2>/dev/null || echo "000")
+
+                        if [ "$code" = "200" ] || [ "$code" = "401" ]; then
+                            found_base_url="http://127.0.0.1:$p"
+                            _log "port $p responded successfully with status $code via HTTP"
+                            break
+                        fi
+                    done
+                fi
 
                 if [ -z "$found_base_url" ]; then
                     _log "could not connect to Connect API on PID $pid"
@@ -247,9 +256,33 @@ while IFS= read -r line; do
                         SEEN_PIDS="$SEEN_PIDS $pid"
                         PROCESSES_FOUND=$((PROCESSES_FOUND + 1))
                         proc_type="cli"
-                        _log "matched agy CLI process line (PID $pid)"
+
+                        # Same argv extraction as the language-server branch above. It used to be
+                        # absent here (and hardcoded to `undefined` in the JS probe this script was
+                        # ported from), so an `agy` session was probed with NO X-Codeium-Csrf-Token
+                        # header and NO seeded port: if the Connect API asks for the token, every
+                        # request 401s and the whole poll is an anonymous "exited 1", which the app
+                        # renders as an ever-older cached reading. Extraction is unconditional and
+                        # costs nothing when the process genuinely carries neither flag - the values
+                        # come out empty and the probe behaves exactly as it did before.
+                        csrf_token=$(extract_arg "$cmdline" "--csrf_token")
+                        ext_port=$(extract_arg "$cmdline" "--extension_server_port")
+                        hdr_csrf=""
+                        if [ -n "$csrf_token" ]; then
+                            hdr_csrf="-H X-Codeium-Csrf-Token:$csrf_token"
+                        fi
+                        _log "matched agy CLI process line (PID $pid, csrf_token=$([ -n "$csrf_token" ] && echo present || echo absent), ext_port=${ext_port:-none})"
 
                         ports=""
+                        case "$ext_port" in
+                            ''|*[!0-9]*) ;;
+                            *)
+                                if [ "$ext_port" -gt 0 ]; then
+                                    ports="$ext_port $((ext_port + 1))"
+                                fi
+                                ;;
+                        esac
+
                         if [ "$UNAME" = "Darwin" ]; then
                             lsof_out=$(lsof -nP -iTCP -sTCP:LISTEN -a -p "$pid" 2>/dev/null || true)
                             if [ -n "$lsof_out" ]; then
@@ -286,10 +319,19 @@ while IFS= read -r line; do
                         fi
 
                         found_base_url=""
+
+                        # Protocol detection is independent of which port answers: try every
+                        # candidate port over HTTPS first, then only if none answered, retry
+                        # every candidate port over HTTP. A per-port HTTPS-then-HTTP loop was
+                        # wrong because it stops at the FIRST port that fails both protocols
+                        # (e.g. ext_port itself refusing HTTPS) instead of moving on to try
+                        # HTTPS on the next candidate port (e.g. ext_port+1, where the process
+                        # actually listens) - it never got there.
                         for p in $clean_ports; do
                             code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
                                 -H "Content-Type: application/json" \
                                 -H "Connect-Protocol-Version: 1" \
+                                $hdr_csrf \
                                 -d '{"wrapper_data":{}}' \
                                 "https://127.0.0.1:$p" 2>/dev/null || echo "000")
 
@@ -298,19 +340,24 @@ while IFS= read -r line; do
                                 _log "CLI port $p responded successfully with status $code via HTTPS"
                                 break
                             fi
-
-                            code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
-                                -H "Content-Type: application/json" \
-                                -H "Connect-Protocol-Version: 1" \
-                                -d '{"wrapper_data":{}}' \
-                                "http://127.0.0.1:$p" 2>/dev/null || echo "000")
-
-                            if [ "$code" = "200" ] || [ "$code" = "401" ]; then
-                                found_base_url="http://127.0.0.1:$p"
-                                _log "CLI port $p responded successfully with status $code via HTTP"
-                                break
-                            fi
                         done
+
+                        if [ -z "$found_base_url" ]; then
+                            for p in $clean_ports; do
+                                code=$(curl -sk --max-time 0.5 -o /dev/null -w "%{http_code}" -X POST \
+                                    -H "Content-Type: application/json" \
+                                    -H "Connect-Protocol-Version: 1" \
+                                    $hdr_csrf \
+                                    -d '{"wrapper_data":{}}' \
+                                    "http://127.0.0.1:$p" 2>/dev/null || echo "000")
+
+                                if [ "$code" = "200" ] || [ "$code" = "401" ]; then
+                                    found_base_url="http://127.0.0.1:$p"
+                                    _log "CLI port $p responded successfully with status $code via HTTP"
+                                    break
+                                fi
+                            done
+                        fi
 
                         if [ -z "$found_base_url" ]; then
                             _log "could not connect to Connect API on CLI PID $pid"
@@ -321,16 +368,25 @@ while IFS= read -r line; do
                             -H "Accept: application/json" \
                             -H "Content-Type: application/json" \
                             -H "Connect-Protocol-Version: 1" \
+                            $hdr_csrf \
                             -d '{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en"}}' \
                             "${found_base_url}/exa.language_server_pb.LanguageServerService/GetUserStatus" 2>/dev/null || printf '\n000')
 
                         status_code=$(printf '%s\n' "$status_resp" | tail -n 1)
                         status_body=$(printf '%s\n' "$status_resp" | sed '$d')
 
+                        # A 401 for a process that exposes no --csrf_token argv is a permanent,
+                        # nameable condition, not one more transient miss. Name it in the log so it
+                        # is distinguishable from "the IDE is mid-restart".
+                        if [ "$status_code" = "401" ] && [ -z "$csrf_token" ]; then
+                            _log "CLI PID $pid: GetUserStatus returned 401 and this process exposes no --csrf_token argv - its quota cannot be read"
+                        fi
+
                         summary_resp=$(curl -sk -w "\n%{http_code}" --max-time 2 -X POST \
                             -H "Accept: application/json" \
                             -H "Content-Type: application/json" \
                             -H "Connect-Protocol-Version: 1" \
+                            $hdr_csrf \
                             -d '{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en"}}' \
                             "${found_base_url}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary" 2>/dev/null || printf '\n000')
 

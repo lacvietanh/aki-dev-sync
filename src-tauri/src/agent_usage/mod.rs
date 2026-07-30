@@ -8,8 +8,8 @@ pub mod claudecode;
 pub mod probe_log;
 pub mod probe_result;
 
-pub use antigravity_logout::{logout_antigravity, logout_antigravity_cli};
-pub use probe_result::{AgentUsageResponse, AgentUsageResult};
+pub use antigravity_logout::*;
+pub use probe_result::AgentUsageResult;
 
 #[tauri::command]
 pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<bool, String> {
