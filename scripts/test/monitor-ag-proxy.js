@@ -3,8 +3,8 @@
  * 
  * Purpose:
  * Standalone verification script that continuously polls the local Antigravity IDE
- * Language Server quota via get-antigravity-usage.js every 5 seconds.
- * 
+ * Language Server quota via get-antigravity-usage.sh every 5 seconds.
+ *
  * Used for testing and monitoring connection stability in isolation without launching
  * the Tauri desktop UI.
  */
@@ -20,7 +20,14 @@ const logSuccess = (msg) => console.log(`\x1b[32m[${formatTime()}] 🟢 OK: \x1b
 const logError = (msg) => console.log(`\x1b[31m[${formatTime()}] 🔴 FAIL: \x1b[0m${msg}`);
 const logInfo = (msg) => console.log(`\x1b[34m[${formatTime()}] 🔵 INFO: \x1b[0m${msg}`);
 
-const COMMAND = 'node scripts/get-antigravity-usage.js';
+// get-antigravity-usage.js→.sh port (docs/research/ghost-files-and-audit-method-jul30.md): the
+// probe moved to a POSIX-sh script, run directly rather than via `node`. NOTE: unlike the retired
+// .js probe, the .sh probe's stdout is `|||FRAME|||`-delimited raw text, not JSON - assembling it
+// into the payload shape this script's JSON.parse() expects now happens in Rust
+// (src-tauri/src/agent_usage/antigravity_payload.rs), so checkProxy() below will report a parse
+// error on every run until it's updated to speak the framed protocol. Kept pointed at the real
+// script rather than the deleted one so failures are visible instead of "command not found".
+const COMMAND = 'sh scripts/get-antigravity-usage.sh';
 const INTERVAL_MS = 5000;
 
 console.log(`\x1b[36m========================================`);
