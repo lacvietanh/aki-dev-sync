@@ -173,7 +173,10 @@ export async function startSync(project, direction, specificPaths = []) {
           ? 'CONFIRM: IT IS UNKNOWN WHICH FILES WILL BE DELETED'
           : `CONFIRM: ${deleteList.length} FILE(S) WILL BE DELETED`,
         width: '560px',
-        html: body + `Type the project name <b>${safeName}</b> to confirm:`,
+        // u-select-text (main.css) on the phrase only: the user is asked to reproduce this exact
+        // string, and the app-wide `user-select: none` made it impossible to copy. Scoped to the
+        // name, not the dialog - the gate is still "paste into the input and click confirm".
+        html: body + `Type the project name <b class="u-select-text">${safeName}</b> to confirm:`,
         icon: previewFailed ? 'error' : 'warning',
         confirmButtonColor: '#ef4444',
         cancelButtonColor: '#374151',
