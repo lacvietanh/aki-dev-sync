@@ -32,11 +32,7 @@
         :key="k.title"
         class="pty-key"
         :title="k.title"
-        :class="{
-          'is-armed':
-            (k.arms === 'ctrl' && ptyApi?.ctrlArmed?.value) ||
-            (k.arms === 'shift' && ptyApi?.shiftArmed?.value),
-        }"
+        :class="{ 'is-armed': !!k.arms && !!ptyApi?.pendingModifiers?.value?.[k.arms] }"
         @mousedown.prevent
         @touchstart.prevent="onKeyTouch(k)"
         @click="onKeyClick(k)"
@@ -69,25 +65,36 @@
       </button>
     </div>
     <!--
-      Compose row: a real text input that composes a whole line before anything reaches the PTY.
-      Shown on EVERY surface since 1.22.0, not just the phone — see `composePlaceholder` in the
-      script for why the Mac needs it just as much (Vietnamese IME + a no-local-echo terminal).
-      Unlike the key row's buttons, this input MUST keep native focus so an IME can compose into it —
+      Compose row: a real text field that composes a whole line before anything reaches the PTY.
+      Gated on the SAME capability as the key row (`showKeyRow`), which is what re-scopes it to a
+      companion. Its Mac justification was Vietnamese IME input; direct typing now works there
+      (useTerminalTextDrain.js), so that justification is spent and Extreme Narrow (CLAUDE.md)
+      removes the control the Mac's own keyboard already provides. What survives is the surface with
+      no physical keyboard, plus true composing IMEs — whose WKWebView support is independently poor
+      and which are scoped out of the direct-typing fix.
+      Unlike the key row's buttons, this field MUST keep native focus so an IME can compose into it —
       no `.prevent` on it, ever.
     -->
-    <div class="pty-compose-row">
-      <input
+    <div v-if="ptyApi?.showKeyRow" class="pty-compose-row">
+      <!--
+        A `<textarea>`, not an `<input>`, and that is the WHOLE of what makes Shift+Enter possible:
+        a single-line input has no representation for a newline at all — `\n` cannot exist in its
+        value — so no keydown handler could ever have inserted one. `rows="1"` + `field-sizing`
+        keeps it one line tall until it actually needs two (see <style>).
+      -->
+      <textarea
         ref="composeInputEl"
         v-model="composeText"
-        type="text"
+        rows="1"
         class="pty-compose-input"
-        :placeholder="composePlaceholder"
+        placeholder="message…"
         autocapitalize="off"
         autocomplete="off"
         autocorrect="off"
         spellcheck="false"
-        @keydown.enter="onComposeKeydown"
-      />
+        @keydown="onComposeKeydown"
+        @compositionend="onComposeCompositionEnd"
+      ></textarea>
       <button class="pty-key pty-compose-send" title="Send" @mousedown.prevent @click="onComposeSend">
         <i class="fa-solid fa-paper-plane"></i>
       </button>
@@ -96,13 +103,12 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
-import { useTerminalInput } from '../composables/useTerminalInput'
-import { useWkImeGuard } from '../composables/useWkImeGuard'
+import { useTerminalTextDrain, POST_COMPOSITION_MS } from '../composables/useTerminalTextDrain'
 import { renameTerminalTab } from '../store/terminalTabsStore'
 import {
   terminalFontScale,
@@ -120,54 +126,124 @@ const props = defineProps({
   active: { type: Boolean, default: true },
 })
 
+// Runtime A/B escape hatch: `localStorage['aki-input-mode'] = 'legacy'` runs xterm completely stock
+// (no text drain at all), which is the falsifier that proves whether the drain is what makes
+// Vietnamese typing work. Read ONCE at setup. There is no CSS half to this flag any more — nothing
+// hides xterm's own textarea now, so the fallback is genuinely reachable rather than reverting the
+// JavaScript onto an unfocusable terminal.
+const legacyInput = (() => {
+  try {
+    return localStorage.getItem('aki-input-mode') === 'legacy'
+  } catch {
+    return false
+  }
+})()
+
 const mountEl = ref(null)
 let term = null
-let imeGuard = null
-let termInput = null
+let textDrain = null
 let fitAddon = null
 let resizeObserver = null
-const ptyApi = ref(null)
-
-// Compose row: a real `<input>` under the key row so an IME can compose a full command before it is
-// sent, instead of the terminal receiving keystroke-at-a-time IME edits through xterm's own hidden
-// textarea.
+// `shallowRef`, NOT `ref`, and that is load-bearing rather than an optimisation. A deep `ref` runs
+// its assigned object through `reactive()`, and `reactive()` UNWRAPS refs held in properties — so
+// `ptyApi.value.pendingModifiers` came back as the plain `{ ctrl, shift }` object and every
+// `.pendingModifiers.value` in this file silently read `undefined`. That is exactly why the Ctrl /
+// Shift key-row buttons never lit up while the bytes they sent were correct all along (the latch
+// itself lives inside the composable's closure, which the unwrapping cannot reach): the template's
+// `is-armed` test was reading `undefined?.[k.arms]` on every render. `shallowRef` leaves the object
+// exactly as the composable returned it, so the refs stay refs and `.value` means what it says.
 //
-// WHY IT IS NO LONGER PHONE-ONLY (1.22.0), REVISED. The original 1.22.0 rationale here blamed the
-// terminal's no-local-echo design (T-5) for all Vietnamese breakage. The full investigation
-// (docs/research/terminal-vietnamese-ime-root-cause-jul27.md, then -2.md) split that into TWO
-// causes:
-//   1. OpenKey/EVKey (CGEventTap key-injection engines, no real composition) break because
-//      WKWebView tags their synthetic keys keyCode 229 and xterm 5.5.0's IME fallback paths drop
-//      or collapse them (upstream, unfixed: xterm.js #5887/#5894). NOT an echo-latency problem —
-//      the PTY consumes keys in order, so nothing open-loop can overshoot. Fixed for direct typing
-//      by the old guard (useWkImeGuard.js v2, now the legacy fallback; its `__akiIme` was the
-//      diagnostic — replaced by `__akiTermInput`).
-//   2. TRUE composing IMEs (macOS's built-in Vietnamese input, marked-text preedit) still fight
-//      both WKWebView's composition-event quirks (#5704) and the no-local-echo screen the preedit
-//      is drawn against. For those, composing in a plain `<input>` — where the IME owns the text
-//      and gets synchronous feedback — and sending only the finished line remains the supported
-//      path. That is why the row renders on the Mac too.
+// This is why the return shape must stay disciplined: `showKeyRow` / `ownsPtySize` are plain
+// booleans (`v-if="ptyApi?.showKeyRow"` reads them directly — a ref there would be truthy ALWAYS and
+// would put the phone-only key row on the Mac), while `pendingModifiers` / `alive` are refs read
+// through `.value`. Adding a ref to the composable's return means every consumer here needs
+// `.value`; adding a plain value means none may use it.
+const ptyApi = shallowRef(null)
+
+// Compose row: a real text field under the key row so a full command is composed before anything
+// reaches the PTY, instead of the terminal receiving keystroke-at-a-time edits.
+//
+// COMPANION-ONLY AGAIN (see the template's `v-if`). It rendered on the Mac too from 1.22.0, on the
+// rationale that OpenKey-class engines could not type directly into xterm. That is now fixed at the
+// source (useTerminalTextDrain.js), so the Mac's justification is spent and the row went back
+// behind the same capability the key row uses. What it is for now is the surface with no physical
+// keyboard: dictation, and a soft keyboard's own IME owning the text with synchronous feedback,
+// which a no-local-echo terminal cannot give a preedit.
 const composeInputEl = ref(null)
 const composeText = ref('')
+// WebKit fires `compositionend` BEFORE `keydown`, so `isComposing` is already false on the Enter
+// that committed a syllable. Same timestamp window as the drain, for the same reason.
+let composeEndedAt = -Infinity
+function onComposeCompositionEnd() {
+  composeEndedAt = performance.now()
+}
 
-// Named per surface: on a phone the row's job is dictation, on the Mac it is the IME path above.
-const composePlaceholder = computed(() =>
-  ptyApi.value?.showKeyRow ? 'message…' : 'type here for Vietnamese / IME input…'
-)
-
-/** Enter must not send MID-COMPOSITION. A composing IME fires `keydown` with `isComposing` true
+/** ONE keydown handler for the compose box, because two (`@keydown` plus `@keydown.enter`) would
+ *  collide on the same `onKeydown` prop and silently drop one of them.
+ *
+ *  Enter must not send MID-COMPOSITION. A composing IME fires `keydown` with `isComposing` true
  *  (legacy engines report `keyCode` 229) for the Enter that COMMITS the syllable — acting on it
  *  would fire the half-finished line and swallow the commit, which is the same class of bug this
- *  whole row exists to remove. */
+ *  whole row exists to remove.
+ *
+ *  A LATCHED CTRL APPLIES HERE TOO (plan §4.3). `onComposeSend` refocuses this box after every
+ *  send, so on a phone it holds focus by DEFAULT — a latch that stopped working exactly where the
+ *  user types is not a working latch, and Ctrl+C is the escape hatch from a runaway process. This
+ *  is a latch statement about the next key, the way OS-level sticky keys behave, not a property of
+ *  one widget. It early-returns when nothing is latched, so the common case is unchanged and no new
+ *  DOM element exists to show it (Extreme Narrow, CLAUDE.md).
+ *
+ *  Deliberately narrow, each clause for a stated reason:
+ *   - Ctrl only. A latched SHIFT is ignored and PRESERVED — capitalisation is the soft keyboard's
+ *     own job and intercepting it would swallow ordinary typing.
+ *   - Only characters Ctrl actually means something for (`ctrlByteFor`), so a latched Ctrl plus a
+ *     space or a digit types normally instead of vanishing into the shell.
+ *   - Never while composing — an armed latch must never eat an IME keystroke. */
 function onComposeKeydown(e) {
   if (e.isComposing || e.keyCode === 229) return
+  const api = ptyApi.value
+  if (
+    api?.pendingModifiers.value.ctrl &&
+    e.key.length === 1 &&
+    api.ctrlByteFor(e.key) !== null
+  ) {
+    e.preventDefault()
+    api.emitKey({ char: e.key })
+    return
+  }
+  if (e.key !== 'Enter') return
+  // Shift+Enter is simply NOT HANDLED: it falls through to the textarea's own newline insertion.
+  // That is deliberate — intercepting it and inserting the newline by hand is the one form a real
+  // IME fights, and the native path is already correct.
+  if (e.shiftKey) return
+  // WebKit fires compositionend BEFORE keydown, so this Enter may be the one that COMMITTED a
+  // syllable, with `isComposing` already false. Acting on it would send a half-finished line and
+  // swallow the commit — the exact class of bug this row exists to remove.
+  if (performance.now() - composeEndedAt < POST_COMPOSITION_MS) return
   onComposeSend()
 }
 
 function onComposeSend() {
   if (!ptyApi.value) return
-  // Empty text + send is still useful (a bare Enter), so this always sends at least '\r'.
-  ptyApi.value.sendRaw((composeText.value || '') + '\r')
+  // A buffer newline and a wire newline are different things and must be translated HERE, at the
+  // send boundary — never passed through. A raw 0x0a mid-buffer reaches a readline-style shell as
+  // accept-line, so a two-line compose would submit line 1 and strand line 2 at the prompt as a
+  // stray command, which a shell then EXECUTES.
+  //
+  // What lines are joined WITH is the one open decision in this feature and it is NOT settled here:
+  // the specified form for "embedded newlines as literal text" is bracketed paste
+  // (\x1b[200~ … \x1b[201~), but sending that to a program with the mode OFF lands the escape bytes
+  // as literal garbage at the prompt — a worse failure than the bug. It must therefore be
+  // CONDITIONED on the receiving program's bracketed-paste state, and whether xterm 5.x exposes a
+  // readable accessor for that is unverified (see docs/plan/terminal-input-surface.md §3.4 and §6
+  // row 4 for the settling command). Until it is settled this sends the fallback form the plan
+  // names for the mode-off branch — the lines as separate submitted commands, i.e. what the user
+  // typed rather than corrupt bytes. An unconditional bracketed-paste wrap is explicitly rejected.
+  //
+  // A SINGLE-LINE SEND IS BIT-IDENTICAL TO BEFORE: no newline to split on, so this is `text + '\r'`.
+  // Empty text + send is still useful (a bare Enter), so it always sends at least '\r'.
+  const lines = (composeText.value || '').split(/\r\n|\n|\r/)
+  ptyApi.value.sendRaw(lines.join('\r') + '\r')
   composeText.value = ''
   // Refocus explicitly: the send BUTTON path would otherwise blur the input via its default
   // mousedown action (see `@mousedown.prevent` on it, same fix as the key row), and staying
@@ -177,18 +253,22 @@ function onComposeSend() {
 
 // §4.5 mobile key row, as data rather than eight near-identical buttons — each one carries three
 // event bindings now (see the template comment), and hand-copying those is exactly the duplication
-// a v-for exists to prevent. `arms: 'ctrl' | 'shift'` marks a sticky modifier button; everything
-// else sends a sequence (`shiftSeq`, when present, is what sticky Shift swaps `seq` for — see
-// fireKey). Tab between Esc and Ctrl per the sticky-Shift placement (between Tab and Ctrl).
+// a v-for exists to prevent.
+//
+// Each entry is one of the three shapes `emitKey` (usePtyTerminal.js) understands, and the row is
+// pure DATA: nothing here decides how a modifier is applied, which is the whole point of the single
+// funnel. `arms: 'ctrl' | 'shift'` marks a sticky-modifier TOGGLE; `csi` is a CSI final byte whose
+// modified forms are derived rather than written out four more times; `seq`/`shiftSeq` is a literal
+// with an explicitly different shifted form (Tab -> backtab).
 const KEY_ROW = [
   { title: 'Esc', label: 'Esc', seq: '\x1b' },
   { title: 'Tab', label: 'Tab', seq: '\t', shiftSeq: '\x1b[Z' },
-  { title: 'Shift (tap, then tap Tab or an arrow)', label: 'Shift', arms: 'shift' },
-  { title: 'Ctrl (tap, then type a letter)', label: 'Ctrl', arms: 'ctrl' },
-  { title: 'Up', icon: 'fa-arrow-up', seq: '\x1b[A', shiftSeq: '\x1b[1;2A' },
-  { title: 'Down', icon: 'fa-arrow-down', seq: '\x1b[B', shiftSeq: '\x1b[1;2B' },
-  { title: 'Left', icon: 'fa-arrow-left', seq: '\x1b[D', shiftSeq: '\x1b[1;2D' },
-  { title: 'Right', icon: 'fa-arrow-right', seq: '\x1b[C', shiftSeq: '\x1b[1;2C' },
+  { title: 'Shift (tap to latch, tap again to release)', label: 'Shift', arms: 'shift' },
+  { title: 'Ctrl (tap to latch, tap again to release)', label: 'Ctrl', arms: 'ctrl' },
+  { title: 'Up', icon: 'fa-arrow-up', csi: 'A' },
+  { title: 'Down', icon: 'fa-arrow-down', csi: 'B' },
+  { title: 'Left', icon: 'fa-arrow-left', csi: 'D' },
+  { title: 'Right', icon: 'fa-arrow-right', csi: 'C' },
   { title: 'Enter', label: 'Enter', seq: '\r' },
 ]
 
@@ -196,29 +276,17 @@ const KEY_ROW = [
 // prevented touchstart would otherwise send the key twice.
 let lastKeyTouchAt = 0
 
-// `\x1b[Z` (backtab) and the CSI modifier-2 arrow sequences are the standard terminal encodings
-// for Shift+Tab / Shift+arrow — AI agents (Claude Code) use Shift+Tab constantly for mode cycling,
-// which a phone's on-screen keyboard has no physical Shift key to produce.
+/** A key-row button either TOGGLES a latch or emits a key — and it never encodes anything itself.
+ *  Both the byte encoding and the latch's read/clear live in `emitKey` (usePtyTerminal.js), which
+ *  is what stops the two-latch split this row used to be half of: there is no longer a code path
+ *  where one modifier is read here and the other somewhere else. */
 function fireKey(k) {
   if (!ptyApi.value) return
-  if (k.arms === 'ctrl') {
-    ptyApi.value.armCtrl()
+  if (k.arms) {
+    ptyApi.value.toggleModifier(k.arms)
     return
   }
-  if (k.arms === 'shift') {
-    ptyApi.value.armShift()
-    return
-  }
-  // Ctrl arms the next REAL keystroke (wireInput's onData in usePtyTerminal.js) and is untouched
-  // here — Ctrl+letter still goes through the soft keyboard exactly as today. Shift instead arms
-  // the next KEY-ROW button, so it is consumed right here: swap in `shiftSeq` if this key has one,
-  // then disarm unconditionally (Enter/Esc/etc. have no `shiftSeq` and are sent unaffected, but a
-  // tap on ANY key-row key still consumes/disarms sticky Shift).
-  const shiftArmed = ptyApi.value.shiftArmed
-  const wasShiftArmed = !!shiftArmed?.value
-  const seq = wasShiftArmed && k.shiftSeq ? k.shiftSeq : k.seq
-  if (wasShiftArmed) shiftArmed.value = false
-  if (seq) ptyApi.value.sendRaw(seq)
+  ptyApi.value.emitKey(k)
 }
 
 function onKeyTouch(k) {
@@ -231,11 +299,11 @@ function onKeyClick(k) {
   fireKey(k)
 }
 
-/** Clicking the terminal mount area focuses the overlay textarea so the user can type. The
- *  textarea has pointer-events:none so mouse clicks go straight through to xterm (selection,
- *  right-click); this handler is how focus gets set at all on the new input layer. */
+/** Clicking the terminal mount area focuses xterm's own hidden textarea so the user can type —
+ *  xterm handles this itself for clicks that land on its rows, but not for the padding around
+ *  them, which is what this covers. */
 function onMountClick() {
-  if (termInput) termInput.focus()
+  term?.focus()
 }
 
 // Hardcoded to the app's existing dark palette (src/assets/main.css :root tokens) — no theme
@@ -275,6 +343,18 @@ function scheduleFit() {
     doFit()
   })
 }
+
+// THE terminal's monospace family — declared exactly once, here. It used to be written out verbatim
+// in three places (this option, the key-row button labels, the compose field), which is a
+// single-source-of-truth breach regardless of whether the value itself is right.
+//
+// It is `ui-monospace` (the macOS system monospace token) rather than nothing, because there is no
+// "no font" state for a terminal: xterm must measure a cell against SOME family, and its own
+// built-in default is `courier-new, courier, monospace` — worse than this on both cell metrics and
+// Vietnamese diacritic coverage. Deleting the option would not give the plain system font, it would
+// give Courier New. The two DOM elements that used to repeat the stack simply inherit the app's own
+// UI font now; neither has a column-alignment requirement.
+const FONT_FAMILY = 'ui-monospace, Menlo, monospace'
 
 // Floor/ceiling on the rendered size, scale included — a 3× zoom of the 12px base is a legitimate 36px, so the bounds move WITH the scale rather than capping it.
 const MIN_FONT_SIZE = 4
@@ -323,44 +403,31 @@ watch(
   (isActive) => {
     if (!isActive) return
     scheduleFit()
-    if (termInput) termInput.focus()
-    else term?.focus()
+    term?.focus()
   }
 )
 
 onMounted(async () => {
-  // Input-layer separation (docs/plan/terminal-ime-input-layer-separation.md):
-  // disableStdin prevents xterm from firing onData from its own textarea. An app-owned
-  // textarea overlay captures all keyboard input and sends committed text via sendRaw().
-  // Escape hatch: localStorage['aki-input-mode']='legacy' reverts to old guard.
-  const useLegacyInput = localStorage.getItem('aki-input-mode') === 'legacy'
+  // xterm owns KEYS, the app owns TEXT (docs/research/terminal-vietnamese-ime-root-cause-4.md §7).
+  // xterm's own hidden textarea is the capture surface — `disableStdin` stays at its default
+  // `false` and the app-owned overlay textarea that used to sit on top of the mount is gone, along
+  // with the ~40 lines of re-implemented terminal protocol it needed. All that is claimed now is
+  // the text path; see useTerminalTextDrain.js for why that split is exclusive by construction.
   term = new Terminal({
     theme: THEME,
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace',
+    fontFamily: FONT_FAMILY,
     fontSize: BASE_FONT_SIZE,
     lineHeight: 1.4,
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: true,
-    disableStdin: !useLegacyInput,
   })
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(mountEl.value)
 
-  if (useLegacyInput) {
-    imeGuard = useWkImeGuard(term)
-  } else {
-    // Lazy callback: ptyApi is populated later in this function (usePtyTerminal below), so
-    // we wire through a closure that resolves on demand. The textarea mount happens now
-    // so it can receive keyboard focus immediately; ptyApi is guaranteed set by the first
-    // keystroke because the user cannot type faster than start() resolves.
-    const onData = (text) => ptyApi.value?.sendRaw(text)
-    termInput = useTerminalInput(onData, {
-      getSelection: () => term.getSelection(),
-    })
-    termInput.mount(mountEl.value)
-  }
+  // After open(): `term.textarea` / `term.element` do not exist before it.
+  if (!legacyInput) textDrain = useTerminalTextDrain(term)
 
   // The tab strip's chip already gets a title "for free" the same way an OS terminal window does:
   // xterm parses the shell's OSC 0/2 title escapes (every shell emits these on `cd`/running a
@@ -390,17 +457,13 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(scheduleFit)
   resizeObserver.observe(mountEl.value)
 
-  if (props.active) {
-    if (termInput) termInput.focus()
-    else term.focus()
-  }
+  if (props.active) term.focus()
 })
 
 onBeforeUnmount(() => {
   if (fitFrame) cancelAnimationFrame(fitFrame)
   if (resizeObserver) resizeObserver.disconnect()
-  if (imeGuard) imeGuard.dispose()
-  if (termInput) termInput.dispose()
+  if (textDrain) textDrain.dispose()
   if (term) term.dispose()
 })
 
@@ -416,7 +479,7 @@ defineExpose({
   kill: () => ptyApi.value?.kill(),
   close: () => ptyApi.value?.close(),
   openExternal: () => ptyApi.value?.openExternal(),
-  focus: () => termInput ? termInput.focus() : term?.focus(),
+  focus: () => term?.focus(),
 })
 </script>
 
@@ -456,36 +519,10 @@ defineExpose({
   height: 100%;
 }
 
-/* Hide xterm's internal textarea — keyboard input goes through the app-owned overlay
-   (useTerminalInput.js). */
-.pty-terminal-mount :deep(.xterm-helper-textarea) {
-  display: none !important;
-}
-
-/* App-owned textarea overlay — invisible but focusable, covers the entire mount area.
-   pointer-events:none so it never intercepts mouse interaction (selection, right-click).
-   Focus is set programmatically via termInput.focus() on mount, tab switch, and click
-   on the mount area. Ref: docs/plan/terminal-ime-input-layer-separation.md */
-.aki-term-input-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  caret-color: transparent;
-  background: transparent;
-  border: none;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  color: transparent;
-  z-index: 1;
-  pointer-events: none;
-  -webkit-appearance: none;
-}
+/* NOTHING HIDES xterm's own `.xterm-helper-textarea` any more, and that is deliberate rather than
+   an omission. It is the capture surface again (useTerminalTextDrain.js), so it must be focusable;
+   `display: none` also defeats xterm's `_syncTextArea()`, which is what positions the OS's IME
+   candidate window at the cursor instead of in the corner of the screen. */
 
 .pty-terminal-mount :deep(.xterm-viewport) {
   overflow-y: auto;
@@ -519,19 +556,25 @@ defineExpose({
   cursor: pointer;
 }
 
-.pty-key:hover {
-  color: var(--text-light);
-  border-color: var(--accent-cyan);
+/* `@media (hover: hover)` is load-bearing, not tidiness: on iOS Safari a `:hover` state STICKS to
+   the last-tapped element until something else is tapped, so an UN-armed key row button could sit
+   showing a cyan border — a false positive on the exact accent the armed state uses to say "this
+   modifier is latched". The key row is a touch surface (it renders only where there is no physical
+   keyboard), so the hover affordance simply does not belong there. */
+@media (hover: hover) {
+  .pty-key:hover {
+    color: var(--text-light);
+    border-color: var(--accent-cyan);
+  }
 }
 
+/* Armed = solid accent fill (an inversion, the strongest single-property state signal available)
+   rather than a new badge/label row — Extreme Narrow, CLAUDE.md. Bound to ONE latch now, so it can
+   no longer be truthful about one modifier while lying about the other. */
 .pty-key.is-armed {
   color: var(--bg-primary);
   background: var(--accent-cyan);
   border-color: var(--accent-cyan);
-}
-
-.pty-key-label {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 }
 
 /* Hairline between the key group and the zoom group — a 1px rule inside a row that already exists,
@@ -555,16 +598,33 @@ defineExpose({
   flex-shrink: 0;
 }
 
+/* Typography matches the project task-note field (tasks/NotesField.vue) — `font-family: inherit`,
+   12px, line-height 1.5 — which is the input the owner named as the one that renders correctly.
+   The monospace override this used to carry was the third verbatim copy of the terminal's font
+   stack and bought nothing: a compose field is prose being typed, not a column-aligned grid.
+   Kept, unlike NotesField: the box's own background/border/radius. NotesField sits inside a card
+   that already reads as an editable region; this sits in a flat strip next to a send button and
+   needs its own affordance.
+   `field-sizing: content` grows it only when Shift+Enter actually adds a line — one row tall the
+   rest of the time (Extreme Narrow, CLAUDE.md), capped so a long paste cannot eat the terminal.
+   The growth cannot re-wrap the PTY: this row renders only where `showKeyRow` is true, i.e. only
+   where `ownsPtySize` is false, so `doFit` returns before `fitAddon.fit()` on every surface that
+   has this element at all. */
 .pty-compose-input {
   flex: 1;
   min-width: 0;
   padding: 4px 8px;
-  font-size: 13px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-light);
+  resize: none;
+  overflow-y: auto;
+  max-height: 5.5em;
+  field-sizing: content;
 }
 
 .pty-compose-input::placeholder {

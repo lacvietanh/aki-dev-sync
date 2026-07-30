@@ -1,3 +1,5 @@
+Status: superseded by `docs/research/terminal-vietnamese-ime-root-cause-4.md`
+
 # Vietnamese typing in the in-app terminal — the auto-restore residual bug, VS Code verdict, ranked candidates
 
 Chain: follows `terminal-vietnamese-ime-root-cause-2.md` (guard v1 post-mortem, delivery-shape matrix, guard v2, shipped and Mac-accepted for the plain-syllable path). That doc needs a `Status: superseded by terminal-vietnamese-ime-root-cause-3.md` line added at its top — **not done here**; this doc does not edit it (research docs are immutable event records, `RULE-docs.md` §B2). The orchestrator makes that edit.
