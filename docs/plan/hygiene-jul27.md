@@ -1,5 +1,13 @@
 # Hygiene batch — jul27 (WS-E)
 
+Status (2026-07-30, plan-consolidation pass): **2 of 3 closed, 1 unclassified — this doc stays active only for item 3.**
+
+- **Item 1 (WebSocket reconnect noise) — closed, no code change.** The verdict was independently re-traced against `src/services/bridge.js`; nothing in app code emits the message and every close path converges through a capped backoff. Nothing to execute.
+- **Item 2 (project-icon 404) — fix applied, uncommitted.** `src/utils/projectIcon.js` carries the edit in the working tree and it has been audited in §2 below. Nothing further to design.
+- **Item 3 (hard-wrap sweep) — UNCLASSIFIED, owner's call (`agent.B5`).** The sweep has already run across 49 doc files (~1409 insertions / 4937 deletions) and none of it is committed. From the tree alone, finished-work-awaiting-a-commit and an abandoned mid-pass are indistinguishable, so this is not auto-classified. The one-word question for the owner: **is the uncommitted hard-wrap sweep finished, or abandoned?** If finished, this doc moves to `done/` and only its "unsafe-to-collapse" list needs preserving; if abandoned, §3's inventory is still the live work list.
+
+This doc was deliberately **not** moved to `done/` for that reason alone. Everything below is the original triage.
+
 Owner workstream for `docs/plan/backlog-jul27.md` WS-E. Three unrelated items triaged together because none blocks or is blocked by the other workstreams. This doc is a **triage report** (agent.B5): findings and verdicts only — nothing in the tree has been touched to produce it.
 
 ## 1. Companion WebSocket reconnect noise
