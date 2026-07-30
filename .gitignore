@@ -28,3 +28,9 @@ ADVISE.html
 
 # Disposable visual export from /akihtmlreport - regenerated wholesale each run, not a doc source of truth (docs/ is)
 REPORT.html
+
+# This repo is itself a project the app can manage, so it grows its own runtime notes file.
+# It holds the owner's real task list for this repo, not a fixture - see docs/feat/project-task-list.md
+# "Self-hosting wrinkle" for why that is left uncommitted here despite the feature's own design intent
+# ("meant to be committed") for every OTHER project this app manages.
+.akidevsync/

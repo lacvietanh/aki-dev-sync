@@ -61,6 +61,8 @@ In addition to individual tasks, a general **Project Notes** card is placed at t
 
 **The local repo is the source of truth for a project; a remote host is only somewhere its code runs.** Tasks and notes therefore live in the project's own working directory, not in the app's central `projects.json`. The file is meant to be committed — that is the point of the move. Design record: `docs/plan/done/1.22.0-notes-json-ssot.md`. Owner: `src-tauri/src/project_notes.rs`, the only place in the Rust tree that spells `.akidevsync/`.
 
+**Self-hosting wrinkle, noted 2026-07-30, unresolved.** This app is itself a project the app can manage, so its own repo also grows a `.akidevsync/notes.json` — and this one is real: it holds the owner's actual task list for this project, not a fixture. It is gitignored in *this* repo rather than committed, which is the opposite of the paragraph above ("the file is meant to be committed — that is the point of the move"). That is a live tension, not a settled exception: "tasks travel with the repo so they're shareable" argues for committing it here of all places, while "this is the owner's private working list, not something to publish in an open-source repo" argues against. Left for the owner to decide; nothing here should be read as the resolution.
+
 ```json
 {
   "about": "https://github.com/lacvietanh/aki-dev-sync",
