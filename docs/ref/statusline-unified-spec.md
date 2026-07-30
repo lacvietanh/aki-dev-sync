@@ -24,13 +24,21 @@ Kịch bản không đọc file từ đĩa cứng mà nhận dữ liệu JSON tr
 | **Cache** | `.context_window.current_usage` | `.context_window.current_usage` | `.cache_read_input_tokens` / `total_cache` |
 | **Account** | `.account.email` | `.account.email` / `.user.email` | `.account.email // .user.email // .email // ""` |
 
-### Cơ chế Fallback Account Email:
-Không CLI nào đặt email vào payload, nên khi `JSON_ACCOUNT_EMAIL` rỗng phải fallback xuống đĩa — **tách hẳn 2 nhánh theo CLI, không thử lần lượt**: máy có cả 2 file thì file nào tồn tại sẽ thắng và tag hiện nhầm account của CLI kia.
+### Cơ chế nguồn Account Email:
+**Tách hẳn 2 nhánh theo CLI, không thử lần lượt** — máy có cả 2 file thì file nào tồn tại sẽ thắng và tag hiện nhầm account của CLI kia.
 
-| CLI | Nguồn fallback |
-|---|---|
-| Claude Code | `~/.claude.json` → `.oauthAccount.emailAddress` |
-| AGY | `~/.gemini/google_accounts.json` → `.active` |
+| CLI | Nguồn | Thứ tự |
+|---|---|---|
+| Claude Code | `claude auth status` chạy live, cache TTL ≤15s (`auth-cache.json`) chỉ để tránh spawn subprocess mỗi lần render | **luôn ghi đè payload, không phải fallback** |
+| AGY | `~/.gemini/google_accounts.json` → `.active` | payload trước, file đĩa là dự phòng |
+
+**Lịch sử đường dẫn `.claude.json` (đã không còn dùng cho email, xem đoạn dưới):** bug thứ hai phát hiện 2026-07-30 là đường dẫn sai (`$HOME/.claude.json` thay vì `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json` — CLI ghi `oauthAccount` vào file **trong thư mục config của nó**, mặc định `$HOME/.claude` kể cả khi `CLAUDE_CONFIG_DIR` không được set, xem `docs/ref/multiple-account-config-dir.md:19`). Đường dẫn đã đúng nhưng file đó **vẫn không đủ tin cậy cho danh tính** — xem đoạn dưới.
+
+**Bug thứ ba, cùng ngày 2026-07-30: `.claude.json` không phải nguồn danh tính đáng tin, kể cả với đường dẫn đúng (chi tiết: `docs/plan/cc-account-identity-ssot.md` §15).** File này do CLI ghi lại theo lịch refresh nội bộ của chính nó, không theo lượt lệnh - khi hai tiến trình `claude` chia sẻ một `CLAUDE_CONFIG_DIR` (hai account thật cùng đăng nhập, workflow bình thường của owner, không phải edge case), tiến trình nào flush file này sau cùng thắng, bất kể tiến trình nào vừa đăng nhập gần nhất. Nguồn đúng là `claude auth status` - lệnh này resolve danh tính của **phiên gọi nó**, không đụng tới `.claude.json` nên không dính race chia sẻ file (xác nhận: hai terminal chia sẻ config dir, gọi `claude auth status` cùng lúc, ra hai email thật khác nhau; lệnh này cũng xác nhận không tự ghi `.claude.json`). Spawn nó mỗi lần render tốn ~200-300ms, nên statusline cache kết quả TTL 15s trong `auth-cache.json` - **chỉ để tránh spawn subprocess dư thừa**, không phải để chịu đựng staleness qua một lần đổi account: cache chung này với `get-claudecode-usage.sh`, và app tự poll mỗi ~30s nên trong đa số trường hợp statusline thấy cache đã ấm sẵn.
+
+**Statusline là một chỗ giữ email độc lập với app** — sửa app mà bỏ statusline chỉ là nửa fix, vì người dùng vẫn thấy email cũ trên mỗi turn. `scripts/get-claudecode-usage.sh` và statusline giờ cùng gọi `claude auth status`; hai bên không được phép bất đồng về việc host này thuộc account nào.
+
+Ràng buộc kèm theo: hai bản đã cài (`~/.claude/statusline-command.sh` và `~/.gemini/antigravity-cli/statusline.sh`) phải **giống nhau từng byte** ngoài vùng `AKI-GENERATED-CONFIG` — đúng như header của template tự cam kết. Đổi nhánh này rồi thì phải Apply lại cả hai đường dẫn, nếu không chỉ một bản có hành vi mới.
 
 ### Thời điểm reset quota — 2 CLI dùng 2 thang khác nhau:
 
