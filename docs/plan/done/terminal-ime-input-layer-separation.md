@@ -1,6 +1,8 @@
 # Terminal Input Layer Separation — Design Plan
 
-Status: **Implemented — `src/composables/useTerminalInput.js` created, `TerminalView.vue` updated. `useWkImeGuard.js` kept for `legacy` escape hatch. Runtime verification on Mac with OpenKey pending.**
+Status: **Implemented — shipped in commit `7ce5804` ("feat(terminal): app-owned textarea input layer, replaces WkImeGuard"): `src/composables/useTerminalInput.js` created, `TerminalView.vue` updated. `useWkImeGuard.js` kept for the `legacy` escape hatch. Runtime verification on a Mac with OpenKey is still pending.** Moved to `done/` on 2026-07-30 by the plan-consolidation pass, verified against the commit rather than against this line.
+
+Two stale references outside this doc still point at the pre-move path `docs/plan/terminal-ime-input-layer-separation.md` and could not be corrected here — source comments are out of scope for a docs pass, and `docs/research/` is immutable: `src/components/TerminalView.vue:332` and `:468`, `src/composables/useTerminalInput.js:4`, and `docs/research/terminal-vietnamese-ime-root-cause-2.md:1`. Fix the three source comments in the next code-touching task; leave the research line alone (`docs.B2` — a research doc is never edited after the fact).
 
 Chain: follows `docs/research/terminal-vietnamese-ime-root-cause-2.md` (guard v2), supersedes `useWkImeGuard.js`.
 

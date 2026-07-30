@@ -1,6 +1,8 @@
-# Terminal mobile keyboard viewport — design (not yet implemented)
+# Terminal mobile keyboard viewport
 
-Read this before touching layout CSS for the dock/terminal: `docs/arch/terminal-stack.md`, `docs/feat/in-app-terminal.md`. This doc answers one pinned request: on a phone opening the companion page, tapping the compose input (or the terminal) and having the on-screen keyboard appear breaks the layout — described by the user as the keyboard "replacing" the terminal view. It is design-only; nothing here has been implemented.
+Status: **IMPLEMENTED — shipped in commit `873e849` ("fix(mobile): keyboard no longer covers the terminal's compose input"). Real-device confirmation on the three phone surfaces (§4/§5) is still outstanding.** Moved to `done/` on 2026-07-30 by the plan-consolidation pass; the "design-only, nothing implemented" line below was stale and is corrected here rather than in the body. What landed: §3.1 `src/composables/useVisualViewportHeight.js`, §3.2 `main.css`'s `--vvh` variable with its pre-JS `100vh` fallback, §3.3 `useDockLayout.js`'s two `vh` math sites (`MAXIMIZED_CSS` and the dock-height calc, both now `var(--vvh, 100vh)`), §3.4 `index.html`'s `interactive-widget=resizes-content`. Verified by reading those four files, not by trusting this doc's own status line.
+
+Read this before touching layout CSS for the dock/terminal: `docs/arch/terminal-stack.md`, `docs/feat/in-app-terminal.md`. This doc answers one pinned request: on a phone opening the companion page, tapping the compose input (or the terminal) and having the on-screen keyboard appear breaks the layout — described by the user as the keyboard "replacing" the terminal view. It was design-only when written.
 
 ## 0. Scope
 
