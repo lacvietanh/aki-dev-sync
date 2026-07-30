@@ -144,12 +144,16 @@ Kế thừa từ `terminal-input-surface.md` §7, thu hẹp lại theo phạm vi
 
 ---
 
-## 6. Trạng thái commit
+## 6. Trạng thái commit — ĐÃ COMMIT HẾT, 2026-07-31
 
-Toàn bộ công việc terminal ở trên **chưa commit**: `useTerminalTextDrain.js` (mới),
-`TerminalView.vue` (sửa), `useTerminalInput.js` + `useWkImeGuard.js` (đã xoá),
-`terminal-vietnamese-ime-root-cause-3.md` (dòng status "superseded"), `-4.md` (mới),
-`terminal-input-surface.md` (mới), cùng hai file jul31 này.
+Cây làm việc sạch. Toàn bộ công việc terminal của phiên này đã lên bốn commit, theo thứ tự:
 
-Vì §2.1 là blocker, **đây là quyết định của chủ sở hữu** — commit ngay để có mốc lùi cho hội đồng,
-hay giữ trong cây làm việc cho tới khi double space được giải. Không tự quyết.
+- `bee7498` — doc nghiên cứu ghost-file audit (đã được index và CHANGELOG trích dẫn từ trước).
+- `4851f40` — bản viết lại text drain (`useTerminalTextDrain.js` mới, `useTerminalInput.js` +
+  `useWkImeGuard.js` bị xoá), cùng fix `shallowRef` cho hiển thị nút Ctrl/Shift armed (§2.3).
+- `2d0f37e` — cặp research/plan jul31 (file này + file song sinh), `docs/index.md`, `CHANGELOG.md`.
+- `0a6d314` — gỡ escape hatch `aki-input-mode='legacy'` (§4).
+
+**Mốc lùi cho hội đồng nếu việc truy §2.1 (double space) đi sai hướng: `4851f40`.** Đó là commit
+mang kiến trúc text-drain đang chạy; lùi về đó bỏ được cả fix hiển thị lẫn việc gỡ escape hatch mà
+không đụng tới kiến trúc gốc.
