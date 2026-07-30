@@ -1,8 +1,8 @@
 # Plan — the Antigravity card must show the live reading, not a pinned entity's old cache
 
-Status: **Fix 1 resolved (2026-07-30 — entity model change)** · Fix 2 and Fix 3 still open · Read-only analysis; no source file was changed while producing this document.
+Status: **DONE (2026-07-30) — verified by the owner on both local and a remote host.** Fix 1 resolved by the v4 entity model. Fix 3 is moot: the probe was rewritten from Node (`get-antigravity-usage.js`, `execAsync` with a fixed buffer) to POSIX `sh` (`get-antigravity-usage.sh`, plain command substitution) in `610fd93`, which has no equivalent buffer ceiling to hit — there is nothing left to bound. Fix 2 is partially addressed: see §13.
 
-> **2026-07-30 update:** Fix 1 is resolved structurally by the v4 entity model change. Account identity is now `(host, email)` with no `sourceType`. A pin is an email-only handle and matches any surface (IDE or CLI) running that account. The "pin says ide, live snapshot says cli" mismatch that §1 documents cannot occur when pins carry no sourceType at all. Fixes 2 and 3 are independent defects that remain open.
+> **2026-07-30 update:** Fix 1 is resolved structurally by the v4 entity model change. Account identity is now `(host, email)` with no `sourceType`. A pin is an email-only handle and matches any surface (IDE or CLI) running that account. The "pin says ide, live snapshot says cli" mismatch that §1 documents cannot occur when pins carry no sourceType at all.
 
 **What it fixes:** the AG card renders an arbitrarily old cached reading while the monitor is fetching and correctly caching a fresh one, whenever the running Antigravity surface is not the one the slot is pinned to. Reported as: "chạy `agy` nãy giờ mà nó không hề cập nhật được usage, vẫn cache từ rất lâu".
 
@@ -161,3 +161,12 @@ Land these in the same task as the fix. Read each before editing — if one turn
 - `docs/research/antigravity-multi-instance-cli-discovery-jul22.md` §2 — the captured `agy` process line showing no `--csrf_token` argv.
 - `docs/plan/usage-probe-oop.md` — WS-C. See §7.
 - `docs/plan/investigate-ag-account-switch-detection.md` — closable. See §8.
+
+## 13. Closing note (2026-07-30) — what actually shipped, against what was decided in §5
+
+The probe rewrite (`610fd93`, JS → `scripts/get-antigravity-usage.sh`) landed before this plan's Fix 2/3 were implemented as originally specified, and changed the ground under both:
+
+- **Fix 3 — moot, not fixed.** The `maxBuffer` ceiling this fix targeted is a Node `execAsync` concern; the shell rewrite reads `ps auxww` via plain command substitution, which has no analogous fixed buffer to overflow. Nothing to bound.
+- **Fix 2 — landed differently than specified, and only halfway.** The shell script does name the condition: a `401` with no `--csrf_token` argv on a CLI process logs `"CLI PID $pid: GetUserStatus returned 401 and this process exposes no --csrf_token argv - its quota cannot be read"` (`get-antigravity-usage.sh:383`). But the status code is not turned into a `miss_reason` the UI can show — `antigravity_payload.rs:23` drops any process whose `status_code` is outside 200-299 silently, the same "anonymous continue" shape §5 flagged, just moved from the script into Rust. **Residual, not closed**: a CSRF-blocked CLI session still reads as an ordinary soft-miss to the app, distinguishable only by grepping `usage.log` by hand. Worth a follow-up only if it's actually hit in practice — the owner has not reported this condition occurring.
+
+**Overall verdict:** the reported symptom (pinned slot showing an old cached reading while a live one exists) is gone — confirmed by the owner on both the local machine and a remote host. Closing this plan on that basis; the Fix 2 residual above is recorded so it isn't rediscovered as a surprise later, not because it blocks anything today.
