@@ -4,17 +4,22 @@
 — cùng tên, cùng ngày. File đó là **quan sát**; file này là **quyết định và việc còn phải làm**.
 Mọi mục dưới đây trỏ về số mục tương ứng bên đó thay vì chép lại quan sát.
 
-**Trạng thái:** kiến trúc đã đúng hướng và phần lớn bề mặt đã đóng. Còn **1 blocker + 2 defect**.
-File này được mở ra để một **phiên hội đồng riêng** nghiên cứu — nó cố ý *không* chứa lời giải.
+**Trạng thái:** kiến trúc đã đúng hướng. Blocker double space (§2.1) **đã đóng 2026-07-31** sau một
+phiên hội đồng riêng (`red-team-drain` + `regression-surface`) và xác nhận trên máy thật. Còn
+**2 defect**: hiển thị latch Ctrl/Shift (§2.3, đã sửa, chờ xác nhận) và Android/Gboard (§2.2, còn mở,
+chưa truy nguyên).
 
 **Thay thế / thu hẹp các plan trước:**
 - [`docs/plan/terminal-input-surface.md`](terminal-input-surface.md) — bảng §6 của nó đã được chạy
   hết một lượt; kết quả nằm ở research §4 (bảng checklist). Plan đó nay chỉ còn hiệu lực cho
   phần **UI feedback** (§2 dưới đây). Thứ tự thi công `#3 → #13 → #2 + #8` của nó đã hoàn tất trên thực tế.
 - [`docs/research/terminal-vietnamese-ime-root-cause-4.md`](../research/terminal-vietnamese-ime-root-cause-4.md)
-  — vẫn là head của chuỗi nghiên cứu và vẫn mô tả đúng kiến trúc đang chạy. **Một tiền đề của nó hết
-  hiệu lực**: §5.3 coi khả năng A/B `aki-input-mode='legacy'` là điều kiện tiên quyết; chủ sở hữu đã
-  bác bỏ (§4 dưới đây).
+  — không còn là head của chuỗi. **Hai tiền đề của nó hết hiệu lực**: §5.3 coi khả năng A/B
+  `aki-input-mode='legacy'` là điều kiện tiên quyết, chủ sở hữu đã bác bỏ (§4 dưới đây); và §7's
+  "narrow" keypress veto cùng dòng đầu bảng exclusivity của nó, bị phiên hội đồng double-space lật lại
+  bằng bằng chứng máy thật — xem
+  [`terminal-vietnamese-ime-root-cause-5.md`](../research/terminal-vietnamese-ime-root-cause-5.md),
+  head mới của chuỗi.
 
 ---
 
@@ -42,16 +47,46 @@ Hệ quả: việc xoá `useTerminalInput.js` và `useWkImeGuard.js` là đúng 
 
 Ba mục, xếp theo mức chặn. Mục 2.1 phải giải trước vì nó che khuất phần còn lại.
 
-### 2.1 — BLOCKER: double space, không liên quan bộ gõ
+### 2.1 — BLOCKER: double space — ĐÃ ĐÓNG 2026-07-31
 
-Quan sát: research §5.2. Tóm tắt điều kiện: mọi dấu cách bị nhân đôi, chữ cái thì không, **không bật
-bộ gõ nào cũng bị**, trên **Chrome**. Có trường hợp một dấu cách chen vào giữa âm tiết (`bá o`).
+Quan sát gốc: research §5.2. Truy nguyên đầy đủ, bằng chứng file:dòng và xác nhận máy thật:
+[`terminal-vietnamese-ime-root-cause-5.md`](../research/terminal-vietnamese-ime-root-cause-5.md).
+Ledger phiên hội đồng:
+`/Users/aki/.aki/agent-council/aki-dev-sync/2026.07.31-0232-double-space/checklist.md`.
 
-Ràng buộc cho lời giải:
-- Phải giải thích được **vì sao chỉ space**, không phải mọi ký tự.
-- Phải giải thích được **research §5.4**: cùng phiên gõ, phần sau khi OpenKey auto-restore lại **không**
-  bị double space. Bất kỳ giả thuyết nào không khớp quan sát này là sai.
-- Không được đánh đổi bằng cách phá lại mục 1 (bracketed paste, phím chức năng, latch).
+**Nguyên nhân gốc:** `cancel(ev, force)` (`Terminal.ts:1308`) là no-op khi thiếu `force` và khi
+`cancelEvents` tắt (mặc định `false` — `OptionsService.ts:56`; `TerminalView.vue` không truyền cờ
+này). `_keyPress` gọi `cancel(ev)` không `force` (`Terminal.ts:1133`). `Keyboard.ts:381` chỉ gán
+`result.key` khi `keyCode >= 48` — space (32) trượt qua, nên `_keyDown` `return true` mà không cancel
+thật (`Terminal.ts:1046-1048`). Hệ quả: `_keyPress` gửi ký tự lần một, trình duyệt vẫn chèn vào
+textarea, drain đọc và gửi lần hai — đúng hai lần, đúng bằng chứng quan sát. Guard chống-gửi-hai-lần
+có sẵn của xterm (`_keyPressHandled`, `Terminal.ts:1177`) không cứu được: nó sống trong `_inputEvent`,
+gắn trực tiếp trên textarea của xterm (`Terminal.ts:384`), còn drain gắn ở pha capture trên tổ tiên
+`term.element` và gọi `stopPropagation()` khiến `_inputEvent` không bao giờ chạy — vô hiệu hoá theo
+cấu trúc, không theo giá trị cờ. **Corollary chưa từng được đo trước đây:** chữ HOA A-Z đi cùng đường
+với space qua HACK caps-lock riêng (`Terminal.ts:1052-1056`).
+
+**research §5.4 (đoạn sau OpenKey auto-restore không bị double) được giải thích:** OpenKey gửi cả
+chuỗi kèm dấu cách cuối trong một sự kiện, Chrome/WKWebView gắn `keyCode 229` cho chuỗi nhiều ký tự,
+nên carrier đó thoát sớm qua `CompositionHelper` và không bao giờ chạm nhánh space nêu trên.
+
+**Fix (`src/composables/useTerminalTextDrain.js`):** `customKeyEventHandler` giờ veto **mọi**
+`keypress`, thay vì chỉ veto carrier đa ký tự như trước — bớt một nhánh phân loại, không thêm guard.
+Invariant đúng theo cấu trúc DOM (`preventDefault` chặn mutation textarea) thay vì theo phân loại
+phím.
+
+**Xác nhận trên máy thật, chủ sở hữu, 2026-07-31:**
+- Trước fix: tiên đoán từ mã nguồn — gõ `TEST` phải ra `TTEÉTT` — đo đúng, xác nhận cả cơ chế lẫn
+  corollary chữ HOA.
+- Sau fix: Mac + OpenKey (`tét`/`TÉT`/`báo cáo`) sạch; Chrome mặt remote (`tét TÉT báo cáo`) sạch;
+  `vim` mũi tên và Ctrl+C bình thường.
+- Sau fix, Android/Gboard mặt remote: không double space; vẫn đúng hình dạng defect §2.2 cũ — fix
+  này không đụng tới nó.
+- **Chưa đo, không tính là PASS:** Option+mũi tên — chủ sở hữu chủ động gác lại lần này.
+- **Không tái hiện được, không phải đã sửa:** `bá o` (dấu cách chen giữa âm tiết) thử lại không ra
+  lại. Không có cơ chế nào trong mã nguồn giải thích được hình dạng đó từ nguyên nhân gốc ở trên
+  (giả thuyết "drain bỏ sót textarea ở nhánh composition" bị bác vì nhánh đó cần `compositionstart`
+  thật, mâu thuẫn với việc bug tái hiện khi không bật bộ gõ) — nên không gộp vào fix này.
 
 ### 2.2 — Android / Gboard: ký tự gốc và ký tự đã sửa đều tới PTY
 
@@ -144,17 +179,26 @@ Kế thừa từ `terminal-input-surface.md` §7, thu hẹp lại theo phạm vi
 
 ---
 
-## 6. Trạng thái commit — ĐÃ COMMIT HẾT, 2026-07-31
+## 6. Trạng thái commit
 
-Cây làm việc sạch. Toàn bộ công việc terminal của phiên này đã lên bốn commit, theo thứ tự:
+Sáu commit đã lên cho công việc terminal của phiên này, theo thứ tự:
 
 - `bee7498` — doc nghiên cứu ghost-file audit (đã được index và CHANGELOG trích dẫn từ trước).
 - `4851f40` — bản viết lại text drain (`useTerminalTextDrain.js` mới, `useTerminalInput.js` +
   `useWkImeGuard.js` bị xoá), cùng fix `shallowRef` cho hiển thị nút Ctrl/Shift armed (§2.3).
 - `2d0f37e` — cặp research/plan jul31 (file này + file song sinh), `docs/index.md`, `CHANGELOG.md`.
 - `0a6d314` — gỡ escape hatch `aki-input-mode='legacy'` (§4).
+- `c417f99`, `f2b9fe2` — hai lần sửa tiếp §6 của chính file này cho khớp thực tế (mục này từng bị bỏ
+  sót cập nhật hai lượt liền trước).
 
-**Mốc lùi cho hội đồng nếu việc truy §2.1 (double space) đi sai hướng: `4851f40`.** Đó là commit
-mang kiến trúc text-drain đang chạy, và fix hiển thị `shallowRef` (§2.3) đã nằm sẵn TRONG chính
-commit này (amend trước khi push) nên lùi về đó **vẫn giữ** fix hiển thị. Thứ duy nhất mất đi là
-việc gỡ escape hatch (`0a6d314`) và các commit doc nằm trên nó.
+**Chưa lên commit tại thời điểm viết đoạn này:** fix double space (§2.1) trong
+`src/composables/useTerminalTextDrain.js`, cùng toàn bộ việc đồng bộ tài liệu của lượt này — mục
+này, §2.1 ở trên, dòng `Status: superseded by` mới thêm vào
+`terminal-vietnamese-ime-root-cause-4.md`, doc mới `terminal-vietnamese-ime-root-cause-5.md`,
+`docs/arch/terminal-stack.md`, `docs/feat/in-app-terminal.md`, `CHANGELOG.md`. Lead sẽ gộp và commit;
+không đoán hash ở đây.
+
+**Mốc lùi cho hội đồng nếu việc truy §2.1 đi sai hướng vẫn là `4851f40`, không đổi.** Fix double
+space nằm TRÊN các commit đã có và không sửa lại kiến trúc drain của `4851f40`, nên lùi về đó vẫn giữ
+fix hiển thị `shallowRef` (§2.3) như mô tả trước; thứ mất đi là việc gỡ escape hatch (`0a6d314`), các
+commit doc nằm trên nó, và fix double space (chưa commit) cùng lượt đồng bộ tài liệu này.

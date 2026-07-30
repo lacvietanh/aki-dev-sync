@@ -1,5 +1,7 @@
 # Vietnamese typing in the in-app terminal — the mechanism was inverted; the decided architecture
 
+Status: §7 point 1 (the "narrow" keypress veto) and the first row of its exclusivity table superseded by `docs/research/terminal-vietnamese-ime-root-cause-5.md` (the jul31 double-space blocker proved that row false — `_keyPress` does not force-cancel space or uppercase A-Z). Every other part of this doc's architecture (the drain, composition stand-down, the 229 irreducible keydown claim, no vendoring, no bundled 6.x upgrade) stands unchanged.
+
 Chain: follows `terminal-vietnamese-ime-root-cause-3.md` (residual auto-restore bug, three ranked candidates, a gated `classify()` patch). This doc reverses that chain's central mechanism against engine source, closes its open candidate analytically, and decides the architecture. It edits nothing in `-jul27.md`, `-2.md` or `-3.md` beyond the single `Status: superseded by` line `docs.B2` allows.
 
 ## Start time
