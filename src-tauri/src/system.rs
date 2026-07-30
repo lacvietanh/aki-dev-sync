@@ -313,7 +313,7 @@ fn ensure_local_dir(path: &str) -> Result<(), String> {
     }
 }
 
-/// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as `run_project_command`/SSH terminal.
+/// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as the SSH terminal.
 ///
 /// `local_path` is optional (contract C-1 with the in-app terminal, which sends `null` when it cannot read the shell's cwd). Absent, empty, or the bare string `~` all mean **no `cd` at all** - the new shell then starts in `$HOME` by itself, which is what the caller wanted. Emitting `cd "~"` instead, as this used to, never worked: a tilde inside quotes is not expanded, so the window opened and immediately printed "no such file or directory".
 #[tauri::command]
@@ -837,56 +837,10 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
     }
 }
 
-/// Opens a Terminal window `cd`'d into `local_path` running `cmd`. Shared by `run_project_command` (BUILD) and `run_project_dev` (DEV) so the terminal-launch line is not duplicated between them.
-#[cfg(target_os = "macos")]
-fn run_in_project_terminal(local_path: &str, cmd: &str) -> Result<(), String> {
-    // Refuse BEFORE opening a window: `cd` failing inside Terminal.app is invisible to us, so
-    // DEV/BUILD used to report "Command started in Terminal!" for a project whose volume was not
-    // mounted - the command never ran.
-    ensure_local_dir(local_path)?;
-    // `local_path` is user-typed free text, so it is quoted. `cmd` is NOT: it is the app-built
-    // command line from `check_project_stack` (`npm run build:app`, …) and must stay parseable as
-    // a command, not collapse into one literal word.
-    let shell_cmd = format!("cd {} && {}", shell_quote(local_path), cmd);
-    open_terminal_with_command(&shell_cmd)
-}
-
-#[tauri::command]
-pub async fn run_project_command(local_path: String, cmd: String) -> Result<(), String> {
-    // spawn_blocking for the `ensure_local_dir` inside - see `open_local_terminal`.
-    tauri::async_runtime::spawn_blocking(move || {
-        #[cfg(target_os = "macos")]
-        {
-            run_in_project_terminal(&local_path, &cmd)?;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = (&local_path, &cmd);
-        }
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
-}
-
-/// DEV button command: opens the dev command in Terminal, exactly like `run_project_command` (BUILD). An earlier version also polled for the dev server's port to come up and auto-opened it in a browser; removed - it never reliably worked across the range of real project configs (custom dev scripts, non-standard ports, monorepo boot times) and the fixed-cost complexity (port resolution, TCP poll, detached background task) wasn't worth the unreliable payoff. The user opens the browser themselves once the Terminal shows the server is up.
-#[tauri::command]
-pub async fn run_project_dev(local_path: String, cmd: String) -> Result<(), String> {
-    // spawn_blocking for the `ensure_local_dir` inside - see `open_local_terminal`.
-    tauri::async_runtime::spawn_blocking(move || {
-        #[cfg(target_os = "macos")]
-        {
-            run_in_project_terminal(&local_path, &cmd)?;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = (&local_path, &cmd);
-        }
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
-}
+// `run_project_command` (BUILD), `run_project_dev` (DEV) and their shared `run_in_project_terminal`
+// helper were removed 2026-07-30: DEV/BUILD now launch into the in-app terminal instead
+// (`docs/plan/done/dev-build-in-app-launch.md`), and these external-`Terminal.app` commands had no
+// remaining call site once `ProjectTable.vue` switched to `openRunCommand`.
 
 // ---------------------------------------------------------------------------
 // LIVE external-Terminal count (docs/feat/in-app-terminal.md, the `TERM` cell's bottom badge).
