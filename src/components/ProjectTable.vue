@@ -1305,8 +1305,15 @@ fieldset:disabled .switch {
        more blank space than it needed. Action column (OPEN + select-push) also narrows since
        OPEN's label now hides at the same 700px breakpoint via u-narrow-hide.
        Project column floor raised 6.5rem -> 7.5rem, and it now carries the flex weight (2fr) so a
-       wider phone/window spends the extra width on the name+paths, not on the sync cluster. */
-    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem minmax(4.5rem, 1fr);
+       wider phone/window spends the extra width on the name+paths, not on the sync cluster.
+       Sync track is a bare 1fr, not minmax(4.5rem, 1fr), for the identical reason the wide-mode
+       track above dropped its own fixed minimum: 4.5rem (72px) is smaller than this cluster's own
+       min-content even icon-only (PUSH ~34px + DRY ~21px + PULL ~34px + two 3px gaps + 8px padding
+       + 4px margin = ~107px for the fieldset alone, plus LOG ~29px and the gear button's fixed 28px
+       plus two 6px gaps from actions-wrapper = ~176px total) - a fixed length there overrides the
+       auto/min-content floor a bare 1fr gets for free, so the fixed-length version was shrinking
+       the whole cluster below its own icons and crushing PUSH/DRY/PULL/LOG/gear into each other. */
+    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem 1fr;
     --grid-gap: 0.4rem;
   }
 
