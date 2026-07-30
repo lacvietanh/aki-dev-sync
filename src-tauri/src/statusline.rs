@@ -338,7 +338,7 @@ const TARGETS: &[Target] = &[
                  jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS\"\n\
                  if [ -f \"$FILE\" ]; then cp \"$FILE\" \"$FILE.aki-bak-$(date +%s)\"; fi\n\
                  tmpf=$(mktemp \"$HOME/.claude/.statusline.aki-tmp.XXXXXX\")\n\
-                 cat > \"$tmpf\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}AKI_STATUSLINE_CLAUDE_EOF\n\
+                 cat > \"$tmpf\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}\nAKI_STATUSLINE_CLAUDE_EOF\n\
                  chmod +x \"$tmpf\"\n\
                  mv \"$tmpf\" \"$FILE\"\n"
             )
@@ -359,7 +359,7 @@ const TARGETS: &[Target] = &[
                  jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS_AGY\"\n\
                  if [ -f \"$FILE_AGY\" ]; then cp \"$FILE_AGY\" \"$FILE_AGY.aki-bak-$(date +%s)\"; fi\n\
                  tmpf=$(mktemp \"$HOME/.gemini/antigravity-cli/.statusline.aki-tmp.XXXXXX\")\n\
-                 cat > \"$tmpf\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}AKI_STATUSLINE_AGY_EOF\n\
+                 cat > \"$tmpf\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}\nAKI_STATUSLINE_AGY_EOF\n\
                  chmod +x \"$tmpf\"\n\
                  mv \"$tmpf\" \"$FILE_AGY\"\n"
             )
