@@ -3,6 +3,19 @@
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
 > **Updated 2026-07-22:** Multi-Surface Integration (v1.17.0: Antigravity Desktop App `AG`, IDE `IDE`, CLI `CLI`). See [docs/plan/done/1.17.0-ag-multi-surface.md](../plan/done/1.17.0-ag-multi-surface.md).
+>
+> **Updated 2026-07-30:** Entity model simplified to `(host, email)` — `sourceType` (ide/cli/desktop) is now transport metadata, not identity. A Google account has one quota; the same email on the same host has one cache slot regardless of which surface reported it. Cache key scheme bumped to v4. See §Per-Account Cache.
+
+## Multi-Surface Directory Structure & Settings
+
+| Surface | Data & Storage Path | Primary Settings File | Note |
+| :--- | :--- | :--- | :--- |
+| **AGY CLI** | `~/.gemini/antigravity-cli/` | `settings.json` | JSON format. Holds `permissions.allow` for auto-approving terminal commands. |
+| **AGY Desktop App** | `~/.gemini/antigravity/` | `user_settings.pb` | Protobuf format for UI settings. Shares auth credentials with CLI. |
+| **AGY IDE** | `~/.gemini/antigravity-ide/` | `user_settings.pb` | Protobuf format for IDE extension settings. |
+
+*Shared auth credentials live at `~/.gemini/oauth_creds.json` and `~/.gemini/google_accounts.json`.*
+
 
 ## Mechanism of Action
 
@@ -49,8 +62,10 @@ sequenceDiagram
   * **IDE Language Server binaries:** `language_server_macos_arm`, `language_server_macos_x64`, `language_server_linux_x64`, `language_server_linux_arm64`, `language_server_windows_x64.exe` (with `--csrf_token` and `--extension_server_port`).
   * **AGY CLI binary:** Standalone `agy` process instances listening on local Connect RPC HTTPS ports.
 * **Argument Extraction:** Parses the command arguments using regular expressions to extract:
-  * `--csrf_token` (Security token required for IDE Connect RPC queries).
-  * `--extension_server_port` (Base extension communication port for IDE).
+  * `--csrf_token` (Security token required for Connect RPC queries).
+  * `--extension_server_port` (Base extension communication port).
+* **Both branches extract, unconditionally.** Until 2026-07-30 only the language-server branch ran the extraction; the `agy` CLI branch set `proc_type="cli"` and skipped it, so an `agy` session was probed with **no** `X-Codeium-Csrf-Token` header and no seeded port. Where the Connect API requires the token, every request 401s and the whole poll collapses into an anonymous failure - which the app renders as a reading that simply keeps getting older, with no error surfaced. This was the direct cause of "Antigravity cannot measure quota while `agy` is running", and it is worth recording *why it survived so long*: the defect was inherited from the Node probe this script was ported from, which hardcoded the token to `undefined`. A port that is checked for parity against its own predecessor cannot detect a fault the two share - so the language-server branch, not the old JS, is the specification the `agy` branch was made to match. Extraction now costs nothing when a process genuinely carries neither flag: the values come out empty and behaviour is unchanged.
+* **A 401 with no `--csrf_token` in argv is logged by name**, distinguishing a permanent "this process's quota is unreadable" from a transient "the IDE is mid-restart". Both used to look identical in the log.
 
 ### 2. Port Discovery & Probing
 * **TCP Port Detection:** Runs `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` to gather active ports listening on each target process ID (both IDE and CLI).
@@ -108,38 +123,42 @@ The script is compiled into the Tauri binary via `include_str!` inside [antigrav
 
 ## Per-Account Cache (localStorage) & Account Dropdown
 
-Antigravity can switch the logged-in account on the same machine, so usage is cached **per account per machine** in `localStorage` under `aki-antigravity-usage-cache-v3`. The whole cache is owned by `src/composables/agUsageCache.js` and reached only through its functions - no component parses it:
+Antigravity can switch the logged-in account on the same machine, so usage is cached **per account per machine** in `localStorage` under `aki-antigravity-usage-cache-v4`. The whole cache is owned by `src/composables/agUsageCache.js` and reached only through its functions — no component parses it:
 
 ```json
 {
   "accounts": {
-    "local|user@a.com:ide":  { "data": { ...usage, "email": "user@a.com" }, "fetchedAt": 1751430000, "host": "local" },
-    "local|user@b.com:cli":  { "data": { ... }, "fetchedAt": 1751420000, "host": "local" },
-    "devbox|user@a.com:ide": { "data": { ... }, "fetchedAt": 1751430500, "host": "devbox" }
+    "local|user@a.com":  { "data": { ...usage, "email": "user@a.com", "sourceType": "cli" }, "fetchedAt": 1751430000, "host": "local" },
+    "local|user@b.com":  { "data": { ... }, "fetchedAt": 1751420000, "host": "local" },
+    "devbox|user@a.com": { "data": { ... }, "fetchedAt": 1751430500, "host": "devbox" }
   },
-  "lastActiveEmailByHost": { "local": "user@a.com", "devbox": "user@a.com" }
+  "lastActiveKeyByHost": { "local": "user@a.com", "devbox": "user@a.com" }
 }
 ```
 
-* **Why the host is in the key** (v3, 1.20.0): the same Google account is routinely signed in on the Mac and on a remote host at once. v2 keyed on `email:sourceType` and carried `host` only as metadata on the value, so both machines wrote the one key - whichever polled last overwrote the other's reading, and the loser's host-scope check then rejected its own former entry and rendered an empty card. Two records that share a key cannot be told apart by metadata; only by the key. `lastActiveEmail` became per-host for the same reason, and the dropdown's dedup pass now runs inside one host's partition instead of `delete`-ing across the whole store.
-* **Migration:** `aki-antigravity-usage-cache` (v1 single blob) → v2 → v3, each step once, old key removed. A v2 entry is re-keyed under its recorded `host`, or `local` when it has none - the only value it can have had, since the remote AG probe did not work before 1.20.0.
-* **Why it also fixes the stale-account bug:** previously the cache was one un-keyed blob. When a live fetch returned `null` (the language server restarts right after an account switch - very common), the null branch displayed that blob = the *previous* account; whether you saw old or new depended on whether the fetch happened to succeed that tick (a race, persisted even across reload). Now the null branch deterministically shows the **last-active account's** cache (labeled *Cached*), and the next successful fetch overwrites it with the true current account. No more random flips.
-* **Account dropdown:** clicking the email in the AG header (`AgentUsage.vue`) opens a dropdown listing every cached account with its cached-ago time and a "live" dot on the active one. Selecting a non-active account **pins** the view to that account's cache (`isCached` badge shown) while the background poll keeps fetching and updating the active account's cache; selecting the live account returns to follow-live. **The pin lives in the slot, not in the monitor** (1.16.0 → persisted in 1.18.0): `AgentUsageSlot.vue` owns `slotViewingEmail` and resolves it in `slotAccountInfo`, because two slots share one monitor and must be able to pin to two different accounts at once - a single selection inside the monitor cannot express that. The monitor exports only what is live - `accounts`, `activeEmail`, `activeEmails` - and always keeps `data` on the active account. Sau refactor 1.20.0 "the composable" **không phải singleton** - mỗi monitor là một entity riêng theo `monitorId(agentId, host)` (`usageMonitorRegistry.js`), nên mỗi `antigravity@<host>` giữ danh sách account của riêng nó. The email-blur eye-toggle applies to dropdown rows too.
+* **Account identity = email, nothing else (v4, 2026-07-30).** A Google account has ONE quota regardless of which local surface (IDE, CLI, desktop) is running. `sourceType` is transport metadata — it records HOW the data was collected (icon/badge), not WHICH quota it belongs to. One email = one cache entry = one quota. Two entries for the same email on the same host are the same quota: the cache and the dedup in `antigravity_payload.rs` both key on email alone.
+* **Why the host is in the key** (v3, 1.20.0): the same Google account is routinely signed in on the Mac and on a remote host at once. v2 keyed on `email` (with host as advisory metadata), so both machines wrote the one key — whichever polled last overwrote the other's reading. Two records that share a key cannot be told apart by metadata; only by the key. `lastActiveKeyByHost` (per-host pointer) replaced the former global `lastActiveEmail` for the same reason.
+* **Migration chain:** `aki-antigravity-usage-cache` (v1 single blob) → v2 (per-account) → v3 (`host|email:sourceType`) → v4 (`host|email`). Each step runs once on load and removes the old key. v3→v4 collapses sourceType variants keeping the freshest entry per (host, email) — no reading is lost.
+* **`sourceType` in the dropdown row** is the most-recently-observed surface — drives the icon (terminal = CLI, logo = IDE). It updates on every live fetch and is NOT used for deduplication or as a cache key.
+* **Account dropdown:** clicking the email in the AG header (`AgentUsage.vue`) opens a dropdown listing every cached account (one row per email), newest first, with its cached-ago time and a «live» dot on the active one. Selecting a non-active account pins the view (`slotViewingEmail` in `AgentUsageSlot.vue`, persisted per slot). **The pin is an email-only handle** — it matches any surface (IDE or CLI) running that account, so switching between surfaces does not strand the card on a stale cache entry. **The monitor's `data` is the full parsed payload** (including `allAccounts`); `AgentUsageSlot.vue`'s `slotAccountInfo` computed resolves the right account for display — that separation is what lets two slots show two different accounts from the same monitor.
+* **Sau refactor 1.20.0** mỗi monitor là một entity riêng theo `monitorId(agentId, host)` (`usageMonitorRegistry.js`), nên mỗi `antigravity@<host>` giữ danh sách account của riêng nó.
 
 > **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
 
 ## Smart Multi-Environment Logout (`logout_antigravity` vs `logout_antigravity_cli`)
 
-To support simultaneous multi-account monitoring across Antigravity IDE and AGY CLI, logout is environment-aware:
+A Google account can be simultaneously signed into both the Antigravity IDE and the AGY CLI on the same machine — these are two **surfaces of the same account**, not two different accounts. Logout is surface-aware because the credential stores differ:
 
-1. **Antigravity IDE (`sourceType: "ide"`):**
+1. **Antigravity IDE surface:**
    - Command: `logout_antigravity`
    - Action: Quits `Antigravity IDE.app` (`osascript` / `pkill`) and wipes OAuth session rows (`antigravityUnifiedStateSync.oauthToken` and `.userStatus`) from SQLite `state.vscdb` (`~/Library/Application Support/antigravity-ide/User/globalStorage/state.vscdb`).
    - UI: Dropdown displays `<i class="fa-solid fa-right-from-bracket"></i> Log Out IDE`.
-2. **AGY CLI (`sourceType: "cli"`):**
+   - `sourceType` in the dropdown row will be `"ide"` when the IDE surface was the most recently observed one.
+2. **AGY CLI surface:**
    - Command: `logout_antigravity_cli`
    - Action: Terminates `agy` CLI binary processes (`pkill -f agy`) and removes CLI credential files (`oauth_creds.json`, `google_accounts.json`, `state.json`) from `~/.gemini/`.
    - UI: Dropdown displays `<i class="fa-solid fa-terminal"></i> Log Out CLI`.
+   - `sourceType` in the dropdown row will be `"cli"` when the CLI surface was the most recently observed one.
 
 Both commands trigger `@logout-success`, causing all active usage slots to self-heal and fall back cleanly to remaining active accounts.
 

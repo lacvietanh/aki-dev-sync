@@ -1,5 +1,8 @@
 # Nghiên Cứu & Đúc Kết: Giám Sát Quota Đa Tiến Trình (Antigravity IDE vs AGY CLI)
 
+> **Status note (2026-07-30):** Finding #5 in `test-case-check-flow.md` (same email, 2 sourceType keys, duplicate cache entries) is resolved: the entity model is now `(host, email)` with no sourceType in the key. This research doc's observation about IDE vs CLI being separate processes is still accurate; the conclusion that they need separate cache entries is superseded — same email = same account = same cache slot.
+
+
 * **Tác giả:** Antigravity AI / Aki Pair Programming
 * **Ngày thực hiện:** 22/07/2026 (2026-07-22)
 * **Trạng thái:** Bổ sung chính thức (Final Approved)
