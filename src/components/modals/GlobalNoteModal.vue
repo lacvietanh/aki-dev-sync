@@ -11,7 +11,7 @@
         label="Global Note"
         placeholder="Ghi chú tổng hợp..."
         :maxlength="100000"
-        :rows="8"
+        :rows="2"
       />
 
       <TaskListPanel
@@ -64,7 +64,10 @@ const collection = useGlobalTaskCollection()
 }
 
 .global-notes-field :deep(.project-notes-textarea) {
-  min-height: 320px;
+  /* No min-height override here: NotesField's own textarea (field-sizing: content, no min-height)
+     sizes natively off the `:rows="2"` this file passes it - ~2 lines of text by default. Any
+     explicit min-height here would floor the box past what 2 rows asks for, same bug as the old
+     320px/190px floors. max-height/resize stay, so more room is one drag away. */
   max-height: 60vh;
   color: #e2e8f0;
   font-size: 13px;
@@ -89,5 +92,18 @@ const collection = useGlobalTaskCollection()
   font-size: 11px;
   color: #475569;
   letter-spacing: 0.3px;
+}
+
+/* Narrow mode (SSoT 700px, main.css) - this file's scoped .note-body/.note-footer padding outranks
+   the global `.modal-body`/`.modal-footer` trim (data-v specificity), so it has to be repeated
+   here, as ChangelogModal/ClaudeProfileModal/SshConfigModal/UpdateModal already do. */
+@media (max-width: 700px) {
+  .note-body {
+    padding: 10px;
+  }
+
+  .note-footer {
+    padding: 8px 10px;
+  }
 }
 </style>
