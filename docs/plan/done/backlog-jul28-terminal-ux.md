@@ -10,7 +10,7 @@ Master index for the four pinned tasks in `.akidevsync/notes.json` plus a doc-hy
 
 | ID | Scope | Status | Notes |
 |---|---|---|---|
-| WS-G | Terminal mobile: virtual-keyboard-appears layout research + design | **implemented** | `docs/plan/terminal-mobile-keyboard-viewport.md` §3 — new `src/composables/useVisualViewportHeight.js`, `main.css`/`useDockLayout.js` `vh`→`--vvh` rewrite, `index.html` `interactive-widget=resizes-content`. On-device verification (§4/§5 of that doc) still outstanding. |
+| WS-G | Terminal mobile: virtual-keyboard-appears layout research + design | **implemented** | `docs/plan/done/terminal-mobile-keyboard-viewport.md` §3 — new `src/composables/useVisualViewportHeight.js`, `main.css`/`useDockLayout.js` `vh`→`--vvh` rewrite, `index.html` `interactive-widget=resizes-content`. On-device verification (§4/§5 of that doc) still outstanding. |
 | WS-H | Terminal mobile: key row wraps to a second line on narrow width | **done** | `src/components/TerminalView.vue` — `.pty-key-row` switched `flex-wrap: wrap` → `nowrap` + horizontal scroll, padding/gap tightened (4px→2px row gap, 4px 8px→3px 5px per key) |
 | WS-I | Sync badge: PUSH/PULL `--delete` indicator too prominent | **done** | `src/components/CountBadgeWrap.vue` — dropped the pill/background/box-shadow to a plain small glyph; added `deleteSide` prop; `src/components/ProjectTable.vue` passes `delete-side="left"` for PUSH (PULL keeps the existing right-side default) so the two icons sit at opposite bottom corners instead of both at bottom-right; `src/assets/main.css` gained the `.cell-badge-left` modifier |
 | WS-J | Terminal tab strip too narrow | **done** | `src/components/TerminalTabStrip.vue` — chip widened from an icon-only square (~24px) to a flexible 84–160px chip showing a truncated title, with an always-visible close-x (previously hover-only on the active chip only) |
@@ -36,7 +36,7 @@ No file was moved or created for WS-K. If the user still wants a physical merge 
 
 - `npm run build` (vite) and `cargo check` (src-tauri) both passed clean as of the last build run in this session, which predates WS-L/M/N. **Not re-run after WS-L/M/N** at the user's explicit instruction (unprompted builds cost tokens they did not ask to spend) — those three are **unverified by any tool**, not just by a live screen, and should be built before being treated as shippable.
 - Visual/touch confirmation of every UI change in this batch (badge placement, tab width, key-row single-line-ness at phone width, the global button's badge layout, tab rename) is a runtime check not done here — flagging as **unverified, needs a live screen** per `coding.B3`.
-- WS-G's real-device keyboard behavior is separately flagged unverified in `docs/plan/terminal-mobile-keyboard-viewport.md` §4/§5.
+- WS-G's real-device keyboard behavior is separately flagged unverified in `docs/plan/done/terminal-mobile-keyboard-viewport.md` §4/§5.
 
 ## Status log
 
