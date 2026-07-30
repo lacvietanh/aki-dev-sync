@@ -15,11 +15,12 @@
 // ENV-1 (docs/plan/done/remote-control.md §9): this file's `isHost` branch is one of the two places in
 // the terminal feature allowed to read it directly (the other is services/ptyBridge.js) —
 // TerminalView.vue's template must stay neutral.
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { isHost, onFrame, send } from '../services/bridge'
 import { invoke } from '../utils/tauri'
 import { FRAME_PTY_INPUT, FRAME_PTY_OUTPUT, FRAME_PTY_RESIZE, FRAME_PTY_EXIT } from '../constants/protocol'
+import { consumeTabPendingCmd } from '../store/terminalTabsStore'
 
 // ── Module-level tab liveness tracker (S3 fix) ──────────────────────────────────────────────────
 //
@@ -117,8 +118,8 @@ function encodeBytesToBase64(bytes) {
  * @param {number} [tabId=0] which terminal tab this surface drives. Defaults to 0, the tab every
  *   id-less caller has always driven (src-tauri/src/pty.rs), so existing single-terminal call sites
  *   keep working untouched.
- * @returns {{ start, ownsPtySize, showKeyRow, hostResize, sendRaw, armCtrl, ctrlArmed, armShift,
- *             shiftArmed, alive, restart, clear, kill, close, openExternal, cd }}
+ * @returns {{ start, ownsPtySize, showKeyRow, hostResize, sendRaw, emitKey, pendingModifiers,
+ *             toggleModifier, ctrlByteFor, alive, restart, clear, kill, close, openExternal, cd }}
  */
 export function usePtyTerminal(term, tabId = 0) {
   let unlistenHostOutput = null
@@ -140,18 +141,29 @@ export function usePtyTerminal(term, tabId = 0) {
     }
     assign(unlisten)
   }
-  // §4.5 mobile key row: "Ctrl (sticky modifier — tap Ctrl, then tap C)". Armed by TerminalView's
-  // Ctrl button; consumed by the very next onData chunk (see wireInput), then auto-disarmed.
-  // Exposed as a ref (not a plain bool) so the key row's active-state styling stays reactive.
-  const ctrlArmed = ref(false)
-  // Sticky Shift — same pattern as ctrlArmed, but consumed differently: Ctrl modifies the next
-  // REAL keystroke (term.onData, wireInput below), because it exists to let a phone's soft
-  // keyboard type Ctrl+letter one tap at a time. Shift instead modifies the next KEY-ROW BUTTON
-  // press (Tab/arrows) — TerminalView.vue's fireKey reads and disarms this ref directly, there is
-  // no onData involvement, because AI-agent workflows (Claude Code's mode-cycling Shift+Tab) are
-  // driven from the synthetic row, not from typed characters. Kept here (not local to the
-  // component) only so it is exposed/styled exactly like ctrlArmed, per-instance, same as ctrlArmed.
-  const shiftArmed = ref(false)
+  // ── Sticky modifiers: ONE latch, ONE emitter ───────────────────────────────────────────────────
+  //
+  // Design + the six defects this shape deletes: docs/plan/terminal-input-surface.md §4. The
+  // previous code kept `ctrlArmed` and `shiftArmed` as two independent refs consumed in two
+  // different places — Ctrl only in `term.onData` here, Shift only in TerminalView's `fireKey` —
+  // so neither could see the other. The observable consequences were not cosmetic: an armed Ctrl
+  // survived a key-row tap and then turned the NEXT typed letter into a control byte inside a live
+  // shell, and Ctrl+arrow could not be produced on a phone at all.
+  //
+  // The fix is flow shape, not more branches (RULE-design-core Law 8): one latch object, and
+  // `emitKey` below as the ONLY function allowed to turn a key press into bytes. Extending to Alt
+  // later is a third key in this object plus one term in `emitKey`'s modifier parameter — no new
+  // mechanism. Per-tab by construction: one composable instance per mounted TerminalView, so
+  // switching tabs cannot carry a latch across.
+  const pendingModifiers = ref({ ctrl: false, shift: false })
+
+  /** Tap to arm, tap again to disarm — a real toggle, which is what the key row's buttons promise.
+   *  No timeout and no auto-expiry: the latch lives until `emitKey` CONSUMES it or the user taps it
+   *  off. `name` is 'ctrl' | 'shift'. */
+  function toggleModifier(name) {
+    pendingModifiers.value = { ...pendingModifiers.value, [name]: !pendingModifiers.value[name] }
+  }
+
   // Is there a live shell behind this terminal? TRI-STATE: `'unknown'` | `true` | `false`.
   //
   // WHY 'unknown' EXISTS, AND WHY IT IS THE INITIAL VALUE: `false` is a CLAIM — the UI paints the
@@ -180,6 +192,48 @@ export function usePtyTerminal(term, tabId = 0) {
   function applyAlive(value) {
     if (typeof value === 'boolean') alive.value = value
   }
+
+  /** #7 (docs/plan/dev-build-in-app-launch.md) — the single funnel that dispatches a DEV/BUILD
+   *  command into a PTY, exactly once. Two triggers feed it and they are handled differently on
+   *  purpose (this split is the fix for a real triple-echo bug, kept here so it is not
+   *  reintroduced):
+   *   - A BRAND-NEW TAB'S FIRST SPAWN is handled DETERMINISTICALLY at the tail of `start()`, once
+   *     `hydrateScrollback()` has already taken its snapshot — see `sendPendingCmdIfAny` there.
+   *   - A DEAD TAB'S RESPAWN (`openRunCommand`'s dead-tab branch calls `pty_spawn` directly on an
+   *     already-mounted tab, never touching `start()`/hydrate again) is handled by the watcher
+   *     below, armed only once `readyForPendingCmd` is true.
+   *
+   *  WHY THE FIRST SPAWN CANNOT ALSO GO THROUGH THIS WATCHER: `start()` calls `ensureSpawned()`
+   *  BEFORE `hydrateScrollback()` — it has to, a brand-new tab has no session for
+   *  `pty_get_scrollback` to read until it is spawned. `pty.rs`'s `append_scrollback` writes every
+   *  read into the ring buffer IMMEDIATELY, decoupled from the coalesced `pty-output` broadcast
+   *  (`flush_locked`/`flusher_loop`, delayed by `FLUSH_INTERVAL`/`FLUSH_BYTES`). A watcher that sent
+   *  the pending command on the FIRST unknown/false -> true edge fired right after `ensureSpawned`'s
+   *  optimistic `alive.value = true` — i.e. BEFORE `hydrateScrollback()` took its snapshot. The
+   *  write reached the shell and got echoed into the ring buffer fast enough that the snapshot
+   *  already contained it, so `term.reset()` + replay rendered it once — and then the SAME bytes'
+   *  still-pending, still-coalesced `pty-output` broadcast landed moments later and got appended by
+   *  the live listener a second (in practice, sometimes a third) time. Gating the reactive path
+   *  behind `readyForPendingCmd` removes the window entirely: the command is never written until
+   *  the snapshot the hydrate takes is already final, so the write's echo can only ever arrive
+   *  through the live stream, once. */
+  let readyForPendingCmd = false
+
+  /** HOST ONLY, checked here rather than by every caller: `start()` calls this unconditionally on
+   *  every mount (host and companion both mount a TerminalView for an activated tab), and only the
+   *  host may ever consume+send — a companion doing so would fire `consumeTabPendingCmd`'s intent
+   *  stub at the host from a screen whose own mount timing has nothing to do with the host's actual
+   *  first-spawn/hydrate race this function exists to avoid. */
+  function sendPendingCmdIfAny() {
+    if (!isHost) return
+    const cmd = consumeTabPendingCmd(tabId)
+    if (cmd) sendRaw(`${cmd}\r`)
+  }
+
+  watch(alive, (isAlive, wasAlive) => {
+    if (isAlive !== true || wasAlive === true || !readyForPendingCmd) return
+    sendPendingCmdIfAny()
+  })
 
   function writeChunk(base64, reset) {
     // `term.reset()`, not `term.clear()`: clear() keeps the current line and all SGR/cursor modes,
@@ -413,11 +467,70 @@ export function usePtyTerminal(term, tabId = 0) {
     }
   }
 
+  /** The Ctrl byte for one character, or `null` if Ctrl means nothing for it. Published (as
+   *  `ctrlByteFor`) so a caller that must decide whether to `preventDefault()` BEFORE emitting —
+   *  the compose input's latch handler — can ask this one domain rather than restate it. */
   function toCtrlByte(ch) {
     const code = ch.toUpperCase().charCodeAt(0)
     // '@'..'_' (64-95) map to control codes 0-31 — the standard terminal Ctrl+key convention
     // (e.g. 'C' -> 0x03, ETX / SIGINT).
     return code >= 64 && code <= 95 ? String.fromCharCode(code - 64) : null
+  }
+
+  /**
+   * THE ONLY PLACE A KEY PRESS BECOMES BYTES. Every source funnels through here — the key row's
+   * buttons, xterm's `onData` (the real/soft keyboard), and the compose input's latch handler — so
+   * there is exactly one site that reads the latch and exactly one that clears it.
+   *
+   * A key is described by ONE of three shapes:
+   *   - `csi`   — a CSI final byte ('A'..'D' for the arrows). Both modifiers are encoded into the
+   *               standard parameter (`\x1b[1;<1+shift+4*ctrl><final>`), which is what makes
+   *               Ctrl+arrow word-jump reachable from a phone at all.
+   *   - `seq` / `shiftSeq` — a literal byte string, with its own shifted form where one exists
+   *               (Tab -> backtab `\x1b[Z`). Shift swaps; Ctrl has no meaning for these.
+   *   - `char`  — a typed character or an IME chunk. Ctrl maps a single character to its control
+   *               byte; Shift is deliberately NOT applied (a soft keyboard already owns
+   *               capitalisation, and upper-casing an IME chunk would corrupt it).
+   *
+   * CLEARING RULE — clear ONLY what was actually consumed. This is one rule, not a branch per
+   * symptom, and it is what makes the plan's explicit ruling on a multi-character chunk fall out
+   * for free: `toCtrlByte` does not apply to a chunk, so the Ctrl is PRESERVED for the next single
+   * character instead of being silently eaten. The same rule keeps a latch alive across a key that
+   * has no shifted form, rather than dropping it without feedback.
+   */
+  function emitKey({ seq, shiftSeq, csi, char } = {}) {
+    const { ctrl, shift } = pendingModifiers.value
+    let out = null
+    let usedCtrl = false
+    let usedShift = false
+
+    if (csi) {
+      // 1 = no modifier, +1 Shift, +4 Ctrl — the standard xterm modifier parameter.
+      const mod = 1 + (shift ? 1 : 0) + (ctrl ? 4 : 0)
+      out = mod === 1 ? `\x1b[${csi}` : `\x1b[1;${mod}${csi}`
+      usedShift = shift
+      usedCtrl = ctrl
+    } else if (char != null && char !== '') {
+      out = char
+      if (ctrl && char.length === 1) {
+        const ctrlByte = toCtrlByte(char)
+        if (ctrlByte !== null) {
+          out = ctrlByte
+          usedCtrl = true
+        }
+      }
+    } else {
+      out = shift && shiftSeq ? shiftSeq : seq
+      usedShift = !!(shift && shiftSeq)
+    }
+
+    if (usedCtrl || usedShift) {
+      pendingModifiers.value = {
+        ctrl: ctrl && !usedCtrl,
+        shift: shift && !usedShift,
+      }
+    }
+    if (out) sendRaw(out)
   }
 
   function wireInput() {
@@ -441,26 +554,11 @@ export function usePtyTerminal(term, tabId = 0) {
         respawn()
         return
       }
-      let out = chunk
-      if (ctrlArmed.value) {
-        ctrlArmed.value = false
-        if (chunk.length === 1) {
-          const ctrlByte = toCtrlByte(chunk)
-          if (ctrlByte !== null) out = ctrlByte
-        }
-      }
-      sendRaw(out)
+      // Through the same funnel as every other source: the latch is applied and cleared in exactly
+      // one place (see emitKey). An IME chunk (length > 1) leaves an armed Ctrl untouched, so the
+      // next single character still receives it instead of the Ctrl vanishing unnoticed.
+      emitKey({ char: chunk })
     })
-  }
-
-  function armCtrl() {
-    ctrlArmed.value = true
-  }
-
-  /** Arms sticky Shift. See `shiftArmed`'s doc comment: disarming is done by TerminalView.vue's
-   *  fireKey (it owns the key-row press that consumes it), not by anything in this file. */
-  function armShift() {
-    shiftArmed.value = true
   }
 
   /** T-4 as a CAPABILITY rather than a role: "does this screen decide the shared PTY's cols/rows?"
@@ -498,13 +596,18 @@ export function usePtyTerminal(term, tabId = 0) {
     }
   }
 
-  /** Boot: wire I/O, ensure the shared PTY exists (idempotent — T-3), hydrate scrollback + size. */
+  /** Boot: wire I/O, ensure the shared PTY exists (idempotent — T-3), hydrate scrollback + size,
+   *  THEN — only now — send a pending DEV/BUILD command if this tab was created with one. See
+   *  `sendPendingCmdIfAny`'s doc comment above for why this must run after the snapshot rather than
+   *  reactively off the spawn's own `alive` transition. */
   async function start(cwd) {
     bootCwd = cwd ?? null
     wireOutput()
     wireInput()
     await ensureSpawned(cwd)
     await hydrateScrollback()
+    readyForPendingCmd = true
+    sendPendingCmdIfAny()
   }
 
   onBeforeUnmount(() => {
@@ -523,10 +626,10 @@ export function usePtyTerminal(term, tabId = 0) {
     showKeyRow,
     hostResize,
     sendRaw,
-    armCtrl,
-    ctrlArmed,
-    armShift,
-    shiftArmed,
+    emitKey,
+    pendingModifiers,
+    toggleModifier,
+    ctrlByteFor: toCtrlByte,
     alive,
     restart,
     clear,

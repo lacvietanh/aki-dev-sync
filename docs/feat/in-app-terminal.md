@@ -1,12 +1,12 @@
 # In-app terminal — feature
 
-A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/plan/remote-views-roadmap.md` § Terminal View.
+A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/arch/remote-views-roadmap.md` § Terminal View.
 
 > **Status:** built in 1.20.0, extended to multiple tabs (per-tab PTY sessions, tab strip, dock split into two collapsible stacks) in a later pass documented in the "Tabs" section below, then to scoped **terminal groups** (this doc's current shape) — see "Groups" below and `docs/arch/terminal-stack.md` for the architecture. The first build was run on a Mac and hit three defects — a terminal that rendered tiny in a corner, a shell that froze silently when it exited, and no session controls at all; all three are fixed in the same 1.20.0 entry (it was never tagged, so it was not split into a follow-up version). Everything here now compiles and passes the unit suite on this Mac (`cargo check` clean, `cargo test --lib` 77/77); what remains open is live runtime behaviour — see "What is still unverified" at the bottom.
 
 ## Why it exists
 
-Not "because VS Code has one". The app already opens `Terminal.app` windows for DEV, BUILD, SSH and the AkiClaudeDoc installer — and a phone on the other end of Remote Control can see none of them. The goal is **drive a real shell on the Mac from the phone**. Every scope decision below follows from that, not from feature parity with an editor.
+Not "because VS Code has one". The app opened `Terminal.app` windows for DEV, BUILD, SSH and the AkiClaudeDoc installer — and a phone on the other end of Remote Control could see none of them. The goal is **drive a real shell on the Mac from the phone**. Every scope decision below follows from that, not from feature parity with an editor. DEV/BUILD have since moved into this terminal (`docs/plan/dev-build-in-app-launch.md`) and are visible from a phone as of that change; SSH and the AkiClaudeDoc installer still open external windows.
 
 It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a runaway build, shell history recall, interactive `y/n` prompts and full-screen programs like `vim` work at all.
 
@@ -119,7 +119,7 @@ Directly under the key row sits a compose input: a plain `<input type="text">` +
 
 ### Vietnamese input: input-layer separation (replaces the 1.22.0 guard)
 
-**Architecture: `docs/plan/terminal-ime-input-layer-separation.md`.** The old approach (`useWkImeGuard.js`, 1.22.0) intercepted xterm.js's internal event pipeline — a capture-phase guard that classified each keydown and vetoed xterm's handlers. That was inherently fragile: it depended on xterm's internal `_keyDownSeen`, `_keyPressHandled`, textarea-diff scheduling, and `beforeinput` behavior, all of which change across xterm versions.
+**Architecture: `docs/plan/done/terminal-ime-input-layer-separation.md`.** The old approach (`useWkImeGuard.js`, 1.22.0) intercepted xterm.js's internal event pipeline — a capture-phase guard that classified each keydown and vetoed xterm's handlers. That was inherently fragile: it depended on xterm's internal `_keyDownSeen`, `_keyPressHandled`, textarea-diff scheduling, and `beforeinput` behavior, all of which change across xterm versions.
 
 The new approach removes xterm from the keyboard path entirely:
 
@@ -195,7 +195,9 @@ Opening the terminal from a paired device adds **no extra confirmation step**, a
 - Theme / shell-profile configuration (the theme is hardcoded to the app's own CSS tokens). Font *size* is adjustable since 1.22.0; the font *family* is not.
 - Search addon, web-links addon, ligatures.
 - SSH-into-a-remote-host inside this view.
-- **Redirecting DEV / BUILD / REPORT into it.** Those open a disposable, per-invocation window scoped to one project's directory, with real polish already invested (double-window avoidance, the 124-column top-right auto-snap). This terminal is one persistent general-purpose shell with no notion of "which project". Merging them would either drag multi-session + per-project cwd into the first version, or make build output fight your own typing in one PTY. `run_in_project_terminal` in `src-tauri/src/system.rs` is already the single funnel, so the redirect stays a one-function change when the groundwork exists. `pty_spawn` already accepts an optional `cwd` for that reason.
+- **REPORT** opens `REPORT.html` in the OS default browser (`open_report_html` in `src-tauri/src/system.rs`) — it is a static file view, not a shell, and was never a terminal-redirect candidate; grouping it with DEV/BUILD in an earlier version of this line was itself the mistake.
+
+**DEV / BUILD now redirect into this terminal (`docs/plan/dev-build-in-app-launch.md`).** The two reasons this line used to give are both gone: terminal v2's SCOPES give every project its own tab group (the "no notion of which project" gap closed 2026-07-28, well before this shipped), and build/dev output fighting the user's own typing is avoided structurally — DEV/BUILD never reuse the scope's last-active shell, they open a dedicated tab tagged `runKind: 'dev' | 'build'` and dedup against THAT tag, not against "any tab in the scope". `ProjectTable.vue`'s DEV/BUILD buttons call `openRunCommand` (`useTerminalTabs.js`), which writes the command via the same `pty_write` a keystroke would, exactly once — for a fresh tab, only after both `pty_spawn` resolves and the tab's scrollback hydrate has taken its snapshot, so the write's echo can only ever arrive through the live output stream, never doubled up with the hydrate's own replay of the same ring-buffer bytes. `run_project_command`/`run_project_dev`/`run_in_project_terminal` (`src-tauri/src/system.rs`) are dead code as of this change — kept for now as a named follow-up cleanup, not removed in the same pass that stopped calling them.
 
 ## What is still unverified
 
