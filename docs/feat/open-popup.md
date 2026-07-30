@@ -18,14 +18,15 @@ Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:
 - **Terminal:** Mở tab Terminal native macOS.
 - **VSCode & VSCode Insiders:** Mở bằng text editor phổ biến.
 - **Antigravity IDE:** Editor mặc định của hệ sinh thái Aki.
-- **DEV + BUILD (v1.7.0):** Hai nút inline xuất hiện khi phát hiện dự án có `package.json`. Mỗi nút có `title` tooltip hiển thị lệnh cụ thể sẽ chạy.
+- **DEV + BUILD (v1.7.0):** Hai nút inline, **luôn hiển thị** cho mọi project. Mỗi nút có `title` tooltip hiển thị lệnh cụ thể sẽ chạy. Nhấn nút mở/focus một tab **trong terminal của app** (không còn mở cửa sổ `Terminal.app` bên ngoài) — nhờ vậy DEV/BUILD giờ nhìn thấy được từ Remote Control trên điện thoại, đúng thứ mà `docs/feat/in-app-terminal.md` từng nêu là khoảng trống. Tab được gắn nhãn `runKind: 'dev'|'build'`: một tab đang chạy chỉ được **focus**, không bị gõ lại lệnh; một tab đã thoát thì được **respawn** rồi gõ lại lệnh; không có tab nào khớp thì mở tab **mới** (không bao giờ tái sử dụng shell người dùng đang gõ dở). Chi tiết thiết kế + rào chắn PATH cold-start: `docs/plan/done/dev-build-in-app-launch.md`.
+  - **Không có lệnh nào resolve được** (project không thuộc stack Tauri/Nuxt/Node và chưa đặt override): nút vẫn nằm đó nhưng bị làm mờ, tooltip "No dev/build command detected - set one in Project Settings". Trước đây cả hàng bị `v-if` xoá khỏi DOM, nên các project ngoài 3 stack đó mất luôn dấu vết của tính năng này.
   - **Tự động nhận diện stack & lệnh mặc định** (`check_project_stack` → `ProjectStackInfo.dev_cmd / build_cmd`):
     - Tauri: DEV = `{pm} tauri dev`, BUILD = `{pm} build:app`
     - Nuxt / Node: DEV = `{pm} dev`, BUILD = `{pm} build`
   - **Tự động cấu hình Package Manager**: Quét lockfile (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) để tự chọn `pnpm`/`yarn`/`bun`/`npm`.
   - **Per-project override**: Có thể ghi đè lệnh DEV/BUILD cho từng project trong Project Settings ("RUN COMMANDS - LOCAL ONLY"). Để trống = dùng mặc định theo stack.
 
-**Missing local folder**: when `local_path_missing` is set (unmounted volume - the same flag that turns the GIT badge amber), every LOCAL item that consumes the path (Finder, In-App Terminal, Terminal, the three IDEs, DEV, BUILD) is dimmed with a "Local folder missing on disk" tooltip. **COPY stays enabled** - copying a path you are about to go fix is legitimate. DEV/BUILD are also guarded host-side (`ensure_local_dir` in `system.rs`), so they report an error instead of the old false "Command started in Terminal!".
+**Missing local folder**: when `local_path_missing` is set (unmounted volume - the same flag that turns the GIT badge amber), every LOCAL item that consumes the path (Finder, In-App Terminal, Terminal, the three IDEs, DEV, BUILD) is dimmed with a "Local folder missing on disk" tooltip. **COPY stays enabled** - copying a path you are about to go fix is legitimate.
 
 ### 3. Remote SSH Targets
 Với các project có cấu hình Remote, popup hiển thị thêm cột kết nối từ xa. Cột này chỉ cần `remote_host` + `remote_path`; công tắc SYNC **không** ẩn cột nữa - nó chỉ khoá riêng **Upload (select files)** (xem `docs/feat/sync-check-and-usage-switches.md`):

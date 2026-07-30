@@ -32,6 +32,8 @@ Before 1.22.0 that round trip had a second cost: `resolveScopeTab`/`capReached` 
 
 **Any new "open/duplicate a terminal" entry point must call `openScopeTerminal`, not `addTerminalTab` directly** — the guard lives in the caller, so bypassing `openScopeTerminal` bypasses it too.
 
+**The one deliberate exception: DEV/BUILD (`docs/plan/done/dev-build-in-app-launch.md`, #7).** `ProjectTable.vue`'s DEV/BUILD buttons — a third entry point alongside the TERM cell and the header icon — call `useTerminalTabs.js`'s `openRunCommand`, not `openScopeTerminal`. `openScopeTerminal`'s reuse check is scope-only ("does this scope already have a tab?"); DEV/BUILD needs a scope **and** `runKind` match ("does this scope already have a *dev* tab?" — a project may have an ordinary shell and a running dev server open at the same time, and pressing BUILD must never touch DEV's tab). `openRunCommand` re-implements the create-or-focus shape against that finer key, tags the new tab `runKind: 'dev' | 'build'`, and stashes the literal command in a `pendingCmd` field that `usePtyTerminal.js` sends once, on the tab's `alive` transitioning to `true` — new spawn or respawn alike, same watcher.
+
 **Known gap the guard does not close:** two browser tabs open on the same phone are two separate page loads, so `pendingActivateScope` (module-scope, per page) is not shared between them. Same per-page-state root cause as the `invoke_result` cross-talk that per-connection addressing fixed in 1.21.1 (`docs/feat/remote-control.md`) — but unfixed here, since closing it needs the guard to live host-side, inside `addTerminalTab`'s own body, not in the composable.
 
 ## The capability pattern
