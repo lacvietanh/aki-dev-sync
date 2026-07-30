@@ -94,11 +94,11 @@ Three of the thirteen produce no plan doc at all, and each says why in its row. 
 | T-1 | Terminal compose input: remove the custom typeface declarations (#2) and accept Shift+Enter (#8) | `terminal-input-surface.md` | planned |
 | T-2 | Sticky/latching modifier keys (#3) | `terminal-input-surface.md`, contingent section | **blocked on one owner answer** — which surface did the report come from, phone or Mac? The arming buttons render only when `showKeyRow`, which is `!isHost`, so the scoped fix exists only on a companion. If the answer is "Mac", this is a different defect in xterm's own encoding and it leaves that doc |
 | T-3 | AG quota frozen while `agy` runs in the in-app terminal (#4) | `ag-usage-pin-vs-live.md` | planned; one owner observation gates the code |
-| T-4 | Claude Code account/email never re-derived on refresh (#9) | `cc-account-identity-ssot.md` | planned — **highest severity in the batch and fully unblocked** |
-| T-5 | DEV/BUILD disabled-not-hidden in the OPEN popup (#6) | `dev-build-visibility.md` | planned |
-| T-6 | DEV/BUILD execute in the in-app PTY (#7) | `dev-build-in-app-launch.md` | planned — **must precede WS-A executing**; see §2a of `terminal-ownership-model.md` |
+| T-4 | Claude Code account/email never re-derived on refresh (#9) | `cc-account-identity-ssot.md` | **fix implemented, awaiting the owner's on-device test.** Root cause was narrower than assumed: identity came from `auth-cache.json` behind a 300s TTL plus a once-per-app-launch latch, while quota came from `rate-limits-cache.json`, which the statusLine hook rewrites independently — two sources, two cadences. The Rust parser and the JS store were both already correct and were not changed |
+| T-5 | DEV/BUILD disabled-not-hidden in the OPEN popup (#6) | `done/dev-build-visibility.md` | **shipped, verified on macOS by the owner 2026-07-30** |
+| T-6 | DEV/BUILD execute in the in-app PTY (#7) | `done/dev-build-in-app-launch.md` | **shipped, verified on macOS by the owner 2026-07-30.** Ran before WS-A as required; §2a of `terminal-ownership-model.md` now records the amendment as applied, and `run_project_command`/`run_project_dev`/`run_in_project_terminal` are removed from `system.rs` |
 | T-7 | Four sites where an existing UI contract was not honoured: project-column flex (#5), `user-select` on the confirm-delete phrase (#10), GlobalNote's missing narrow repeat and its textarea min-height (#11) | `ui-sweep-misses.md` | planned |
-| T-8 | Hide/reveal a project row (#12) | `project-visibility-toggle.md` | **contingent** — it is the only new feature among defects, and a reveal affordance for a hidden project is the new element CLAUDE.md's Extreme Narrow rule forbids. Gated on the owner answering whether a hidden project must be discoverable |
+| T-8 | Hide/reveal a project row (#12) | `project-visibility-toggle.md` | **closed, not built.** The owner resolved the gate by removing the hide-a-project feature outright (`49025a2`), so the Extreme Narrow question this row was blocked on no longer has a subject |
 | T-9 | Terminal resize must reach both the app and the companion (#1) | **none — verification, not a plan.** See below | static analysis found no defect at any candidate origin; one runtime check outstanding |
 | T-10 | Vietnamese typing in xterm (#13) | **none — already WS-D above** | ~~a fourth analysis round against the same missing observation buys nothing~~ **wrong, and the owner said so.** The fourth round was run on the corrected premise (OpenKey works in VS Code; the earlier refusal rested on a single miscited issue) and it closed the item outright. The lesson is the reusable part: "more analysis buys nothing" was a judgement about the *question*, made without checking whether the question had been framed correctly |
 
@@ -106,6 +106,8 @@ Three of the thirteen produce no plan doc at all, and each says why in its row. 
 
 **Unblocked, in order:** T-4 (#9) → #10 → T-5 (#6) → T-7's remaining three → T-1 (#2 + #8).
 **On the owner's answers:** T-3 (#4) → T-6 (#7, after T-5) → T-2 (#3) → T-10 (#13) → T-8 (#12).
+
+**Remaining as of 2026-07-30:** T-1 and T-2 (both in `terminal-input-surface.md`) and T-3. T-4 awaits the owner's device test; T-5, T-6, T-9 and T-10 are shipped, T-8 is closed without being built.
 
 Severity is deliberately overruled in two places, named so a later reader does not read them as mistakes:
 

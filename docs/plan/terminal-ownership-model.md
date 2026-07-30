@@ -32,11 +32,22 @@ Stated first, because the imagined final version is much larger than what should
 | "One session" = the root of a cwd subtree (`count_cwd_subtree_roots`), promoted past macOS's `login -pf` wrapper. One rule, two callers, so badge and modal cannot disagree. | `src-tauri/src/system.rs` |
 | The derived design deliberately replaced a session counter that only grew and never saw a window close. | header comment of `useExternalTerminals.js`, § "External `Terminal.app` count — derived, never remembered" in `docs/arch/terminal-stack.md` |
 | Every Terminal window the app opens goes through one funnel, `open_terminal_with_command`, which `.spawn()`s `osascript` and **reads nothing back** — the app currently retains zero identity for what it launched. | `src-tauri/src/system.rs:186` |
-| Four launch paths reach that funnel: `open_local_terminal`, `run_project_command` (BUILD), `run_project_dev` (DEV), `open_remote_subprocess("terminal")` (SSH). | `src-tauri/src/system.rs` |
-| Three frontend call sites launch one of those: the OPEN popup's `Terminal` item, the in-app tab's "open externally", and DEV/BUILD. All then call `pokeExternalTermCounts()`, which carries **no owner information**. | `src/components/ProjectTable.vue:589`, `src/composables/usePtyTerminal.js:295`, `src/store/projectStore.js:44` |
-| Both scan commands are deliberately absent from the companion allowlist; `open_local_terminal`, `run_project_command`, `run_project_dev`, `open_remote_subprocess` are present. | `src/services/hostInvoke.js` |
+| Two launch paths reach that funnel: `open_local_terminal` and `open_remote_subprocess("terminal")` (SSH). | `src-tauri/src/system.rs` |
+| Two frontend call sites launch one of those: the OPEN popup's `Terminal` item and the in-app tab's "open externally". Both then call `pokeExternalTermCounts()`, which carries **no owner information**. | `src/components/ProjectTable.vue`, `src/composables/usePtyTerminal.js`, `src/store/projectStore.js:44` |
+| Both scan commands are deliberately absent from the companion allowlist; `open_local_terminal` and `open_remote_subprocess` are present. | `src/services/hostInvoke.js` |
 | `ps` already reports a tty per row and it is already parsed into `PsRow.tty`. | `src-tauri/src/system.rs` |
 | There is no JS test runner in the repo (`package.json` has no vitest/jest). Rust has `#[cfg(test)] mod tests` in `system.rs`. | `package.json`, `src-tauri/src/system.rs:1333` |
+
+### 2a. Amendment applied — the launch-path count shrank when DEV/BUILD moved in-app
+
+**Applied 2026-07-30.** `docs/plan/done/dev-build-in-app-launch.md` shipped and was verified on macOS by the owner: DEV and BUILD now run in the in-app PTY and no longer open `Terminal.app`. `run_project_command`, `run_project_dev` and `run_in_project_terminal` were removed outright from `src-tauri/src/system.rs` in the same batch, so this is a completed retirement, not a scheduled one. §2's table and §5's attribution row above are already updated to match; this section records why they changed.
+
+- **§2's "four launch paths" row dropped to two** — `open_local_terminal` and `open_remote_subprocess("terminal")`.
+- **§5's `DEV / BUILD window` attribution row is now vacuous** — it described a window this app no longer opens.
+
+**WS-A narrowed; it was not cancelled.** This is the point most at risk of being misread. Everything that makes this workstream worth doing survives untouched: the spawn-origin registry, §3's reconciliation rule, the global complement in §5, the per-project versus global split, and the SSH-terminal attribution change that is the user's own stated request. What changed is the *size of the input set* — two launch paths instead of four — which makes the registry smaller and simpler, not less necessary. A reader who takes this note as "WS-A is superseded by the in-app terminal work" has read it backwards.
+
+**Ordering held.** The council's execution order put `dev-build-in-app-launch.md` before WS-A executes, precisely so WS-A is designed against the final launch-path set rather than one it was about to lose. That order was followed, so no stale rows were left behind for a later reader to trip over.
 
 ## 3. The crux — how registry and scan reconcile
 
@@ -114,7 +125,7 @@ Every ambiguous case, answered:
 | Two projects pointing at the same directory | A **tagged** session counts only for the project it was launched from — an improvement over today, where both show the same number. An **adopted** session counts for both badges, and once in the owned set | Tagging is per project id; cwd genuinely cannot distinguish, and inventing a tiebreak would be a guess |
 | The owning project's folder is now unreachable (unmounted volume, deleted) | The session stays owned and keeps counting on that project's badge | Ownership is keyed on tty+pid+token, never on the path. Today `canonicalize` fails and the badge silently drops to 0, which reads as "you have nothing open" when the truth is "we cannot resolve the path" |
 | SSH terminal opened from a project's OPEN popup | **Owned by that project** | Its cwd is the local `$HOME`, so today it is counted nowhere. Under spawn-origin, "where you pressed the button" is the whole rule. This is a deliberate, visible behavior change — listed in S3's acceptance criteria so a reviewer sees it rather than discovers it |
-| DEV / BUILD window | Owned by that project | Same funnel, same rule |
+| ~~DEV / BUILD window~~ | — | **Vacuous since 2026-07-30**: DEV/BUILD run in the in-app PTY and open no `Terminal.app` window at all. Kept struck through rather than deleted so a reader of an older revision can see the row was retired, not overlooked. See §2a |
 | Window launched from the in-app terminal's "open externally" button | Owned by that tab's scope — the project id, or the global token for a global-scope tab | The tab already knows its scope; nothing is inferred |
 | Scan fails (`pgrep`/`ps`/`lsof` error) | Previous snapshot stands, both badges | Already the rule in `useExternalTerminals.js`: a failed scan means "we don't know", not "everything closed". Do not regress it |
 | `Terminal.app` not running | All counts 0, no error | Already the rule (`scan_terminal_tree` returns `Ok(None)`) |
@@ -157,8 +168,8 @@ Result the user actually asked for: the global button gains the slate external b
 - Every Terminal launch already funnels through exactly one function, `open_terminal_with_command`. There is one place to add tagging, not four (`system.rs:186`).
 - That function currently `.spawn()`s and discards `osascript`'s stdout, so today nothing is retained about a launched window. Reading a value back requires changing `.spawn()` → `.output()`.
 - `ps` already emits a tty column and it is already parsed into `PsRow.tty`. No new subprocess and no new parser are needed to match a tty back to a live process.
-- `open_remote_subprocess` is a **plain synchronous `pub fn`**, not `async fn` + `spawn_blocking`. It survives today only because it never waits on its child. Switching to `.output()` would make it a blocking subprocess wait on the IPC dispatch thread — a direct `tauri.A1` / CLAUDE.md never-block-the-UI violation. It **must** become `async fn` + `spawn_blocking` in the same step. `open_local_terminal`, `run_project_command` and `run_project_dev` are already correctly wrapped.
-- Both scan commands are already excluded from `COMPANION_ALLOWED_COMMANDS`, and the four launch commands are already included, so the companion seam needs no new entry — only a new optional argument on commands already allowed.
+- `open_remote_subprocess` is a **plain synchronous `pub fn`**, not `async fn` + `spawn_blocking`. It survives today only because it never waits on its child. Switching to `.output()` would make it a blocking subprocess wait on the IPC dispatch thread — a direct `tauri.A1` / CLAUDE.md never-block-the-UI violation. It **must** become `async fn` + `spawn_blocking` in the same step. `open_local_terminal` is already correctly wrapped.
+- Both scan commands are already excluded from `COMPANION_ALLOWED_COMMANDS`, and both launch commands are already included, so the companion seam needs no new entry — only a new optional argument on commands already allowed.
 - `externalTermCounts` is a `ref` export of a `src/store/` module, so `services/mirror.js` auto-discovers and mirrors it. A sibling `externalTermGlobalCount` placed in the same file is mirrored on the same mechanism with no transport work.
 
 **Unverified — cannot be checked without running on a Mac** (`coding.B3`; this machine cannot build Tauri/Rust and has no `osascript`):
@@ -201,13 +212,13 @@ New pure module `src/utils/terminalOwnership.js` — no Vue, no `invoke`: given 
 
 ### S3 — Rust: capture the tty and tag it
 
-`open_terminal_with_command` returns `Result<String, String>` (the tty, or `""`), reading `osascript` stdout via `.output()`. `open_remote_subprocess` becomes `async fn` + `spawn_blocking` **in this step, not later**. All four launch commands take an `owner: Option<String>` and record `(tty → owner)` when both are present. `TerminalOwnership` is `app.manage`d in `lib.rs`. `reconcile_terminal_owners` runs at the top of both scan commands: pin the pid on first sight, drop dead entries one at a time. `owner` is populated on the session payload.
+`open_terminal_with_command` returns `Result<String, String>` (the tty, or `""`), reading `osascript` stdout via `.output()`. `open_remote_subprocess` becomes `async fn` + `spawn_blocking` **in this step, not later**. Both launch commands take an `owner: Option<String>` and record `(tty → owner)` when both are present. `TerminalOwnership` is `app.manage`d in `lib.rs`. `reconcile_terminal_owners` runs at the top of both scan commands: pin the pid on first sight, drop dead entries one at a time. `owner` is populated on the session payload.
 
 *Acceptance*: `grep -n "#\[tauri::command\]" -A2 src-tauri/src/system.rs` shows every command that waits on a subprocess is `async fn` with `spawn_blocking` — specifically `open_remote_subprocess`. No function clears the registry map; removal is per-key only, and the removal function is named for one session. An empty tty is a no-op, never an error, and the window still opens. A unit test drives `reconcile_terminal_owners` against a synthetic tree and asserts that (a) an entry whose tty vanished is dropped, (b) an entry whose tty exists but whose pinned pid is gone is dropped, (c) no other entry is touched by either.
 
 ### S4 — Frontend: pass the owner at every launch site
 
-`pokeExternalTermCounts()` is replaced by one funnel, `registerExternalTerminalLaunch({ owner, path })`, which passes the owner through to the launch command and schedules the same 800ms rescan. Wired at all three call sites: the OPEN popup's `Terminal` item and DEV/BUILD (owner = `project.id`), and the in-app tab's "open externally" (owner = that tab's scope).
+`pokeExternalTermCounts()` is replaced by one funnel, `registerExternalTerminalLaunch({ owner, path })`, which passes the owner through to the launch command and schedules the same 800ms rescan. Wired at both remaining call sites: the OPEN popup's `Terminal` item (owner = `project.id`) and the in-app tab's "open externally" (owner = that tab's scope). DEV/BUILD is no longer one of them — it opens no external window.
 
 *Acceptance*: no call site passes an owner it had to infer — each one already holds the project or the scope. The `action()`-wrapped funnel still works from a companion (the phone's OPEN → Terminal tags identically). No call site calls `invoke('open_local_terminal', …)` directly any more.
 
