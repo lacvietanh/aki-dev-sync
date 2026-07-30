@@ -53,9 +53,14 @@ if [ "$CLI" = "CC" ]; then
   _rl_now=$(date +%s)
   _rl_acct=""
   _rl_acct_uuid=""
-  if [ -f "$HOME/.claude.json" ]; then
-      _rl_acct=$(jq -r '.oauthAccount.emailAddress // ""' "$HOME/.claude.json" 2>/dev/null)
-      _rl_acct_uuid=$(jq -r '.oauthAccount.accountUuid // ""' "$HOME/.claude.json" 2>/dev/null)
+  # The CLI writes oauthAccount inside its config dir, whose default (CLAUDE_CONFIG_DIR unset) is
+  # $HOME/.claude, not bare $HOME - a flat $HOME/.claude.json is never the CLI's file. This process
+  # is a direct child of `claude` (the statusLine hook), so it already inherits whatever
+  # CLAUDE_CONFIG_DIR that invocation used, if any.
+  _rl_claude_json="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json"
+  if [ -f "$_rl_claude_json" ]; then
+      _rl_acct=$(jq -r '.oauthAccount.emailAddress // ""' "$_rl_claude_json" 2>/dev/null)
+      _rl_acct_uuid=$(jq -r '.oauthAccount.accountUuid // ""' "$_rl_claude_json" 2>/dev/null)
   fi
   # Drop every entry that is past its reset (resets_at == 0 means "unknown", not "expired"),
   # or that has gone unseen in a live payload for too long (the account still owns the cache
@@ -500,17 +505,42 @@ g_cli_tag=""
 if [ "$EN_cli_tag" = 1 ]; then
   acc_name=""
   if [ "$EN_account" = 1 ]; then
-    # Neither CLI puts an email in the payload, so each falls back to its own on-disk account file.
-    # These must NOT be tried in sequence: on a machine that has both, whichever file exists would
-    # win and the tag would show the other CLI's account.
-    if [ -z "$JSON_ACCOUNT_EMAIL" ]; then
-      if [ "$CLI" = "CC" ]; then
-        [ -f "$HOME/.claude.json" ] && \
-          JSON_ACCOUNT_EMAIL=$(jq -r '.oauthAccount.emailAddress // ""' "$HOME/.claude.json" 2>/dev/null)
-      else
-        [ -f "$HOME/.gemini/google_accounts.json" ] && \
-          JSON_ACCOUNT_EMAIL=$(jq -r '.active // ""' "$HOME/.gemini/google_accounts.json" 2>/dev/null)
+    # Each CLI reads its OWN on-disk account file. These must NOT be tried in sequence: on a machine
+    # that has both, whichever file exists would win and the tag would show the other CLI's account.
+    #
+    # For Claude Code, ~/.claude.json's oauthAccount is NOT used here (nor in get-claudecode-usage.sh
+    # - see that script's §5/§5c for the full story). It is a cache the CLI itself flushes on its own
+    # schedule, and when two `claude` processes share one CLAUDE_CONFIG_DIR (switching accounts by
+    # logging into a second one in the same config dir, without CLAUDE_CONFIG_DIR isolation - a real,
+    # supported workflow, see docs/ref/multiple-account-config-dir.md), whichever process flushes last
+    # wins there regardless of which one most recently logged in - so a switch could read correctly for
+    # one render and silently revert on the next, with nothing about that render having changed.
+    # `claude auth status` queries the CLI's live credential state directly and is not subject to that
+    # clobber race (confirmed: it does not itself write ~/.claude.json). Spawning it on every render
+    # would add ~200-300ms to every prompt though, so its result is cached for AUTH_TTL_S seconds in
+    # the SAME auth-cache.json get-claudecode-usage.sh already maintains (config-dir-scoped, so this
+    # and the app's own poll loop share one fresh copy in the common case - the app polls every ~30s,
+    # so this render usually finds it already warm and never has to spawn anything itself).
+    if [ "$CLI" = "CC" ]; then
+      _live_acct=""
+      _auth_cache="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/auth-cache.json"
+      AUTH_TTL_S=15
+      _auth_cache_age=999999
+      if [ -f "$_auth_cache" ]; then
+        _auth_mtime=$(stat -f %m "$_auth_cache" 2>/dev/null || stat -c %Y "$_auth_cache" 2>/dev/null)
+        _auth_cache_age=$(( $(date +%s) - _auth_mtime ))
       fi
+      if [ "$_auth_cache_age" -lt "$AUTH_TTL_S" ]; then
+        _live_acct=$(jq -r '.email // ""' "$_auth_cache" 2>/dev/null)
+      else
+        _auth_live=$( (timeout 3 claude auth status 2>/dev/null || gtimeout 3 claude auth status 2>/dev/null || claude auth status 2>/dev/null) )
+        _live_acct=$(printf '%s' "$_auth_live" | jq -r '.email // ""' 2>/dev/null)
+        [ -n "$_live_acct" ] && printf '%s' "$_auth_live" > "$_auth_cache" 2>/dev/null
+      fi
+      [ -n "$_live_acct" ] && JSON_ACCOUNT_EMAIL="$_live_acct"
+    elif [ -z "$JSON_ACCOUNT_EMAIL" ]; then
+      [ -f "$HOME/.gemini/google_accounts.json" ] && \
+        JSON_ACCOUNT_EMAIL=$(jq -r '.active // ""' "$HOME/.gemini/google_accounts.json" 2>/dev/null)
     fi
     # The domain is dropped FIRST - AGY puts a full address in the payload, so a raw 4-char cut of
     # "lva@akitao.com" would print the useless "lva@". Cut the local part, THEN truncate.

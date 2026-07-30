@@ -15,8 +15,36 @@ if [ ! -f "$FILE" ]; then exit 0; fi
 # the OAuth poll's os.replace() comment already assumed this hook wrote non-atomically; matching
 # that closes the last read-half-written-file race between the two writers.
 # See docs/arch/usage-claudecode.md §3 (provision).
-if grep -q "aki-rlcache v3" "$FILE"; then
-    :  # already up to date - nothing to do
+# The guard used to be `grep -q "aki-rlcache v3"` - it knew only its OWN version, so a file already
+# carrying a NEWER writer (v4/v5, installed by a Statusline Apply) did not match and control fell
+# through to the removal below. That removal is anchored on `^rl_input=`, and the unified template
+# indents that line, so the delete was a no-op and v3 got prepended on top of the newer block:
+# provisioning silently DOWNGRADED a good install and left two cache writers stacked, v3 running
+# first and writing a payload with no `account_uuid` and no `seen_at` - which is exactly the field
+# the account-integrity gate in get-claudecode-usage.sh is built on. Read the installed version
+# number instead of testing for one literal, and never write over something newer.
+INSTALLED_RLCACHE_V=$(grep -o '# aki-rlcache v[0-9][0-9]*' "$FILE" 2>/dev/null | sed 's/.*v//' | sort -n | tail -n 1)
+if [ -n "$INSTALLED_RLCACHE_V" ] && [ "$INSTALLED_RLCACHE_V" -ge 3 ] 2>/dev/null; then
+    # Already at or newer than the block this script injects - nothing to do.
+    # Repair the one state that provisioning itself used to create: a v3 block stacked in front of
+    # a newer one. Deleting the v3 block is safe only when BOTH of its own anchors are present, and
+    # the awk below refuses to write anything unless it actually found the closing anchor - a sed
+    # range that misses its end pattern deletes to EOF, which is how a statusline gets destroyed.
+    if grep -q '^# aki-rlcache v3$' "$FILE" && grep -q '^printf .*\$RL_TMP' "$FILE" && [ "$INSTALLED_RLCACHE_V" -gt 3 ]; then
+        RL_FIX_TMP="${FILE}.aki-rlfix.$$"
+        if awk '
+            /^# aki-rlcache v3$/ && !closed && !skip { skip = 1; next }
+            skip && /^printf .*\$RL_TMP/ { skip = 0; closed = 1; next }
+            !skip { print }
+            END { exit (closed ? 0 : 1) }
+        ' "$FILE" > "$RL_FIX_TMP" 2>/dev/null; then
+            mv -f "$RL_FIX_TMP" "$FILE"
+            printf '[SHELL:provision] removed a stacked aki-rlcache v3 block; the newer statusline writer (v%s) now owns the cache\n' "$INSTALLED_RLCACHE_V" >&2
+        else
+            rm -f "$RL_FIX_TMP"
+            printf '[SHELL:provision] a v3 block is stacked in front of v%s but its end anchor was not found - left untouched, re-Apply the statusline\n' "$INSTALLED_RLCACHE_V" >&2
+        fi
+    fi
 else
     if grep -q "rate-limits-cache" "$FILE"; then
         # Old (v1 unmarked, or v2 marked) block present → delete it before injecting v3.
