@@ -59,6 +59,7 @@
 
 ## Plans (Active)
 
+- [docs/plan/remaining-1.22.md](plan/remaining-1.22.md) - Single entry point for everything outstanding after the 1.22.0 release: a ranked table of 14 items (1 defect, 9 runtime-verify checks, 1 debt, 2 unbuilt features, 1 decision the owner owes), each pointing at its owning file for detail
 - [docs/plan/backlog-jul27.md](plan/backlog-jul27.md) - Master index for jul27 batch (terminal ownership, terminal chrome settings, usage probe OOP, IME, hygiene, `--delete` indicator)
 - [docs/plan/hygiene-jul27.md](plan/hygiene-jul27.md) - Hygiene batch (WS-E): companion WebSocket reconnect noise investigation, icon 404 handling, and hard-wrap comment sweep
 - [docs/plan/terminal-chrome-settings.md](plan/terminal-chrome-settings.md) - Terminal chrome settings (WS-B): 3-dot settings menu on terminal stack header, per-control checkboxes, and host-dependent defaults
