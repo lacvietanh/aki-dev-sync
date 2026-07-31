@@ -82,7 +82,8 @@ phím.
   `vim` mũi tên và Ctrl+C bình thường.
 - Sau fix, Android/Gboard mặt remote: không double space; vẫn đúng hình dạng defect §2.2 cũ — fix
   này không đụng tới nó.
-- **Chưa đo, không tính là PASS:** Option+mũi tên — chủ sở hữu chủ động gác lại lần này.
+- **Chưa đo, không tính là PASS:** Option+mũi tên — chủ sở hữu chủ động gác lại lần này. Theo dõi tại
+  [`verify-pending.md` §Terminal T2](verify-pending.md#t2--optionarrow-with-the-double-space-fix-in-place).
 - **Không tái hiện được, không phải đã sửa:** `bá o` (dấu cách chen giữa âm tiết) thử lại không ra
   lại. Không có cơ chế nào trong mã nguồn giải thích được hình dạng đó từ nguyên nhân gốc ở trên
   (giả thuyết "drain bỏ sót textarea ở nhánh composition" bị bác vì nhánh đó cần `compositionstart`
@@ -115,8 +116,8 @@ sáng".
 biết PTY đã chết, luôn hiển thị 'unknown'). Không phải việc ngoài phạm vi: đó là **cùng một dòng
 lỗi**, và sửa `shallowRef` làm cả ba chỗ đúng cùng lúc.
 
-**Cần chủ sở hữu xác nhận trên máy thật:** (a) nút Ctrl/Shift sáng khi latch, tắt khi nhả;
-(b) tab hiển thị đúng trạng thái chết thay vì luôn 'unknown'.
+**Cần chủ sở hữu xác nhận trên máy thật:** theo dõi tập trung tại
+[`verify-pending.md` §Terminal T1](verify-pending.md#t1--ctrlshift-armed-button-display--tab-alive-status).
 
 Ràng buộc đã tuân thủ: `showKeyRow` / `ownsPtySize` phải giữ nguyên là **boolean thuần** trong
 `usePtyTerminal.js` — nếu biến chúng thành ref thì `v-if="ptyApi?.showKeyRow"` luôn truthy và hàng
@@ -179,9 +180,9 @@ Kế thừa từ `terminal-input-surface.md` §7, thu hẹp lại theo phạm vi
 
 ---
 
-## 6. Trạng thái commit
+## 6. Trạng thái commit — ĐÃ COMMIT HẾT, 2026-07-31
 
-Sáu commit đã lên cho công việc terminal của phiên này, theo thứ tự:
+Cây làm việc sạch. Tám commit đã lên cho công việc terminal của phiên này, theo thứ tự:
 
 - `bee7498` — doc nghiên cứu ghost-file audit (đã được index và CHANGELOG trích dẫn từ trước).
 - `4851f40` — bản viết lại text drain (`useTerminalTextDrain.js` mới, `useTerminalInput.js` +
@@ -190,15 +191,13 @@ Sáu commit đã lên cho công việc terminal của phiên này, theo thứ t�
 - `0a6d314` — gỡ escape hatch `aki-input-mode='legacy'` (§4).
 - `c417f99`, `f2b9fe2` — hai lần sửa tiếp §6 của chính file này cho khớp thực tế (mục này từng bị bỏ
   sót cập nhật hai lượt liền trước).
+- `b99502a` — fix double space (§2.1), veto mọi keypress trong
+  `src/composables/useTerminalTextDrain.js`.
+- `5f41817` — đồng bộ tài liệu cho fix double space: `terminal-vietnamese-ime-root-cause-5.md` mới,
+  dòng `Status: superseded by` trên `-4.md`, `docs/arch/terminal-stack.md`,
+  `docs/feat/in-app-terminal.md`, `docs/index.md`, `CHANGELOG.md`, và chính file này (§2.1, §6).
 
-**Chưa lên commit tại thời điểm viết đoạn này:** fix double space (§2.1) trong
-`src/composables/useTerminalTextDrain.js`, cùng toàn bộ việc đồng bộ tài liệu của lượt này — mục
-này, §2.1 ở trên, dòng `Status: superseded by` mới thêm vào
-`terminal-vietnamese-ime-root-cause-4.md`, doc mới `terminal-vietnamese-ime-root-cause-5.md`,
-`docs/arch/terminal-stack.md`, `docs/feat/in-app-terminal.md`, `CHANGELOG.md`. Lead sẽ gộp và commit;
-không đoán hash ở đây.
-
-**Mốc lùi cho hội đồng nếu việc truy §2.1 đi sai hướng vẫn là `4851f40`, không đổi.** Fix double
-space nằm TRÊN các commit đã có và không sửa lại kiến trúc drain của `4851f40`, nên lùi về đó vẫn giữ
-fix hiển thị `shallowRef` (§2.3) như mô tả trước; thứ mất đi là việc gỡ escape hatch (`0a6d314`), các
-commit doc nằm trên nó, và fix double space (chưa commit) cùng lượt đồng bộ tài liệu này.
+**Mốc lùi cho hội đồng nếu việc truy §2.1 (double space) đi sai hướng vẫn là `4851f40`, không đổi.**
+Đó là commit mang kiến trúc text-drain đang chạy, và fix hiển thị `shallowRef` (§2.3) đã nằm sẵn
+TRONG chính commit này nên lùi về đó **vẫn giữ** fix hiển thị. Thứ mất đi là việc gỡ escape hatch
+(`0a6d314`), fix double space (`b99502a`) và các commit doc nằm trên nó.

@@ -4,6 +4,8 @@ Covers three of the four in-app-terminal input-layer defects from the jul30 batc
 
 Feature doc to sync on implementation: `docs/feat/in-app-terminal.md` — the user-facing description of the in-app terminal. Architecture: `docs/arch/terminal-stack.md` — how the terminal stack, tabs and PTY wiring fit together. Both listed in §6, neither edited here.
 
+**Status (2026-07-31, plan-consolidation pass):** narrowed by [`terminal-input-jul31.md`](terminal-input-jul31.md), which supersedes this doc as the read-first entry point — its §1 ran §6's whole checklist below on real hardware and closed most of it. This doc now only carries live value for the two rows §6 still lists as open, both tracked in `verify-pending.md`. Per `terminal-input-jul31.md` §5, this doc moves to `docs/plan/done/` once jul31's §2.3 (Ctrl/Shift armed-button display) gets owner confirmation — not done yet, so this doc stays here for now. `docs/research/terminal-vietnamese-ime-root-cause-4.md` (referenced below as "the head of that chain") is also stale: `-5.md` is the current head, per jul31's own note.
+
 ---
 
 ## 1. Three framing corrections — read these before deciding anything
@@ -52,7 +54,7 @@ xterm.js's `fontFamily` option has a **built-in default of `'courier-new, courie
 
 The defensible reading of "remove the custom declaration" on the canvas is therefore: **collapse the four-name stack to the one Apple system token that means "the system monospace"** — `ui-monospace` (fallback `Menlo`) — declared once, in one place. Nothing bespoke remains, the SSoT breach closes, and no rendering regresses.
 
-**ASSUMPTION** — that xterm 5.x's `fontFamily` default is the Courier New string above. It cannot be confirmed from this box: `node_modules/@xterm` **is not installed here** (verified — `node_modules/` holds 95 packages and `@xterm` is not among them). Settling command, on a machine with a full install: `grep -rn "courier" node_modules/@xterm/xterm/src/common/services/OptionsService.ts`.
+**ASSUMPTION, now moot** — the shipped fix does not rely on this. `src/components/TerminalView.vue:344` sets `const FONT_FAMILY = 'ui-monospace, Menlo, monospace'` explicitly and unconditionally, so xterm's own default (whatever it is) is never reached in this app. No settling command needed.
 
 ### 2.4 What #2 does NOT claim
 
@@ -216,18 +218,18 @@ One item is a hard prerequisite of #13 rather than a sibling: on the Mac, the `a
 
 ## 6. Unverified — every Mac observation, with its settling command
 
-Nothing below can be checked from the dev box: it is headless Linux, the app is a macOS Tauri build, and `@xterm/xterm` is not even installed here (§2.3). Per `RULE-coding.md` §B3 these are reported as unverified, never as done.
+**Superseded 2026-07-31 by the real-hardware run recorded in `terminal-input-jul31.md`.** That doc's §1 ("Đã đóng — không mở lại") ran this whole table once on a real Mac + companion and closed rows 1, 2, 5, 7 and 8 by direct observation; row 3 is now moot (§2.3 above). Rows 3 and 6 are the only two with no closing evidence yet, and are tracked centrally rather than here:
 
-| # | Claim / open question | What settles it |
+| # | Claim / open question | Disposition |
 |---|---|---|
-| 1 | That the toggles read correctly at a glance on a real phone once the state is one latch (§4.4) | Arm Ctrl on the companion, look at the row without hunting for it; then tap another button and confirm the previously-tapped one does not retain a cyan border (the stuck-`:hover` false positive) |
-| 2 | Whether the mono override is what the owner sees as "lỗi font", or whether it is Vietnamese combining marks (§2.4) | Apply §2.1, look at the compose input on the Mac. If it persists, check OpenKey's Unicode mode ("Unicode dựng sẵn" vs "Unicode tổ hợp") |
-| 3 | xterm's `fontFamily` default (§2.3's Courier New consequence) | `grep -rn "courier" node_modules/@xterm/xterm/src/common/services/OptionsService.ts` after a full `npm install` |
-| 4 | Whether xterm 5.x exposes a readable bracketed-paste state — **prerequisite** for §3.4 | `grep -rn "bracketedPaste\|BracketedPaste" node_modules/@xterm/xterm/typings/xterm.d.ts node_modules/@xterm/xterm/src/common/InputHandler.ts` after a full `npm install` |
-| 5 | Which multi-line wire form the target CLIs actually receive (§3.4) | In the in-app terminal run `cat -v`, Send a two-line compose, and read whether `^[[200~…` / `^[^M` / `^J` arrives; compare against a physical Shift+Enter in a `/terminal-setup`-configured iTerm2 |
-| 6 | Whether an auto-growing compose textarea causes host PTY re-wrap oscillation | Owned by the geometry item, not this doc: the textarea's `field-sizing: content` changes `.pty-terminal-mount`'s height → `ResizeObserver` → `scheduleFit` → `fitAddon.fit()` → `hostResize` → `pty_resize` (`TerminalView.vue:261-298`). Fallback with zero geometry cost: a fixed 2-row textarea |
-| 7 | That a latched Ctrl now works with focus in the compose input (§4.3), without eating IME composition or ordinary capitals | On the companion: run `sleep 60`, tap Ctrl, type `c` in the compose box — the process must die. Then arm Shift and type Vietnamese in the same box — every character must arrive intact |
-| 8 | #13 — owned by `ime-research`, not by this doc | Listed for completeness only: `scripts/capture-ime-evidence.sh`, then `__akiIme.tail(20)`; plus the falsifier `localStorage['aki-ime-guard'] = 'off'` and repeat the repro |
+| 1 | Toggles read correctly at a glance, no stuck-`:hover` false positive (§4.4) | Closed by the jul31 run ("Sticky Ctrl/Shift... đúng, có bằng chứng ở hai chương trình"); the `@media (hover: hover)` guard is in code (`TerminalView.vue:546-551`). Still tracked once more, folded into [`verify-pending.md` T4](verify-pending.md#t4--stuck-hover-false-positive-on-ios-safari-key-row-buttons), because the jul31 run did not specifically exercise the stuck-hover case |
+| 2 | Mono override vs Vietnamese combining marks as the "lỗi font" cause (§2.4) | Closed — jul31 run: "Font ô compose — nhất quán, 'hoàn hảo'" |
+| 3 | xterm's `fontFamily` default (§2.3's Courier New consequence) | Moot — see §2.3 above, the app never reaches xterm's default |
+| 4 | Whether xterm 5.x exposes a readable bracketed-paste state — **prerequisite** for §3.4 | No longer needed — `terminal-input-jul31.md` §3 records the owner's decision to leave multi-line paste as-is ("quá phức tạp so với giá trị") |
+| 5 | Which multi-line wire form the target CLIs actually receive (§3.4) | Closed — jul31 run: "Shift+Enter trong ô compose — đúng, 'hoàn hảo'" |
+| 6 | Whether an auto-growing compose textarea causes host PTY re-wrap oscillation | Still open, not exercised by the jul31 run. Tracked as [`verify-pending.md` T3](verify-pending.md#t3--compose-textarea-auto-grow-vs-pty-resize-oscillation) |
+| 7 | Latched Ctrl works with focus in the compose input, without eating IME/capitals (§4.3) | Closed — jul31 run: "Ctrl+X trong `nano`, Ctrl+C từ ô compose" |
+| 8 | #13 — owned by `ime-research`, not by this doc | Closed by the whole IME chain through `terminal-vietnamese-ime-root-cause-5.md`; `"ăn gì" → "ăn g"` is gone per the jul31 run |
 
 ---
 

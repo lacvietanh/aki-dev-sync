@@ -75,7 +75,7 @@ This tool was built for a specific way of working - you'll feel at home if you:
 The parts I'm quietly proud of - the clever bits that make the boring stuff "just work":
 
 - **ANSI Terminal status colors & Unicode Vietnamese.** Force git to output color and raw paths via `-c color.status=always -c core.quotepath=false`. An extremely lightweight client-side Regex ANSI parser converts terminal escapes into styled HTML spans, displaying files in native terminal colors and rendering Vietnamese accents instead of obscure octal escapes.
-- **Smart Stack Launcher & Lockfile Analyzer.** Inspects files to check if the project uses Tauri or Node, then scans lockfiles (`pnpm`, `yarn`, `bun`, or `npm`) to dynamically execute the correct start command inside the native macOS terminal.
+- **Smart Stack Launcher & Lockfile Analyzer.** Inspects files to check if the project uses Tauri or Node, then scans lockfiles (`pnpm`, `yarn`, `bun`, or `npm`) to dynamically pick the correct start command and run it in the project's own in-app terminal tab.
 - **Zero-JS Auto-growing Textarea.** Modern WebKit (Tauri/macOS) supports the CSS property `field-sizing: content;`. Using this eliminates all need for heavy JS resize keypress listeners and calculations, allowing tasks and notes inputs to auto-grow natively and smoothly.
 - **Inherited Visual Changelog Preview.** We pass a `projectId` down to the existing `ChangelogModal` to fetch and render the project's own changelog file in clean Markdown and Mermaid, reusing the core layout.
 - **Real quota, not guesses.** Claude Code's `statusLine` hook emits Anthropic's actual `rate_limits` after every turn. We persist it by idempotently patching `statusline-command.sh` over SSH - so the numbers are server truth, not token estimates.

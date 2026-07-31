@@ -5,11 +5,11 @@ Four small, binary-correct UI fixes surfaced in the 2026.07.30 backlog triage (o
 existing design system — no new pattern, no persistence, no owner judgment call. Contrast
 `project-visibility-toggle.md` (#12), which is a new capability and does not belong in this doc.
 
-No version number is introduced by this doc (release.A5). Status: **all four implemented (Phase B),
-unverified at runtime** — #5 in `ProjectTable.vue`'s two `--grid-cols` declarations, #10 in
-`useSync.js`'s confirm `html`, #11a/#11b in `GlobalNoteModal.vue`. #11b landed at `min-height: 190px`;
-note that the arithmetic in that section adds the `.project-notes-section` padding to a floor that
-sits on the textarea itself (`padding: 0`), so the true `rows="8"` equivalent is ~167px, not ~195px.
+No version number is introduced by this doc (release.A5). Status: **all four implemented (Phase B).**
+Runtime confirmation for #5, #11a, #11b is tracked centrally in
+[`verify-pending.md` §UI](verify-pending.md#ui) (U1/U2/U3) rather than here. #10 needs no runtime
+check — its own section below already concludes "none of consequence". Still open, and the reason
+this doc stays out of `done/`: the doc-sync note right below.
 
 ## Doc-sync note (read before implementing)
 
@@ -59,9 +59,7 @@ one custom property; already commented) — this is the file's own established p
 violation. No token extraction needed (not a repeating value, `design.A2` Rule-of-Three doesn't
 apply).
 
-**Unverified at runtime:** whether `6rem`/`4.5rem` is enough for `.col-sync`'s content at the
-narrowest supported width (420px). Settle by opening the app at minimum width and checking for
-clipped/wrapped sync-column buttons; widen the `minmax` floor if so.
+**Unverified at runtime:** tracked as [`verify-pending.md` U1](verify-pending.md#u1--projects-table-column-flex-reshape).
 
 ---
 
@@ -146,6 +144,8 @@ nothing to fix there.
 **Why this lands in the existing pattern.** Zero new mechanism — the 5th application of an already
 4x-precedented repeat.
 
+**Unverified at runtime:** tracked as [`verify-pending.md` U2](verify-pending.md#u2--globalnotemodal-narrow-mode-padding-repeat).
+
 ---
 
 ## #11b — GlobalNote textarea min-height (filed as VERTICAL-SPACE, not narrow-mode)
@@ -172,6 +172,8 @@ a guessed round number like the old 320px/190px) and resets `field-sizing: fixed
 so sizing is driven solely by `min-height`/`max-height: 60vh`/`resize: vertical` — the same
 mechanism this file always used successfully; only the floor's px value, and the accidental
 dependence on an unsupported auto-sizing property, were ever wrong.
+
+**Unverified at runtime:** tracked as [`verify-pending.md` U3](verify-pending.md#u3--globalnotemodal-textarea-min-height-re-tune).
 
 ---
 
