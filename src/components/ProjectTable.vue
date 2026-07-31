@@ -433,12 +433,7 @@ const popupStyles = ref({});
 const openPopupId = ref(null);
 const openedByTap = ref(false);
 
-// Popup is `position: fixed`, so viewport coordinates are the right frame of reference. It is
-// horizontally centered on the window (clamped to a small viewport margin so it never crops
-// against an edge) rather than pinned to the trigger's left edge, which used to let a wide popup
-// run off the right side of the window. The popup element is already in the DOM at
-// `visibility: hidden` (not `display: none`) when this fires, so its real rendered width can be
-// measured before it becomes visible.
+// Popup is `position: fixed`, so viewport coordinates are the right frame of reference. It is centered on the TRIGGER button's own horizontal midpoint (clamped to a small viewport margin so it never crops against an edge), not on the window's midpoint - centering on the window instead of the trigger made the popup drift away from its OPEN button on anything wider than a narrow phone-sized viewport, landing it in the middle of the whole app with no visible link back to the row that opened it. The popup element is already in the DOM at `visibility: hidden` (not `display: none`) when this fires, so its real rendered width can be measured before it becomes visible.
 function positionPopup(project, wrapperEl) {
   if (!wrapperEl) return;
   const rect = wrapperEl.getBoundingClientRect();
@@ -447,7 +442,8 @@ function positionPopup(project, wrapperEl) {
   let left = rect.left;
   if (popupEl) {
     const popupWidth = popupEl.getBoundingClientRect().width || popupEl.offsetWidth || 0;
-    left = window.innerWidth / 2 - popupWidth / 2;
+    const triggerCenter = rect.left + rect.width / 2;
+    left = triggerCenter - popupWidth / 2;
     left = Math.min(Math.max(left, margin), window.innerWidth - popupWidth - margin);
   }
   popupStyles.value = {
@@ -786,16 +782,18 @@ function formatTimeAgo(timestamp) {
   --grid-gap: 0.5rem;
 }
 
+/* .grid-header and every .grid-row used to be independent `display: grid` boxes that each just happened to share the same --grid-cols value; a content-sized track (a bare `1fr` == `minmax(auto, 1fr)`, needed by the SYNC column so its PUSH/DRY/PULL/LOG/gear cluster is never guessed too small - see the f6ebc4a/a3b46709 history above) computes its auto-floor from only the min-content of items inside that ONE grid, so the header's short "SYNC" label and a row's full button cluster picked different real pixel widths for the same column - the header/body misalignment reported. Making `.projects-grid` the one real grid and every `.grid-header`/`.grid-row` a `subgrid` of it (via `display: contents` on the non-visual `.grid-body` wrapper in between) forces a single, shared auto-floor computed once across all of them, so alignment can't drift no matter what any individual row's content needs. */
 .projects-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: var(--grid-cols);
+  column-gap: var(--grid-gap);
   width: 100%;
 }
 
 .grid-header {
   display: grid;
-  grid-template-columns: var(--grid-cols);
-  column-gap: var(--grid-gap);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   width: 100%;
   position: sticky;
@@ -830,16 +828,15 @@ function formatTimeAgo(timestamp) {
   justify-content: center;
 }
 
+/* `display: contents`: the transition-group's own wrapper div carries no visual styling of its own (no border/background/hover), so removing its box is free - it just needs to stop being an extra layer between `.projects-grid` and each `.grid-row`, so every row becomes a direct subgrid child of the one real grid above instead of a grandchild the column tracks can't reach. */
 .grid-body {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
+  display: contents;
 }
 
 .grid-row {
   display: grid;
-  grid-template-columns: var(--grid-cols);
-  column-gap: var(--grid-gap);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   width: 100%;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
@@ -916,6 +913,7 @@ function formatTimeAgo(timestamp) {
 
 .grid-row-special {
   display: flex;
+  grid-column: 1 / -1;
   width: 100%;
 }
 
@@ -1046,13 +1044,13 @@ function formatTimeAgo(timestamp) {
   max-width: 100%;
 }
 
-/* Colour-only PUSH/PULL distinction - no separate badge element (Extreme Narrow). */
+/* Colour-only PUSH/PULL distinction - no separate badge element (Extreme Narrow). Must match the PUSH/PULL buttons themselves (main.css .btn-tech-push is orange/#FF8C00 == --accent-amber, .btn-tech-pull is blue/#0088ff, closest existing var is --accent-cyan) - these were swapped (push showed cyan, pull showed amber) so LAST ACTION read as the opposite colour of the button that just fired. */
 .la-push {
-  color: var(--accent-cyan);
+  color: var(--accent-amber);
 }
 
 .la-pull {
-  color: var(--accent-amber);
+  color: var(--accent-cyan);
 }
 
 .la-host {
