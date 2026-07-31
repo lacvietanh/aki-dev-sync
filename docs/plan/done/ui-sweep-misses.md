@@ -8,19 +8,22 @@ existing design system — no new pattern, no persistence, no owner judgment cal
 No version number is introduced by this doc (release.A5). Status: **all four implemented (Phase B).**
 Runtime confirmation for #5, #11a, #11b is tracked centrally in
 [`verify-pending.md` §UI](verify-pending.md#ui) (U1/U2/U3) rather than here. #10 needs no runtime
-check — its own section below already concludes "none of consequence". Still open, and the reason
-this doc stays out of `done/`: the doc-sync note right below.
+check — its own section below already concludes "none of consequence". Doc-sync obligation closed
+2026-07-31 (see note below) — only runtime verification remains, tracked in `verify-pending.md`.
 
 ## Doc-sync note (read before implementing)
 
 **No `docs/feat/` doc owns the projects table at all** (plan-docs' drift finding D-6, this session).
 It is the app's primary surface and is currently undocumented. #5 (this doc) and #12
 (`project-visibility-toggle.md`) both change that surface and there is nowhere to sync the change to
-today. Not fixed in this doc — named so the gap is visible, not rediscovered next session.
+today. Not fixed in this doc, and not owed by it either — named so the gap is visible, not
+rediscovered next session; creating that doc is separate scope.
 
-#11 (GlobalNote) syncs to the existing `docs/feat/project-task-list.md`, which already documents the
+#11 (GlobalNote) synced 2026-07-31 to `docs/feat/project-task-list.md`, which already documents the
 Global Note / task-list shared engine (`useTaskCollection`, `TaskListPanel.vue`, `NotesField.vue`) —
-update that doc's narrow-mode and textarea-sizing description once the fix lands. Not performed here.
+its "Global" bullet under "Reached by" now describes the `:deep()` fixed `min-height`/`resize:
+vertical` sizing (#11b) and the local 700px narrow-mode padding repeat (#11a), read from
+`src/components/modals/GlobalNoteModal.vue:66-119`.
 
 ---
 

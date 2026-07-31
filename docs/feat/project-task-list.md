@@ -22,7 +22,7 @@ Two data sources plug into the same factory:
 ## Reached by
 
 - **Project**: clicking the Tasks button in the `TASKS` column opens `ProjectTasksModal.vue` — header + `NotesField` + `TaskListPanel`, wired to `useProjectTaskCollection`.
-- **Global**: clicking the titlebar sticky-note icon opens `GlobalNoteModal.vue` — the existing big monospace notes textarea (same `NotesField`, with `:deep()` style overrides for its larger look) + `TaskListPanel`, wired to `useGlobalTaskCollection`. The titlebar button itself shows `TaskCountBadges` for the global list's pinned/open counts.
+- **Global**: clicking the titlebar sticky-note icon opens `GlobalNoteModal.vue` — the existing big monospace notes textarea (same `NotesField`, with `:deep()` style overrides for its larger look) + `TaskListPanel`, wired to `useGlobalTaskCollection`. Its `:deep()` override also resets the textarea's sizing from `NotesField`'s base `field-sizing: content` (inert in WKWebView) to a fixed `min-height: 42px` (2 rows) + `max-height: 60vh` + `resize: vertical`, so the drag handle has an explicit baseline. Below 700px width the modal locally repeats the narrow-mode padding trim on its own `.note-body`/`.note-footer` (scope-override outranks `main.css`'s global rule — same pattern as ChangelogModal/ClaudeProfileModal/SshConfigModal/UpdateModal). The titlebar button itself shows `TaskCountBadges` for the global list's pinned/open counts.
 
 ## Behavior
 - **Click to open**: Clicking the Tasks button opens a focused centered modal (`ProjectTasksModal.vue`).
