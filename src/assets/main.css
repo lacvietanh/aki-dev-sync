@@ -204,10 +204,18 @@ a {
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
+  /* flex-grow/flex-basis, not the `flex` shorthand: only numeric-to-numeric endpoints animate -
+     `flex: none` resolves to a flex-basis of `auto`, and a transition can't interpolate between a
+     length and `auto`, so collapsing used to snap instead of easing shut. */
+  transition: flex-grow 0.25s ease, flex-basis 0.25s ease;
 }
 
 .dock-stack.is-collapsed {
-  flex: none;
+  flex-grow: 0;
+  flex-shrink: 0;
+  /* Fixed px match for .terminal-header's real rendered height (--control-h content + 2px*2
+     padding + 1px border) - the only numeric value flex-basis can ease toward. */
+  flex-basis: calc(var(--control-h) + 5px);
 }
 
 /* Body wrapper for a stack rendered with body-persist (DockStack.vue's bodyPersist prop). It sits

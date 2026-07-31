@@ -63,6 +63,8 @@ A stack **collapse** no longer unmounts anything either (1.21.1). `DockStack.vue
 
 The re-fit on expand is not a new code path: `TerminalStack.vue` passes `active` as `t.id === activeTabId && !collapsed`, and `TerminalView.vue`'s existing `watch(() => props.active)` re-fits and refocuses on the false→true edge. While hidden the container measures 0 and `doFit()`'s `width < 40 || height < 24` floor discards the measurement, so nothing resizes the live PTY.
 
+`TerminalStack.vue` also collapses **itself** once `tabs.value.length` (the full, unfiltered list) reaches 0 — every tab in every scope closed, by any close path (a chip's ✕, ⌘W on the last one, etc.) — a `watch` sets `collapsed.value = true` rather than a per-close-path special case, since it is state-driven, not path-driven. The collapse/expand transition itself is a `main.css` rule on `.dock-stack`: `flex-grow`/`flex-basis` (numeric, so a `transition` can ease it), not the `flex: none` shorthand (whose implicit `auto` basis a transition can't interpolate toward) — shared with `LogStack.vue`, so both stacks now ease shut/open instead of snapping.
+
 The cost is retention: every mounted xterm keeps its 5000-line scrollback while the panel is closed, which is what `MAX_TABS` bounds.
 
 ## External `Terminal.app` count — derived, never remembered

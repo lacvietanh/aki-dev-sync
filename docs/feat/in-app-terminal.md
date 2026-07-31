@@ -154,7 +154,7 @@ Before this, a companion's font size was *derived*: `TerminalView.vue`'s `scaleF
 
 ## External `Terminal.app` sessions (1.22.0)
 
-A button in the stack header opens a modal listing every external `Terminal.app` window/tab: the directory it stands in, its pid/tty, how long it has run, and **what is executing inside it** — which is the actual question ("which window has the dev server?"). It cannot show their screens; no app can read another application's window contents, and the MVP does not pretend otherwise.
+A button in the stack header opens a modal listing every external `Terminal.app` window/tab: the directory it stands in, its pid/tty, how long it has run, and **what is executing inside it** — which is the actual question ("which window has the dev server?"). It cannot show their screens; no app can read another application's window contents, and the MVP does not pretend otherwise. The button's own icon is `fa-terminal` boxed in a rounded outline (distinct from the bare glyph the in-app tabs use elsewhere), and it now carries a badge of its own: the sum of every project's external count (`externalTermCounts`) plus the unowned complement (`externalTermGlobalCount`, see below) — the total external session count, not just what one project's badge already showed.
 
 `list_external_terminals` (`src-tauri/src/system.rs`) shares `scan_terminal_tree` with the badge's `count_external_terminals` — same `pgrep`/`ps`/`lsof` pipeline, same subtree-root definition of "one session", so the modal can never list a different number than the badge above it claims. On demand only, never on the badge's 5s cadence: it returns a command line per process, which has no business being polled. Host-only, and deliberately absent from `COMPANION_ALLOWED_COMMANDS` — the scan reads the Mac's process table, so on a phone the button would only ever open an error; it hides itself there instead.
 
@@ -165,6 +165,10 @@ Deliberately not there: function keys, Alt/Meta, a configurable key row. None ar
 ## SSH into a remote host (in-app)
 
 The OPEN popup's REMOTE column now has **SSH Terminal (In-App)** above the original **SSH Terminal** (native `Terminal.app`), same ordering as LOCAL's In-App Terminal over its own native Terminal item, and for the same reason: it is the only one of the two that works from a phone. `build_remote_ssh_command` (`src-tauri/src/system.rs`) builds the exact `ssh <host> -t '...'` string the native item already launches in `Terminal.app` — same host validation, same `mkdir -p && cd` remote-side quoting — and hands it back as plain text; `openProjectRemoteTerminal` (`ProjectTable.vue`) then types that string into a fresh (or reused) in-app PTY tab via `openProjectRemoteTerminal` (`useTerminalTabs.js`), which dedups by `runKind: 'ssh'` exactly like DEV/BUILD dedup by their own `runKind`. Pure string construction, no subprocess, so it is companion-allowed (`COMPANION_ALLOWED_COMMANDS`).
+
+## Auto-collapse when the last tab closes
+
+Closing every tab everywhere — via a tab's own ✕, `⌘W` on the last one, or any other close path — now collapses the terminal stack itself instead of leaving an open panel over an empty mount area (`TerminalStack.vue` watches `tabs.value.length`). The collapse (and the reverse expand, from the `TERM` cell, the header icon, or the OPEN popup) now eases via a `flex-grow`/`flex-basis` transition on `.dock-stack` (`main.css`) instead of snapping instantly — `flex: none`'s implicit `auto` basis can't be interpolated, so the collapsed state now sets a literal pixel `flex-basis` matching the header's own rendered height, which a transition CAN ease toward. This CSS rule is shared with `LogStack.vue`, so the event log panel eases the same way.
 
 ## How the bytes move
 

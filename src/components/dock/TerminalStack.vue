@@ -45,11 +45,12 @@
     <template #actions>
       <button
         v-if="externalTerminalsSupported"
-        class="btn-tech btn-tech-secondary btn-terminal-action"
+        class="btn-tech btn-tech-secondary btn-terminal-action btn-external-term"
         title="External Terminal.app sessions — what is running in each"
         @click="openExternalTermModal"
       >
-        <i class="fa-solid fa-window-maximize"></i>
+        <i class="fa-solid fa-terminal external-term-icon"></i>
+        <span v-if="externalTermTotalCount > 0" class="external-term-badge">{{ externalTermTotalCount }}</span>
       </button>
       <!-- Hidden when the whole dock is collapsed to its headers: CSS owns the height in that state
            (useDockLayout.js's dockAllCollapsed), so the button would be a no-op. -->
@@ -101,6 +102,7 @@ import {
   externalTerminalsSupported,
   openExternalTermModal,
 } from '../../composables/useExternalTerminals';
+import { externalTermCounts, externalTermGlobalCount } from '../../store/projectStore';
 import {
   zoomInTerminalFont,
   zoomOutTerminalFont,
@@ -118,6 +120,12 @@ const collapsed = terminalStackCollapsed;
 
 const { tabs, scope, scopeProject, activeTabId, newTab, closeTab, cycleTab } = useTerminalTabs();
 
+// Every tab, everywhere, closed (⌘W on the last one or any other close path) -> nothing left to
+// show, so the panel folds itself away instead of sitting open over an empty mount area.
+watch(() => tabs.value.length, (n) => {
+  if (n === 0) collapsed.value = true;
+});
+
 // Icon mechanism (named explicitly): utils/projectIcon.js's projectIconSrc(id, timestamp) +
 // projectStore.iconTimestamp, with a @error fallback flag — the exact trio ProjectTable.vue,
 // GitModal.vue and ProjectTasksModal.vue already use. Resolves the aki-devsync-icon:// protocol on
@@ -127,6 +135,13 @@ const scopeIconFailed = ref(false);
 watch(scope, () => { scopeIconFailed.value = false; }); // reset per scope, not globally
 
 const scopeIconSrc = computed(() => (scopeProject.value ? projectIconSrc(scopeProject.value.id, iconTimestamp.value) : ''));
+
+// ALL external Terminal.app sessions right now, not just the ones standing in a project directory:
+// every project's own count (externalTermCounts) plus the global complement (sessions matching no
+// project path) that the same scan already produces (useExternalTerminals.js).
+const externalTermTotalCount = computed(() =>
+  Object.values(externalTermCounts.value).reduce((sum, n) => sum + n, 0) + externalTermGlobalCount.value
+);
 // 'TERMINAL' spelled out, matching the project table's TERMINAL column — one canonical term for one
 // concept. A project scope shows the project's own 4-char abbreviation instead: that is an identity,
 // not the word for the feature.
@@ -203,5 +218,36 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true));
 }
 .term-scope-icon { width: 14px; height: 14px; border-radius: 3px; object-fit: cover; }
 .term-scope-name { line-height: 1; }
+
+.btn-external-term {
+  position: relative;
+}
+
+/* Same fa-terminal glyph as the in-app tab/header identity, boxed in a rounded outline so this one
+   specific button reads as "a terminal in its own window" (external) rather than the bare glyph
+   in-app terminal uses everywhere else. */
+.external-term-icon {
+  border: 1.5px solid currentColor;
+  border-radius: 5px;
+  padding: 2px 3px;
+}
+
+.external-term-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  background: #94a3b8;
+  color: #0b1220;
+  box-shadow: 0 0 0 2px var(--bg-primary);
+  pointer-events: none;
+}
 </style>
 
