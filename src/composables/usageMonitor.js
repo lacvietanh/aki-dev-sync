@@ -309,9 +309,8 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           const nowSec = Date.now() / 1000;
           const mtimeSec = parseInt(res.file_modified_at, 10);
 
-          // ── Stale detection ──────────────────────────────────────────────
+          // ── Reset-window freshness (log-only, feeds reset_overdue_s/until_reset_s below) ──
           // file_modified_at (cache mtime), not fetched_at: for AG the two are identical (the script writes fresh data on every live poll), but for Claude Code fetched_at is always ≈0 right after Rust reads the file  - that blinded this badge to a cache frozen mid-window (statusLine/oauth both silent, resets_at still in the future) - the exact freshness blind spot behind Lỗi C. mtime is the data's true age either way.
-          const dataAge = mtimeSec > 0 ? (nowSec - mtimeSec) : Infinity;
           let resetIsPast = false;
           if (!isAg) {
             // five_hour only, on purpose - NOT "any bucket whose reset has passed". The staleness
@@ -323,10 +322,6 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
             const fh = parsed?.rate_limits?.five_hour;
             resetIsPast = fh?.resets_at > 0 && nowSec > fh.resets_at;
           }
-          // Logged, never stored: the card derives its own staleness from `dataAt` and the clock it
-          // already ticks (see the `reading` block above). Keeping the computation here keeps the
-          // log line honest about which rule fired.
-          const liveStale = resetIsPast || dataAge > 600;
           // The mtime the staleness rule is measured against - published so the UI can show the age rather than assert "Stale". 0 means the host could not report an mtime; that is "unknown", not "now", so it stays null and the card falls back to the badge.
           const nextDataAt = mtimeSec > 0 ? mtimeSec : null;
 
@@ -373,8 +368,6 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
             ...bucketFields,
             mtime: mtimeSec,
             file_age_s:           mtimeSec > 0 ? Math.round(nowSec - mtimeSec) : null,
-            stale:                liveStale,
-            stale_reason:         resetIsPast ? 'resetIsPast' : dataAge > 600 ? 'dataAgeStale' : 'none',
             reset_overdue_s:      resetIsPast ? Math.round(nowSec - fiveHour.resets_at) : null,
             until_reset_s:        (!resetIsPast && fiveHour?.resets_at > 0)
                                     ? Math.round(fiveHour.resets_at - nowSec) : null,
