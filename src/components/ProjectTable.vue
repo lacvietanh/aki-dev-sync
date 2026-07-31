@@ -222,6 +222,11 @@
                           <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
                         </button>
                       </div>
+                      <!-- In-app first, same reasoning as LOCAL's In-App Terminal above: the only one of the two
+                           that works from a phone. -->
+                      <div class="popup-item" @click="openProjectRemoteTerminal(p)">
+                        <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-cyan);"></i> SSH Terminal (In-App)
+                      </div>
                       <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
                         <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
                       </div>
@@ -372,7 +377,7 @@ import CountBadgeWrap from './CountBadgeWrap.vue';
 const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
-const { openGlobalTerminal, openProjectTerminal, openRunCommand } = useTerminalTabs();
+const { openGlobalTerminal, openProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openRunCommand } = useTerminalTabs();
 
 // Global-scope mirror of TerminalCell.vue's own badge computeds (docs/plan/done/terminal-ownership-model.md
 // §7 — Rule-of-Three found only two real instances, so this stays inline rather than spawning a
@@ -712,6 +717,16 @@ async function openReportHtml(project) {
     if (!nativeWindow) Toast.fire({ icon: 'success', title: 'Report opened on the Mac' });
   } catch (e) {
     console.error('Failed to open REPORT.html', e);
+    Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
+  }
+}
+
+async function openProjectRemoteTerminal(project) {
+  try {
+    const sshCmd = await invoke('build_remote_ssh_command', { host: project.remote_host, path: project.remote_path });
+    openProjectRemoteTerminalTab(project, sshCmd);
+  } catch (e) {
+    console.error(e);
     Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
   }
 }

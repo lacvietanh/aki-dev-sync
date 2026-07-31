@@ -355,6 +355,15 @@ done
 [ -n "$AGY_BIN" ] || AGY_BIN=antigravity-ide
 "#;
 
+/// Builds the exact `ssh … -t …` command line the native "SSH Terminal" popup entry launches in Terminal.app (see `open_remote_subprocess`'s "terminal" branch below), so the in-app terminal's "SSH Terminal (In-App)" popup entry can type the identical command into a PTY tab instead of spawning a second, external terminal window. Pure string construction, no subprocess — safe to call from a companion.
+#[tauri::command]
+pub fn build_remote_ssh_command(host: String, path: String) -> Result<String, String> {
+    validate_remote_host(&host)?;
+    let qpath = shell_quote_remote_path(&path);
+    let remote_cmd = format!("mkdir -p {q} && cd {q} ; exec bash", q = qpath);
+    Ok(format!("ssh {} -t {}", host, shell_quote(&remote_cmd)))
+}
+
 /// Subprocess-based remote openers that cannot be expressed as a plain `open` call:
 /// - `terminal`: SSH via AppleScript (macOS-only)
 /// - `antigravity`: `antigravity-ide --remote` CLI

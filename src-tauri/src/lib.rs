@@ -89,6 +89,7 @@ pub fn run() {
             system::install_akiclaudedoc,
             system::open_local_terminal,
             system::open_remote_subprocess,
+            system::build_remote_ssh_command,
             system::check_ide_availability,
             system::resolve_remote_path,
             system::resolve_report_html,

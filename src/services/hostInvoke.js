@@ -73,6 +73,7 @@ export const COMPANION_ALLOWED_COMMANDS = new Set([
   'read_ssh_config',
   'resolve_remote_path',
   'resolve_report_html',
+  'build_remote_ssh_command',
   // Agent usage slots — the phone runs its own slots (usageSlotStore targets are per-screen).
   'get_agent_usage',
   'provision_agent_usage',

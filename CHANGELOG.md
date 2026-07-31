@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [Unreleased]
 
+#### Added
+- **SSH Terminal (In-App)**, a new item in the OPEN popup's REMOTE column, above the existing native **SSH Terminal** — the only one of the two that works from a phone, same reasoning as LOCAL's own In-App Terminal over its native counterpart. Types the exact same `ssh <host> -t '...'` command the native item already launches in `Terminal.app` into a PTY tab inside the app instead of a second external window (`build_remote_ssh_command` in `src-tauri/src/system.rs` builds the string; `openProjectRemoteTerminal` dedups the tab by `runKind: 'ssh'`, the same pattern DEV/BUILD already use).
+
 #### Fixed
 - **The projects table's header no longer drifts out of alignment with its own columns.** The header row and every project row were each their own independent CSS grid that only happened to share the same column-width formula; a column sized from its own content (the SYNC column's button cluster) computed a different real pixel width in the header's own grid (short "SYNC" label) than in a row's grid (the full PUSH/DRY/PULL/LOG/gear cluster), so the two drifted apart. The header and every row are now `subgrid`s of one shared grid, so all of them are forced to agree on the same column widths.
 - **The PUSH/PULL LAST ACTION line showed the opposite colour of the button that ran it** (a push showed in the pull button's colour and vice versa). The two now match their buttons.

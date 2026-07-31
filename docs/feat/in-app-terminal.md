@@ -6,7 +6,7 @@ A real interactive shell inside the app, on a `TERMINAL` tab next to the event l
 
 ## Why it exists
 
-Not "because VS Code has one". The app opened `Terminal.app` windows for DEV, BUILD, SSH and the AkiClaudeDoc installer — and a phone on the other end of Remote Control could see none of them. The goal is **drive a real shell on the Mac from the phone**. Every scope decision below follows from that, not from feature parity with an editor. DEV/BUILD have since moved into this terminal (`docs/plan/done/dev-build-in-app-launch.md`) and are visible from a phone as of that change; SSH and the AkiClaudeDoc installer still open external windows.
+Not "because VS Code has one". The app opened `Terminal.app` windows for DEV, BUILD, SSH and the AkiClaudeDoc installer — and a phone on the other end of Remote Control could see none of them. The goal is **drive a real shell on the Mac from the phone**. Every scope decision below follows from that, not from feature parity with an editor. DEV/BUILD have since moved into this terminal (`docs/plan/done/dev-build-in-app-launch.md`) and are visible from a phone as of that change; SSH now has an in-app option too (see "SSH into a remote host" below), alongside its original external-window path. The AkiClaudeDoc installer still opens an external window.
 
 It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a runaway build, shell history recall, interactive `y/n` prompts and full-screen programs like `vim` work at all.
 
@@ -162,6 +162,10 @@ A button in the stack header opens a modal listing every external `Terminal.app`
 
 Deliberately not there: function keys, Alt/Meta, a configurable key row. None are load-bearing for driving a build or a dev shell.
 
+## SSH into a remote host (in-app)
+
+The OPEN popup's REMOTE column now has **SSH Terminal (In-App)** above the original **SSH Terminal** (native `Terminal.app`), same ordering as LOCAL's In-App Terminal over its own native Terminal item, and for the same reason: it is the only one of the two that works from a phone. `build_remote_ssh_command` (`src-tauri/src/system.rs`) builds the exact `ssh <host> -t '...'` string the native item already launches in `Terminal.app` — same host validation, same `mkdir -p && cd` remote-side quoting — and hands it back as plain text; `openProjectRemoteTerminal` (`ProjectTable.vue`) then types that string into a fresh (or reused) in-app PTY tab via `openProjectRemoteTerminal` (`useTerminalTabs.js`), which dedups by `runKind: 'ssh'` exactly like DEV/BUILD dedup by their own `runKind`. Pure string construction, no subprocess, so it is companion-allowed (`COMPANION_ALLOWED_COMMANDS`).
+
 ## How the bytes move
 
 ```
@@ -194,7 +198,6 @@ Opening the terminal from a paired device adds **no extra confirmation step**, a
 - Split panes (multiple tabs within one PTY-per-tab model are covered above — a split pane would be more than one *view* onto one tab, which is a different feature).
 - Theme / shell-profile configuration (the theme is hardcoded to the app's own CSS tokens). Font *size* is adjustable since 1.22.0; the font *family* is not.
 - Search addon, web-links addon, ligatures.
-- SSH-into-a-remote-host inside this view.
 - **REPORT** opens `REPORT.html` in the OS default browser (`open_report_html` in `src-tauri/src/system.rs`) — it is a static file view, not a shell, and was never a terminal-redirect candidate; grouping it with DEV/BUILD in an earlier version of this line was itself the mistake.
 
 **DEV / BUILD now redirect into this terminal (`docs/plan/done/dev-build-in-app-launch.md`).** The two reasons this line used to give are both gone: terminal v2's SCOPES give every project its own tab group (the "no notion of which project" gap closed 2026-07-28, well before this shipped), and build/dev output fighting the user's own typing is avoided structurally — DEV/BUILD never reuse the scope's last-active shell, they open a dedicated tab tagged `runKind: 'dev' | 'build'` and dedup against THAT tag, not against "any tab in the scope". `ProjectTable.vue`'s DEV/BUILD buttons call `openRunCommand` (`useTerminalTabs.js`), which writes the command via the same `pty_write` a keystroke would, exactly once — for a fresh tab, only after both `pty_spawn` resolves and the tab's scrollback hydrate has taken its snapshot, so the write's echo can only ever arrive through the live output stream, never doubled up with the hydrate's own replay of the same ring-buffer bytes. `run_project_command`/`run_project_dev`/`run_in_project_terminal` (`src-tauri/src/system.rs`), the old external-`Terminal.app` launch path this replaced, have since been removed (2026-07-30) along with their `hostInvoke.js` allowlist entries and `lib.rs` registrations.

@@ -387,6 +387,38 @@ export function useTerminalTabs() {
     else setPendingClaim(scope) // companion fallback — same mechanism openScopeTerminal uses
   }
 
+  /** Remote counterpart to `openProjectTerminal`: dedups by (scope, runKind: 'ssh') exactly like
+   *  DEV/BUILD, so a project can have an ordinary local shell tab AND an SSH tab open at once,
+   *  and a second click focuses the existing SSH tab instead of piling up new ones. `sshCmd` is
+   *  the exact `ssh … -t …` string the backend's `build_remote_ssh_command` returns — this
+   *  composable never constructs shell syntax itself. */
+  function openProjectRemoteTerminal(project, sshCmd) {
+    if (!project || !sshCmd) return
+    const scope = project.id
+    expandTerminalStack()
+    activeTerminalScope.value = scope
+    const existing = terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === 'ssh')
+    if (existing) {
+      setActiveTab(existing.id)
+      if (tabLiveness.value[existing.id] === false) {
+        setTabPendingCmd(existing.id, sshCmd)
+        invoke('pty_spawn', { tabId: existing.id, cwd: project.local_path }).catch((e) =>
+          console.error('[useTerminalTabs] openProjectRemoteTerminal respawn failed', e)
+        )
+      }
+      return
+    }
+    const tab = addTerminalTab({
+      title: `${project.name} (SSH)`,
+      projectId: scope,
+      cwd: project.local_path,
+      runKind: 'ssh',
+      pendingCmd: sshCmd,
+    })
+    if (tab) setActiveTab(tab.id)
+    else setPendingClaim(scope)
+  }
+
   return {
     tabs,            // FULL list — mount loop only
     scopedTabs,      // the strip, cycling, and the close-fallback use this
@@ -394,6 +426,7 @@ export function useTerminalTabs() {
     activeTab, activeTabId, setActiveTab,
     newTab, closeTab, cycleTab,
     openProjectTerminal,   // scope-aware
+    openProjectRemoteTerminal,
     openGlobalTerminal,
     openRunCommand,
   }
