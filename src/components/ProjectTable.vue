@@ -374,7 +374,7 @@ const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
 const { openGlobalTerminal, openProjectTerminal, openRunCommand } = useTerminalTabs();
 
-// Global-scope mirror of TerminalCell.vue's own badge computeds (docs/plan/terminal-ownership-model.md
+// Global-scope mirror of TerminalCell.vue's own badge computeds (docs/plan/done/terminal-ownership-model.md
 // §7 — Rule-of-Three found only two real instances, so this stays inline rather than spawning a
 // TerminalButton abstraction for two call sites; `TerminalCountBadges` itself is already scope-agnostic).
 const globalTabCount = computed(() => terminalTabs.value.filter((t) => t.projectId == null).length)

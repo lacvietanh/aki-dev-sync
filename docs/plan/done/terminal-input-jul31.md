@@ -10,7 +10,7 @@ phiên hội đồng riêng (`red-team-drain` + `regression-surface`) và xác n
 giả thuyết root cause ở mức code, chưa xác nhận trên máy thật, chưa sửa).
 
 **Thay thế / thu hẹp các plan trước:**
-- [`docs/plan/terminal-input-surface.md`](terminal-input-surface.md) — bảng §6 của nó đã được chạy
+- [`docs/plan/done/terminal-input-surface.md`](terminal-input-surface.md) — bảng §6 của nó đã được chạy
   hết một lượt; kết quả nằm ở research §4 (bảng checklist). Plan đó nay chỉ còn hiệu lực cho
   phần **UI feedback** (§2 dưới đây). Thứ tự thi công `#3 → #13 → #2 + #8` của nó đã hoàn tất trên thực tế.
 - [`docs/research/terminal-vietnamese-ime-root-cause-4.md`](../research/terminal-vietnamese-ime-root-cause-4.md)
@@ -184,7 +184,7 @@ Kế thừa từ `terminal-input-surface.md` §7, thu hẹp lại theo phạm vi
   `useTerminalTextDrain`; ghi ranh giới "xterm owns keys; the app owns text".
 - `README.md` + `src/components/modals/IntroModal.vue` — chỉ khi §2.3 đổi hành vi nhìn thấy được.
 - `CHANGELOG.md` mục `[Unreleased]` — **không đánh số phiên bản** (`RULE-release.md` §A5).
-- `docs/plan/terminal-input-surface.md` → `docs/plan/done/` sau khi §2.3 đóng.
+- `docs/plan/done/terminal-input-surface.md` — moved to `done/` after §2.3 closed.
 - File này + file research song sinh → `docs/plan/done/` và giữ nguyên chỗ cho research, khi cả §2
   đóng hết.
 

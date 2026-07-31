@@ -1,6 +1,6 @@
 # WS-A — External terminal ownership model
 
-**Status**: MVP floor shipped (2026-07-28), S3-S7 still planning · **Batch**: `docs/plan/backlog-jul27.md` (WS-A), `docs/plan/done/backlog-jul28-terminal-ux.md` (WS-N) · **Version state**: `package.json` is `1.21.0`; this accumulates in `CHANGELOG.md`'s `[Unreleased]`. No version number appears in this doc or in any file it creates.
+**Status**: MVP floor shipped (2026-07-28), S3-S7 still planning · **Batch**: `docs/plan/done/backlog-jul27.md` (WS-A), `docs/plan/done/backlog-jul28-terminal-ux.md` (WS-N) · **Version state**: `package.json` is `1.21.0`; this accumulates in `CHANGELOG.md`'s `[Unreleased]`. No version number appears in this doc or in any file it creates.
 
 **2026-07-28 note — what actually shipped is NOT §10's S1/S2/S5 as written.** The user's immediate complaint was narrower than this whole doc: the global button showed neither badge at all. Rather than build the full session-inventory/pure-selector/component-rename shape (§10 S1, S2, S5), a smaller command was added instead:
 - `src-tauri/src/system.rs`'s new `count_external_terminals_global(paths)` computes §5's complement (`unowned = all subtree roots − roots matching any of paths`) directly in Rust and returns one `u32` — no `list_terminal_sessions()`, no `owner` field, no `src/utils/terminalOwnership.js` pure module. It is the §5 formula, computed in a different shape than §10 specifies.

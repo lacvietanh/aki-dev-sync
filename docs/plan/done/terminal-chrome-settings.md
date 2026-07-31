@@ -1,6 +1,6 @@
 # Terminal chrome settings — WS-B spec
 
-Workstream WS-B of `docs/plan/backlog-jul27.md`. A 3-dot settings menu on the terminal stack's title bar, drop-up, one checkbox per toggleable piece of terminal chrome, host-dependent defaults. Feature doc to sync on implementation: `docs/feat/in-app-terminal.md`; architecture: `docs/arch/terminal-stack.md`.
+Workstream WS-B of `docs/plan/done/backlog-jul27.md`. A 3-dot settings menu on the terminal stack's title bar, drop-up, one checkbox per toggleable piece of terminal chrome, host-dependent defaults. Feature doc to sync on implementation: `docs/feat/in-app-terminal.md`; architecture: `docs/arch/terminal-stack.md`.
 
 **Contingency marker.** Every row and paragraph tagged `[WS-A]` is contingent on WS-A's external-terminal ownership model, which is being designed in parallel and may add, remove, or rename a header control. Nothing else in this doc depends on it.
 

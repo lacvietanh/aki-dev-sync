@@ -241,4 +241,4 @@ To be done by whoever executes the code, in the same task as the change (CLAUDE.
 - `docs/arch/terminal-stack.md` — the terminal-stack architecture doc. The §4.2 single-funnel change alters the documented input pipeline.
 - `README.md` and `src/components/modals/IntroModal.vue` — required by CLAUDE.md for any user-visible feature change, i.e. for **#3 and #8** (English, terse). #2 is internal hygiene and needs neither.
 - `CHANGELOG.md` `[Unreleased]` — one entry per shipped defect. **No version number anywhere in this doc or in the entries** (`RULE-release.md` §A5).
-- `docs/plan/backlog-jul27.md` — the workstream tracker. **Not amended here**; `plan-docs` owns that edit.
+- `docs/plan/done/backlog-jul27.md` — the workstream tracker. **Not amended here**; `plan-docs` owns that edit.

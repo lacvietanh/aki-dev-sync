@@ -26,6 +26,11 @@ Consolidated 2026-07-31 from `hygiene-jul27.md`, `ui-sweep-misses.md`, `terminal
 **Source:** `terminal-input-surface.md` §6 row 1 (folded into T1's scope — same key-row buttons).
 **Steps:** On a real iPhone, tap a key-row button that is not Ctrl/Shift (e.g. Esc), then look at it without tapping anything else — confirm it does not show a cyan border that could be mistaken for an armed-latch state.
 
+### T5 — Terminal resize propagation reaching both the app and the companion
+**Changed:** none — static analysis across two rounds found no defect at any candidate origin (`FRAME_PTY_RESIZE` wired both ways, host is sole resize authority, resize frames are never-dropped, geometry is pushed unprompted on every new/reconnected socket). The honest close is "no defect found statically, one runtime check outstanding," not "no bug" — see `docs/plan/done/backlog-jul27.md` T-9.
+**Source:** `backlog-jul27.md` T-9 (#1).
+**Steps:** `scripts/verify-pty-resize.sh` prints the full walkthrough. Four parts, on a real Mac with a real phone paired: (1) drag the dock splitter, collapse/expand the stack, switch tabs, apply a window-size preset — confirm the companion's grid matches the Mac's after each; (2) resize on the Mac before pairing a phone (geometry should arrive correct, unprompted), then background the phone until the socket drops and let it reconnect (geometry should re-arrive without a resize event); (3) **the one genuinely unsettled item** — zoom with the companion's own key-row `+`/`−` and watch whether xterm actually re-measures/repaints on a bare `fontSize` write with no accompanying `fit()`/`resize()`; (4) confirm whether the original symptom report predates the font-zoom commit `8cc2669` and the dock-splitter work — if so, parts 1–3 passing means it's already gone. If all four pass, this closes verified-with-no-change and gets **no** CHANGELOG entry (a verification is not a fix).
+
 ## UI
 
 ### U1 — Projects table column-flex reshape

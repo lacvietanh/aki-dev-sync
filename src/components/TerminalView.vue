@@ -222,7 +222,7 @@ function onComposeSend() {
   // (\x1b[200~ … \x1b[201~), but sending that to a program with the mode OFF lands the escape bytes
   // as literal garbage at the prompt — a worse failure than the bug. It must therefore be
   // CONDITIONED on the receiving program's bracketed-paste state, and whether xterm 5.x exposes a
-  // readable accessor for that is unverified (see docs/plan/terminal-input-surface.md §3.4 and §6
+  // readable accessor for that is unverified (see docs/plan/done/terminal-input-surface.md §3.4 and §6
   // row 4 for the settling command). Until it is settled this sends the fallback form the plan
   // names for the mode-off branch — the lines as separate submitted commands, i.e. what the user
   // typed rather than corrupt bytes. An unconditional bracketed-paste wrap is explicitly rejected.

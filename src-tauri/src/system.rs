@@ -1036,7 +1036,7 @@ pub async fn count_external_terminals(paths: Vec<String>) -> Result<HashMap<Stri
 }
 
 /// How many external `Terminal.app` sessions belong to NONE of `paths` right now — the complement
-/// the global-terminal button's badge shows (`docs/plan/terminal-ownership-model.md` §5, MVP floor:
+/// the global-terminal button's badge shows (`docs/plan/done/terminal-ownership-model.md` §5, MVP floor:
 /// adoption-only, no spawn-origin tagging). A session is a subtree root, the same unit
 /// `count_cwd_subtree_roots` counts; this walks every root once rather than summing the per-path
 /// counts, so a root matching two of `paths` at once is never double-subtracted.

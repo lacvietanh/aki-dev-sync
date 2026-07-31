@@ -5,7 +5,7 @@
 # RUN THIS ON THE MAC, paired with a phone/browser companion (Remote Control). This dev box cannot
 # build or run Tauri (CLAUDE.local.md), so the actual verification can only happen here.
 #
-# Council finding (docs/plan/backlog-jul27.md WS-... / akiflow session
+# Council finding (docs/plan/done/backlog-jul27.md WS-... / akiflow session
 # 2026.07.30-0213-terminal-usage-ui-backlog, checklist.md ITEM-2): all four hypotheses for a real
 # resize-sync defect were refuted by source reading — the host (Mac) is already the sole resize
 # authority (src-tauri/src/pty.rs pty_resize -> real TIOCSWINSZ), the FRAME_PTY_RESIZE broadcast is

@@ -40,7 +40,7 @@ export const externalTermCounts = ref({})
 
 /** Sibling of `externalTermCounts`: how many external `Terminal.app` sessions belong to NONE of the
  *  listed projects — the global-terminal header button's bottom badge
- *  (`docs/plan/terminal-ownership-model.md` §5, adoption-only MVP floor). Same mirroring, same
+ *  (`docs/plan/done/terminal-ownership-model.md` §5, adoption-only MVP floor). Same mirroring, same
  *  re-derived-never-remembered discipline; see `useExternalTerminals.js`. */
 export const externalTermGlobalCount = ref(0)
 

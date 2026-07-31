@@ -152,7 +152,7 @@ is considered done for this feature — it is not optional polish.
 
 ## WS-A consequence (pointer only — not an edit performed here)
 
-`docs/plan/terminal-ownership-model.md` (WS-A) §5's attribution table has a row
+`docs/plan/done/terminal-ownership-model.md` (WS-A) §5's attribution table has a row
 *"DEV / BUILD window | Owned by that project | Same funnel, same rule"*, and §2 counts DEV/BUILD
 (`run_project_command`, `run_project_dev`) among 4 launch paths reaching
 `open_terminal_with_command`. Now that this has shipped and those two Rust commands are deleted,
@@ -195,7 +195,7 @@ after the removal.
 - `docs/feat/open-popup.md` §2 — current DEV/BUILD description.
 - `docs/plan/done/dev-build-visibility.md` — the companion defect (#6) on the same two buttons;
   deliberately a separate doc.
-- `docs/plan/terminal-ownership-model.md` (WS-A) — the attribution-table conflict above; amendment
+- `docs/plan/done/terminal-ownership-model.md` (WS-A) — the attribution-table conflict above; amendment
   owned by `plan-docs`, not this doc.
 - `src-tauri/src/pty.rs:446,758` — `pty_spawn`, `pty_write`.
 - `src/composables/useTerminalTabs.js:199-221,341-343` — `openScopeTerminal`, `openProjectTerminal`.
