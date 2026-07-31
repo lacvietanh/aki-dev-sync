@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Fixed
+- **Typographic space-lookalikes typed or pasted into the in-app terminal no longer break shell parsing.** macOS's `⌥+Space` types U+00A0 (non-breaking space) directly, and Gboard's suggestion-chip insertion and text pasted from a formatted web page/doc often carry U+00A0 or U+202F instead of an ASCII space. Shells treat those as ordinary word characters rather than `IFS`, so e.g. `echo "1 2 3"` parsed as one token and failed with `command not found`. `usePtyTerminal.js`'s `sendRaw()` — the one funnel every keystroke source (typed text, IME chunks, pasted text via xterm, the compose row) already passes through before reaching the PTY — now replaces `U+00A0`/`U+202F` with a real ASCII space. Deliberately a replacement, not a deletion: unlike the drain's own `SENTINELS` handling in `useTerminalTextDrain.js` (which *deletes* OpenKey's invisible edit markers), the user meant a word boundary here, just typed or pasted the typographic variant of one. Separate mechanism from the already-closed 1.22.0 double-space blocker (an uncancelled `_keyPress` re-sending the same keystroke) and from the still-open Android/Gboard double-insert (`docs/research/terminal-gboard-double-insert.md`) — neither of those is a character-substitution bug, and neither predicted this one.
+
 ### [1.22.0] - 2026-07-31
 
 #### Added

@@ -143,7 +143,7 @@ export function usePtyTerminal(term, tabId = 0) {
   }
   // ── Sticky modifiers: ONE latch, ONE emitter ───────────────────────────────────────────────────
   //
-  // Design + the six defects this shape deletes: docs/plan/terminal-input-surface.md §4. The
+  // Design + the six defects this shape deletes: docs/plan/done/terminal-input-surface.md §4. The
   // previous code kept `ctrlArmed` and `shiftArmed` as two independent refs consumed in two
   // different places — Ctrl only in `term.onData` here, Shift only in TerminalView's `fireKey` —
   // so neither could see the other. The observable consequences were not cosmetic: an armed Ctrl
@@ -451,12 +451,24 @@ export function usePtyTerminal(term, tabId = 0) {
     }
   }
 
+  /** Space-lookalikes that arrive from a source outside this app's control and must not reach the
+   *  shell as-is: macOS's `⌥+Space` types U+00A0 directly, Gboard's suggestion-chip insertion and
+   *  text pasted from a formatted web page/doc often carry U+00A0 or U+202F instead of an ASCII
+   *  space. zsh (and most shells) treat those as ordinary word characters, not IFS, so
+   *  `echo "1 2 3"` parses as ONE token and fails with `command not found`. Unlike
+   *  the drain's `SENTINELS` (useTerminalTextDrain.js), which DELETES OpenKey's own invisible edit
+   *  markers, these are deliberately REPLACED with a real space — the user meant a word boundary,
+   *  they just typed/pasted the typographic variant of one. */
+  const NBSP_LIKE = /[\u00a0\u202f]/g
+
   /** Shared funnel for every keystroke source: the real (soft) keyboard via xterm's onData, AND
    *  the mobile key row's synthetic sequences (Esc/Tab/arrows/Enter) — both end up here so there
-   *  is exactly one place that decides host-direct-invoke vs. raw-bridge-frame. */
+   *  is exactly one place that decides host-direct-invoke vs. raw-bridge-frame. Also the one place
+   *  NBSP-family normalization needs to live, since every source (typed text, IME chunks, pasted
+   *  text via xterm, the compose row) reaches the PTY through this function and nothing else does. */
   function sendRaw(str) {
     if (!str) return
-    const data = encodeBytesToBase64(new TextEncoder().encode(str))
+    const data = encodeBytesToBase64(new TextEncoder().encode(str.replace(NBSP_LIKE, ' ')))
     if (isHost) {
       invoke('pty_write', { tabId, data }).catch((e) => console.error('[usePtyTerminal] pty_write failed', e))
     } else {
