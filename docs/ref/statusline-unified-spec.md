@@ -395,3 +395,9 @@ Vì 2 file hiện tại giống nhau ~97% (mục 7), việc gộp thành **đún
 Việc này **không** thay đổi kiến trúc `StatuslineTarget` Adapter (vẫn 1 config Rust, vẫn có khái niệm 2 target) — chỉ thay đổi ở khâu cuối: thay vì sinh 2 nội dung script khác nhau cho 2 target, sinh **1 nội dung duy nhất** (đã gate rlcache theo `.model` type) rồi ghi ra cả 2 đường dẫn.
 
 > **Kết cục (Phase 2.2):** ý "1 nội dung duy nhất ghi ra 2 đường dẫn" đã được giữ lại và làm tới cùng — nhưng gate là `$0` chứ không phải `.model | type` (payload thật cho thấy **cả 2 CLI** đều gửi `.model` dạng object nên gate đó không phân biệt được gì), và trait `StatuslineTarget` đã bị xoá hẳn: hai target giờ chỉ khác nhau ở đoạn cài đặt (đường dẫn + patch `settings.json`), không còn khác ở nội dung script. Xem §8.1 và §8.3b.
+
+---
+
+## 9. `RLCACHE` bỏ sót `CLAUDE_CONFIG_DIR` (2026-08-01, đã fix)
+
+`.claude.json`'s đường dẫn đọc `oauthAccount` đã tôn trọng `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` từ bug thứ hai (§ mục 2, 2026-07-30), nhưng `RLCACHE` (biến giữ đường dẫn `rate-limits-cache.json`) và `mktemp` tương ứng của nó vẫn cứng `$HOME/.claude/...` — một cấu hình `CLAUDE_CONFIG_DIR` khác `$HOME/.claude` sẽ khiến khối `aki-rlcache` đọc/ghi sai file so với nơi `.claude.json` thật sự nằm. Đã sửa cả 3 chỗ trong template (`src-tauri/src/statusline-unified.sh`, generator duy nhất — xem §8.3b) để dùng chung một biến `_rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"`: `RLCACHE`, `mkdir -p`, và `mktemp`'s temp-file prefix. `statusline.rs` nhúng file này qua `include_str!` nên không có bản deploy riêng cần đồng bộ tay.

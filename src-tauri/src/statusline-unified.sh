@@ -48,8 +48,9 @@ echo "$input" > /tmp/statusline_stdin_dump.json 2>/dev/null
 # blast radius as the resets_at check, just triggered by silence instead of a timestamp.
 # See docs/plan/done/1.18.0-statusline-apply-correctness.md, section P0-5 (data integrity).
 if [ "$CLI" = "CC" ]; then
-  RLCACHE="$HOME/.claude/rate-limits-cache.json"
-  mkdir -p "$HOME/.claude" 2>/dev/null
+  _rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  RLCACHE="$_rl_config_dir/rate-limits-cache.json"
+  mkdir -p "$_rl_config_dir" 2>/dev/null
   _rl_now=$(date +%s)
   _rl_acct=""
   _rl_acct_uuid=""
@@ -57,7 +58,7 @@ if [ "$CLI" = "CC" ]; then
   # $HOME/.claude, not bare $HOME - a flat $HOME/.claude.json is never the CLI's file. This process
   # is a direct child of `claude` (the statusLine hook), so it already inherits whatever
   # CLAUDE_CONFIG_DIR that invocation used, if any.
-  _rl_claude_json="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json"
+  _rl_claude_json="$_rl_config_dir/.claude.json"
   if [ -f "$_rl_claude_json" ]; then
       _rl_acct=$(jq -r '.oauthAccount.emailAddress // ""' "$_rl_claude_json" 2>/dev/null)
       _rl_acct_uuid=$(jq -r '.oauthAccount.accountUuid // ""' "$_rl_claude_json" 2>/dev/null)
@@ -115,7 +116,7 @@ if [ "$CLI" = "CC" ]; then
   if [ -n "$rl_merged" ]; then
       _with_rl=$(printf '%s' "$input" | jq -c --argjson rl "$rl_merged" '.rate_limits = $rl' 2>/dev/null)
       [ -n "$_with_rl" ] && input="$_with_rl"
-      _rl_tmp=$(mktemp "$HOME/.claude/.rate-limits-cache.XXXXXX" 2>/dev/null)
+      _rl_tmp=$(mktemp "$_rl_config_dir/.rate-limits-cache.XXXXXX" 2>/dev/null)
       if [ -n "$_rl_tmp" ]; then
           if printf '{"account":%s,"account_uuid":%s,"rate_limits":%s}\n' "$(jq -n --arg a "$_rl_acct" '$a')" "$(jq -n --arg u "$_rl_acct_uuid" '$u')" "$rl_merged" > "$_rl_tmp" 2>/dev/null; then
               mv -f "$_rl_tmp" "$RLCACHE" 2>/dev/null || rm -f "$_rl_tmp"
