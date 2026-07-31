@@ -19,11 +19,9 @@ Single entry point for everything still outstanding after the `1.22.0` release (
 | 11 | HARDWRAP | Hard-wrap sweep, code buckets — JS/Vue (~67 files) and Rust (~13 files), ~2,239 lines, never attempted; docs bucket (48 files) already done | debt | No | `docs/plan/done/hygiene-jul27.md` item 3, `docs/plan/done/backlog-jul27.md` WS-E |
 | 12 | WS-B | Terminal chrome settings: 3-dot visibility menu on the terminal stack header | unbuilt | No | `docs/plan/done/terminal-chrome-settings.md` |
 | 13 | WS-A-S3-7 | External terminal ownership model, steps S3–S7 (tty capture/tagging, provenance in the modal, button rename) | unbuilt | No | `docs/plan/done/terminal-ownership-model.md` |
-| 14 | PT-DOC | No `docs/feat/` doc owns `ProjectTable.vue`'s column-grid behaviour — the shipped #5 column-flex fix (U1 above) has nowhere to sync to | decision | No | this file (no owning doc exists yet) |
-| 15 | T5 | Terminal resize propagation (host↔companion) — static analysis cleared, one runtime check outstanding, incl. the genuinely unsettled font-zoom re-measure question | verify | No | `docs/plan/verify-pending.md#t5` |
-| 16 | WS-C-RESIDUAL | Two defects survived the usage-probe-OOP port: `agy`'s CSRF token (P10) is never extracted in the shell probe's `agy` branch, so quota can't be measured while `agy` runs; `claudecode.rs:45-52` still carries a leftover `agent_name`/`"antigravity"` string | defect | No | `docs/plan/done/backlog-jul27.md` WS-C row, `docs/plan/done/usage-probe-oop.md` |
+| 14 | T5 | Terminal resize propagation (host↔companion) — static analysis cleared, one runtime check outstanding, incl. the genuinely unsettled font-zoom re-measure question | verify | No | `docs/plan/verify-pending.md#t5` |
 
-None of the 16 items blocks a future release in the sense of "cannot ship without it" — 1.22.0 is already out with every one of these either caveated in the CHANGELOG (GBOARD) or simply not yet built/verified. GBOARD is ranked first because it is the only *defect users can hit right now*; everything else is either confirming already-shipped correctness, paying down debt, or work that has not started.
+None of the 14 remaining items blocks a future release in the sense of "cannot ship without it" — 1.22.0 is already out with every one of these either caveated in the CHANGELOG (GBOARD) or simply not yet built/verified. GBOARD is ranked first because it is the only *defect users can hit right now*; everything else is either confirming already-shipped correctness, paying down debt, or work that has not started. PT-DOC and WS-C-RESIDUAL (formerly #14 and #16 of an original 16) closed 2026-08-01 — see "Resolved" below; both were answerable from the repo alone, no device or owner input needed.
 
 ## Items
 
@@ -35,7 +33,7 @@ None of the 16 items blocks a future release in the sense of "cannot ship withou
 
 **Decision the owner owes:** both candidate fixes cost an invariant 1.22.0 just bought. (a) Discriminate `deleteContentBackward` outside composition and translate it to real backspace bytes — reintroduces `inputType`-based classification, which `-5.md`'s fix explicitly removed ("one branch removed, not one added") and the file's own header argues against by design. Only correct if the plain-delete branch is confirmed. (b) Track a shadow buffer of already-sent-but-still-editable characters — reintroduces the app-owned text-state tracking the 1.22.0 architecture deliberately deleted (`useTerminalInput.js`, the overlay textarea). Neither can both preserve the "exactly one input path, no branch-by-classification" invariant and correctly reconcile a delete against text the drain already forwarded and erased. If the hardware measurement instead shows the composition-wrapper branch, the fix is not in this file at all — it is in xterm's own composition-completion path, a different investigation. Wait for the measurement before picking a direction.
 
-### 2–10, 15. verify-pending — 10 runtime checks
+### 2–10, 14. verify-pending — 10 runtime checks
 
 All ten (T1–T5, U1–U3, I1–I2) are code-complete (T5's underlying mechanism predates this batch) or committed; nothing is missing work, each is blocked only on someone at the Mac (or a phone against it) observing the result. `docs/plan/verify-pending.md` is the operational checklist — walk it top to bottom, delete a row when it passes, and follow that row's pointer back to its source plan to close it per `docs.B1` if it was the plan's last open item. Three are worth flagging individually:
 
@@ -61,25 +59,28 @@ All ten (T1–T5, U1–U3, I1–I2) are code-complete (T5's underlying mechanism
 
 **Feasibility risk:** S3's whole tagging mechanism rests on one unverified assumption — that AppleScript's `do script` returns a tab object whose `tty` property can be read back in the same script, and that the tty is populated immediately rather than after the shell starts. Neither has been executed on a Mac (this environment has no `osascript`). If it fails, every session simply falls back to today's cwd-adoption behavior — the design is built to degrade non-destructively, so the risk is scoped to "S3–S7 doesn't ship as designed," not to a regression.
 
-**Next concrete action:** if resumed, follow the doc's own S3 → S4 → S5 → S6 → S7 order (§10); S3 first, since S4–S6 all depend on the owner token S3 introduces. Two open questions survive inside this unbuilt work (§11): **Q2** — whether the global terminal button should also open the sessions modal filtered to unowned sessions — left unanswered by design since it would add a second verb to a "same class, different scope" button; **Q3** — whether the registry's stated non-persistence across app restarts (§6) is an acceptable degradation, to be confirmed before S3 lands rather than assumed away.
+**Next concrete action:** if resumed, follow the doc's own S3 → S4 → S5 → S6 → S7 order (§10); S3 first, since S4–S6 all depend on the owner token S3 introduces.
 
-### 14. PT-DOC — decision owed: does `ProjectTable.vue`'s column-grid behaviour get its own `docs/feat/` doc
+**Decided 2026-08-01** (both were reasoning-only, no device needed — the source doc `terminal-ownership-model.md` §11 keeps its original text as the immutable design record; the answers live here): **Q2** — No, the global terminal button stays single-verb (open/reactivate the global group); a sessions-modal filter would be a second, different verb on the same button, which the design already argued against. **Q3** — Yes, non-persistence across restarts is acceptable: the whole feature is built to degrade non-destructively to today's cwd-adoption behavior (already the fallback for S3's AppleScript risk above), and a restart legitimately has no live process to own a claim over yet — the registry rebuilding from a fresh scan each session is the correct behavior, not a gap.
 
-**Status:** no `docs/feat/` doc currently owns the projects table, the app's primary surface. The shipped column-flex fix (U1 above) has no doc-sync target under `docs.B3` — there is nowhere to write "the project column and sync column now both flex, weighted 2:1" down as current-state documentation. This was already flagged once, as D-6 in `backlog-jul27.md`'s findings table, and has sat unresolved since.
-
-**Decision the owner owes:** create `docs/feat/project-table.md` (or similarly named) as a standalone doc, or accept that the table's behaviour stays undocumented outside code comments and plan-doc history. Cost of creating one: a new doc to keep in sync on every future table change (column widths, badges, the WS-F `--delete` indicator, WS-A's button rename if S5 ever lands). Cost of not creating one: every future table change (WS-A S5, WS-B if it ever touches the TERMINAL header, any future column-layout fix) has no canonical current-state doc to update, and the only record of "why the grid is shaped this way" lives scattered across plan docs that eventually move to `done/`.
-
-### 15. T5 — terminal resize propagation
+### 14. T5 — terminal resize propagation
 
 **Status:** see verify-pending row T5 above and `docs/plan/done/backlog-jul27.md` T-9. Static analysis across two rounds cleared all four candidate origins of a propagation break; the honest close is "no defect found statically, one runtime check outstanding," not "no bug." A named-but-not-required optional optimisation surfaced alongside it (`hostResize()` sends a resize frame on every `doFit()` cycle with no cols/rows equality check, so a continuous drag gesture is chatty) — correct, not broken, and left unscheduled pending someone actually measuring the cost.
 
 **Next concrete action:** run `scripts/verify-pty-resize.sh`'s four-part walkthrough on a real Mac with a real phone paired (detail in verify-pending.md#t5). If all four pass, close as verified-with-no-change; per the batch's own CHANGELOG rule that gets no entry.
 
-### 16. WS-C-RESIDUAL — two defects survived the usage-probe-OOP port
+## Resolved (2026-08-01)
 
-**Status:** `docs/plan/done/usage-probe-oop.md` shipped in `610fd93`, but the ported shell probe (`scripts/get-antigravity-usage.sh`) never carried over CSRF-token extraction into its `agy` branch — `proc_type="cli"` is set and `extract_arg` is never called, so `hdr_csrf` is empty and no CSRF header or seeded port is sent. This reproduces issue #4 exactly ("AG cannot measure quota while `agy` runs") in the build the owner is running now (P10, `docs/plan/done/backlog-jul27.md` D-13). Separately, `claudecode.rs:45-52` still carries a leftover `agent_name` field and `"antigravity"` string from before the module split.
+Both closed by re-checking the claim against the current repo — no device and no owner decision was actually needed for either.
 
-**Next concrete action:** port the language-server branch's CSRF extraction (`scripts/get-antigravity-usage.sh:93`) into the `agy` branch (`:224-250`); remove the stale `agent_name`/`"antigravity"` leftover from `claudecode.rs:45-52`. Both are small, scoped fixes with no design question attached — this is unscheduled debt, not a decision the owner owes.
+### PT-DOC — `ProjectTable.vue` doc
+
+**Decision:** create the doc. Done: `docs/feat/project-table.md`, indexed in `docs/index.md`. Documents the subgrid alignment fix (U1) and the wide/narrow `--grid-cols` tracks as current-state, so future table changes (WS-A S5's button rename, any column-layout fix) have a canonical sync target.
+
+### WS-C-RESIDUAL — re-verified against current code, both halves already fine
+
+- **CSRF token in the `agy` branch:** already fixed. `scripts/get-antigravity-usage.sh`'s `agy` branch (~line 224 on) calls `extract_arg "$cmdline" "--csrf_token"` and builds `hdr_csrf` exactly like the language-server branch, with a comment recording the fix. The plan's claim was accurate when written but the code has since moved on; no action needed.
+- **`claudecode.rs`'s `agent_name`/`"antigravity"` handling:** re-read in context (`src-tauri/src/agent_usage/claudecode.rs:45-50`) — this is not leftover dead code. `provision_agent_usage` (`src-tauri/src/agent_usage/mod.rs`) is one generic Tauri command called with either agent id from the frontend; `claudecode.rs` is where it lands and the `agent_name == "antigravity"` branch is a deliberate no-op success (Antigravity has nothing to provision) rather than a stray string from before the module split. Nothing to remove.
 
 ## Not in scope / deliberately not doing
 
