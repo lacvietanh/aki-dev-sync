@@ -6,8 +6,8 @@ Mọi mục dưới đây trỏ về số mục tương ứng bên đó thay vì
 
 **Trạng thái:** kiến trúc đã đúng hướng. Blocker double space (§2.1) **đã đóng 2026-07-31** sau một
 phiên hội đồng riêng (`red-team-drain` + `regression-surface`) và xác nhận trên máy thật. Còn
-**2 defect**: hiển thị latch Ctrl/Shift (§2.3, đã sửa, chờ xác nhận) và Android/Gboard (§2.2, còn mở,
-chưa truy nguyên).
+**2 defect**: hiển thị latch Ctrl/Shift (§2.3, đã sửa, chờ xác nhận) và Android/Gboard (§2.2, đã có
+giả thuyết root cause ở mức code, chưa xác nhận trên máy thật, chưa sửa).
 
 **Thay thế / thu hẹp các plan trước:**
 - [`docs/plan/terminal-input-surface.md`](terminal-input-surface.md) — bảng §6 của nó đã được chạy
@@ -89,11 +89,21 @@ phím.
   (giả thuyết "drain bỏ sót textarea ở nhánh composition" bị bác vì nhánh đó cần `compositionstart`
   thật, mâu thuẫn với việc bug tái hiện khi không bật bộ gõ) — nên không gộp vào fix này.
 
-### 2.2 — Android / Gboard: ký tự gốc và ký tự đã sửa đều tới PTY
+### 2.2 — Android / Gboard: ký tự gốc và ký tự đã sửa đều tới PTY — **ĐÃ TRUY NGUYÊN, CHƯA SỬA**
 
 Quan sát: research §5.5 (`ăn gì` → `aăn giì`). **Giữ tách khỏi 2.1** — khác nền tảng, khác hình dạng,
-nhiều khả năng khác nguyên nhân. Không gộp hai mục này vào một fix chung nếu chưa chứng minh được
-chúng cùng gốc.
+đã xác nhận không chung nguyên nhân với 2.1 (fix 2.1 đổ bộ lên máy thật, hình dạng defect này y
+nguyên). Không gộp hai mục này vào một fix chung.
+
+Truy nguyên ở mức code, chưa có capture trên máy Android thật:
+[`terminal-gboard-double-insert.md`](../research/terminal-gboard-double-insert.md). Cơ chế nghi ngờ
+mạnh nhất (chưa xác nhận trên phần cứng): drain đọc-hết-rồi-xoá-rỗng textarea sau mỗi ký tự gốc, nên
+khi Gboard tự sửa (autocorrect/dấu) bằng cách xoá lùi phần đã gõ rồi chèn bản đã sửa, thao tác xoá
+chạm vào một textarea đã rỗng sẵn — không có gì để xoá, event xoá bị bỏ qua lặng lẽ, chỉ có phần chèn
+bản sửa tới được PTY, chồng lên bản gốc đã gửi trước đó. Doc trên nêu một nhánh rẽ chưa loại trừ được
+chỉ bằng đọc mã nguồn (Gboard bọc phần sửa trong composition event thật hay không) và một phép đo
+console cụ thể (`__akiTermInput.dump()` trên máy Android) để chốt nhánh nào đúng. **Trạng thái: đã có
+giả thuyết root cause với bằng chứng file:dòng, chưa xác nhận trên máy thật, chưa sửa.**
 
 ### 2.3 — Nút Ctrl/Shift không sáng khi đang armed — **ĐÃ SỬA 2026-07-31, chờ xác nhận**
 
