@@ -166,9 +166,11 @@ Both commands trigger `@logout-success`, causing all active usage slots to self-
 
 The usage section uses a declarative, standardized N-Tier slot architecture:
 
-* **Declarative Schema (`ALL_TIER_ROWS`):** Slots are modeled declaratively as rows of slot configurations (`Slot A` & `Slot B` for Tier 1; `Slot C` & `Slot D` for Tier 2).
+* **Generated, not listed (`MAX_TIER_ROWS`):** Row/slot ids are derived, not hardcoded — `slotIdAt(index)` maps a flat index to a letter (`0` → `A`, `1` → `B`, ...), `rowSlotIds(rowIndex)` gives one row's pair, `allSlotIds()` gives every addressable slot up to `MAX_TIER_ROWS * SLOTS_PER_ROW`. The old literal `ALL_TIER_ROWS` two-row array was the real ceiling on the whole feature — any `tierCount` above 2 sliced past its end and rendered nothing. Raising `MAX_TIER_ROWS` (currently 4 → 8 slots) is now the only edit needed; every consumer (template, popup positioning, per-slot defaults) follows automatically.
 * **Zero Template Duplication:** A nested `v-for` renders `activeTierRows` dynamically based on `tierCount`. Adding N tiers requires zero HTML template edits.
-* **User Control:** The App Titlebar Menu (☰) includes a 1 Tier / 2 Tiers toggle, persisting the preference in `localStorage` (`aki-usage-tier-count`).
+* **User Control:** The App Titlebar Menu (☰) has a `Usage slots:` `<select>` (2/4/6/8 slots, filling two per row) instead of a fixed row-count button pair, so the option list grows with `MAX_TIER_ROWS` without widening the menu. The picker talks to the user in slots; `localStorage` (`aki-usage-tier-count`) still stores rows, the same unit and key it always used — `rowsToSlots`/`slotsToRows` in `usageTierStore.js` are the only place the two units meet.
+* **Per-slot defaults beyond A-D:** `usageSlotStore.js`'s `defaultTarget(slotId)` keeps the historical A/B/C/D opening views (so an upgraded install looks unchanged) and falls back to local Claude Code for any new slot — never a remote default, which would resolve to an empty host and show an error card before the user ever picks one.
+* **Popup opening corner:** `AgentUsageSlot.vue`'s `popupPosition` derives which corner a slot's account menu unfolds from out of the slot's grid position (`slotIndexOf` + `SLOTS_PER_ROW`) instead of a hardcoded per-letter switch, so a bottom row's popup opens upward instead of into the section's `overflow-y: auto` clip.
 
 ## Log Out behavior & cache retention (PO decision, chốt 2026-07-07 - nguồn chân lý)
 

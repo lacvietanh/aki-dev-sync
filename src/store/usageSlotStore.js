@@ -14,20 +14,37 @@
 import { ref } from 'vue'
 import { action } from '../services/action'
 import { selectedSshHost } from './sshStore'
+import { allSlotIds } from './usageTierStore'
 
 const STORAGE_KEY = 'aki-usage-slot-targets'
 
-// Slot A/B are the tier-1 pair, C/D the tier-2 pair (AgentUsageSection's row layout). The defaults
-// reproduce what the four slots showed before they had independent targets.
-const DEFAULTS = {
+// What a slot shows before the user has ever touched it.
+//
+// A..D are a compatibility table, not the ceiling: those four are the only slots that existed when
+// the panel was fixed at two rows, and reproducing their exact opening view is what keeps an
+// upgraded install looking unchanged. Any slot beyond them (row 3+, which is new surface nobody has
+// a habit about yet) gets BASE_DEFAULT - local Claude Code, the one target that always resolves.
+//
+// Deliberately NOT `remote` for new slots: a remote default with no host picked yet resolves to an
+// empty host and opens on an error card.
+const BASE_DEFAULT = { scope: 'local', localAgent: 'cc', remoteAgent: 'cc', remoteHost: '' }
+const SEED_DEFAULTS = {
   A: { scope: 'local', localAgent: 'ag', remoteAgent: 'cc', remoteHost: '' },
   B: { scope: 'local', localAgent: 'ag', remoteAgent: 'cc', remoteHost: '' },
   C: { scope: 'local', localAgent: 'cc', remoteAgent: 'cc', remoteHost: '' },
   D: { scope: 'remote', localAgent: 'cc', remoteAgent: 'cc', remoteHost: '' },
 }
 
-// One-time lift of the four per-slot keys AgentUsageSlot.vue used to write directly.
-function migrateSlot(slotId, dflt) {
+/** The opening target for one slot. Always a fresh object - callers spread and mutate it. */
+export function defaultTarget(slotId) {
+  return { ...(SEED_DEFAULTS[slotId] || BASE_DEFAULT) }
+}
+
+// One-time lift of the per-slot keys AgentUsageSlot.vue used to write directly. Only A..D were ever
+// written under that scheme, so for every later slot the three reads simply miss and the default
+// stands - which is why this needs no slot list of its own.
+function migrateSlot(slotId) {
+  const dflt = defaultTarget(slotId)
   const top = localStorage.getItem(`aki-usage-slot-${slotId}-top`)
   const sub = localStorage.getItem(`aki-usage-slot-${slotId}-sub`)
   const remoteSub = localStorage.getItem(`aki-usage-slot-${slotId}-remote-sub`)
@@ -40,19 +57,22 @@ function migrateSlot(slotId, dflt) {
 }
 
 function seed() {
+  const ids = allSlotIds()
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed === 'object') {
+        // Stored map wins per field, defaults fill the rest - so a record written when only A..D
+        // existed gains the new slots without losing a single choice already made in the old four.
         const out = {}
-        for (const [id, dflt] of Object.entries(DEFAULTS)) out[id] = { ...dflt, ...parsed[id] }
+        for (const id of ids) out[id] = { ...defaultTarget(id), ...parsed[id] }
         return out
       }
     }
   } catch (_) {}
   const out = {}
-  for (const [id, dflt] of Object.entries(DEFAULTS)) out[id] = migrateSlot(id, dflt)
+  for (const id of ids) out[id] = migrateSlot(id)
   return out
 }
 
@@ -66,7 +86,7 @@ export const slotTargets = ref(seed())
  * could hold a host of its own; that keeps an upgraded install behaving exactly as it did.
  */
 export function slotTarget(slotId) {
-  const t = slotTargets.value[slotId] || DEFAULTS[slotId] || DEFAULTS.A
+  const t = slotTargets.value[slotId] || defaultTarget(slotId)
   const agent = t.scope === 'remote' ? t.remoteAgent : t.localAgent
   const agentId = agent === 'ag' ? 'antigravity' : 'claudecode'
   const host = t.scope === 'remote' ? (t.remoteHost || selectedSshHost.value || '') : 'local'
@@ -81,7 +101,7 @@ export function slotTarget(slotId) {
  * otherwise hit on every host change.
  */
 export const setSlotTarget = action('usageSlotStore.setSlotTarget', (slotId, patch) => {
-  const current = slotTargets.value[slotId] || DEFAULTS[slotId] || DEFAULTS.A
+  const current = slotTargets.value[slotId] || defaultTarget(slotId)
   slotTargets.value = { ...slotTargets.value, [slotId]: { ...current, ...patch } }
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(slotTargets.value)) } catch (_) {}
 })

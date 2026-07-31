@@ -152,25 +152,18 @@
             </div>
             <div class="icon-dropdown-separator"></div>
             <div class="icon-dropdown-ac-section">
-              <span class="ac-title"><i class="fa-solid fa-layer-group"></i> Usage row:</span>
-              <div class="icon-dropdown-preset-row ac-row">
-                <button
-                  type="button"
-                  class="icon-dropdown-preset-btn"
-                  :class="{ 'is-active': tierCount === 1 }"
-                  @click="setTierCount(1)"
-                  title="Usage Panel: 1 Row (2 slots side-by-side)">
-                  <i class="fa-solid fa-bars"></i> 1 row
-                </button>
-                <button
-                  type="button"
-                  class="icon-dropdown-preset-btn"
-                  :class="{ 'is-active': tierCount === 2 }"
-                  @click="setTierCount(2)"
-                  title="Usage Panel: 2 Rows (4 slots stacked grid)">
-                  <i class="fa-solid fa-table-cells-large"></i> 2 rows
-                </button>
-              </div>
+              <span class="ac-title"><i class="fa-solid fa-layer-group"></i> Usage slots:</span>
+              <!-- A select, not a row of buttons: the options grow with MAX_TIER_ROWS and a button
+                   per option would widen this menu without limit (UI Extreme Narrow). -->
+              <select
+                class="ac-row tier-slot-select"
+                :value="usageSlotCount"
+                @change="onPickSlotCount"
+                title="Usage Panel: how many slots to show. Slots fill two per row.">
+                <option v-for="rows in TIER_ROW_OPTIONS" :key="rows" :value="rowsToSlots(rows)">
+                  {{ rowsToSlots(rows) }} slots ({{ rows }} {{ rows === 1 ? 'row' : 'rows' }})
+                </option>
+              </select>
             </div>
             <!-- Window presets are native-window only — hidden on a phone companion, which has no
                  window to resize or place. -->
@@ -328,7 +321,7 @@ import { openGlobalNote, noteContent, globalNoteSummary } from '../composables/u
 import { useRemoteControl } from '../composables/useRemoteControl';
 import { STATUSLINE_COLORS } from '../utils/statuslineColors';
 import { copyText } from '../utils/clipboard';
-import { tierCount, setTierCount } from '../store/usageTierStore';
+import { tierCount, setTierCount, rowsToSlots, slotsToRows, TIER_ROW_OPTIONS } from '../store/usageTierStore';
 import { requestRefreshAll } from '../store/remoteActions';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
@@ -590,6 +583,14 @@ function handleRefresh() {
   requestRefreshAll();
 }
 
+// The picker is in SLOTS because slots are what the user counts on screen; the store keeps ROWS,
+// the unit it has always persisted. These two are the whole translation - see usageTierStore.
+const usageSlotCount = computed(() => rowsToSlots(tierCount.value));
+
+function onPickSlotCount(e) {
+  setTierCount(slotsToRows(parseInt(e.target.value, 10)));
+}
+
 function applyViewSafe(axis, name) {
   applyView(axis, name).catch((e) => console.error(`Failed to apply "${name}" window view:`, e));
 }
@@ -828,6 +829,35 @@ function onViewShortcut(e) {
   flex: 1;
 }
 
+/* Matches .icon-dropdown-preset-btn's resting look so the menu still reads as one set of controls,
+   but as a select it stays one line wide no matter how many options MAX_TIER_ROWS allows. */
+.tier-slot-select {
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.tier-slot-select:hover,
+.tier-slot-select:focus {
+  background: rgba(0, 210, 255, 0.1);
+  color: #e2e8f0;
+  border-color: rgba(0, 210, 255, 0.3);
+}
+
+/* The native popup list is drawn by the OS, not by this stylesheet - give the options the dark
+   background explicitly or they render as light-on-light on macOS. */
+.tier-slot-select option {
+  background: #16161a;
+  color: #cbd5e1;
+}
+
 .icon-dropdown-separator {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
@@ -878,7 +908,7 @@ function onViewShortcut(e) {
   color: #a5f3fc;
 }
 
-/* The preset currently in effect (usage row) or remembered for next launch (AppWindow). */
+/* The AppWindow preset remembered for next launch. */
 .icon-dropdown-preset-btn.is-active,
 .icon-dropdown-preset-btn.is-active i {
   color: #a5f3fc;

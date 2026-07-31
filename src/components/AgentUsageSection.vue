@@ -4,7 +4,7 @@
          a divider <div> is a DOM node whose only job is to be a line (CLAUDE.md, UI Extreme Narrow). -->
     <div v-for="(row, rIdx) in activeTierRows" :key="rIdx" class="tier-row-container">
       <div class="usage-split-layout">
-        <AgentUsageSlot v-for="slot in row" :key="slot.id" :slot-id="slot.id" />
+        <AgentUsageSlot v-for="slotId in row" :key="slotId" :slot-id="slotId" />
       </div>
     </div>
   </div>
@@ -20,26 +20,21 @@
 // machines at once, and nothing here has to know which.
 import { computed } from 'vue';
 import AgentUsageSlot from './AgentUsageSlot.vue';
-import { tierCount } from '../store/usageTierStore';
+import { tierCount, rowSlotIds } from '../store/usageTierStore';
 
-// Declarative N-Tier configuration schema:
-// Row 0 (Tier 1): Slot A & Slot B
-// Row 1 (Tier 2): Slot C & Slot D
-// Standardized architecture: adding Tiers requires zero template code changes. Each slot's default
-// target lives with the rest of its persisted target state, in `store/usageSlotStore.js`.
-const ALL_TIER_ROWS = [
-  [{ id: 'A' }, { id: 'B' }],
-  [{ id: 'C' }, { id: 'D' }]
-];
-
-const activeTierRows = computed(() => {
-  return ALL_TIER_ROWS.slice(0, tierCount.value);
-});
+// Rows are generated, not listed: row R is `rowSlotIds(R)` - ['A','B'], ['C','D'], ['E','F'], ...
+// The old literal two-row array was the real ceiling on the whole feature; a tierCount above 2 just
+// sliced past the end and rendered nothing. Now the row count is bounded in one place only
+// (`MAX_TIER_ROWS` in usageTierStore), and each slot's default target is derived there too, in
+// `store/usageSlotStore.js` - so no row is ever rendered whose slots have no target to resolve.
+const activeTierRows = computed(() =>
+  Array.from({ length: Math.max(tierCount.value, 1) }, (_, r) => rowSlotIds(r))
+);
 
 // One tier row is a fixed-height band (header + card body); rows are separated by ROW_GAP_PX.
-// There is no cap: the old `Math.min(…, 335)` could never bind - the tallest reachable value is
-// 2 * ROW_HEIGHT_PX + ROW_GAP_PX = 332 with the two tiers ALL_TIER_ROWS defines - so it only
-// hid what the real ceiling was.
+// There is no cap here: an old `Math.min(…, 335)` could never bind back when only two rows existed,
+// so it only hid what the real ceiling was. Beyond the window's height the section scrolls
+// (overflow-y: auto below) rather than being clamped to a height that cuts a row in half.
 const ROW_HEIGHT_PX = 161;
 const ROW_GAP_PX = 10;
 

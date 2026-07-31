@@ -81,6 +81,7 @@ import { useSsh } from '../composables/useSsh';
 import { getMonitor, releaseMonitor } from '../composables/usageMonitorRegistry';
 import { loadAgAccount } from '../composables/agUsageCache';
 import { slotTarget, setSlotTarget } from '../store/usageSlotStore';
+import { tierCount, slotIndexOf, SLOTS_PER_ROW } from '../store/usageTierStore';
 
 // A slot is a VIEW onto a UsageMonitor, never an owner of one. It holds only which monitor to look
 // at - scope (LOCAL/REMOTE), agent (AG/CC) and, since the entity refactor, WHICH REMOTE HOST - plus
@@ -173,14 +174,18 @@ function toggleEmail() {
   showEmail.value = !showEmail.value;
   localStorage.setItem(showEmailKey, String(showEmail.value));
 }
+// Which corner the account popup unfolds from, derived from where the slot sits in the grid rather
+// than named per slot. The old A/B/C/D switch had a `default` that every row-3+ slot fell into, so
+// the bottom-most row would have opened its menu downwards, straight into the section's
+// `overflow-y: auto` clip. Column comes from the slot's position in its row; vertical side from
+// whether the row is in the panel's top half - which reproduces the old mapping exactly at 1 row
+// (A opens down) and at 2 rows (A/B down, C/D up).
 const popupPosition = computed(() => {
-  switch (props.slotId) {
-    case 'A': return 'popup-pos-tl';
-    case 'B': return 'popup-pos-tr';
-    case 'C': return 'popup-pos-bl';
-    case 'D': return 'popup-pos-br';
-    default: return 'popup-pos-tl';
-  }
+  const idx = Math.max(slotIndexOf(props.slotId), 0);
+  const col = idx % SLOTS_PER_ROW === 0 ? 'l' : 'r';
+  const row = Math.floor(idx / SLOTS_PER_ROW);
+  const vert = row < Math.max(tierCount.value, 1) / 2 ? 't' : 'b';
+  return `popup-pos-${vert}${col}`;
 });
 // Per-slot viewing email/key state: lets Slot A and Slot B independently select and display
 // different active or cached accounts from the same monitor's data, persisted per slot.
