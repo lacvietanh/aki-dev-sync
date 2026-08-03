@@ -20,8 +20,9 @@ Single entry point for everything still outstanding after the `1.22.0` release (
 | 12 | WS-B | Terminal chrome settings: 3-dot visibility menu on the terminal stack header | unbuilt | No | `docs/plan/done/terminal-chrome-settings.md` |
 | 13 | WS-A-S3-7 | External terminal ownership model, steps S3–S7 (tty capture/tagging, provenance in the modal, button rename) | unbuilt | No | `docs/plan/done/terminal-ownership-model.md` |
 | 14 | T5 | Terminal resize propagation (host↔companion) — static analysis cleared, one runtime check outstanding, incl. the genuinely unsettled font-zoom re-measure question | verify | No | `docs/plan/verify-pending.md#t5` |
+| 15 | TOAST | Toast positioning — fell out of the `improve-jun24.md` cleanup untracked; never got the `top-end`/`bottom-start` fix proposed there, and current code matches neither the original problem nor either proposal | defect | No | `docs/plan/done/improve-jun24.md` §3, this file item 15 |
 
-None of the 14 remaining items blocks a future release in the sense of "cannot ship without it" — 1.22.0 is already out with every one of these either caveated in the CHANGELOG (GBOARD) or simply not yet built/verified. GBOARD is ranked first because it is the only *defect users can hit right now*; everything else is either confirming already-shipped correctness, paying down debt, or work that has not started. PT-DOC and WS-C-RESIDUAL (formerly #14 and #16 of an original 16) closed 2026-08-01 — see "Resolved" below; both were answerable from the repo alone, no device or owner input needed.
+None of the 15 remaining items blocks a future release in the sense of "cannot ship without it" — 1.22.0 is already out with every one of these either caveated in the CHANGELOG (GBOARD) or simply not yet built/verified. GBOARD is ranked first because it is the only *defect users can hit right now*; everything else is either confirming already-shipped correctness, paying down debt, or work that has not started. PT-DOC and WS-C-RESIDUAL (formerly #14 and #16 of an original 16) closed 2026-08-01 — see "Resolved" below; both were answerable from the repo alone, no device or owner input needed. TOAST (#15) was added 2026-08-01 as a doc-repair recovery — see item 15 for detail.
 
 ## Items
 
@@ -69,6 +70,14 @@ All ten (T1–T5, U1–U3, I1–I2) are code-complete (T5's underlying mechanism
 
 **Next concrete action:** run `scripts/verify-pty-resize.sh`'s four-part walkthrough on a real Mac with a real phone paired (detail in verify-pending.md#t5). If all four pass, close as verified-with-no-change; per the batch's own CHANGELOG rule that gets no entry.
 
+### 15. TOAST — toast positioning, recovered from a lost cleanup row
+
+**Status:** UNRESOLVED. Original problem (`docs/plan/done/improve-jun24.md` §3, "Issue D - Toast đè nút"): the SweetAlert2 toast mixin anchored bottom-right, so a "Sync complete/failed" toast fired right after Push/Pull covered the ACTIONS-column button in the last row of `ProjectTable`, and "Preset applied"/"SSH config saved" toasts covered a modal's Cancel/Save footer buttons. Proposed fixes were `top-end` (below the titlebar) or `bottom-start`, to be confirmed against 5 modals.
+
+**Current code** (`src/store/projectStore.js:7`, verified 2026-08-01): the `Toast` mixin sets `position: 'bottom'` — bottom-center, not the bottom-right corner the original defect described, and neither of the two proposed fixes (`top-end`, `bottom-start`). Whether centered-bottom still covers the ACTIONS column or a modal footer has not been re-tested against the 5-modal walkthrough §3 called for.
+
+**Next concrete action:** re-run the original 5-modal check against the current `bottom` position; if it still overlaps, apply `top-end` or `bottom-start` per the original proposal and land the titlebar-boundary requirement (`top: var(--titlebar-h)`, never `top: 0`) if `top-end` is chosen.
+
 ## Resolved (2026-08-01)
 
 Both closed by re-checking the claim against the current repo — no device and no owner decision was actually needed for either.
@@ -92,4 +101,4 @@ Both closed by re-checking the claim against the current repo — no device and 
 
 ## Not covered by this file
 
-Two open threads exist in the source docs that this file's mandate does not include and that are therefore deliberately excluded, not overlooked: `docs/plan/done/cc-account-identity-ssot.md` (T-4, fix shipped, awaiting the owner's on-device rebuild+verify) and `docs/plan/ui-sweep-misses.md` (T-7's status was not re-checked in the 2026-07-31 pass per `backlog-jul27.md`). Both are tracked in `backlog-jul27.md`'s own T-table; if either is still open, it belongs there or in a future revision of this file, not silently folded in here.
+Two open threads exist in the source docs that this file's mandate does not include and that are therefore deliberately excluded, not overlooked: `docs/plan/done/cc-account-identity-ssot.md` (T-4, fix shipped, awaiting the owner's on-device rebuild+verify) and `docs/plan/done/ui-sweep-misses.md` (T-7's status was not re-checked in the 2026-07-31 pass per `backlog-jul27.md`). Both are tracked in `backlog-jul27.md`'s own T-table; if either is still open, it belongs there or in a future revision of this file, not silently folded in here.

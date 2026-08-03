@@ -11,9 +11,9 @@
 | §1 Claude account info (email/org/tier) | ✅ Done - hiển thị trong `AgentUsage.vue` |
 | §2 Table alignment | ✅ Done - header/body căn chỉnh, col widths tường minh; `table-layout: fixed` đánh giá lại → không cần (1 table HTML, cột không trôi) |
 | §3 CSS variables + empty states + saveConfig toast | ✅ Done - biến định nghĩa trong `:root`, `saveConfig()` có Toast, `--color-danger` alias |
-| §3 Toast positioning | ⏸ Deferred → `deferred-auto-update-toast-pos.md` |
+| §3 Toast positioning | ⏸ Deferred → `docs/plan/remaining-1.22.md` #TOAST |
 | §4 Antigravity remote fix | ✅ Done |
-| §5 Auto-update | ⏸ Deferred → `deferred-auto-update-toast-pos.md` |
+| §5 Auto-update | ⏸ Deferred → `deferred-auto-update.md` |
 
 ---
 

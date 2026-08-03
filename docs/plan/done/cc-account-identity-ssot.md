@@ -100,7 +100,7 @@ The entire auth, identity and emit block is nested inside `if [ -f "$FILE" ]`, w
 
 ### Fix 1 — emit the live identity and prefer it
 
-`get-claudecode-usage.sh` already holds `CURRENT_ACCT` and `CURRENT_ACCT_UUID` at `:133-134`. Emit them — merged into the `AUTHINFO` object, or as a new `|||IDENTITY|||` frame — and make `agent_usage.rs:596` prefer them over the `auth-cache` email. `organizationName` supplies `orgName` the same way `LIVE_ORG_TIER` already supplies `TIER` at `:148-151`. Keep `claude auth status` as the fallback for when `oauthAccount` is absent.
+`get-claudecode-usage.sh` already holds `CURRENT_ACCT` and `CURRENT_ACCT_UUID` at `:133-134`. Emit them — merged into the `AUTHINFO` object, or as a new `|||IDENTITY|||` frame — and make `agent_usage.rs:596` [split by `610fd93` into `agent_usage/claudecode.rs`; the `AUTHINFO` email/org extraction this line pointed at is now `claudecode.rs:181-185`] prefer them over the `auth-cache` email. `organizationName` supplies `orgName` the same way `LIVE_ORG_TIER` already supplies `TIER` at `:148-151`. Keep `claude auth status` as the fallback for when `oauthAccount` is absent.
 
 ### Fix 2 — move the identity read out from under the quota-file test
 
@@ -169,7 +169,9 @@ Everything above was settled from source and from files on disk; nothing here ne
 
 ## 11. Adjacent finding, handed to the lead — not fixed here
 
-While verifying the AG-side identity sources on disk: `src-tauri/src/agent_usage/antigravity_logout.rs:120-129` (`logout_antigravity_cli`) deletes `~/.gemini/oauth_creds.json`, `~/.gemini/google_accounts.json` and `~/.gemini/state.json`. **None of those three exists on a current AGY CLI install** — the live credential is `~/.gemini/antigravity-cli/antigravity-oauth-token`. The same missing `google_accounts.json` is what `statusline-unified.sh:512` reads for the AG account tag, so that tag renders blank. Both are outside the two defects this session scoped; recorded here so the observation is not lost.
+While verifying the AG-side identity sources on disk: `src-tauri/src/agent_usage/antigravity_logout.rs:120-129` (`logout_antigravity_cli`) deletes `~/.gemini/oauth_creds.json`, `~/.gemini/google_accounts.json` and `~/.gemini/state.json`. **Believed at the time: none of those three exists on a current AGY CLI install**, with the live credential taken to be `~/.gemini/antigravity-cli/antigravity-oauth-token`, and the same missing `google_accounts.json` read by `statusline-unified.sh:512` for the AG account tag, so that tag was believed to render blank.
+
+**[Correction, verified 2026-08-01 via `ls -la ~/.gemini/`]** Only `oauth_creds.json` is actually absent (a renamed sibling `oauth_creds.json-lac` sits next to it). `google_accounts.json` (109B) and `state.json` (656B) both exist. `statusline-unified.sh:543-544` guards on `[ -f "$HOME/.gemini/google_accounts.json" ]` and, when present, reads `.active` via `jq` — so the tag renders the account email, not blank. The observation above was wrong; the downstream "renders blank" conclusion does not hold. Both remain outside the two defects this session scoped.
 
 ## 12. Doc-sync obligations
 

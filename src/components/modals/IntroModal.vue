@@ -1,7 +1,7 @@
 <template>
   <BaseModal :show="showIntroModal" @close="closeIntroModal">
     <template #title>
-      <i class="fa-solid fa-book-open mr-1" style="color: #6ee7b7;"></i> User Guide - Aki Dev Sync
+      <i class="fa-solid fa-book-open mr-1 icon-guide"></i> User Guide - Aki Dev Sync
     </template>
 
     <div class="modal-body scrollable intro-content u-select-text">
@@ -45,7 +45,7 @@
       <div class="subgroup-label mb-1">⚡ SYNC</div>
       <div class="features-grid mb-3">
         <div class="feature-card">
-          <div class="feature-icon"><i class="fa-solid fa-arrow-up"></i></div>
+          <div class="feature-icon icon-push"><i class="fa-solid fa-arrow-up"></i></div>
           <div class="feature-text">
             <strong>PUSH</strong>
             <span>Push Local → Remote with everything not listed in <code>push_excludes</code>, plus a per-project "Force Delete" setting. A folder listed only in <code>pull_excludes</code> is <strong>push-only</strong> - sent up, never pulled back, never counted as a change (<code>.git/</code> by default: the AI gets full history, and the PUSH badge stays dark through git's own housekeeping). While a sync is running that project's button becomes <strong>STOP</strong> - it kills rsync and its ssh, and quitting the app kills them too.</span>
@@ -53,7 +53,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-bolt"></i></div>
+          <div class="feature-icon icon-select"><i class="fa-solid fa-bolt"></i></div>
           <div class="feature-text">
             <strong>SELECT (Push Special)</strong>
             <span>Opens the native macOS file picker (multi-select). If a file already exists on Remote, shows a Local / Remote mtime comparison before you confirm the overwrite.</span>
@@ -61,7 +61,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #3b82f6;"><i class="fa-solid fa-arrow-down"></i></div>
+          <div class="feature-icon icon-pull"><i class="fa-solid fa-arrow-down"></i></div>
           <div class="feature-text">
             <strong>PULL</strong>
             <span>Pull back what was written on Remote so you can review and commit it on Local.</span>
@@ -69,7 +69,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #22c55e;"><i class="fa-solid fa-shield-halved"></i></div>
+          <div class="feature-icon icon-dryrun"><i class="fa-solid fa-shield-halved"></i></div>
           <div class="feature-text">
             <strong>DRY RUN</strong>
             <span>Preview exactly which files would change - nothing is written until you turn this off.</span>
@@ -77,7 +77,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #a78bfa;"><i class="fa-solid fa-circle-dot"></i></div>
+          <div class="feature-icon icon-syncstatus"><i class="fa-solid fa-circle-dot"></i></div>
           <div class="feature-text">
             <strong>Sync Status</strong>
             <span>Checked automatically - the PUSH/PULL buttons light up when the two sides drift apart.</span>
@@ -85,7 +85,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #f97316;"><i class="fa-solid fa-code"></i></div>
+          <div class="feature-icon icon-hooks"><i class="fa-solid fa-code"></i></div>
           <div class="feature-text">
             <strong>Pre / Post Hooks</strong>
             <span>Scripts run before/after each sync (build, restart a service, notify...), on Local or Remote as you choose.</span>
@@ -93,7 +93,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #ef4444;"><i class="fa-solid fa-clone"></i></div>
+          <div class="feature-icon icon-delete"><i class="fa-solid fa-clone"></i></div>
           <div class="feature-text">
             <strong>Mirror / Delete</strong>
             <span>Turn on <code>--delete</code> for an exact mirror. Push never deletes by default; once enabled, pushing over newer Remote changes asks for confirmation first. Whichever direction is armed shows a small red trash glyph on a faint chip in the bottom corner of its button (bottom-left for PUSH, bottom-right for PULL) - hidden while that button reads STOP, so a running sync never looks like the deletion is what's happening.</span>
@@ -101,7 +101,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #14b8a6;"><i class="fa-solid fa-layer-group"></i></div>
+          <div class="feature-icon icon-presets"><i class="fa-solid fa-layer-group"></i></div>
           <div class="feature-text">
             <strong>Exclude Presets</strong>
             <span>Separate rsync excludes for Push and Pull, with 1-click presets: Nuxt 4, Tauri v2, Aki Default.</span>
@@ -113,7 +113,7 @@
       <div class="subgroup-label mb-1">🛠 TOOLS & MONITOR</div>
       <div class="features-grid">
         <div class="feature-card">
-          <div class="feature-icon" style="color: #00d2ff;"><i class="fa-solid fa-list-check"></i></div>
+          <div class="feature-icon icon-tasks"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-text">
             <strong>Project Tasks & Notes</strong>
             <span>Task management: Pin 📌, Wish 🕒 and Done (which auto-unpins). Includes a Project Notes card that grows natively with its content via CSS (`field-sizing: content`) and trims stray whitespace. Shares its task engine and list UI with Global Note below.</span>
@@ -121,7 +121,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #06b6d4;"><i class="fa-solid fa-grip"></i></div>
+          <div class="feature-icon icon-openpopup"><i class="fa-solid fa-grip"></i></div>
           <div class="feature-text">
             <strong>Open Popup & Stack Launcher</strong>
             <span>Quick-open Local and Remote IDEs - hover to open on the Mac, or <strong>tap</strong> on a paired phone (tap again, Esc, or a tap outside closes it; the popup's position is per-screen, so it no longer jumps to the Mac's coordinates on a phone). Only <strong>Upload (select files)</strong> is gated by the SYNC switch - SSH Terminal, VSCode/Antigravity Remote and COPY stay usable with sync off. <strong>DEV</strong> (green) and <strong>BUILD</strong> (amber) follow the detected stack, tooltip shows the exact command, and pressing one opens/focuses that project's own tab in the <strong>in-app terminal</strong> instead of an external window - a running dev server or an already-visible build is never re-triggered by another click, an exited one is respawned and re-run automatically; a project with no detected command still shows both, dimmed, pointing at Project Settings. Lockfile scan picks the right package manager. Every Terminal window still opened externally (local, SSH, the AkiClaudeDoc installer) snaps to 124 columns in the top-right of the main display.</span>
@@ -129,7 +129,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-note-sticky"></i></div>
+          <div class="feature-icon icon-globalnote"><i class="fa-solid fa-note-sticky"></i></div>
           <div class="feature-text">
             <strong>Global Note</strong>
             <span>A global notepad on the titlebar - the icon turns amber when it has content, now paired with a full task list (pin/wish/done, same as per-project tasks). Not tied to any project, auto-saved after 500ms to <code>appDataDir</code> as <code>{content, tasks}</code> - an older content-only file still loads. Header badges show pinned/open counts.</span>
@@ -137,15 +137,15 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #818cf8;"><i class="fa-solid fa-chart-bar"></i></div>
+          <div class="feature-icon icon-usage"><i class="fa-solid fa-chart-bar"></i></div>
           <div class="feature-text">
             <strong>Agent Usage</strong>
-            <span>Real quota: <strong>Claude Code</strong> reads Anthropic's <code>rate_limits</code> - on this Mac or on any SSH host - showing plan tier, email and org name. One bar per quota bucket the account actually has: 5-Hour and 7-Day today, plus any per-model weekly (Opus, Sonnet, …) automatically, with no update needed when Anthropic adds one. <strong>Antigravity</strong> covers all 3 surfaces: <code>AG</code> (Desktop App), <code>IDE</code> (VS Code extension) and <code>CLI</code> (terminal), with a lightweight 1-pass Smart Deduplicate (~40ms). The two auth domains stay separate (IDE SQLite vs the shared Gemini core in <code>~/.gemini/</code>), each with its own contextual Log Out. Both agents can be watched <strong>locally or on any number of SSH hosts at once</strong>: every slot has its own host picker, so one slot watches Claude Code on host A while another watches host B under a different account. Menu ☰ → <code>Usage slots:</code> picks <strong>2, 4, 6 or 8</strong> slots, filling two per row. Two slots pointed at the same source is <em>allowed</em> - they share one instance and one poll instead of doubling it. Each monitor has its own power icon; switch one off and its last reading stays on screen marked as cached, switch it back on and it resumes. Reset countdowns tick in real time. When a pool's 7-day quota hits 100%, <em>that pool's</em> 5-hour number is dimmed and dropped from the colour ladder - a spent pool makes its 5h figure meaningless, so your eye goes to the number that still counts.</span>
+            <span>Real quota: <strong>Claude Code</strong> reads Anthropic's <code>rate_limits</code> - on this Mac or on any SSH host - showing plan tier, email and org name. One bar per quota bucket the account actually has: 5-Hour and 7-Day today, plus any per-model weekly (Opus, Sonnet, …) automatically, with no update needed when Anthropic adds one. <strong>Antigravity</strong> covers all 3 surfaces: <code>AG</code> (Desktop App), <code>IDE</code> (VS Code extension) and <code>CLI</code> (terminal), with a lightweight 1-pass Smart Deduplicate (~40ms). Both agents can be watched <strong>locally or on any number of SSH hosts at once</strong>: every slot has its own host picker, so one slot watches Claude Code on host A while another watches host B under a different account. Menu ☰ → <code>Usage slots:</code> picks <strong>2, 4, 6 or 8</strong> slots, filling two per row. Two slots pointed at the same source is <em>allowed</em> - they share one instance and one poll instead of doubling it. Each monitor has its own power icon; switch one off and its last reading stays on screen marked as cached, switch it back on and it resumes. Reset countdowns tick in real time. When a pool's 7-day quota hits 100%, <em>that pool's</em> 5-hour number is dimmed and dropped from the colour ladder - a spent pool makes its 5h figure meaningless, so your eye goes to the number that still counts.</span>
           </div>
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #f59e0b;"><i class="fa-solid fa-cloud"></i></div>
+          <div class="feature-icon icon-cloud"><i class="fa-solid fa-cloud"></i></div>
           <div class="feature-text">
             <strong>Sync Check & remote monitors - independent switches</strong>
             <span>The power icon in the SYNC column toggles PUSH/PULL/SELECT, the Open popup's <strong>Upload (select files)</strong> item, and sync diff checks (background + manual) - the popup's REMOTE column itself stays available, since SSH Terminal and the remote IDE entries only reach the server, they do not sync files. In Agent Usage's REMOTE tab, the <code>AG</code> and <code>CC</code> tabs each have their own power icon, toggling the Antigravity and Claude Code monitors independently. The host picker beside them belongs to <strong>that slot alone</strong>, so one slot watches Claude Code on host A while another watches host B under a different account - two machines side by side. Switching one off never switches off another. Every monitor is on by default; each active remote monitor costs one SSH round-trip per refresh cycle, and its power icon stops it completely. If a host stops answering, that monitor gives up rather than probing a dead machine forever: its power icon turns <strong>amber</strong>, the tooltip names the host, and clicking it retries.</span>
@@ -153,7 +153,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #94a3b8;"><i class="fa-solid fa-key"></i></div>
+          <div class="feature-icon icon-ssh"><i class="fa-solid fa-key"></i></div>
           <div class="feature-text">
             <strong>SSH Config</strong>
             <span>Manage <code>~/.ssh/config</code> with undo/redo - no terminal needed. The host picked here is the <strong>default</strong> for any Agent Usage slot that has not chosen its own; to change a slot's host, use the picker in that slot's header.</span>
@@ -161,7 +161,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #ec4899;"><i class="fa-solid fa-rotate"></i></div>
+          <div class="feature-icon icon-background"><i class="fa-solid fa-rotate"></i></div>
           <div class="feature-text">
             <strong>Background Refresh</strong>
             <span>Checks Git status, sync diff and agent usage on a configurable cycle. A countdown ring shows live progress right on the GIT and ACTIONS column headers.</span>
@@ -169,7 +169,7 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #fbbf24;"><i class="fa-solid fa-arrows-rotate"></i></div>
+          <div class="feature-icon icon-refresh"><i class="fa-solid fa-arrows-rotate"></i></div>
           <div class="feature-text">
             <strong>Refresh - 1 unit of work</strong>
             <span>The per-project Refresh button and the global one in the titlebar both call the same <code>refreshProject()</code> (git status + sync diff + stack detection, in parallel) - no more full app reload. Spinner state lives on each check itself, so a background cycle spins the icon at the right moment too.</span>
@@ -177,14 +177,14 @@
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon" style="color: #f87171;"><i class="fa-brands fa-git-alt"></i></div>
+          <div class="feature-icon icon-git"><i class="fa-brands fa-git-alt"></i></div>
           <div class="feature-text">
             <strong>Git & Changelog Visual Preview</strong>
             <span>The Git modal renders log/status in ANSI terminal colours, handles Vietnamese accents (quotepath=false), and supports stage & commit, fetch, push, plus a Visual Changelog Preview of the project.</span>
           </div>
         </div>
         <div class="feature-card">
-          <div class="feature-icon" style="color: #10b981;"><i class="fa-solid fa-cloud-arrow-down"></i></div>
+          <div class="feature-icon icon-update"><i class="fa-solid fa-cloud-arrow-down"></i></div>
           <div class="feature-text">
             <strong>App Update Check</strong>
             <span>Checks for updates silently on launch, or manually from the Logo menu, showing a version badge and a toast when a new release is out.</span>
@@ -196,25 +196,15 @@
       <div class="alert-box tech mt-3">
         <h4 class="alert-title"><i class="fa-solid fa-flask"></i> Engineering Highlights</h4>
         <ul class="custom-list">
-          <li><strong>Git terminal colours & Unicode:</strong> Force Git to emit raw ANSI colour (`color.status=always`), parse it with regex into coloured HTML spans (Red/Green/Yellow/Cyan/Bold), and disable quotepath (`core.quotepath=false`) so Vietnamese filenames render perfectly.</li>
-          <li><strong>Stack Detector & Lockfile Analyzer:</strong> Detects Tauri vs Node and reads lockfiles (`pnpm`, `yarn`, `bun`, `npm`) to run the right dev/preview command with no manual config.</li>
-          <li><strong>Native textarea autogrow (CSS-only):</strong> The new `field-sizing: content` property grows Tasks & Notes to fit their actual content - not one line of JS resize code, and no layout jank.</li>
-          <li><strong>Inherited Changelog modal:</strong> A `projectId` parameter plus a custom title/content lets one shared Changelog component serve each project's own changelog too.</li>
-          <li><strong>Real quota:</strong> Reads the `rate_limits` Anthropic's server returns through the `statusLine` hook - nothing patched together, no simulated requests.</li>
-          <li><strong>Hybrid Patching:</strong> At 100% the Claude CLI hides `rate_limits`. The app estimates the reset time itself so the UI keeps showing something accurate.</li>
-          <li><strong>Parallel quota (v1.3.0):</strong> Two Connect RPC endpoints queried at once for the 5H and Weekly quotas of both the Gemini and Claude/GPT pools, grouped into compact fieldsets.</li>
-          <li><strong>Antigravity Native RPC:</strong> Skips Google's API (usually empty) - scans native processes and finds the port with `lsof` to query Connect RPC on the local proxy, ~40ms.</li>
-          <li><strong>Antigravity Log Out that really logs out:</strong> Clearing Cookies/Local Storage is not enough - the login token is encrypted by Electron's `safeStorage`, whose AES key lives in exactly one macOS Keychain item (`"Antigravity IDE Safe Storage"`). Log Out quits the app and deletes that one item (no Keychain scan or dump), leaving the token permanently unreadable - settings, extensions and rules live in separate files and are untouched.</li>
-          <li><strong>Claude Code - one source of truth:</strong> The app never runs <code>claude</code> itself to fetch usage. The old active path (force-sync, Haiku probe) is deleted outright: it once leaked 19 orphaned sessions (6GB RAM + 4GB swap) on a remote host, and a real measurement showed a headless turn returns only the reset time, never a percentage. The <code>statusLine</code> hook cache is now the only source.</li>
-          <li><strong>Two CLIs, ONE statusline script:</strong> The same file is installed for both Claude Code (<code>~/.claude/statusline-command.sh</code>) and AGY CLI (<code>~/.gemini/antigravity-cli/statusline.sh</code>), and <strong>each CLI is pointed at it through the <code>statusLine</code> key in its own <code>settings.json</code></strong> - writing the file alone is half an install and the CLI runs nothing. It works out which CLI is running it from its own path (<code>$0</code>), not by guessing from the payload. Pick the targets in the modal title, apply to several hosts in parallel. Every line opens with a coloured <code>CC</code>/<code>AG</code> tag plus the account name, so you know which CLI and which account printed it. The <code>rate_limits</code> cache is now bound to the account that wrote it and drops expired entries - no more phantom quota from another session or account. Each field has its own truncate width, blocks are separated by alternating light/dark backgrounds (zebra) instead of <code>|</code>, and every option in the modal has an automated test proving it really reaches the file. Each host shows a <code>CC</code>/<code>AG</code> tag for the CLIs it actually has: filled means the statusline is running, hollow means the CLI is there but nothing is wired up yet.</li>
-          <li><strong>App-icon menu & window presets:</strong> The ☰ titlebar menu collects GitHub/Release links, manual update check, SSH Config, Enable SSH Terminal Color, Statusline Customizer, Claude Code Profile (Local), Claude Code Cleanup (Local) - what <code>~/.claude</code> costs in disk, with a checkbox per path so you tick exactly what goes; skills, hooks and settings are never deletable, and agent memory sits in its own group so clearing chat history can't take it along - Pre-allow AGY Commands (seeds a recommended command allowlist into agy's <code>settings.json</code> on local/remote hosts, so it stops prompting for permission on routine commands), Remote Control, the AkiClaudeDoc installer, a <code>Usage slots:</code> picker for 2, 4, 6 or 8 slots (two per row), and 4 window presets under <code>AppWindow:</code> - Narrow (420px), Wide (768px), Stick Top-Left (auto-fits height to the project list), Center Primary. <code>⌘1</code> = Narrow + Stick Top-Left, <code>⌘2</code> = Wide + Center Primary (both work without opening the menu). Tick <strong>remember</strong> to re-apply the width and placement you chose on the next launch (width first, since Stick Top-Left fits its height to the current width).</li>
-          <li><strong>Remote Control (v1.19.0, preview):</strong> Control the app from a phone browser on the same LAN or over Tailscale. Menu ☰ → <strong>Remote Control</strong> → <strong>On</strong> shows a 6-digit pair code and the <code>IP:PORT</code> rows to open on the phone (click to copy); pair once, and it reconnects silently after that. The Mac stays the single source of truth - the phone only mirrors its state and sends gestures back over one WebSocket. <strong>Off</strong> cuts every live phone and stops serving on that port; 10 wrong codes disable it automatically. Same address in dev and release (<code>:1421</code>). The <strong>HTTPS (PWA)</strong> row serves over HTTPS via Tailscale, which is what lets the phone <em>Install</em> it as a standalone app (needs HTTPS certs enabled once in the Tailscale admin console). Security note (tightened in v1.21.0): a paired device can no longer invoke arbitrary Tauri commands - it is limited to a default-deny allowlist, and anything outside it is refused on the Mac. And a <code>http://</code> LAN address is not encrypted - the pair code can be read by anyone on that network, so the <strong>On</strong> switch turns amber and copying such an address warns you. The Tailscale HTTPS address does not have this problem.<br><strong>v1.20.0:</strong> confirmation dialogs are now mirrored state - trigger a PUSH <code>--delete</code> from the phone and the "type the project name" box appears on <em>both</em> screens, answerable from either (the typed name is still verified on the Mac, so the phone cannot skip the check). Same for Remove Project, the replacement SSH host picker, and the "preview failed, continue anyway?" prompt. Also fixes task/note edits made on the phone reverting a while later: an edit used to be written straight to disk without touching the Mac's live state, so the next reconnect (screen lock, tab switch, network drop) replayed the stale copy over it.</li>
-          <li><strong>In-app terminal & groups:</strong> A <code>TERMINAL</code> stack above the event log (the bottom dock is now two independently collapsible stacks, not tabs of one panel) running a real shell on the Mac (a genuine PTY, not a command runner piping output) - so history recall with the arrow keys, <code>Ctrl+C</code> on a running command, interactive prompts and <code>vim</code> all work. <strong>Groups:</strong> tabs are scoped into one group per project plus one <strong>global</strong> group not tied to any project - a project's <code>TERM</code> cell or the column header's terminal icon switches the stack to that group, showing only its tabs (other groups' shells keep running untouched, never re-spawned by switching). <code>⌘T</code> new tab, <code>⌘W</code> close tab, <code>⌘⇧[</code> / <code>⌘⇧]</code> cycle - all act within the current group only; an exited shell tints only its own tab's icon red, never the whole header. No group is pinned to a minimum tab count, global included - every group opens its first tab on demand and can be closed back down to zero, the same way a project's group always could. A tab's title follows the shell automatically (the same OSC title escapes an external <code>Terminal.app</code> window's titlebar already reads), or right-click a chip to rename it by hand - a manual rename sticks. Whatever you type on the Mac or on the phone lands in the same shell per tab and both screens show identical output - which is the point, since <code>Terminal.app</code> renders nowhere but the Mac, so a phone could never drive it. The Mac stays the sole resize authority (a PTY has one size; letting the phone set it would let a narrow screen mangle output running on the Mac). A slim key row covers Esc / Tab / sticky Shift / sticky Ctrl / the four arrows / Enter for what a phone keyboard cannot send, and shows only on the phone, not on the Mac's own screen. Shift and Ctrl are <strong>toggles</strong> - tap to latch, tap again to release - and they work together and everywhere: Shift turns Tab into backtab and the arrows into their shifted forms (for AI-agent shortcuts like Claude Code's Shift+Tab mode cycling), Ctrl turns the arrows into word-jumps and the next typed letter into its control byte, including while the compose box has focus, so <code>Ctrl+C</code> on a runaway process is reachable. A compose box below the key row lets voice dictation or the phone's IME type a full command before sending it - <code>Shift+Enter</code> adds a line instead of sending. Recent output replays per tab when you reopen it or the phone reconnects. The shell runs as a <em>login shell</em>, so it has the same <code>PATH</code> as every other Terminal window (nvm, rbenv, path_helper all load). The panel header now carries one button, <strong>CLOSE</strong> (hides the panel, every shell keeps running) / <strong>EXPAND</strong> - the old CLEAR/RESTART/KILL/OPEN toolbar is gone: KILL/RESTART are now a tab chip's own ✕ (✕ then + to restart in the same directory), OPEN moved to each project's OPEN popup. When a shell exits (<code>exit</code>, or a crash) only its own tab turns red instead of going quiet - typing anything starts a new one. Each project's <code>TERMINAL</code> column (replacing the old LAST ACTION column) is now one button opening/reactivating that project's group - a fresh tab starts in that directory if the group is empty, an already-open tab is reused untouched (no <code>cd</code>, so a long-running command is never interrupted) - with two badges: top (cyan, red if one has exited) = tab count in that group, bottom (slate) = external <code>Terminal.app</code> windows standing in that project's directory right now (a live count, re-scanned every few seconds - close the window and the badge drops). The column header's own global-terminal icon carries the same two badges for the global group - top its own tab count, bottom every external window standing in none of your projects' directories. Security: opening the terminal from a paired device adds <em>no</em> extra confirmation - that device could already run arbitrary commands via DEV/BUILD, so gating the terminal alone would be theatre and would defeat the point (you use the phone precisely when you are not at the Mac). <strong>Off</strong> still cuts every device instantly.</li>
-          <li><strong>Tasks &amp; notes live in the repo, not in the app (v1.22.0):</strong> a project's task list and notes moved out of the app's own <code>projects.json</code> and into <code>&lt;project&gt;/.akidevsync/notes.json</code> - the local repo is the source of truth, a host is only somewhere code runs. The file is pretty-printed for readable diffs, always carries an <code>about</code> link back to this app's repo, and is excluded from PUSH and PULL by default: a mirroring PULL deletes whatever the remote lacks, so without that exclude one pull would erase the task list. Reading it returns a <em>status</em> (ok / missing / unavailable / corrupt), not a defaulted empty object - an unmounted volume or a file left with git conflict markers makes the surface read-only instead of showing an empty note that would then be saved over the real one. Migration off the old location is one-way and needs no flag: the absent key <em>is</em> the marker, enforced in Rust by <code>skip_serializing_if</code>.</li>
-          <li><strong>Vietnamese typing in the terminal:</strong> OpenKey/EVKey are not real IMEs - they retype each corrected syllable as one synthetic key event carrying the <em>whole</em> string. xterm assumes one key event carries one character, so it kept only the first: <code>ăn gì</code> arrived as <code>ăn g</code>. The rule now is <strong>xterm owns keys, the app owns text</strong> - the app reads what was typed from the input surface's value rather than from the key event, and every actual key (arrows in <code>vim</code>, Ctrl combos, function keys, bracketed paste) stays with xterm, which already gets them right. <em>Direct typing with OpenKey works</em>, so the compose box went back to the phone, where there is no physical keyboard. macOS's own Vietnamese input is a true composing IME whose preedit cannot live against a no-local-echo terminal (the PTY is the single source of truth; a character is only drawn once the shell echoes it back) - compose in that box instead, which owns the text with synchronous feedback and sends only the finished line.</li>
-          <li><strong>The `.git/` mtime trap:</strong> Directory-only mtime changes from git's internal housekeeping are filtered out of the dry-run result, so the PUSH button no longer lights up for nothing.</li>
-          <li><strong>Bidirectional EC-3 disambiguation (Baseline Manifest):</strong> rsync cannot tell "remote created file X" from "Local deleted file X", or "Mac created file Y" from "remote deleted file Y". After each full sync the app writes a snapshot of the local file list to <code>appDataDir/baselines/</code>. On the next check: in pull_list + in baseline + gone from Local → Local deleted it → add to push_count; in push_list + in baseline → remote deleted it → drop from push_count. Fully solves the PUSH badge lighting up wrongly when most coding happens on the remote.</li>
-          <li><strong>Narrow Mode (v1.14.0):</strong> The window stays usable down to 420px (<code>minWidth</code> in <code>tauri.conf.json</code>), driven by one shared breakpoint (700px) and two global utility classes (<code>.u-narrow-hide</code>/<code>.u-wide-hide</code>) - no component defines its own. A hidden text label survives in the <code>title</code> tooltip, and no button ever loses both its icon and its label.</li>
+          <li><strong>Git terminal colours & Unicode:</strong> Git output renders in real terminal colours, and Vietnamese filenames show accents correctly instead of octal escapes.</li>
+          <li><strong>Stack Detector & Lockfile Analyzer:</strong> Detects Tauri vs Node and picks the right package manager automatically - no manual config.</li>
+          <li><strong>Real quota, never simulated:</strong> Quota numbers come straight from Anthropic's server via the <code>statusLine</code> hook, including a patched-in reset time when the CLI itself would hide it at 100%.</li>
+          <li><strong>Antigravity quota via native RPC:</strong> Skips Google's slow/empty cloud API - reads the IDE's local process directly, ~40ms.</li>
+          <li><strong>App-icon menu & window presets:</strong> The ☰ titlebar menu holds update checks, SSH Config, Statusline Customizer, Claude Code Cleanup, Remote Control, a <code>Usage slots:</code> picker (2/4/6/8), and window presets (<code>⌘1</code> Narrow+Stick Top-Left, <code>⌘2</code> Wide+Center). Tick <strong>remember</strong> to restore the exact window size/position next launch.</li>
+          <li><strong>Remote Control:</strong> Control the app from a phone browser on the same LAN or over Tailscale - pair once with a 6-digit code, then it reconnects silently. Confirmation dialogs (delete, remove project) mirror to both screens and are still verified on the Mac.</li>
+          <li><strong>In-app terminal & groups:</strong> A real shell (genuine PTY) runs inside the app, scoped into one tab group per project plus a global group. A paired phone gets its own plain-text view with a key row for Esc/Tab/Ctrl/Shift/arrows, since a phone has no physical keyboard.</li>
+          <li><strong>Tasks &amp; notes live in the repo, not in the app:</strong> A project's tasks and notes live in <code>&lt;project&gt;/.akidevsync/notes.json</code>, travel with the repo, and are excluded from PUSH/PULL so a mirroring sync can never erase them.</li>
+          <li><strong>Vietnamese typing in the terminal:</strong> OpenKey/EVKey retype a corrected syllable as one event carrying the whole string; the terminal now reads typed text from the input surface itself instead of the key event, so nothing gets truncated.</li>
         </ul>
       </div>
 
@@ -230,7 +220,7 @@
       </div>
     </div>
 
-    <div class="modal-footer" style="justify-content: flex-end;">
+    <div class="modal-footer modal-footer-right">
       <button class="btn-tech btn-tech-primary" @click="closeIntroModal">
         <i class="fa-solid fa-check"></i> GOT IT
       </button>
@@ -400,6 +390,31 @@ const { showIntroModal, closeIntroModal } = useIntro();
   color: var(--text-muted);
 }
 .mb-1 { margin-bottom: 4px; }
+
+/* Icon colors - using design system colors */
+.icon-guide { color: #6ee7b7; }
+.icon-push { color: #a78bfa; }
+.icon-select { color: #f59e0b; }
+.icon-pull { color: #3b82f6; }
+.icon-dryrun { color: #22c55e; }
+.icon-syncstatus { color: #a78bfa; }
+.icon-hooks { color: #f97316; }
+.icon-delete { color: #ef4444; }
+.icon-presets { color: #14b8a6; }
+.icon-tasks { color: #00d2ff; }
+.icon-openpopup { color: #06b6d4; }
+.icon-globalnote { color: #f59e0b; }
+.icon-usage { color: #818cf8; }
+.icon-cloud { color: #f59e0b; }
+.icon-ssh { color: #94a3b8; }
+.icon-background { color: #ec4899; }
+.icon-refresh { color: #fbbf24; }
+.icon-git { color: #f87171; }
+.icon-update { color: #10b981; }
+
+.modal-footer-right {
+  justify-content: flex-end;
+}
 
 /* Long inline <code> spans (file paths, shell snippets) are the only unbreakable runs in this guide - let them break instead of widening the modal. */
 .intro-content code {

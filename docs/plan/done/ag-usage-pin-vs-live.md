@@ -23,7 +23,7 @@ That was fixed correctly — the email-only fallback was removed (`agUsageCache.
 ```mermaid
 graph LR
   A[usageMonitor.checkUsage<br/>usageMonitor.js:247] --> B[invoke get_agent_usage]
-  B --> C[agent_usage.rs:647<br/>get_antigravity_usage]
+  B --> C[agent_usage/antigravity.rs:16<br/>get_antigravity_usage]
   C --> D[run_remote_node_timeout]
   D --> E[scripts/get-antigravity-usage.js<br/>ps auxww → Connect RPC]
   E --> F[persistAgAccount<br/>usageMonitor.js:353]
