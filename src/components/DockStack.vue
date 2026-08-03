@@ -29,12 +29,18 @@
       </div>
     </div>
     <slot v-if="collapsed" name="peek"></slot>
-    <!-- bodyPersist (opt-in, terminal stack only): keep the body MOUNTED while collapsed and merely
-         hide it, so collapsing does not dispose every xterm. The wrapper div is unavoidable —
-         v-show sets style.display on one element and a <slot> renders a fragment. Without the prop
-         the two lines below reduce to exactly the old `v-if="collapsed" peek / v-else default`
-         pair, which is why LogStack.vue's render path is untouched. -->
-    <div v-if="bodyPersist" class="dock-stack-body" v-show="!collapsed"><slot></slot></div>
+    <!-- bodyPersist (opt-in, terminal stack only): keep the body MOUNTED (and, deliberately, always
+         PAINTED — no `v-show`) while collapsed, so collapsing does not dispose every xterm. Toggling
+         `display:none` the instant `collapsed` flips would pop the content away in one frame while
+         `.dock-stack`'s flex-basis/flex-grow are still easing over their own 0.25s — the box shrinks
+         smoothly around content that already vanished, which reads as "the transition doesn't
+         actually happen" (or, on expand, as content snapping in a frame before the box has finished
+         growing to fit it). `.dock-stack { overflow: hidden }` (main.css) does the hiding instead: as
+         flex-basis eases down to the collapsed header height, the body is clipped out of view in the
+         same motion as the box, so the content's disappearance and the box's shrink are the SAME
+         animation rather than two unsynchronized ones. The wrapper div is unavoidable — a <slot>
+         renders a fragment and needs an element to hang the class on. -->
+    <div v-if="bodyPersist" class="dock-stack-body"><slot></slot></div>
     <slot v-else-if="!collapsed"></slot>
   </div>
 </template>

@@ -41,9 +41,7 @@ The stack header always shows which group you are in: a project icon (or a plain
 - **Top (cyan, red if one has exited)** — how many in-app tabs exist in that project's group right now. Turns red the moment any one of them has exited; the count itself does not change (a dead shell is still a tab until you close it or a new command respawns it).
 - **Bottom (slate)** — how many **external** `Terminal.app` windows/tabs are standing in that project's directory **right now**. A live count, not a tally: open a window and it rises, close that window and it falls back within a tick.
 
-  *Mechanism.* The host runs `count_external_terminals` (`src-tauri/src/system.rs`) every **5 s**, plus once ~800 ms after the app itself opens a Terminal window so the badge moves immediately. One scan is three short local subprocesses: `pgrep -x Terminal` (absent → every count is 0), one `ps -axo pid=,ppid=` to walk Terminal's whole descendant tree, and one batched `lsof -a -d cwd -p <pids> -F pn` (capped at 200 pids) for their working directories. The counting rule is **roots of matching subtrees**: a process counts only if its cwd is the project directory *and its parent's cwd is not* — so one window running `npm run dev` (shell → npm → node, all sharing the cwd) counts once, not three times, without having to know which executables are shells. Match is **exact** in v1: a shell in `<project>/src` does not count.
-
-  Host-only. The scan needs `Terminal.app`'s process tree, which exists only on the Mac; the companion never polls, it receives the snapshot (`externalTermCounts`) over the state mirror.
+  Mechanism (scan cadence, subprocess pipeline, subtree-root counting rule): `docs/arch/terminal-stack.md` § External `Terminal.app` count — derived, never remembered. Host-only; the companion never polls, it receives the snapshot (`externalTermCounts`) over the state mirror.
 
 **Moved / removed vs. the old single-panel version:**
 
@@ -77,33 +75,20 @@ Each project's OPEN popup carries **In-App Terminal**, which switches to that pr
 
 The dock is now two independently collapsible stacks — `TerminalStack` above `LogStack` (`src/components/DockStack.vue`) — rather than one panel with LOG/TERMINAL tabs. Each stack owns its own collapse ref and hands it to `DockStack`. Collapsing the log stack shrinks it to one live line (the latest log message); collapsing the terminal stack shows only its header. Each stack's collapse state is per-screen, matching every other dock decision above.
 
-**Backend.** `src-tauri/src/pty.rs` keys every piece of session state by a `TabId` (`u32`): `sessions`, `inputs`, `scrollbacks` are each a `HashMap<TabId, _>` instead of a singleton, and `min_accepted` (the generation-fencing floor) is a **per-tab** map — a single global floor would let retiring one tab's generation fence off a still-live generation in another tab. Every command takes an `Option<u32> tab_id` defaulting to tab 0, which is the backward-compatibility seam: a companion running an older frontend build that never sends `tab_id` keeps landing on exactly the session it always drove. The one exception is `pty_close_tab`, whose `tab_id` is **required** — a defaultable "close" is exactly the accidental-blast-radius shape the multi-entity regression guard forbids. `pty_list_tabs()` returns `{id, alive}` per tab so a reloaded frontend can re-adopt shells the backend kept running. A `MAX_TABS = 16` global cap (1.21.1, up from 8) bounds the real resource cost — each live tab is a shell process plus three raw threads — and is derived from the frontend's per-group cap of 5; see "Tab and byte caps" above and `docs/arch/terminal-stack.md` for the full derivation.
+Backend session storage, wire format, companion addressing, resync, and restart/kill process-group mechanics are backend architecture, not feature behaviour: `docs/arch/terminal-stack.md` §§ PTY backend contract, Wire format, Never-block-the-UI.
 
-**Wire format.** No new frame types — `pty_output` / `pty_input` / `pty_resize` / `pty_exit` all now carry `tab_id` (default 0). This matters because the relay (`web_server.rs`) coalesces `pty_output` frames under congestion by tag alone, content-blind — without `tab_id` on every frame, a coalesce could silently land tab A's bytes in tab B's xterm.
-
-**Per-companion addressing (1.21.1).** A scrollback replay (a `pty_output` with `reset: true`) and an `invoke_result` are now addressed to the one companion they are for, via an optional `to` field the relay routes on and an optional `from` field the relay stamps on the way in — see `docs/feat/remote-control.md` for the wire-level detail. Before this, both were broadcast: a second phone joining wiped and rebuilt the screen of a phone already mid-command, and two phones with an overlapping `invoke` call in flight (each numbering requests from 1 on its own page) could resolve each other's replies. Live `pty_output`, `pty_exit`, `pty_resize`, `delta` and `init` all still broadcast, unchanged, because every screen genuinely needs the same bytes.
-
-**Resync.** `pushScrollback()` became `pushAllScrollbacks(to)` in `src/services/ptyBridge.js`: on a fresh companion connect or a scheduled resync, it calls `pty_list_tabs()` then replays every tab's scrollback, not just tab 0's — the same congestion that forces a resync would otherwise leave every tab past the first silently un-replayed on the device that just reconnected. The companion-join path passes the joining device's id so only that phone receives the replay; the host's own congestion-recovery path still broadcasts, because that hole exists in every companion's byte stream at once and there is no single device to address it to.
-
-**Frontend.** `usePtyTerminal(term, tabId)` takes a tab id and filters both its Tauri-event and companion-frame listeners by it (`if ((payload.tab_id ?? 0) !== tabId) return`) — one listener is wired per mounted `TerminalView`, and every one of them otherwise receives every tab's bytes. Liveness is now three-state (`'unknown' | true | false`): a fresh mount or a failed invoke sets `'unknown'`, never `false`, so a terminal never paints its header red before a real exit is confirmed — the "TERMINAL - EXITED" false-positive flash this replaced. `terminalTabsStore.js` holds the shared tab list (mirrored, since which tabs exist is genuinely cross-screen state); `useTerminalTabs.js` holds the per-screen liveness map and "has this tab ever been shown" bookkeeping locally, never mirrored, since each screen's PTY event stream is its own. Closing a tab (`closeTerminalTab`) splices exactly one entry and tells the backend to drop that one tab's session + scrollback (`drop_tab_state`) — every other tab's shell and scrollback survive untouched. No group has a floor (2026-07-28; see "Groups" above) — a project's group, or the global group, may empty out entirely, and simply stops existing until its `TERM` cell (or the header's global terminal icon) is clicked again. Global used to be pinned to a permanent one-tab minimum; that turned out to be the actual mechanism behind phantom "Shell" tabs piling up across dev-server HMR reloads, not just an inconsistency, so it was removed rather than patched.
+**Liveness.** Three-state (`'unknown' | true | false`): a fresh mount or a failed invoke sets `'unknown'`, never `false`, so a terminal never paints its header red before a real exit is confirmed. Closing a tab drops only that one tab's session and scrollback — every other tab survives untouched.
 
 **On-screen key row.** Now companion-only (`showKeyRow: !isHost` in `usePtyTerminal.js`) — the Mac has a real keyboard and never needs it; only a paired phone does.
 
-**Tab titles follow the shell, or rename by hand (2026-07-28).** A chip's title is no longer always "Shell" — xterm parses the shell's own OSC 0/2 title escapes (the same ones an external `Terminal.app` window's titlebar already shows) and retitles the chip automatically (`TerminalView.vue`'s `onTitleChange`). Right-click a chip to rename it directly in place; a manual rename sticks (`terminalTabsStore.js`'s `titleLocked`) and is never overwritten by the shell's own retitling afterward. No context-menu component was added for this — right-click enters the rename directly, since renaming is the only action a menu here would ever offer.
+**Tab titles follow the shell, or rename by hand (2026-07-28).** A chip's title is no longer always "Shell" — xterm parses the shell's own OSC 0/2 title escapes (the same ones an external `Terminal.app` window's titlebar already shows) and retitles the chip automatically. Right-click a chip to rename it directly in place; a manual rename sticks and is never overwritten by the shell's own retitling afterward.
 
-### Restart cannot orphan or clobber a session
+## SimpleView — the phone's plain-text view (1.23.0)
 
-Every spawn takes a generation number. A reader thread only retires the session slot if the session sitting in it is still the one it was reading. Without that, a shell killed by RESTART whose EOF arrives a moment late would null out the brand-new session that replaced it — leaving a terminal that is dead with no error anywhere and no way to tell why. This is why the button is safe to double-tap.
-
-### Killing the shell means killing its process group
-
-`portable_pty`'s `Child::kill()` signals only the direct child — the login shell. Everything the user started *inside* that shell is a separate process in the shell's process group and receives nothing from it. `kill_current` therefore sends SIGHUP to the whole group first (`killpg`, the same signal closing a real terminal window sends) and escalates to SIGKILL only for what survives the grace period. `portable-pty` puts the child in its own session on unix, so the child's pid is its process-group id and one `killpg` reaches every descendant.
-
-The bigger half of the fix is *when* teardown runs: it is now also wired to `RunEvent::Exit` in `lib.rs`. Every other path into `kill_current` is a user gesture (KILL, RESTART), so before that hook existed, quitting the app ran no teardown whatsoever.
-
-**How much `killpg` itself buys, stated honestly.** The unit test `killing_the_shell_takes_processes_started_inside_it_with_it` still passes with `killpg` swapped for a plain `kill` on the shell — verified by mutation, not assumed. That is a fact about unix rather than a weak test: when a session leader holding a controlling terminal dies, the kernel SIGHUPs the foreground process group on its own, so an ordinary foreground child dies either way. `killpg` covers what the kernel does not: a process that has left the foreground group, and any teardown path where the ctty is not revoked. Treat it as belt-and-braces on top of the exit hook, not as the load-bearing part.
-
-This was written while investigating orphaned `ssh` clients (`ppid=1`) on the dev Mac that were holding remote `sshd` sessions — and with them several hundred MB each of `agy`/`claude` — alive on `akicloud`. **That investigation is not closed and this fix should not be recorded as its resolution.** The evidence does not fit the in-app terminal: the orphans' `stdout` is `/dev/null` while `stdin`/`stderr` are revoked devices, which is not the shape a shell hands a foreground `ssh`, and no code path in this app spawns a bare `ssh <host>` with no remote command. The real source is still unidentified.
+A paired phone renders the PTY byte stream as a plain scrolling text stream, never xterm.js's canvas grid — `useTerminalViewType.js` picks `SimpleView.vue` on any non-host screen, `TerminalView.vue` on the Mac.
+The phone never receives `cols`/`rows` and never calls a resize, so a narrow viewport can no longer mangle output meant for the Mac's wider terminal.
+Cursor-up, line-erase and carriage-return are honoured line-by-line; all other grid/cursor-positioning escapes are dropped, since there is no grid to position within.
+Key row and compose row are the same affordances as the Mac-hosted `TerminalView.vue`, copy-adapted rather than shared, since SimpleView has no xterm instance to hang them off.
 
 ## Phone input
 
@@ -164,38 +149,15 @@ Deliberately not there: function keys, Alt/Meta, a configurable key row. None ar
 
 ## SSH into a remote host (in-app)
 
-The OPEN popup's REMOTE column now has **SSH Terminal (In-App)** above the original **SSH Terminal** (native `Terminal.app`), same ordering as LOCAL's In-App Terminal over its own native Terminal item, and for the same reason: it is the only one of the two that works from a phone. `build_remote_ssh_command` (`src-tauri/src/system.rs`) builds the exact `ssh <host> -t '...'` string the native item already launches in `Terminal.app` — same host validation, same `mkdir -p && cd` remote-side quoting — and hands it back as plain text; `openProjectRemoteTerminal` (`ProjectTable.vue`) then types that string into a fresh (or reused) in-app PTY tab via `openProjectRemoteTerminal` (`useTerminalTabs.js`), which dedups by `runKind: 'ssh'` exactly like DEV/BUILD dedup by their own `runKind`. Pure string construction, no subprocess, so it is companion-allowed (`COMPANION_ALLOWED_COMMANDS`).
+The OPEN popup's REMOTE column now has **SSH Terminal (In-App)** above the original **SSH Terminal** (native `Terminal.app`), same ordering as LOCAL's In-App Terminal over its own native Terminal item, and for the same reason: it is the only one of the two that works from a phone. `build_remote_ssh_command` (`src-tauri/src/system.rs`) builds the exact `ssh <host> -t '...'` string the native item already launches in `Terminal.app` — same host validation, same `mkdir -p && cd` remote-side quoting — and hands it back as plain text; `openProjectRemoteTerminal` (`ProjectTable.vue`) then types that string into a fresh in-app PTY tab via `openProjectRemoteTerminal` (`useTerminalTabs.js`). Unlike DEV/BUILD, which still dedup by their own `runKind` and reuse an existing tab, SSH no longer dedups — every invocation opens a new tab, subject to the same per-scope (5) and global (16) tab caps as any other tab. Pure string construction, no subprocess, so it is companion-allowed (`COMPANION_ALLOWED_COMMANDS`).
 
 ## Auto-collapse when the last tab closes
 
 Closing every tab everywhere — via a tab's own ✕, `⌘W` on the last one, or any other close path — now collapses the terminal stack itself instead of leaving an open panel over an empty mount area (`TerminalStack.vue` watches `tabs.value.length`). The collapse (and the reverse expand, from the `TERM` cell, the header icon, or the OPEN popup) now eases via a `flex-grow`/`flex-basis` transition on `.dock-stack` (`main.css`) instead of snapping instantly — `flex: none`'s implicit `auto` basis can't be interpolated, so the collapsed state now sets a literal pixel `flex-basis` matching the header's own rendered height, which a transition CAN ease toward. This CSS rule is shared with `LogStack.vue`, so the event log panel eases the same way.
 
-## How the bytes move
-
-```
-[Mac] shell ──► PTY reader thread ──► ring buffer (scrollback)
-                       │
-                       ├─ emit('pty-output') ──────────► the Mac's own terminal (lowest latency)
-                       └─ services/ptyBridge.js ──────► pty_output frame ──► phone
-[phone] keystroke ──► pty_input frame ──► ptyBridge (Mac) ──┐
-[Mac]   keystroke ──────────────────────────────────────────┴──► pty_write  (one authority)
-```
-
-Terminal bytes ride **four top-level frames on the existing socket** (`pty_input`, `pty_output`, `pty_resize`, `pty_exit`), never the state mirror or the intent registry. Raw output is a firehose; it does not fit a JSON-diffed state model. The first two names were reserved in `src/constants/protocol.js` a release ahead of time for exactly this.
-
-Bytes are base64 end-to-end and are never treated as a Rust `String`. The frontend decodes to a `Uint8Array` and hands it to xterm.js, whose own stateful UTF-8 decoder reassembles a multi-byte character split across two PTY reads — so no app code has to buffer split sequences. Output is coalesced (about every 20ms, or 16KB, whichever comes first) so a chatty build does not become one network message per `read()`.
-
-## Never-block-the-UI, and the one place the usual rule inverts
-
-`pty_spawn` / `pty_write` / `pty_resize` / `pty_get_scrollback` are all `async fn` wrapping their work in `spawn_blocking`, per the ABSOLUTE rule in `CLAUDE.md`.
-
-The **read loop is a dedicated `std::thread`, and must stay one.** `spawn_blocking`'s pool is sized for bounded one-shot work; parking one of its threads forever in a `read()` loop for the app's whole lifetime starves every other blocking command (remote path resolution, update check, git info) of a slot. A tokio task would be just as wrong — `portable-pty`'s reader is a synchronous `Read`, so it would block a worker identically. This is the one spot in the app where "just wrap it in `spawn_blocking`" is the bug rather than the fix.
-
 ## Security
 
 Opening the terminal from a paired device adds **no extra confirmation step**, and that is a decision. A paired device could already invoke any command on the host, including the one that runs an arbitrary shell command for DEV and BUILD — so gating a PTY alone while that stays open would be theatre, and it would defeat the purpose, since the phone is used precisely when nobody is at the Mac. The pairing token remains the single gate and **Off** still cuts every live device instantly. This is the same posture 1.19.0 already declared, not a widening of it.
-
-`pty_output` carries an optional `reset` flag meaning "replace everything, do not append" — set by CLEAR, RESTART and scrollback replay. `pty_exit` is a separate signal rather than something parsed out of the `[process exited]` text: driving state by pattern-matching our own cosmetic output would break the moment the wording changed.
 
 ## Not in this version
 

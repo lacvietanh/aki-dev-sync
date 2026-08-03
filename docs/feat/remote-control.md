@@ -263,7 +263,6 @@ The single reference to check every control against while editing. Goal (plan §
 | Power AG / CC (any scope) | `monitor.toggle()`→`setMonitorEnabled(id, …)` (`usageMonitorStore`) | MIRROR + ACTION | **FIXED** — flags moved to store; toggle is an action. Since 1.20.0 one keyed map, one entry per `agentId@host` (`monitorId`), not four fixed source flags — "ccRemote" is no longer a thing |
 | Remote host select | `@change=setSlotTarget(slotId,{remoteHost})` (`AgentUsageSlot.vue`) | MIRROR (`usageSlotStore`) + ACTION | **FIXED** — `:value`+`@change`→action, not v-model. Per **slot** since 1.20.0; `sshStore.selectedSshHost` is only the fallback |
 | Reload / retry | `$emit('retry')`→`checkUsage`→`get_agent_usage` RPC | RPC | RPC-OK (refetches the phone's view) |
-| Logout AG (IDE/CLI) | `logoutAntigravity`→`logout_antigravity*` RPC | Swal on phone + RPC | RPC-OK (logs out on Mac) |
 | Open Antigravity | `handleIconClick`→`macos_open` RPC | RPC | RPC-OK |
 | Tab LOCAL / REMOTE | `setSlotTarget(slotId,{scope})` (`AgentUsageSlot.vue`) | MIRROR (`usageSlotStore`) + ACTION | **FIXED (1.20.0)** — the slot's target became store state; the old "component-local + localStorage" REVIEW is settled |
 | Source tab AG / CC | `setAgent()`→`setSlotTarget(slotId,{localAgent\|remoteAgent})` (`AgentUsageSlot.vue`) | MIRROR + ACTION | **FIXED (1.20.0)** — same |

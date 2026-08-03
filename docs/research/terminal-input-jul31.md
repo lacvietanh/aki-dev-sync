@@ -1,6 +1,6 @@
 # Terminal input — bản ghi phiên test trên máy thật
 
-**Plan song sinh:** [`docs/plan/terminal-input-jul31.md`](../plan/terminal-input-jul31.md) — cùng tên,
+**Plan song sinh:** [`docs/plan/terminal-input-jul31.md`](../plan/done/terminal-input-jul31.md) — cùng tên,
 cùng ngày. File này là **bản ghi sự kiện, không sửa về sau** (`docs.B2`); mọi quyết định và việc còn
 phải làm nằm ở plan.
 
@@ -25,7 +25,7 @@ trị hay không):
   `src/components/TerminalView.vue` (sửa), `src/composables/useTerminalInput.js` +
   `useWkImeGuard.js` (đã xoá — tổng 750 dòng). HEAD tại `95a540f`.
 - Chưa có mục nào trong bảng 8 quan sát của
-  [`terminal-input-surface.md`](../plan/terminal-input-surface.md) §6 từng được chạy. Toàn bộ nhánh
+  [`terminal-input-surface.md`](../plan/done/terminal-input-surface.md) §6 từng được chạy. Toàn bộ nhánh
   này cho tới lúc đó là suy luận từ mã nguồn xterm 5.5.0 và WebKit, không có dữ liệu máy thật.
 - `-4.md` tự ghi nhận một điểm bất định còn lại: không rõ carrier của OpenKey có được gắn
   `keyCode 229` hay không. Thiết kế được cho là bền với cả hai chiều.
@@ -146,13 +146,13 @@ Không chạy. Lý do nêu ra: đường legacy vốn đầy lỗi, giữ lại 
 
 - [`terminal-vietnamese-ime-root-cause-4.md`](terminal-vietnamese-ime-root-cause-4.md) — kiến trúc
   đang được test; §7 mô tả đúng cái đang chạy, §5.3 có một tiền đề bị lần test này bác bỏ (§5.6).
-- [`terminal-input-surface.md`](../plan/terminal-input-surface.md) §6 — bảng 8 quan sát chưa xác nhận
+- [`terminal-input-surface.md`](../plan/done/terminal-input-surface.md) §6 — bảng 8 quan sát chưa xác nhận
   mà lần test này chạy hết.
 - `src/composables/useTerminalTextDrain.js` — mã được test.
 
 ## 6. Decision
 
-**Action** — mở [`docs/plan/terminal-input-jul31.md`](../plan/terminal-input-jul31.md) để sắp xếp
+**Action** — mở [`docs/plan/terminal-input-jul31.md`](../plan/done/terminal-input-jul31.md) để sắp xếp
 phần còn lại: một blocker (§5.2), một defect Android (§5.5), một defect hiển thị (§5.1), và một việc
 gỡ bỏ (§5.6). Blocker được giao cho một phiên hội đồng riêng.
 

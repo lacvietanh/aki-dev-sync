@@ -208,6 +208,12 @@ a {
      `flex: none` resolves to a flex-basis of `auto`, and a transition can't interpolate between a
      length and `auto`, so collapsing used to snap instead of easing shut. */
   transition: flex-grow 0.25s ease, flex-basis 0.25s ease;
+  /* Load-bearing for bodyPersist (DockStack.vue): with no `v-show` toggling the body away, this box
+     is what hides it — as flex-basis eases down to the collapsed header height, anything taller than
+     the current box gets clipped in the same motion, instead of bleeding out over the sibling stack
+     below or the log stack underneath. Without this, the persisted terminal body stays fully painted
+     at its old size while the box shrinks around it. */
+  overflow: hidden;
 }
 
 .dock-stack.is-collapsed {

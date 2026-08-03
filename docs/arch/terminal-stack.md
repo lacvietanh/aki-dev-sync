@@ -55,6 +55,49 @@ One PTY per `tab_id`; `pty_spawn` is idempotent; liveness travels on `pty_output
 
 **Terminal v2 required zero Rust changes.** The backend was already tab-keyed and knows nothing about "projects" or "groups" — scope is a pure frontend grouping over `projectId`, a field the tab list already carried before this work. If any part of this feature had needed a Rust change, that would have meant the frontend-only premise was wrong.
 
+**Backend storage.** `src-tauri/src/pty.rs` keys every piece of session state by a `TabId` (`u32`): `sessions`, `inputs`, `scrollbacks` are each a `HashMap<TabId, _>` instead of a singleton, and `min_accepted` (the generation-fencing floor) is a **per-tab** map — a single global floor would let retiring one tab's generation fence off a still-live generation in another tab. Every command takes an `Option<u32> tab_id` defaulting to tab 0, the backward-compatibility seam for a companion frontend that never sends `tab_id`. The one exception is `pty_close_tab`, whose `tab_id` is **required** — a defaultable "close" is exactly the accidental-blast-radius shape the multi-entity regression guard forbids. `pty_list_tabs()` returns `{id, alive}` per tab so a reloaded frontend can re-adopt shells the backend kept running.
+
+## Wire format
+
+No new frame types — `pty_output` / `pty_input` / `pty_resize` / `pty_exit` all carry `tab_id` (default 0). This matters because the relay (`web_server.rs`) coalesces `pty_output` frames under congestion by tag alone, content-blind — without `tab_id` on every frame, a coalesce could silently land tab A's bytes in tab B's xterm. `pty_output` also carries an optional `reset` flag meaning "replace everything, do not append", set by RESTART and scrollback replay.
+
+**Per-companion addressing (1.21.1).** A scrollback replay (a `pty_output` with `reset: true`) and an `invoke_result` are addressed to the one companion they are for, via an optional `to` field the relay routes on and an optional `from` field the relay stamps on the way in — see `docs/feat/remote-control.md` for the wire-level detail. Before this, both were broadcast: a second phone joining wiped and rebuilt the screen of a phone already mid-command, and two phones with an overlapping `invoke` call in flight could resolve each other's replies. Live `pty_output`, `pty_exit`, `pty_resize`, `delta` and `init` all still broadcast, since every screen genuinely needs the same bytes.
+
+**Resync.** `pushScrollback()` became `pushAllScrollbacks(to)` in `src/services/ptyBridge.js`: on a fresh companion connect or a scheduled resync, it calls `pty_list_tabs()` then replays every tab's scrollback, not just tab 0's — the same congestion that forces a resync would otherwise leave every tab past the first silently un-replayed on the device that just reconnected. The companion-join path passes the joining device's id so only that phone receives the replay; the host's own congestion-recovery path still broadcasts, because that hole exists in every companion's byte stream at once and there is no single device to address it to.
+
+## How the bytes move
+
+```
+[Mac] shell ──► PTY reader thread ──► ring buffer (scrollback)
+                       │
+                       ├─ emit('pty-output') ──────────► the Mac's own terminal (lowest latency)
+                       └─ services/ptyBridge.js ──────► pty_output frame ──► phone
+[phone] keystroke ──► pty_input frame ──► ptyBridge (Mac) ──┐
+[Mac]   keystroke ──────────────────────────────────────────┴──► pty_write  (one authority)
+```
+
+Terminal bytes ride four top-level frames on the existing socket (`pty_input`, `pty_output`, `pty_resize`, `pty_exit`), never the state mirror or the intent registry — raw output is a firehose and does not fit a JSON-diffed state model. The first two names were reserved in `src/constants/protocol.js` a release ahead of time for exactly this. Bytes are base64 end-to-end and never treated as a Rust `String`; the frontend decodes to a `Uint8Array` and hands it to xterm.js, whose own stateful UTF-8 decoder reassembles a multi-byte character split across two PTY reads. Output is coalesced (about every 20ms, or 16KB, whichever comes first) so a chatty build does not become one network message per `read()`. `pty_exit` is a separate signal rather than something parsed out of the `[process exited]` text: driving state by pattern-matching our own cosmetic output would break the moment the wording changed.
+
+## Never-block-the-UI, and the one place the usual rule inverts
+
+`pty_spawn` / `pty_write` / `pty_resize` / `pty_get_scrollback` are all `async fn` wrapping their work in `spawn_blocking`, per the ABSOLUTE rule in `CLAUDE.md`.
+
+The **read loop is a dedicated `std::thread`, and must stay one.** `spawn_blocking`'s pool is sized for bounded one-shot work; parking one of its threads forever in a `read()` loop for the app's whole lifetime starves every other blocking command (remote path resolution, update check, git info) of a slot. A tokio task would be just as wrong — `portable-pty`'s reader is a synchronous `Read`, so it would block a worker identically. This is the one spot in the app where "just wrap it in `spawn_blocking`" is the bug rather than the fix.
+
+### Restart cannot orphan or clobber a session
+
+Every spawn takes a generation number. A reader thread only retires the session slot if the session sitting in it is still the one it was reading. Without that, a shell killed by restart whose EOF arrives a moment late would null out the brand-new session that replaced it — leaving a terminal that is dead with no error anywhere and no way to tell why.
+
+### Killing the shell means killing its process group
+
+`portable_pty`'s `Child::kill()` signals only the direct child — the login shell. Everything the user started *inside* that shell is a separate process in the shell's process group and receives nothing from it. `kill_current` therefore sends SIGHUP to the whole group first (`killpg`, the same signal closing a real terminal window sends) and escalates to SIGKILL only for what survives the grace period. `portable-pty` puts the child in its own session on unix, so the child's pid is its process-group id and one `killpg` reaches every descendant.
+
+The bigger half of the fix is *when* teardown runs: it is also wired to `RunEvent::Exit` in `lib.rs`. Every other path into `kill_current` is a user gesture (KILL, RESTART), so before that hook existed, quitting the app ran no teardown whatsoever.
+
+**How much `killpg` itself buys, stated honestly.** The unit test `killing_the_shell_takes_processes_started_inside_it_with_it` still passes with `killpg` swapped for a plain `kill` on the shell — verified by mutation, not assumed. When a session leader holding a controlling terminal dies, the kernel SIGHUPs the foreground process group on its own, so an ordinary foreground child dies either way. `killpg` covers what the kernel does not: a process that has left the foreground group, and any teardown path where the ctty is not revoked.
+
+The app-exit teardown investigation (orphaned `ssh` clients on the dev Mac) is tracked separately and not resolved by this mechanism — the evidence does not fit the in-app terminal's spawn shape.
+
 ## Mount semantics
 
 `TerminalStack.vue`'s mount loop (`v-for="t in tabs"`, the FULL unfiltered list) iterates every tab regardless of scope, on purpose: `v-if="activatedTabs.has(t.id)"` mounts a `TerminalView` lazily on first activation and keeps it mounted afterward, and only `v-show="t.id === activeTabId"` changes when the visible tab or the visible scope changes. Filtering the mount loop by scope would unmount and re-spawn xterms on every group switch — the tab strip (`TerminalTabStrip.vue`) is what is scope-filtered (`scopedTabs`), not the mount loop.

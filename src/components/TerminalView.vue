@@ -408,6 +408,7 @@ onMounted(async () => {
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: true,
+    macOptionClickForcesSelection: true, // without this, Option-drag can't select while a TUI has mouse-mode on
   })
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)

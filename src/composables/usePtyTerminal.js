@@ -19,6 +19,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { isHost, onFrame, send } from '../services/bridge'
 import { invoke } from '../utils/tauri'
+import { decodeBase64ToBytes, encodeBytesToBase64 } from '../utils/ptyCodec'
 import { FRAME_PTY_INPUT, FRAME_PTY_OUTPUT, FRAME_PTY_RESIZE, FRAME_PTY_EXIT } from '../constants/protocol'
 import { consumeTabPendingCmd } from '../store/terminalTabsStore'
 
@@ -89,19 +90,6 @@ export function seedTabLiveness(list) {
     if (t && typeof t.id === 'number' && typeof t.alive === 'boolean') next[t.id] = t.alive
   }
   tabLiveness.value = next
-}
-
-function decodeBase64ToBytes(b64) {
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return bytes
-}
-
-function encodeBytesToBase64(bytes) {
-  let bin = ''
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-  return btoa(bin)
 }
 
 /**

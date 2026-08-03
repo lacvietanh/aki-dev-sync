@@ -185,14 +185,24 @@ export function useTerminalTextDrain(term) {
    *  classification, no interpretation of a key event's payload. */
   function onInputCapture(ev) {
     if (ev.target !== textarea) return
-    if (composing || ev.isComposing) return
     const inputType = ev.inputType || ''
-    // Composition, paste and drop are xterm's own, correctly-handled paths. Claiming paste here in
-    // particular would lose bracketed paste, which is the defect the previous overlay shipped with.
+    // xterm already sent the paste (bracketed wrapping intact) but clears the textarea BEFORE
+    // the browser's own insertion, not after — so the pasted text is still sitting there.
+    // Drain it without sending, or the next uncancelled keystroke (SPACE) re-sends it.
+    // Ordered above the composing guard: xterm's paste handler runs regardless of composition
+    // state, and clearing here is safe because the composition helper re-reads a live textarea.
+    if (inputType === 'insertFromPaste') {
+      textarea.value = ''
+      record('input-paste-cleared', { inputType })
+      return
+    }
+    if (composing || ev.isComposing) return
+    // Composition is xterm's own, correctly-handled path. Drop is not: xterm 5.5.0 registers no
+    // drop listener, so dropped text lingers until a later keystroke drags it along — a known
+    // pre-existing defect left alone, since draining it would discard text nothing else sends.
     if (
       inputType.startsWith('insertComposition') ||
       inputType === 'insertFromComposition' ||
-      inputType === 'insertFromPaste' ||
       inputType === 'insertFromDrop'
     ) {
       record('input-passed', { inputType })

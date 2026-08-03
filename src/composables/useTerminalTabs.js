@@ -363,6 +363,7 @@ export function useTerminalTabs() {
   function openRunCommand(project, cmd, kind) {
     if (!project || !cmd) return
     const scope = project.id
+    const priorScope = activeTerminalScope.value
     expandTerminalStack()
     activeTerminalScope.value = scope
     const existing = terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === kind)
@@ -376,6 +377,10 @@ export function useTerminalTabs() {
       }
       return
     }
+    if (capReached(scope)) {
+      activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
+      return
+    }
     const tab = addTerminalTab({
       title: kind === 'dev' ? 'DEV' : 'BUILD',
       projectId: scope,
@@ -387,25 +392,21 @@ export function useTerminalTabs() {
     else setPendingClaim(scope) // companion fallback — same mechanism openScopeTerminal uses
   }
 
-  /** Remote counterpart to `openProjectTerminal`: dedups by (scope, runKind: 'ssh') exactly like
-   *  DEV/BUILD, so a project can have an ordinary local shell tab AND an SSH tab open at once,
-   *  and a second click focuses the existing SSH tab instead of piling up new ones. `sshCmd` is
-   *  the exact `ssh … -t …` string the backend's `build_remote_ssh_command` returns — this
-   *  composable never constructs shell syntax itself. */
+  /**
+   * Remote counterpart to `openProjectTerminal`, but always a new tab — no dedup. DEV/BUILD's
+   * reason for reusing a tab (never re-type into a running dev server) does not transfer to an
+   * ssh login shell, which the user legitimately opens several of at once; the tab chip's own
+   * restart affordance covers a dead shell. `sshCmd` is the exact `ssh … -t …` string the
+   * backend's `build_remote_ssh_command` returns — this composable never builds shell syntax.
+   */
   function openProjectRemoteTerminal(project, sshCmd) {
     if (!project || !sshCmd) return
     const scope = project.id
+    const priorScope = activeTerminalScope.value
     expandTerminalStack()
     activeTerminalScope.value = scope
-    const existing = terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === 'ssh')
-    if (existing) {
-      setActiveTab(existing.id)
-      if (tabLiveness.value[existing.id] === false) {
-        setTabPendingCmd(existing.id, sshCmd)
-        invoke('pty_spawn', { tabId: existing.id, cwd: project.local_path }).catch((e) =>
-          console.error('[useTerminalTabs] openProjectRemoteTerminal respawn failed', e)
-        )
-      }
+    if (capReached(scope)) {
+      activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
       return
     }
     const tab = addTerminalTab({

@@ -1,6 +1,6 @@
 # Terminal input — plan chốt lại, 2026-07-31
 
-**Báo cáo test (đối chiếu):** [`docs/research/terminal-input-jul31.md`](../research/terminal-input-jul31.md)
+**Báo cáo test (đối chiếu):** [`docs/research/terminal-input-jul31.md`](../../research/terminal-input-jul31.md)
 — cùng tên, cùng ngày. File đó là **quan sát**; file này là **quyết định và việc còn phải làm**.
 Mọi mục dưới đây trỏ về số mục tương ứng bên đó thay vì chép lại quan sát.
 
@@ -13,12 +13,12 @@ giả thuyết root cause ở mức code, chưa xác nhận trên máy thật, c
 - [`docs/plan/done/terminal-input-surface.md`](terminal-input-surface.md) — bảng §6 của nó đã được chạy
   hết một lượt; kết quả nằm ở research §4 (bảng checklist). Plan đó nay chỉ còn hiệu lực cho
   phần **UI feedback** (§2 dưới đây). Thứ tự thi công `#3 → #13 → #2 + #8` của nó đã hoàn tất trên thực tế.
-- [`docs/research/terminal-vietnamese-ime-root-cause-4.md`](../research/terminal-vietnamese-ime-root-cause-4.md)
+- [`docs/research/terminal-vietnamese-ime-root-cause-4.md`](../../research/terminal-vietnamese-ime-root-cause-4.md)
   — không còn là head của chuỗi. **Hai tiền đề của nó hết hiệu lực**: §5.3 coi khả năng A/B
   `aki-input-mode='legacy'` là điều kiện tiên quyết, chủ sở hữu đã bác bỏ (§4 dưới đây); và §7's
   "narrow" keypress veto cùng dòng đầu bảng exclusivity của nó, bị phiên hội đồng double-space lật lại
   bằng bằng chứng máy thật — xem
-  [`terminal-vietnamese-ime-root-cause-5.md`](../research/terminal-vietnamese-ime-root-cause-5.md),
+  [`terminal-vietnamese-ime-root-cause-5.md`](../../research/terminal-vietnamese-ime-root-cause-5.md),
   head mới của chuỗi.
 
 ---
@@ -50,7 +50,7 @@ Ba mục, xếp theo mức chặn. Mục 2.1 phải giải trước vì nó che 
 ### 2.1 — BLOCKER: double space — ĐÃ ĐÓNG 2026-07-31
 
 Quan sát gốc: research §5.2. Truy nguyên đầy đủ, bằng chứng file:dòng và xác nhận máy thật:
-[`terminal-vietnamese-ime-root-cause-5.md`](../research/terminal-vietnamese-ime-root-cause-5.md).
+[`terminal-vietnamese-ime-root-cause-5.md`](../../research/terminal-vietnamese-ime-root-cause-5.md).
 Ledger phiên hội đồng:
 `/Users/aki/.aki/agent-council/aki-dev-sync/2026.07.31-0232-double-space/checklist.md`.
 
@@ -96,7 +96,7 @@ Quan sát: research §5.5 (`ăn gì` → `aăn giì`). **Giữ tách khỏi 2.1*
 nguyên). Không gộp hai mục này vào một fix chung.
 
 Truy nguyên ở mức code, chưa có capture trên máy Android thật:
-[`terminal-gboard-double-insert.md`](../research/terminal-gboard-double-insert.md). Cơ chế nghi ngờ
+[`terminal-gboard-double-insert.md`](../../research/terminal-gboard-double-insert.md). Cơ chế nghi ngờ
 mạnh nhất (chưa xác nhận trên phần cứng): drain đọc-hết-rồi-xoá-rỗng textarea sau mỗi ký tự gốc, nên
 khi Gboard tự sửa (autocorrect/dấu) bằng cách xoá lùi phần đã gõ rồi chèn bản đã sửa, thao tác xoá
 chạm vào một textarea đã rỗng sẵn — không có gì để xoá, event xoá bị bỏ qua lặng lẽ, chỉ có phần chèn
