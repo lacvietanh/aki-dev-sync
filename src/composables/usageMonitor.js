@@ -437,17 +437,6 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     }
   };
 
-  // AG-only: called right after a successful logout. logout_antigravity wipes AG's own auth state (SQLite rows, keychain item, session cookies) but this monitor's own cache/view-state is deliberately left untouched - see "Log Out behavior & cache retention" in docs/arch/usage-antigravity.md (PO decision, 2026-07-07): the header showing the just-logged-out account's last-known data until a new account goes live is the INTENDED behavior (the whole point of the per-account cache is to keep showing each account's last-known state), not a bug.
-  //
-  // Regression note: 1.9.3 (`a26b8f5`/`b082d0d`) treated that as a bug and cleared the account on logout - `clearAgStore()` ended up wiping the ENTIRE per-account history, not just the just-logged-out account, silently erasing every other cached account too. Fixed 2026-07-07 by removing the clearing behavior entirely, per the corrected product decision above.
-  //
-  // Named `recheckAfterLogout`, not `resetAccount`: it resets nothing. The old name promised exactly the blast radius 1.9.3 actually shipped, which is the naming failure CLAUDE.md's Regression Guard exists to stop (name a function by its real scope).
-  const recheckAfterLogout = () => {
-    if (!isAg) return;
-    ulog('ag logout: recheck', {}, 'info');
-    checkUsage(); // just an immediate poll to pick up a new login sooner - no state is cleared
-  };
-
   // Circuit breaker. The log from the 2026-07-20 incident shows 12 consecutive failures spaced at exactly 30.0s - the poll kept probing at full rate for 24 minutes after the host had stopped accepting TCP entirely. A host that has failed this many times in a row is down, not slow, and no amount of further probing will change that; only a human fixing it will.
   //
   // Deliberately a hard stop, not exponential backoff: backoff is for a host expected to recover on its own, which is not this case, and the evenly-spaced log proves probes were already serialized (they never piled up), so there is nothing for a graduated delay to relieve. Stopping outright is both simpler and the honest signal to the user.
@@ -647,6 +636,5 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     accounts,
     activeEmail,
     activeEmails,
-    recheckAfterLogout
   };
 }

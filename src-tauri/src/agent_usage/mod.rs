@@ -2,13 +2,11 @@
 // @docs docs/arch/usage-antigravity.md
 
 pub mod antigravity;
-pub mod antigravity_logout;
 pub mod antigravity_payload;
 pub mod claudecode;
 pub mod probe_log;
 pub mod probe_result;
 
-pub use antigravity_logout::*;
 pub use probe_result::AgentUsageResult;
 
 #[tauri::command]

@@ -36,8 +36,6 @@ Remote AG needed no Rust at all: `get_agent_usage('antigravity', host)` already 
 
 **Host is per slot (1.20.0)**: the picker writes the *slot's* own host - `AgentUsageSlot.vue:40-41` binds `:value="target.host"` and `@change="setSlotTarget(slotId, { remoteHost: … })"` - so two slots can watch two different hosts on screen at the same time. The app-wide `selectedSshHost` (`sshStore`) is now only the fallback for a slot that has never picked a host of its own (`usageSlotStore.js`'s `slotTarget()`), plus its unrelated jobs (SSH-config modal, project sync/diff). The pre-1.20.0 statement "both remote sources watch the same `selectedSshHost`: one host choice, two monitors of it" describes the old design and is no longer true.
 
-**Log Out is withheld on a remote card.** `logout_antigravity` / `logout_antigravity_cli` act on this Mac, so offering them while the card shows a remote host's probe would sign out the wrong machine (`AgentUsage.vue`, `remote` prop).
-
 ## What none of them gate
 
 Local usage sources (Antigravity, Claude Code local) have their own independent per-source power switches (`antigravity@local`/`claudecode@local`) - no switch above touches them.

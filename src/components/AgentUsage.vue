@@ -29,27 +29,24 @@
         <div class="agent-icon-wrapper" :class="currentSourceType">
           <i
             v-if="currentSourceType === 'cli'"
-            class="fa-solid fa-terminal agent-cli-icon"
+            class="fa-solid fa-terminal agent-cli-icon clickable-icon"
             @click="handleIconClick"
-            style="cursor: pointer;"
             title="CLI Active"
           ></i>
           <img
             v-else-if="currentSourceType === 'desktop' || currentSourceType === 'desktop_cli'"
             src="/antigravity-app-icon.png"
-            class="agent-img-icon ag-desktop-icon"
+            class="agent-img-icon ag-desktop-icon clickable-icon"
             alt="AG"
             @click="handleIconClick"
-            style="cursor: pointer;"
             title="AG Active"
           />
           <img
             v-else
             src="/antigravity-icon.png"
-            class="agent-img-icon ag-ide-icon"
+            class="agent-img-icon ag-ide-icon clickable-icon"
             alt="IDE"
             @click="handleIconClick"
-            style="cursor: pointer;"
             title="IDE Active"
           />
         </div>
@@ -100,13 +97,6 @@
                     <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
                   </span>
                 </button>
-                <!-- Log Out acts on THIS Mac's Antigravity (logout_antigravity* are local-only
-                     Tauri commands), so it is not offered while the card is showing a remote
-                     host's probe - clicking it there would sign out the wrong machine. -->
-                <button v-if="!remote" class="ag-account-item ag-logout-item" :disabled="loggingOut" @click="logoutAntigravity" :title="getLogoutTitle()">
-                  <i class="fa-solid" :class="loggingOut ? 'fa-circle-notch fa-spin' : (currentSourceType === 'ide' ? 'fa-right-from-bracket' : (currentSourceType === 'cli' ? 'fa-terminal' : 'fa-desktop'))"></i>
-                  <span>{{ loggingOut ? 'Logging out…' : getLogoutBtnText() }}</span>
-                </button>
               </div>
             </span>
             <button v-if="data && data.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
@@ -146,8 +136,8 @@
             <div class="zone-content">
               <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
                 <div class="skeleton-circle"></div>
-                <div class="skeleton-text" style="width: 15px;"></div>
-                <div class="skeleton-text" style="width: 25px; height: 6px;"></div>
+                <div class="skeleton-text skeleton-text-15"></div>
+                <div class="skeleton-text skeleton-text-25"></div>
               </div>
             </div>
           </fieldset>
@@ -156,8 +146,8 @@
             <div class="zone-content">
               <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
                 <div class="skeleton-circle"></div>
-                <div class="skeleton-text" style="width: 15px;"></div>
-                <div class="skeleton-text" style="width: 25px; height: 6px;"></div>
+                <div class="skeleton-text skeleton-text-15"></div>
+                <div class="skeleton-text skeleton-text-25"></div>
               </div>
             </div>
           </fieldset>
@@ -293,7 +283,6 @@ import { invoke } from '../utils/tauri';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
 import { refreshSettings } from '../store/refreshStore';
-import { requestAgLogout } from '../store/remoteActions';
 
 const props = defineProps({
   agentId: String,
@@ -310,9 +299,7 @@ const props = defineProps({
   // True when sourceOff is forced (not user-toggled) - e.g. Claude Code local monitoring
   // locked off while Proxy mode is active. Swaps the off-state message to explain why.
   locked: { type: Boolean, default: false },
-  // True when this card is showing a remote host's probe rather than this Mac's. Only used to
-  // withhold controls that act on the LOCAL machine (AG Log Out); the readings themselves are
-  // rendered identically either way.
+  // True when showing a remote host's probe rather than this Mac's; readings render identically either way.
   remote: { type: Boolean, default: false },
   // AG-only multi-account view (unused for Claude Code)
   accounts: { type: Array, default: () => [] },
@@ -345,7 +332,7 @@ const uiStatus = computed(() => {
   return { kind: 'data' };
 });
 
-const emit = defineEmits(['retry', 'select-account', 'toggle-email', 'logout-success']);
+const emit = defineEmits(['retry', 'select-account', 'toggle-email']);
 
 function isAccountCurrent(acc) {
   const key = acc.accountKey || acc.email;
@@ -369,35 +356,6 @@ const agDisplayName = computed(() => {
   if (currentSourceType.value === 'ide') return 'IDE';
   return 'AG';
 });
-
-function getLogoutBtnText() {
-  if (currentSourceType.value === 'ide') return 'Log Out IDE';
-  if (currentSourceType.value === 'cli') return 'Log Out CLI';
-  return 'Log Out AG';
-}
-
-function getLogoutTitle() {
-  if (currentSourceType.value === 'ide') return 'Sign out of IDE session';
-  if (currentSourceType.value === 'cli') return 'Sign out of CLI session';
-  return 'Sign out of AG session';
-}
-
-const loggingOut = ref(false);
-// Confirm + the two logout commands both live in `remoteActions.requestAgLogout`, on the host: the
-// confirm is a mirrored dialog (docs/plan/done/1.20.0-terminal-and-remote-sync.md §3), and a companion
-// cannot ask one - it would render a popup nothing on the host is awaiting. `requestAgLogout`
-// returns true only when a logout really ran, so the stub's `undefined` on a companion never fakes
-// a success here.
-async function logoutAntigravity() {
-  if (loggingOut.value) return;
-  loggingOut.value = true;
-  try {
-    const loggedOut = await requestAgLogout(currentSourceType.value);
-    if (loggedOut) emit('logout-success');
-  } finally {
-    loggingOut.value = false;
-  }
-}
 
 function getEmailPrefix(email) {
   if (!email) return '';
@@ -1083,22 +1041,7 @@ async function handleIconClick() {
   background: #22c55e;
   box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
 }
-.ag-logout-item {
-  justify-content: flex-start;
-  gap: 6px;
-  margin-top: 2px;
-  padding-top: 5px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0 0 4px 4px;
-  color: #f87171;
-}
-.ag-logout-item:hover {
-  background: rgba(239, 68, 68, 0.12);
-}
-.ag-logout-item:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+
 
 .agent-org {
   font-size: 10px;
@@ -1292,6 +1235,19 @@ async function handleIconClick() {
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.05);
   animation: pulse 1.5s infinite ease-in-out;
+}
+
+.skeleton-text-15 {
+  width: 15px;
+}
+
+.skeleton-text-25 {
+  width: 25px;
+  height: 6px;
+}
+
+.clickable-icon {
+  cursor: pointer;
 }
 
 @keyframes pulse {

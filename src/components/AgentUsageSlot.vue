@@ -68,7 +68,6 @@
       :popup-position="popupPosition"
       @retry="monitor.refresh"
       @select-account="handleSelectAccount"
-      @logout-success="monitor.recheckAfterLogout"
       @toggle-email="toggleEmail"
     />
   </div>

@@ -90,25 +90,9 @@ When the user is signed out while the language server is still running, `GetUser
 
 **Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100% stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing: `get_antigravity_usage` in `agent_usage/antigravity.rs` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set `error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là `usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort monitor and the frontend already has a graceful null path (show the last cached account), so `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason at debug level. Result: transient/offline/signed-out states show the cached account (or the "Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
 
-## Log Out (fixed 2026-07-03, v1.9.x → next)
+## Log Out (removed 1.23.0)
 
-Antigravity's account dropdown (in `AgentUsage.vue`, opened by clicking the email) has a **Log Out** row that calls the `logout_antigravity` Tauri command.
-
-**Where the credential actually lives (empirically verified on this machine).** The live OAuth session is stored in VS Code's globalState SQLite store, `User/globalStorage/state.vscdb`, in the `ItemTable` under two keys:
-
-- `antigravityUnifiedStateSync.oauthToken` (~1 KB)
-- `antigravityUnifiedStateSync.userStatus` (~8 KB - account/email/quota)
-
-These values are **not** Electron `safeStorage` ciphertext - they carry no `v10`/`v11` prefix (inspected without materializing the token; first byte `0x43` = base64 protobuf, the Connect-RPC wire form). The earlier theory that the token was `safeStorage`-encrypted and that deleting the `"Antigravity IDE Safe Storage"` Keychain item made it "permanently undecryptable" was **wrong**: because the token isn't encrypted with that key, wiping cookies + the Keychain item left the token fully readable, so the IDE re-read it on next launch and silently signed back in. That was the "logout does nothing" bug in 1.9.
-
-`logout_antigravity` now:
-
-1. Quits the app (`osascript quit app` then `pkill -f` fallback) so nothing holds the files open.
-2. Deletes the account-only Chromium files (`ANTIGRAVITY_ACCOUNT_ONLY_PATHS`).
-3. **Deletes the two auth rows** (`ANTIGRAVITY_AUTH_KEYS`) from `state.vscdb` **and** `state.vscdb.backup` (Antigravity restores from the backup if the primary is missing) via the system `/usr/bin/sqlite3` - `remove_antigravity_auth_rows()`. This is what actually forces re-login. A `DELETE ... WHERE key IN (...)` touches only those two rows and leaves all other globalState intact (verified: 2 keys removed, 1632 rows preserved).
-4. Deletes the `"Antigravity IDE Safe Storage"` Keychain item (defense-in-depth - harmless, and covers any future build that *does* move to `safeStorage`).
-
-`User/` (settings, keybindings, snippets, extensions, workspaceStorage) and the rest of `globalStorage/` are never touched, so extensions, rules, and permissions survive a logout intact.
+The Antigravity account dropdown's **Log Out** row and the `logout_antigravity` / `logout_antigravity_cli` Tauri commands (and `src-tauri/src/agent_usage/antigravity_logout.rs`) were removed from the app in 1.23.0 - see [CHANGELOG.md](../../CHANGELOG.md) under `### [1.23.0] - 2026-08-01` → Removed. Antigravity usage probing (this whole doc otherwise) is unaffected; only the in-app sign-out action is gone.
 
 ## Execution Environment
 
@@ -145,23 +129,6 @@ Antigravity can switch the logged-in account on the same machine, so usage is ca
 
 > **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
 
-## Smart Multi-Environment Logout (`logout_antigravity` vs `logout_antigravity_cli`)
-
-A Google account can be simultaneously signed into both the Antigravity IDE and the AGY CLI on the same machine — these are two **surfaces of the same account**, not two different accounts. Logout is surface-aware because the credential stores differ:
-
-1. **Antigravity IDE surface:**
-   - Command: `logout_antigravity`
-   - Action: Quits `Antigravity IDE.app` (`osascript` / `pkill`) and wipes OAuth session rows (`antigravityUnifiedStateSync.oauthToken` and `.userStatus`) from SQLite `state.vscdb` (`~/Library/Application Support/antigravity-ide/User/globalStorage/state.vscdb`).
-   - UI: Dropdown displays `<i class="fa-solid fa-right-from-bracket"></i> Log Out IDE`.
-   - `sourceType` in the dropdown row will be `"ide"` when the IDE surface was the most recently observed one.
-2. **AGY CLI surface:**
-   - Command: `logout_antigravity_cli`
-   - Action: Terminates `agy` CLI binary processes (`pkill -f agy`) and removes CLI credential files (`oauth_creds.json`, `google_accounts.json`, `state.json`) from `~/.gemini/`.
-   - UI: Dropdown displays `<i class="fa-solid fa-terminal"></i> Log Out CLI`.
-   - `sourceType` in the dropdown row will be `"cli"` when the CLI surface was the most recently observed one.
-
-Both commands trigger `@logout-success`, causing all active usage slots to self-heal and fall back cleanly to remaining active accounts.
-
 ## Dynamic N-Tier Grid Architecture (`usageTierStore.js` & `AgentUsageSection.vue`)
 
 The usage section uses a declarative, standardized N-Tier slot architecture:
@@ -173,6 +140,8 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 * **Popup opening corner:** `AgentUsageSlot.vue`'s `popupPosition` derives which corner a slot's account menu unfolds from out of the slot's grid position (`slotIndexOf` + `SLOTS_PER_ROW`) instead of a hardcoded per-letter switch, so a bottom row's popup opens upward instead of into the section's `overflow-y: auto` clip.
 
 ## Log Out behavior & cache retention (PO decision, chốt 2026-07-07 - nguồn chân lý)
+
+> **Historical note (1.23.0):** the in-app **Log Out** action this section describes (`resetAccount()`, the dropdown row) was removed - see the "Log Out (removed 1.23.0)" section above. The cache-retention rationale, the regression history, and the design locks below still govern how the multi-account cache behaves (an account can still go stale/inactive without an explicit logout), so they are kept for context.
 
 **Mục tiêu của cache multi-account**: xem được hiện trạng lần cuối (last-known state) của **từng** account, vì AG native chỉ hiển thị được 1 account tại 1 thời điểm. Cache tồn tại để bù đắp đúng giới hạn đó - không phải để "dọn dẹp" hay "ẩn" tài khoản không còn active.
 
@@ -211,6 +180,6 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **UI Components:**
   - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Pure N-Tier slot layout; owns no usage state.
   - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
-  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon, cyan/purple live dots, and environment-aware logout.
+  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon and cyan/purple live dots.
   - [UsageCircle.vue](../../src/components/UsageCircle.vue) - SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
   - [RefreshRing.vue](../../src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).

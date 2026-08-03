@@ -121,41 +121,6 @@ export const requestSelectPush = action('remoteActions.requestSelectPush', (id) 
   return openSelectDialog(project)
 })
 
-/** Log out this Mac's Antigravity session (IDE / desktop / CLI). Host-only for the same reason:
- *  `logout_antigravity*` act on the Mac, and the confirm is a mirrored dialog. Returns whether the
- *  logout actually ran, so the clicking screen only reports success on a real one — on a companion
- *  the action stub resolves to `undefined`, which must not be read as "logged out". */
-export const requestAgLogout = action('remoteActions.requestAgLogout', async (sourceType) => {
-  const isIde = sourceType === 'ide'
-  const isCli = sourceType === 'cli'
-  const isDesktop = sourceType === 'desktop' || sourceType === 'desktop_cli'
-
-  let title = 'Đăng xuất IDE?'
-  let html = 'Ứng dụng sẽ tự đóng và xoá phiên đăng nhập hiện tại.<br>Settings, extension, rule và permission vẫn được giữ nguyên.'
-  if (isDesktop) {
-    title = 'Đăng xuất AG?'
-    html = 'Ứng dụng sẽ dừng các tiến trình và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.'
-  } else if (isCli) {
-    title = 'Đăng xuất CLI (Terminal)?'
-    html = 'Ứng dụng sẽ dừng các tiến trình CLI và xoá phiên đăng nhập hiện tại.<br>Lịch sử hội thoại và cấu hình vẫn được giữ nguyên.'
-  }
-
-  const answer = await askConfirm({
-    kind: 'confirm',
-    title,
-    html,
-    icon: 'warning',
-    confirmButtonColor: '#ef4444',
-    cancelButtonColor: '#374151',
-    confirmButtonText: 'Đăng xuất',
-    cancelButtonText: 'Hủy',
-  })
-  if (!answer || !answer.confirmed) return false
-
-  await invoke(isIde ? 'logout_antigravity' : 'logout_antigravity_cli')
-  return true
-})
-
 /** Flip a project's DRY toggle and persist. Mutating the mirrored `projects` ref on the host is
  *  what pushes the new value back to every screen (incl. the phone that flipped it) through the
  *  mirror — the companion never writes its own copy. */

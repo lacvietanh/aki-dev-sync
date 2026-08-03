@@ -34,7 +34,6 @@ import { FRAME_INVOKE, FRAME_INVOKE_RESULT } from '../constants/protocol'
  *   run_sync, cancel_sync            -> remoteActions.requestSync / requestCancelSync (intents)
  *   save_projects                    -> PERSIST-1: a companion would persist ITS copy of `projects`
  *   write_global_note                -> noteStore.applyGlobalNoteEdit (intent); reads are allowed
- *   logout_antigravity(_cli)         -> remoteActions.requestAgLogout (intent)
  *   set_claude_profile,
  *   apply_statusline_config          -> privileged host/remote config writes, host-window only
  *   get_companion_status             -> its payload carries the relay's host token (bridge.js)
