@@ -174,7 +174,7 @@
               <label
                 class="remember-view"
                 :class="{ on: rememberView }"
-                title="Remember the window presets picked here and re-apply them on next launch">
+                title="Remember this window's exact size and position, and restore them next time you open the app.">
                 <input type="checkbox" :checked="rememberView" @change="toggleRememberView" />
                 remember
               </label>
@@ -206,7 +206,7 @@
                   class="icon-dropdown-preset-btn"
                   :class="{ 'is-active': savedView.place === 'stick' }"
                   @click="applyViewSafe('place', 'stick')"
-                  title="Snap window to the top-left-most connected monitor and resize height to fit the whole project list">
+                  title="Snap window to the top-left of the top-left-most connected monitor, spanning the full work-area height">
                   <i class="fa-solid fa-border-top-left"></i> Stick Top-Left
                 </button>
                 <button

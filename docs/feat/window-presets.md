@@ -11,7 +11,7 @@ Bốn preset **không** phải một danh sách phẳng mà là hai trục riên
 | Trục | Preset | Tác dụng |
 |---|---|---|
 | `width` | `narrow` (420px) / `wide` (768px) | Đổi chiều rộng, giữ nguyên chiều cao và vị trí |
-| `place` | `stick` / `center` | `stick`: dán vào góc trên-trái của màn hình trên-trái nhất, đồng thời co chiều cao vừa đúng danh sách project. `center`: căn giữa màn hình chính, không đổi kích thước |
+| `place` | `stick` / `center` | `stick`: dán vào góc trên-trái của màn hình trên-trái nhất, chiều cao luôn bằng trọn work area của màn hình đó (đã trừ menu bar). `center`: căn giữa màn hình chính, không đổi kích thước |
 
 Nếu gộp thành một trục (chỉ nhớ "nút bấm cuối cùng") thì chọn Narrow rồi chọn Center Primary sẽ xoá mất Narrow đã nhớ.
 
@@ -19,11 +19,13 @@ Nếu gộp thành một trục (chỉ nhớ "nút bấm cuối cùng") thì ch�
 
 ## 2. Remember
 
-- Checkbox `remember` nằm bên phải nhãn `AppWindow:` (cùng hàng, `justify-content: space-between`).
-- Tắt mặc định. Khi bật, mỗi lần bấm preset sẽ ghi lại lựa chọn của **trục đó**.
-- Tắt remember sẽ **xoá luôn** dữ liệu đã lưu — nếu giữ lại, lần bật sau sẽ khôi phục một layout người dùng chưa hề chọn trong phiên đó.
-- Preset đang được nhớ trên mỗi trục được tô sáng (`is-active`) trong menu, nên không cần thêm dòng chữ nào để mô tả trạng thái.
-- Lưu ở `localStorage`: `aki-devsync-remember-view` (cờ bật/tắt) và `aki-devsync-window-view` (`{width, place}`).
+- Tắt mặc định. `remember` **không còn lưu preset đã chọn** — nó lưu kích thước/vị trí cửa sổ thật tại thời điểm chụp: `{ width, height, x, y }` (`captureBounds()`), dưới key `aki-devsync-window-bounds-pt`. Cờ bật/tắt riêng ở `aki-devsync-remember-view`.
+- Cả 4 trường đều là logical point (trước đây `x`/`y` lưu physical pixel), vì đó là đơn vị duy nhất nhất quán trên máy nhiều màn hình khác scale factor để restore đúng chỗ.
+- Chụp chỉ xảy ra ở hai thời điểm: lúc bật checkbox `remember` lên, và mỗi lần một preset được áp trong khi `remember` đang bật. Kéo/resize cửa sổ bằng tay **không** kích hoạt chụp lại.
+- Tắt `remember` **không xoá** dữ liệu đã lưu — giá trị lưu là một phép đo chính xác, không phải một preset có thể chọn lại, nên gạt tắt không được phép huỷ nó.
+- Khi app khởi động với `remember` đang bật nhưng chưa có gì lưu (profile mới nâng cấp, hoặc localStorage vừa bị xoá), `restoreView()` tự chụp ngay lúc đó thay vì bỏ qua, để lần khởi động sau có cái để khôi phục.
+- Preset được tô sáng (`is-active`) trong menu là preset **được bấm gần nhất trong phiên hiện tại** (`savedView`, chỉ tồn tại trong bộ nhớ session) — không liên quan tới dữ liệu đã lưu ở `remember`, nên nó không phản ánh layout sẽ được khôi phục ở lần mở tiếp theo.
+- Cả hai key cũ, `aki-devsync-window-view` (định dạng preset cũ) và `aki-devsync-window-bounds` (định dạng physical pixel cũ), bị xoá khỏi `localStorage` ngay khi app khởi động, không phụ thuộc `remember` đang bật hay tắt — ai đã bật remember trước bản này mất bounds đã nhớ đúng một lần và phải bật lại.
 
 ## 3. Phím tắt ⌘1 / ⌘2
 
@@ -40,6 +42,6 @@ Nhãn `⌘1`/`⌘2` là hai thẻ `position: absolute` phủ lên khe giữa hai
 
 ## 4. Khôi phục lúc khởi động
 
-`restoreView()` chạy trong `onMounted` của AppHeader, áp **width trước, place sau**. Thứ tự này bắt buộc: `stick` đo chiều cao nội dung theo chiều rộng **hiện tại**, nếu chạy trước khi đổi chiều rộng thì sẽ vừa khít với chiều rộng cũ.
+`restoreView()` chạy trong `onMounted` của AppHeader và khôi phục thẳng bounds đã lưu bằng Tauri window API (`setSize`/`setPosition`) — không còn đi qua `applyView`/preset, không còn khái niệm "width trước, place sau". Nếu vị trí đã lưu không còn nằm trên màn hình nào đang kết nối (màn hình rời đi hoặc đổi độ phân giải), toạ độ được nudge về trong work area của màn hình gần nhất thay vì để cửa sổ trôi ra ngoài tầm với.
 
-**Hạn chế đã biết**: `stick` đo chiều cao qua DOM (`measureRequiredContentHeight()`), mà lúc app vừa mở danh sách project có thể chưa load xong, nên chiều cao khôi phục có thể thấp hơn thực tế (sàn dưới là `minHeight` 500px trong `tauri.conf.json`). Nếu thấy khó chịu thì hoãn `restoreView()` tới sau khi danh sách render xong, thay vì gọi ngay ở `onMounted`.
+Giới hạn cũ về `stick` đo chiều cao qua DOM (`measureRequiredContentHeight()`) không còn tồn tại — hàm đo đã bị xoá, `stick` giờ luôn lấy trọn chiều cao work area của màn hình đích nên không phụ thuộc project list đã render xong hay chưa.
