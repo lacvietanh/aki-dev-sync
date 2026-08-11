@@ -15,13 +15,19 @@
 // ENV-1 (docs/plan/done/remote-control.md §9): this file's `isHost` branch is one of the two places in
 // the terminal feature allowed to read it directly (the other is services/ptyBridge.js) —
 // TerminalView.vue's template must stay neutral.
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { isHost, onFrame, send } from '../services/bridge'
 import { invoke } from '../utils/tauri'
 import { decodeBase64ToBytes, encodeBytesToBase64 } from '../utils/ptyCodec'
-import { FRAME_PTY_INPUT, FRAME_PTY_OUTPUT, FRAME_PTY_RESIZE, FRAME_PTY_EXIT } from '../constants/protocol'
-import { consumeTabPendingCmd } from '../store/terminalTabsStore'
+import {
+  FRAME_PTY_INPUT,
+  FRAME_PTY_OUTPUT,
+  FRAME_PTY_RESIZE,
+  FRAME_PTY_RESIZE_REQUEST,
+  FRAME_PTY_EXIT,
+} from '../constants/protocol'
+import { consumeTabPendingCmd, terminalTabs, setResizeOwner } from '../store/terminalTabsStore'
 
 // ── Module-level tab liveness tracker (S3 fix) ──────────────────────────────────────────────────
 //
@@ -106,8 +112,9 @@ export function seedTabLiveness(list) {
  * @param {number} [tabId=0] which terminal tab this surface drives. Defaults to 0, the tab every
  *   id-less caller has always driven (src-tauri/src/pty.rs), so existing single-terminal call sites
  *   keep working untouched.
- * @returns {{ start, ownsPtySize, showKeyRow, hostResize, sendRaw, emitKey, pendingModifiers,
- *             toggleModifier, ctrlByteFor, alive, restart, clear, kill, close, openExternal, cd }}
+ * @returns {{ start, ownsPtySize, showReclaimPill, showKeyRow, hostResize, requestResize, sendRaw,
+ *             emitKey, pendingModifiers, toggleModifier, ctrlByteFor, alive, restart, clear, kill,
+ *             close, openExternal, cd }}
  */
 export function usePtyTerminal(term, tabId = 0) {
   let unlistenHostOutput = null
@@ -262,6 +269,9 @@ export function usePtyTerminal(term, tabId = 0) {
     try {
       await invoke('pty_restart', { tabId, cwd: bootCwd ?? null })
       alive.value = true
+      // Fresh shell resets to default authority, not a stale companion claim (host-only mirrored
+      // state). docs/plan/wish-terminal-manual-resize-authority.md lifecycle item 6.
+      if (isHost) setResizeOwner(tabId, 'host')
     } catch (e) {
       // 'unknown', never `false` — same reasoning as `ensureSpawned`.
       alive.value = 'unknown'
@@ -415,6 +425,18 @@ export function usePtyTerminal(term, tabId = 0) {
         if (!isForThisTab((event && event.payload) || {})) return
         alive.value = false
       }).then((un) => adoptSubscription(un, (h) => { unlistenHostExit = h }))
+      // Companion -> host resize claim. The one WS frame the host listens for here: it needs THIS
+      // tab's `term` ref to sync the Mac's render to a size it didn't measure. Honored
+      // unconditionally — safety is that the companion only sends it off one deliberate tap.
+      // docs/plan/wish-terminal-manual-resize-authority.md.
+      unsubscribeFrame = onFrame((frame) => {
+        if (disposed || !frame || frame.t !== FRAME_PTY_RESIZE_REQUEST) return
+        if (!isForThisTab(frame)) return
+        if (!frame.cols || !frame.rows) return
+        term.resize(frame.cols, frame.rows)
+        setResizeOwner(tabId, frame.from || 'host')
+        hostResize(frame.cols, frame.rows)
+      })
     } else {
       unsubscribeFrame = onFrame((frame) => {
         if (disposed || !frame) return
@@ -561,11 +583,16 @@ export function usePtyTerminal(term, tabId = 0) {
     })
   }
 
-  /** T-4 as a CAPABILITY rather than a role: "does this screen decide the shared PTY's cols/rows?"
-   *  Only the host does. TerminalView.vue reads this to choose between fitting the grid and scaling
-   *  the font — it must never import `isHost` itself (ENV-1), so every role fact the component
-   *  needs is published here in terms of what the component actually decides with it. */
-  const ownsPtySize = isHost
+  /** This tab's current resize-authority holder, read fresh off the mirrored store — 'host'
+   *  (default) or a companion's opaque connection id. Never cached (a stale read is Finding 4's
+   *  "Mac pinned to a stale size" bug). docs/plan/wish-terminal-manual-resize-authority.md. */
+  function resizeOwnerFor() {
+    return terminalTabs.value.find((t) => t.id === tabId)?.resizeOwner || 'host'
+  }
+
+  /** Reactive form of resize ownership, for the one template consumer that needs the change signal:
+   *  the Mac reclaim pill (a real ref, read via `.value`). False on every companion via `isHost`. */
+  const showReclaimPill = computed(() => isHost && resizeOwnerFor() !== 'host')
 
   /** The SECOND published capability, in the same voice as `ownsPtySize`: "does this surface need
    *  the synthetic key row (Esc/Tab/arrows/Ctrl)?" — not "is this a phone".
@@ -596,6 +623,14 @@ export function usePtyTerminal(term, tabId = 0) {
     }
   }
 
+  /** Companion "Fit to my screen": send the locally-measured size as a claim (a companion has no
+   *  Tauri IPC to resize the PTY itself). One tap, one frame = the whole claim mechanism.
+   *  docs/plan/wish-terminal-manual-resize-authority.md. */
+  function requestResize(cols, rows) {
+    if (isHost || !cols || !rows) return
+    send({ t: FRAME_PTY_RESIZE_REQUEST, tab_id: tabId, cols, rows })
+  }
+
   /** Boot: wire I/O, ensure the shared PTY exists (idempotent — T-3), hydrate scrollback + size,
    *  THEN — only now — send a pending DEV/BUILD command if this tab was created with one. See
    *  `sendPendingCmdIfAny`'s doc comment above for why this must run after the snapshot rather than
@@ -622,9 +657,17 @@ export function usePtyTerminal(term, tabId = 0) {
 
   return {
     start,
-    ownsPtySize,
+    /** T-4 capability: does this screen decide the PTY's cols/rows right now? Host, and only while
+     *  no companion holds a claim — else the Mac's ResizeObserver steals authority back on any
+     *  window touch. A getter (not a captured value) so doFit reads the current owner each tick;
+     *  still returns a plain boolean. docs/plan/wish-terminal-manual-resize-authority.md. */
+    get ownsPtySize() {
+      return isHost && resizeOwnerFor() === 'host'
+    },
+    showReclaimPill,
     showKeyRow,
     hostResize,
+    requestResize,
     sendRaw,
     emitKey,
     pendingModifiers,

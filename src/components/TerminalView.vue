@@ -3,10 +3,9 @@
 
   Role-agnostic by construction (ENV-1, docs/plan/done/remote-control.md §9): this file never imports
   or checks `isHost` — every host/companion branch lives in composables/usePtyTerminal.js and
-  services/ptyBridge.js. The SAME markup renders on the Mac window and on a paired phone. It asks
-  the composable for CAPABILITIES instead: `ownsPtySize` (does this screen decide the shared PTY's
-  cols/rows?) and `showKeyRow` (does this screen need the synthetic Esc/Tab/arrow/Ctrl row?) — never
-  "am I the host".
+  services/ptyBridge.js. The SAME markup renders on Mac and phone; it asks the composable for
+  CAPABILITIES (`ownsPtySize`, `showReclaimPill` host-only, `showKeyRow`), never "am I the host".
+  Resize-authority design: docs/plan/wish-terminal-manual-resize-authority.md.
 
   WP-C (tab strip): one instance per open tab (`tabId` prop), all mounted at once so switching tabs
   never re-spawns a shell or drops render state — `active` (prop) picks which one is shown
@@ -63,7 +62,24 @@
       <button class="pty-key" title="Larger text" @mousedown.prevent @click="zoomInTerminalFont">
         <i class="fa-solid fa-magnifying-glass-plus"></i>
       </button>
+      <!-- "Fit to my screen": the one explicit tap that claims temporary resize authority over the
+           shared PTY. docs/plan/wish-terminal-manual-resize-authority.md. -->
+      <span class="pty-key-sep" aria-hidden="true"></span>
+      <button class="pty-key" title="Fit terminal to my screen" @mousedown.prevent @click="onRequestFitToMe">
+        <i class="fa-solid fa-expand"></i>
+      </button>
     </div>
+    <!-- Host-only reclaim pill: shown only while a companion holds resize authority. An overlay,
+         not a row (Extreme Narrow). docs/plan/wish-terminal-manual-resize-authority.md. -->
+    <button
+      v-if="ptyApi?.showReclaimPill?.value"
+      class="pty-resize-owner-pill"
+      title="Reclaim this terminal's size for your own window"
+      @mousedown.prevent
+      @click="onReclaimResize"
+    >
+      Sized for a connected phone — tap to reclaim
+    </button>
     <!--
       Compose row: a real text field that composes a whole line before anything reaches the PTY.
       Gated on the SAME capability as the key row (`showKeyRow`), which is what re-scopes it to a
@@ -109,7 +125,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
 import { useTerminalTextDrain, POST_COMPOSITION_MS } from '../composables/useTerminalTextDrain'
-import { renameTerminalTab } from '../store/terminalTabsStore'
+import { renameTerminalTab, reclaimResizeAuthority } from '../store/terminalTabsStore'
 import {
   terminalFontScale,
   zoomInTerminalFont,
@@ -284,6 +300,24 @@ function onKeyTouch(k) {
 function onKeyClick(k) {
   if (Date.now() - lastKeyTouchAt < 700) return
   fireKey(k)
+}
+
+/** Companion "Fit to my screen": measure this screen locally (same `fitAddon.fit()` the host uses
+ *  in doFit), then ask the host to apply that size. docs/plan/wish-terminal-manual-resize-authority.md. */
+function onRequestFitToMe() {
+  if (!fitAddon || !term || !ptyApi.value) return
+  try {
+    fitAddon.fit()
+  } catch {
+    return // Same as doFit(): fit() throws if the renderer is not ready yet.
+  }
+  ptyApi.value.requestResize(term.cols, term.rows)
+}
+
+/** Mac reclaim tap: hand authority back, then live-remeasure via scheduleFit — never a cached size. */
+function onReclaimResize() {
+  reclaimResizeAuthority(props.tabId)
+  scheduleFit()
 }
 
 /** Clicking the terminal mount area focuses xterm's own hidden textarea so the user can type —
@@ -486,6 +520,28 @@ defineExpose({
   min-width: 0;
   height: 100%;
   min-height: 0;
+  position: relative; /* anchors the absolute .pty-resize-owner-pill overlay */
+}
+
+/* Host-only reclaim pill: absolute overlay, takes no layout space from the mount below. */
+.pty-resize-owner-pill {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  padding: 3px 8px;
+  font-size: 10px;
+  line-height: 1.3;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 999px;
+  color: var(--text-light);
+  cursor: pointer;
+  opacity: 0.9;
+}
+
+.pty-resize-owner-pill:hover {
+  opacity: 1;
 }
 
 /* `overflow-x: auto`, not `hidden`: on a companion the grid is fixed by the host (T-4) and zoom

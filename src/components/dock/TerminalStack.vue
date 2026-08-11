@@ -8,7 +8,6 @@
 <template>
   <DockStack
     :collapsed="collapsed"
-    collapse-variant="close"
     body-persist
     @update:collapsed="collapsed = $event"
   >
@@ -26,7 +25,7 @@
       </span>
       <TerminalTabStrip />
     </template>
-    <!-- #actions holds only ICON buttons that act on the PANEL, never on a shell: CLEAR / RESTART / KILL / OPEN stay gone (see docs/feat/in-app-terminal.md's migration table) — reachable via the tab chip's ✕ (kill), ✕+ (restart), or the OPEN popup (external). CLOSE is still the DockStack chevron itself (collapse-variant="close" above). -->
+    <!-- #actions holds only ICON buttons that act on the PANEL, never on a shell: CLEAR / RESTART / KILL / OPEN stay gone (see docs/feat/in-app-terminal.md's migration table) — reachable via the tab chip's ✕ (kill), ✕+ (restart), or the OPEN popup (external). The panel collapses via the DockStack chevron. -->
     <template #actions>
       <button
         v-if="externalTerminalsSupported"

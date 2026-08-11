@@ -115,6 +115,25 @@ export const FRAME_PTY_RESIZE = 'pty_resize'
 // `pty_get_scrollback`'s `alive` field instead.
 export const FRAME_PTY_EXIT = 'pty_exit'
 
+// companion -> host: "I am claiming resize authority for this tab, apply this size now"
+// (docs/plan/wish-terminal-manual-resize-authority.md). Carries `{ tab_id, cols, rows }`. Honored
+// UNCONDITIONALLY on arrival — no negotiation, no permission check beyond "this came from a
+// companion" — because safety here comes entirely from WHEN a companion is allowed to send this
+// (only in direct response to one explicit user tap on a key-row button, never from a
+// ResizeObserver or any automatic/background trigger), not from the host refusing it. The relay
+// stamps `from` on every companion frame regardless of type (src-tauri/src/web_server.rs
+// stamp_from), so the host already knows which connection to record as the new
+// `terminalTabsStore.js` `resizeOwner` without this frame needing to carry any identity itself.
+//
+// A DELIBERATE, NARROW EXCEPTION TO THIS FILE'S OWN FREEZE: this is the fifth member of the
+// already-exempted PTY firehose-adjacent frame family (raw bytes/liveness/size, not JSON-diffed
+// state), not a new per-feature category — see the design doc above for why reusing
+// FRAME_PTY_RESIZE bidirectionally was considered and rejected (every frame here has one
+// documented fixed direction; overloading one tag with direction-dependent meaning breaks that).
+// `resizeOwner` ITSELF is ordinary shared state and rides the normal FRAME_DELTA mirror, exactly
+// like the tab list — only the imperative "apply this size now" action needed a new raw frame.
+export const FRAME_PTY_RESIZE_REQUEST = 'pty_resize_request'
+
 // ── WS close codes (mirrored in src-tauri/src/web_server.rs — keep the two in step) ───────────
 //
 // These three were one undifferentiated 4001 until 1.20.0, and that ambiguity WAS the bug: a

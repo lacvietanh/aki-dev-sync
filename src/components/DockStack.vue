@@ -21,10 +21,10 @@
         <button
           class="btn-tech btn-tech-secondary btn-terminal-action"
           @click="$emit('update:collapsed', !collapsed)"
-          :title="collapsed ? 'Expand panel' : (collapseVariant === 'close' ? 'Close panel (shells keep running)' : 'Collapse panel')"
+          :title="collapsed ? 'Expand panel' : 'Collapse panel'"
         >
-          <i class="fa-solid" :class="collapsed ? 'fa-chevron-up' : (collapseVariant === 'close' ? 'fa-xmark' : 'fa-chevron-down')"></i>
-          <span class="u-narrow-hide">{{ collapsed ? 'EXPAND' : (collapseVariant === 'close' ? 'CLOSE' : 'COLLAPSE') }}</span>
+          <i class="fa-solid" :class="collapsed ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+          <span class="u-narrow-hide">{{ collapsed ? 'EXPAND' : 'COLLAPSE' }}</span>
         </button>
       </div>
     </div>
@@ -51,10 +51,6 @@ defineProps({
   collapsed: { type: Boolean, default: false },
   icon: { type: String, default: '' },
   titleClass: { type: [String, Object, Array], default: '' },
-  // 'chevron' (default) | 'close' — CLOSE *is* the chevron, restyled: one affordance, zero new DOM
-  // nodes (Extreme Narrow). The collapsed state always keeps fa-chevron-up / EXPAND regardless of
-  // this prop, so the panel can be brought back from its own header either way.
-  collapseVariant: { type: String, default: 'chevron' },
   // false (default) — collapsing destroys the body, the cheap behaviour a log stack wants.
   // true — collapsing only hides it (see the template comment); the specialization opts in.
   bodyPersist: { type: Boolean, default: false },

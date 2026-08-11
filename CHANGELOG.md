@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Changed
+- **The phone companion mounts the real in-app terminal (xterm.js) again, full-screen TUI support (`vim`, `htop`, `claude`/`agy`'s own UI) included** — reverting 1.23.0's SimpleView plain-text-stream fallback, whose accepted cost was exactly that class of program rendering garbled on a phone. Resize safety no longer comes from the phone never getting a real grid at all; it comes from an explicit, revocable claim: the Mac auto-drives the shared terminal's size by default (unchanged from before), and a companion may take temporary authority only via one deliberate "Fit to my screen" tap in its key row — never automatically or in the background, which is what makes this safe against the original 1.20.0 incident (a phone silently resizing the shared PTY mid-build) that the old "Mac only, always" rule existed to prevent. The Mac gets a small "sized for a connected phone — tap to reclaim" pill whenever a companion currently holds that claim. `SimpleView.vue` and its supporting files are kept in the tree, unreferenced, as a candidate for a future opt-in low-bandwidth mode rather than deleted outright. Design: `docs/plan/wish-terminal-manual-resize-authority.md`.
+
 ### [1.23.0] - 2026-08-03
 
 #### Added
