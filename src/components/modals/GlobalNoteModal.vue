@@ -1,5 +1,5 @@
 <template>
-  <BaseModal :show="showGlobalNote" @close="closeGlobalNote" container-style="max-width: 720px; width: 90vw">
+  <BaseModal :show="showGlobalNote" @close="closeGlobalNote" container-class="global-note-modal">
     <template #title>
       <i class="fa-solid fa-note-sticky mr-1"></i> Global Note
     </template>
@@ -110,11 +110,21 @@ const collection = useGlobalTaskCollection()
    here, as ChangelogModal/ClaudeProfileModal/SshConfigModal/UpdateModal already do. */
 @media (max-width: 700px) {
   .note-body {
-    padding: 10px;
+    padding: 8px 0;
   }
 
   .note-footer {
     padding: 8px 10px;
+  }
+
+  /* Both the body and the note card add side padding; at narrow, zero the body's horizontal padding
+     (above) and keep only a hairline on the card so the mono text runs flush to the window edge. */
+  .global-notes-field :deep(.project-notes-section) {
+    padding: 8px 4px;
+  }
+
+  .global-notes-field {
+    margin-bottom: 8px;
   }
 }
 </style>

@@ -102,7 +102,16 @@
                   <!-- u-select-text (main.css): paths are copied by hand often enough that the
                        app-wide no-selection default has to be lifted here. -->
                   <span class="path-local u-select-text" :title="p.local_path"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
-                  <span v-if="p.remote_host" class="path-remote u-select-text" :title="`${p.remote_host}:${p.remote_path}`"><i class="fa-solid fa-cloud text-amber mr-1"></i> {{ p.remote_host }}:{{ p.remote_path }}</span>
+                  <span v-if="p.remote_host" class="path-remote" :title="`${p.remote_host}:${p.remote_path}`">
+                    <i class="fa-solid fa-cloud text-amber mr-1"></i><select
+                      class="host-select-mini host-select-mini--wide"
+                      :value="p.remote_host"
+                      @change="setRemoteHost(p.id, $event.target.value)"
+                      @click.stop
+                      :title="p.remote_host">
+                      <option v-for="h in hostOptionsFor(p)" :key="h" :value="h">{{ h }}</option>
+                    </select><span class="u-select-text">:{{ p.remote_path }}</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -118,7 +127,7 @@
             <div class="git-cell">
               <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
                 <button
-                        class="btn-action-git"
+                        class="btn-cell-trigger btn-action-git"
                         :class="{
                           'git-no-repo': !isPathMissing(p) && ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
                           'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
@@ -250,7 +259,7 @@
                 </div>
               </div>
 
-              <button class="btn-tech btn-tech-secondary"
+              <button class="btn-tech btn-tech-secondary btn-refresh-project"
                       @click="requestRefresh(p.id)"
                       :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
                       :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only - git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
@@ -333,12 +342,12 @@
                 </div>
               </div>
 
-              <button class="btn-tech btn-tech-secondary" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
+              <button class="btn-tech btn-tech-secondary btn-log-trigger" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
                 <i class="fa-solid fa-file-lines btn-log-icon-only"></i>
                 <span class="btn-text u-narrow-hide">LOG</span>
               </button>
 
-              <button class="btn-tech btn-tech-secondary btn-icon-only" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
+              <button class="btn-cell-trigger" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
                 <i class="fa-solid fa-gear"></i>
               </button>
             </div>
@@ -367,7 +376,7 @@ import { copyText } from '../utils/clipboard';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
 // R-2 write side: these run the real action on the host whether clicked on the Mac or relayed
 // from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
-import { requestSync, requestSelectPush, setDryRun, requestRefresh, reorderProjects, requestCancelSync } from '../store/remoteActions';
+import { requestSync, requestSelectPush, setDryRun, setRemoteHost, requestRefresh, reorderProjects, requestCancelSync } from '../store/remoteActions';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import TerminalCell from './TerminalCell.vue';
@@ -399,6 +408,16 @@ const { nativeWindow } = useAppWindow();
 
 function handleCreateNew() {
   createNewProject(sshHosts);
+}
+
+// A project's stored host may no longer be in `~/.ssh/config` (config edited outside this app, or
+// `applySshHostsChange`'s migration dialog was declined). Dropping it from the option list would
+// make the select silently show blank while the underlying value is untouched — this keeps the
+// stored value visible and selected instead of discarding it.
+function hostOptionsFor(p) {
+  return p.remote_host && !sshHosts.value.includes(p.remote_host)
+    ? [p.remote_host, ...sshHosts.value]
+    : sshHosts.value;
 }
 
 // §3.6 — while a sync runs, the button for THAT direction is the STOP button: same button, changed
@@ -921,35 +940,10 @@ function formatTimeAgo(timestamp) {
   box-shadow: 0 0 12px rgba(0, 210, 255, 0.5);
 }
 
-.grid-header-cell:last-child,
-.grid-row-cell:last-child {
-  padding-right: 12px;
-}
-
 .grid-row-special {
   display: flex;
   grid-column: 1 / -1;
   width: 100%;
-}
-
-.col-tasks,
-.col-git-status,
-.col-terminal,
-.col-action,
-.col-sync {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-/* Reset widths from main.css to let CSS Grid control layout */
-.col-project-info,
-.col-tasks,
-.col-git-status,
-.col-terminal,
-.col-action,
-.col-sync {
-  width: auto !important;
-  max-width: none !important;
 }
 
 .th-with-ring {
@@ -971,7 +965,6 @@ function formatTimeAgo(timestamp) {
   min-width: 0;
   padding-right: 6px;
 }
-
 
 /* Drag handle: the project icon area */
 .project-drag-handle {
@@ -1106,21 +1099,22 @@ fieldset:disabled .switch {
   pointer-events: none;
 }
 
-.actions-wrapper .btn-tech {
-  padding: 0 8px !important;
+.btn-refresh-project,
+.btn-log-trigger {
+  padding: 0 8px;
 }
 
 .actions-wrapper .btn-tech-push,
 .actions-wrapper .btn-tech-pull {
-  padding: 0 6px !important;
+  padding: 0 6px;
 }
 
-.actions-wrapper .btn-action-open {
-  padding: 0 10px !important;
+.btn-action-open {
+  padding: 0 10px;
 }
 
-.actions-wrapper .btn-action-open i {
-  margin-left: 0 !important;
+.btn-action-open i {
+  margin-left: 0;
 }
 
 /* Open Popup */
@@ -1353,17 +1347,21 @@ fieldset:disabled .switch {
   }
 
   /* PUSH/PULL lose their text label at this width - match them to the OPEN button's icon-only
-     footprint (10px) rather than the wider guess that was breaking the layout. Must win over the
-     `.actions-wrapper .btn-tech-push/-pull { padding: 0 6px !important }` rule above, which
-     otherwise silently wins on specificity + !important regardless of this media query. */
+     footprint (10px) rather than the wider guess that was breaking the layout. The `.actions-wrapper`
+     prefix keeps this selector's specificity at or above the wide-mode rule above, so it wins here
+     without needing !important. */
   .actions-wrapper .btn-tech-push,
   .actions-wrapper .btn-tech-pull {
-    padding: 0 10px !important;
+    padding: 0 10px;
   }
 
-  /* Reduce OPEN button padding slightly so it fits in the action column */
-  .actions-wrapper .btn-action-open {
-    padding: 0 6px !important;
+  /* OPEN/LOG lose their text label at this width too - collapse to the exact same 32px square
+     as the plain .btn-cell-trigger icon buttons (git/terminal/tasks/settings) instead of a
+     bespoke padding guess, so all six row controls read as one family, not five widths. */
+  .actions-wrapper .btn-action-open,
+  .btn-log-trigger {
+    width: 32px;
+    padding: 0;
   }
 
   /* Every attempt to hang DRY off the bottom edge (position: absolute, overlapping the row's
@@ -1387,7 +1385,7 @@ fieldset:disabled .switch {
      overhang past each button's top-right corner — main.css .cell-badge) have room to sit without
      overlapping the "DRY" text. */
   .dry-toggle-center {
-    padding: 0 2px !important;
+    padding: 0 2px;
   }
 
   .dry-toggle-center .dry-label {

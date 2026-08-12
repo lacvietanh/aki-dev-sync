@@ -3,10 +3,11 @@
 
   Mount semantics, two different axes:
   - SWITCHING TABS (this component): every tab that has ever been activated stays mounted (`v-if="activatedTabs.has(t.id)"`) and only the active one is shown (`v-show`) — switching back to a tab never re-spawns its xterm instance or re-fetches its scrollback. This loop iterates the FULL tab list (not the scope-filtered one) ON PURPOSE, so switching between GROUPS never unmounts/re-spawns an xterm either — only which chip's tab is visible changes.
-  - COLLAPSING THE STACK: also non-destructive since 1.21.1. `body-persist` (below) tells DockStack to keep its body mounted and merely `v-show` it, so a collapse no longer disposes N xterms and an expand no longer re-spawns and re-hydrates them. What it costs instead is that every mounted xterm and its 5000-line scrollback is RETAINED behind a closed panel — which is what MAX_TABS bounds. What it buys is that scroll position and a full-screen program's painted screen survive the round-trip, rather than being rebuilt from a ring buffer that may already have trimmed the escape sequences that drew them.
+  - COLLAPSING THE STACK: also non-destructive since 1.21.1. `body-persist` (below) tells DockStack to keep its body mounted and let CSS clip it, so a collapse no longer disposes N xterms and an expand no longer re-spawns and re-hydrates them. What it costs instead is that every mounted xterm and its 5000-line scrollback is RETAINED behind a closed panel — which is what MAX_TABS bounds. What it buys is that scroll position and a full-screen program's painted screen survive the round-trip, rather than being rebuilt from a ring buffer that may already have trimmed the escape sequences that drew them.
 -->
 <template>
   <DockStack
+    stack-key="terminal"
     :collapsed="collapsed"
     body-persist
     @update:collapsed="collapsed = $event"
@@ -36,7 +37,7 @@
         <i class="fa-solid fa-terminal external-term-icon"></i>
         <span v-if="externalTermTotalCount > 0" class="external-term-badge">{{ externalTermTotalCount }}</span>
       </button>
-      <!-- Hidden when the whole dock is collapsed to its headers: CSS owns the height in that state (useDockLayout.js's dockAllCollapsed), so the button would be a no-op. -->
+      <!-- Hidden when both stacks are collapsed (useDockLayout.js's dockAllCollapsed): with nothing expanded there is nothing to fill the screen with, so the button would be a no-op. -->
       <button
         v-if="!dockAllCollapsed"
         class="btn-tech btn-tech-secondary btn-terminal-action"
@@ -62,6 +63,7 @@
           :tab-id="t.id"
           :cwd="t.cwd"
           :active="t.id === activeTabId && !collapsed"
+          :dock-animating="dockAnimating"
         />
       </template>
     </div>
@@ -74,7 +76,7 @@ import DockStack from '../DockStack.vue';
 import { useTerminalViewType } from '../../composables/useTerminalViewType';
 import TerminalTabStrip from '../TerminalTabStrip.vue';
 import { terminalStackCollapsed } from '../../composables/useTerminalPanel';
-import { dockAllCollapsed, dockMaximized, toggleDockMaximized } from '../../composables/useDockLayout';
+import { dockAllCollapsed, dockAnimating, dockMaximized, toggleDockMaximized } from '../../composables/useDockLayout';
 import {
   externalTerminalsSupported,
   openExternalTermModal,

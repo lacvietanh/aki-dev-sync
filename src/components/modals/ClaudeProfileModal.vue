@@ -30,7 +30,7 @@
           <div class="modal-footer">
             <button
                     v-if="currentMode === 'native'"
-                    class="btn-proxy"
+                    class="btn-modal-action btn-proxy"
                     @click="applyMode('proxy')"
                     :disabled="busy"
                     title="Write proxy config into ~/.claude/settings.json. Restart Claude Code to apply.">
@@ -39,7 +39,7 @@
             </button>
             <button
                     v-else-if="currentMode === 'proxy'"
-                    class="btn-native"
+                    class="btn-modal-action btn-native"
                     @click="applyMode('native')"
                     :disabled="busy"
                     title="Remove all proxy keys from ~/.claude/settings.json">
@@ -236,23 +236,6 @@ async function applyMode(mode) {
 .btn-native,
 .btn-proxy {
   flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s;
-}
-
-.btn-native:disabled,
-.btn-proxy:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .btn-native {

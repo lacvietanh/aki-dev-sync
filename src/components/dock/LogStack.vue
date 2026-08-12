@@ -6,8 +6,9 @@
 -->
 <template>
   <DockStack
-    title="GLOBAL EVENT LOG"
+    stack-key="log"
     :collapsed="collapsed"
+    body-persist
     @update:collapsed="collapsed = $event"
   >
     <template #title>
@@ -16,7 +17,7 @@
         <span class="badge-project">{{ projects.find(p => p.id === activeLogProjectId)?.name }}</span>
         <i class="fa-solid fa-terminal text-amber ml-1 mr-1"></i> RAW CONSOLE
       </span>
-      <button v-if="activeLogProjectId !== null" class="btn-tech btn-tech-secondary btn-icon-only ml-2 text-red" @click="activeLogProjectId = null" title="Close Project Log & Return to Global Log">
+      <button v-if="activeLogProjectId !== null" class="btn-cell-trigger ml-2 text-red" @click="activeLogProjectId = null" title="Close Project Log & Return to Global Log">
         <i class="fa-solid fa-circle-xmark"></i>
       </button>
       <span class="status-indicator ml-2" v-if="anySyncing">

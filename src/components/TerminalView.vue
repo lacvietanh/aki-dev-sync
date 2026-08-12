@@ -78,7 +78,8 @@
       @mousedown.prevent
       @click="onReclaimResize"
     >
-      Sized for a connected phone — tap to reclaim
+      <i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i>
+      <span>Phone controls size, tap to reclaim</span>
     </button>
     <!--
       Compose row: a real text field that composes a whole line before anything reaches the PTY.
@@ -140,6 +141,7 @@ const props = defineProps({
   cwd: { type: String, default: null },
   tabId: { type: Number, default: 0 },
   active: { type: Boolean, default: true },
+  dockAnimating: { type: Boolean, default: false },
 })
 
 const mountEl = ref(null)
@@ -358,12 +360,17 @@ const THEME = {
 // feed its own observer, which is the documented ResizeObserver loop warning.
 let fitFrame = 0
 function scheduleFit() {
-  if (fitFrame) return
+  if (props.dockAnimating || fitFrame) return
   fitFrame = requestAnimationFrame(() => {
     fitFrame = 0
     doFit()
   })
 }
+
+// While a dock transition eases this terminal's ancestors, scheduleFit no-ops (guard above) so the ResizeObserver storm is dropped; fit once when it ends. Why suspend at all: useDockLayout's dockAnimating.
+watch(() => props.dockAnimating, (animating) => {
+  if (!animating) scheduleFit()
+})
 
 // THE terminal's monospace family — declared exactly once, here. It used to be written out verbatim
 // in three places (this option, the key-row button labels, the compose field), which is a
@@ -523,25 +530,29 @@ defineExpose({
   position: relative; /* anchors the absolute .pty-resize-owner-pill overlay */
 }
 
-/* Host-only reclaim pill: absolute overlay, takes no layout space from the mount below. */
+/* Absolute overlay, takes no layout space. Solid accent fill + shadow so it reads as a control over terminal text; the old translucent same-tone chip vanished into htop/vim output. */
 .pty-resize-owner-pill {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
-  padding: 3px 8px;
-  font-size: 10px;
-  line-height: 1.3;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--accent-cyan);
-  border-radius: 999px;
-  color: var(--text-light);
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  background: var(--accent-cyan);
+  border: none;
+  border-radius: 6px;
+  color: var(--bg-primary);
   cursor: pointer;
-  opacity: 0.9;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
 }
 
 .pty-resize-owner-pill:hover {
-  opacity: 1;
+  filter: brightness(1.08);
 }
 
 /* `overflow-x: auto`, not `hidden`: on a companion the grid is fixed by the host (T-4) and zoom

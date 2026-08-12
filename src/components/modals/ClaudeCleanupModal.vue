@@ -59,14 +59,14 @@
     </div>
 
     <div class="modal-footer">
-      <button class="btn-rescan" :disabled="loading || busy" title="Measure again" @click="rescan">
+      <button class="btn-modal-action btn-rescan" :disabled="loading || busy" title="Measure again" @click="rescan">
         <i class="fa-solid fa-rotate"></i>
       </button>
       <!-- Two-state button rather than a second dialog: the narrow-UI principle (CLAUDE.md) says a
            state change rides an existing element, and the confirm is more legible on the button that
            carries the action than in a modal stacked over this one. -->
       <button
-        class="btn-delete"
+        class="btn-modal-action btn-cleanup-delete"
         :class="{ arming: arming }"
         :disabled="busy || selectedBytes === 0"
         :title="arming ? 'Click again to delete' : 'Delete the selected groups'"
@@ -459,21 +459,6 @@ watch(
   border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.btn-rescan,
-.btn-delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s;
-}
-
 .btn-rescan {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.1);
@@ -485,27 +470,21 @@ watch(
   color: #94a3b8;
 }
 
-.btn-delete {
+.btn-cleanup-delete {
   flex: 1;
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.35);
   color: #f87171;
 }
 
-.btn-delete:hover:not(:disabled) {
+.btn-cleanup-delete:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.2);
 }
 
-.btn-delete.arming {
+.btn-cleanup-delete.arming {
   background: rgba(239, 68, 68, 0.3);
   border-color: #ef4444;
   color: #fecaca;
-}
-
-.btn-rescan:disabled,
-.btn-delete:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global narrow

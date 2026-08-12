@@ -334,40 +334,14 @@ const slotAccountInfo = computed(() => {
 /* Deliberately small: since 1.19.0 the REMOTE tab carries the same AG | CC pair as LOCAL, so the
    host picker no longer owns the whole right-hand group - it gives up the width those two tabs
    need. The full host name still shows in the open dropdown and in the title tooltip. */
-.host-select-mini {
-  background-color: var(--bg-tertiary);
-  color: var(--text-light);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  padding: 1px 2px;
-  height: 19px;
-  max-width: 70px;
-  font-size: 9px;
-  font-family: inherit;
-  outline: none;
-  cursor: pointer;
-}
-.host-select-mini:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-.host-select-mini:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 /* Narrow mode (docs/plan/done/narrow-mode-and-ux-1.14.0.md §B2): labels are hidden via the global
    .u-narrow-hide utility (applied in the template); this block only tightens the layout that
-   utility can't express - icon-only tabs no longer need the old label-sized horizontal padding. */
+   utility can't express - icon-only tabs no longer need the old label-sized horizontal padding.
+   .host-select-mini's own narrow-width step lives in main.css beside its base definition. */
 @media (max-width: 700px) {
   .tab {
     padding: 3px 5px;
     gap: 2px;
-  }
-
-  /* Icon-only tabs still need their share of the row here, so the picker shrinks again. */
-  .host-select-mini {
-    max-width: 46px;
   }
 }
 </style>

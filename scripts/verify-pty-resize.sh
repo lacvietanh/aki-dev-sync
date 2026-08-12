@@ -28,7 +28,7 @@ the app's Remote Control URL) both viewing the SAME PTY tab.
 
 PART A — Mac window resize must reach the companion
   1. On the Mac, open an in-app terminal tab and confirm the SAME tab is visible on the companion.
-  2. Resize the Mac app window (drag an edge, or toggle the terminal dock's own splitter).
+  2. Resize the Mac app window (drag an edge, or drag the terminal stack's own splitter).
   3. On the companion, confirm the terminal grid visibly reflows (more/fewer columns or rows) to
      match. This should happen automatically, no companion-side action needed.
   PASS = companion grid changes without you touching the companion.

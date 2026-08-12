@@ -205,10 +205,10 @@
           </div>
 
           <div class="modal-footer">
-            <button class="btn-reset" @click="resetToDefault" :disabled="busy" title="Reload the built-in default preset">
+            <button class="btn-modal-action btn-reset" @click="resetToDefault" :disabled="busy" title="Reload the built-in default preset">
               <i class="fa-solid fa-arrow-rotate-left"></i> Reset
             </button>
-            <button class="btn-apply" @click="apply" :disabled="busy || selectedHosts.length === 0 || selectedTargets.length === 0" :title="applyTitle">
+            <button class="btn-modal-action btn-apply" @click="apply" :disabled="busy || selectedHosts.length === 0 || selectedTargets.length === 0" :title="applyTitle">
               <i class="fa-solid" :class="busy ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
               {{ busy ? 'Applying…' : `Apply to ${selectedHosts.length} host${selectedHosts.length === 1 ? '' : 's'}` }}
             </button>
@@ -1572,22 +1572,6 @@ const previewHtml = computed(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   flex-shrink: 0;
 }
-
-.btn-reset, .btn-apply {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s;
-}
-
-.btn-reset:disabled, .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-reset {
   background: rgba(255, 255, 255, 0.04);

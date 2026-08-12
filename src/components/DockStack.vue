@@ -1,21 +1,27 @@
 <!--
-  Reusable base for one dock panel ("stack"). Purely presentational — collapse STATE is owned by
-  each stack's own caller (logStore.isLogExpanded for LogStack.vue,
-  useTerminalPanel.js's terminalStackCollapsed for TerminalStack.vue); this component only renders
-  the header/body/peek chrome around it and emits update:collapsed when its chevron is clicked.
+  Reusable base for one dock panel ("stack"). Collapse STATE is owned by each caller (logStore.isLogExpanded for LogStack.vue, useTerminalPanel.js's terminalStackCollapsed for TerminalStack.vue); this renders the chrome around it, emits update:collapsed, and owns this stack's resize handle.
 
-  Reuses the EXISTING .terminal-header / .terminal-title / .terminal-actions classes from main.css
-  (Extreme Narrow, CLAUDE.md: no new visual language for a layout change).
+  The handle lives here, not in each specialization, because two stacks would mean two identical sets of pointer handlers (pattern.A5). That is why a presentational base imports the geometry module: `stackKey` is this stack's identity in useDockLayout.js's per-stack length map.
+
+  Reuses the existing .terminal-header / .terminal-title / .terminal-actions classes and the same 3px .dock-splitter the single dock-level splitter used before the sum model (Extreme Narrow, CLAUDE.md).
 -->
 <template>
-  <div class="dock-stack" :class="{ 'is-collapsed': collapsed }">
+  <!-- Sibling, not child: `.dock-stack { overflow: hidden }` would clip this handle's negative margin and its 11px hit area. None while collapsed — the length is then a fixed header row. -->
+  <div
+    v-if="!collapsed"
+    class="dock-splitter"
+    role="separator"
+    aria-orientation="horizontal"
+    title="Drag to resize this panel · double-click to reset"
+    @pointerdown="onSplitterDown"
+    @pointermove="onSplitterMove"
+    @pointerup="onSplitterUp"
+    @pointercancel="onSplitterUp"
+    @dblclick="resetStackHeight(stackKey)"
+  ></div>
+  <div ref="stackEl" class="dock-stack" :style="dockStackFlex(stackKey)">
     <div class="terminal-header">
-      <div class="terminal-title" :class="titleClass">
-        <slot name="title">
-          <i v-if="icon" class="fa-solid mr-1" :class="icon"></i>
-          {{ title }}
-        </slot>
-      </div>
+      <div class="terminal-title"><slot name="title"></slot></div>
       <div class="terminal-actions">
         <slot name="actions"></slot>
         <button
@@ -29,31 +35,50 @@
       </div>
     </div>
     <slot v-if="collapsed" name="peek"></slot>
-    <!-- bodyPersist (opt-in, terminal stack only): keep the body MOUNTED (and, deliberately, always
-         PAINTED — no `v-show`) while collapsed, so collapsing does not dispose every xterm. Toggling
-         `display:none` the instant `collapsed` flips would pop the content away in one frame while
-         `.dock-stack`'s flex-basis/flex-grow are still easing over their own 0.25s — the box shrinks
-         smoothly around content that already vanished, which reads as "the transition doesn't
-         actually happen" (or, on expand, as content snapping in a frame before the box has finished
-         growing to fit it). `.dock-stack { overflow: hidden }` (main.css) does the hiding instead: as
-         flex-basis eases down to the collapsed header height, the body is clipped out of view in the
-         same motion as the box, so the content's disappearance and the box's shrink are the SAME
-         animation rather than two unsynchronized ones. The wrapper div is unavoidable — a <slot>
-         renders a fragment and needs an element to hang the class on. -->
+    <!-- bodyPersist: the body stays mounted and painted, so no xterm is disposed. `overflow: hidden` clips it as the box eases shut, where `v-show` would pop it away in one frame. -->
     <div v-if="bodyPersist" class="dock-stack-body"><slot></slot></div>
     <slot v-else-if="!collapsed"></slot>
   </div>
 </template>
 
 <script setup>
-defineProps({
-  title: { type: String, default: '' },
+import { ref } from 'vue';
+import {
+  dockDragging,
+  dockStackFlex,
+  resetStackHeight,
+  setStackHeightFromPointer,
+} from '../composables/useDockLayout';
+
+const props = defineProps({
   collapsed: { type: Boolean, default: false },
-  icon: { type: String, default: '' },
-  titleClass: { type: [String, Object, Array], default: '' },
-  // false (default) — collapsing destroys the body, the cheap behaviour a log stack wants.
-  // true — collapsing only hides it (see the template comment); the specialization opts in.
   bodyPersist: { type: Boolean, default: false },
-})
-defineEmits(['update:collapsed'])
+  stackKey: { type: String, required: true },
+});
+defineEmits(['update:collapsed']);
+
+const stackEl = ref(null);
+
+// setPointerCapture keeps the drag alive once the pointer outruns this 3px element; dockDragging drops the transitions for its duration (`.is-dragging`).
+function onSplitterDown(e) {
+  e.preventDefault();
+  dockDragging.value = true;
+  e.currentTarget.setPointerCapture(e.pointerId);
+}
+
+// Re-read per frame, not captured on pointerdown: a drag that starts while maximised un-maximises on its first move, and only a live read sees where this stack's floor landed afterwards.
+function onSplitterMove(e) {
+  if (!dockDragging.value) return;
+  setStackHeightFromPointer(props.stackKey, e.clientY, stackEl.value.getBoundingClientRect().bottom);
+}
+
+function onSplitterUp(e) {
+  if (!dockDragging.value) return;
+  dockDragging.value = false;
+  try {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  } catch {
+    // Already gone (window blur mid-drag); dockDragging above is what actually ends the drag.
+  }
+}
 </script>

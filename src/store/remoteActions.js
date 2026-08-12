@@ -131,6 +131,21 @@ export const setDryRun = action('remoteActions.setDryRun', (id, value) => {
   saveProjectsList()
 })
 
+/** Change a project's remote host from the table's inline select and persist. Same mirror
+ *  mechanics as setDryRun above; also blanks the pending push/pull counts and bumps the epoch like
+ *  applyProjectConfig's identityChanged branch does, since a host swap invalidates any diff check
+ *  in flight against the OLD host — this is the same identity change, just from a different
+ *  entry point. */
+export const setRemoteHost = action('remoteActions.setRemoteHost', (id, host) => {
+  const project = byId(id)
+  if (!project || project.remote_host === host) return
+  project.remote_host = host
+  bumpEpoch(id)
+  projectRuntime.value[id] = { ...projectRuntime.value[id], hasPendingPush: null, hasPendingPull: null }
+  saveProjectsList()
+  refreshProject(project)
+})
+
 /** Refresh ONE project's status (git + remote diff + stack). */
 export const requestRefresh = action('remoteActions.requestRefresh', (id) => {
   const project = byId(id)

@@ -19,11 +19,17 @@
 
 :root {
   --titlebar-h: 42px;
-  /* Height of one interactive control in a row/header — .btn-tech, the 28px icon buttons, the
-     cell triggers and (minus its 4px breathing room) TerminalTabStrip's chips all derive from this
-     ONE value. It used to be a literal 28px in five places plus a mirrored
-     --terminal-header-content-h whose comment had to promise it matched .btn-tech by hand. */
+  /* One value for every row/header control height: .btn-tech, the 28px icon buttons, cell triggers, and (minus 4px breathing room) TerminalTabStrip's chips all derive from it. */
   --control-h: 28px;
+  /* One radius for every button/input in the app — .btn-tech, .btn-cell-trigger, .btn-secondary/.btn-save/.btn-delete, .btn-modal-action, form fields. */
+  --radius-control: 4px;
+  /* Icon+label gap shared by .btn-tech and the row action clusters. */
+  --control-gap: 6px;
+  /* A collapsed stack measures its header alone (--control-h content + 2px*2 padding + 1px border); the log stack adds one peek line. useDockLayout.js sums these same two tokens into the dock's height, so the stylesheet and the geometry cannot disagree. */
+  --dock-peek-h: 20px;
+  --dock-header-h: calc(var(--control-h) + 5px);
+  /* One easing shared by the container height and the stacks' flex so both animate on the same clock. */
+  --dock-ease: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --bg-primary: #0A0F16;
   --border-card: rgba(0, 210, 255, 0.15);
   --accent-cyan: #00d2ff;
@@ -52,13 +58,8 @@ body {
   -webkit-user-select: none;
 }
 
-/* Selection is OFF by default for the whole app shell and ON only where copying is the point.
-   This is the inverse of the old default (body: text + a `user-select: none` sprinkled per
-   component): chrome text - labels, tab captions, table headers, badges, section titles - is never
-   copied, and an accidental drag over it just paints an ugly highlight.
-   Two rules, no per-component class. Opt back in with `.u-select-text` on any element whose text
-   the user genuinely copies (console/log output, git status & diff, changelog and release notes,
-   paths, emails, pair codes); form controls are opted in here so they never need the class. */
+/* Selection is OFF for the whole app shell and ON only where copying is the point: chrome text (labels, tab captions, table headers, badges, titles) is never copied and a drag over it just paints an ugly highlight. */
+/* Opt back in with .u-select-text where the user genuinely copies (console/log output, git status & diff, changelog, paths, emails, pair codes); form controls are opted in here so they never need the class. */
 input,
 textarea,
 [contenteditable],
@@ -68,9 +69,7 @@ textarea,
   -webkit-user-select: text;
 }
 
-/* Nothing in the chrome is a drag source - generalised from the old `.top-header *` rule.
-   ProjectTable's row drag-and-drop sets `-webkit-user-drag: element !important` on `.grid-row`
-   (a div) and is unaffected. */
+/* Nothing in the chrome is a drag source. ProjectTable's row DnD sets -webkit-user-drag: element !important on .grid-row (a div) and is unaffected. */
 img,
 a {
   -webkit-user-drag: none;
@@ -112,18 +111,12 @@ a {
   color: var(--accent-red);
 }
 
-/* Narrow-mode utilities live at the BOTTOM of this file - see the block after `.update-modal`.
-   They must come after every base rule they override: `.modal-body { padding: 16px }` and
-   `.titlebar-button` are declared further down at the same specificity, so a media query placed
-   here would lose the cascade and silently do nothing (which is exactly what happened between
-   1.14.0 and 1.19.0 - only `.u-narrow-hide`, which carries !important, ever took effect). */
+/* Narrow-mode utilities live at the BOTTOM of this file (block after .update-modal): they must come after every base rule they override, or a media query here loses the cascade and silently does nothing. */
 
 .dashboard-layout {
   display: flex;
   flex-direction: column;
-  /* Three fallback tiers, each for a browser that can't do the next one - not duplication:
-     100vh for no-JS/no-dvh, 100dvh once the toolbar has settled, --vvh once
-     useVisualViewportHeight.js is live and keyboard-aware (docs/plan/terminal-mobile-keyboard-viewport.md §3.2). */
+  /* Three fallback tiers, each for a browser that can't do the next: 100vh for no-JS/no-dvh, 100dvh once the toolbar settles, --vvh once useVisualViewportHeight.js is live and keyboard-aware (docs/plan/terminal-mobile-keyboard-viewport.md §3.2). */
   height: 100vh;
   height: 100dvh;
   height: calc(var(--vvh, 100dvh));
@@ -137,8 +130,7 @@ a {
   border-bottom: 1px solid var(--border-card);
 }
 
-/* `height` is set INLINE by AppConsole.vue from useDockLayout.js (drag/maximise); the 40vh here is
-   only the pre-hydration fallback and the value the `.is-all-collapsed` rule below overrides. */
+/* height is set INLINE by AppConsole.vue from useDockLayout.js (the sum of both stacks, or the maximised height); the 40vh here is only the pre-hydration fallback. */
 .dashboard-bottom {
   flex: none;
   height: 40vh;
@@ -148,21 +140,18 @@ a {
   min-height: 0;
   background: rgba(5, 7, 12, 0.6);
   backdrop-filter: blur(10px);
-  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: height var(--dock-ease);
   border-top: 1px solid rgba(0, 210, 255, 0.2);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
 
-/* Mid-drag: the eased transition would make the panel trail the pointer by a few frames, which
-   reads as a laggy splitter rather than a smooth one. */
-.dashboard-bottom.is-dragging {
+/* Mid-drag the eased transition makes the panel trail the pointer by a few frames (laggy splitter), so drop it while dragging — on the stack too, whose flex-basis is what a drag actually writes. Firing no transition events is also what keeps TerminalView's live per-frame fit (useDockLayout.js's dockAnimating). */
+.dashboard-bottom.is-dragging,
+.dashboard-bottom.is-dragging .dock-stack {
   transition: none;
 }
 
-/* The splitter. Three pixels of actual layout, an 11px hit area via ::before — a 3px drag target is
-   a well-documented miss-fest, and growing the element itself would steal that height from the
-   terminal on every screen for the sake of a gesture used occasionally (Extreme Narrow, CLAUDE.md:
-   the affordance is an overlay on space that already exists, not a new row). */
+/* The splitter: 3px of real layout with an 11px hit area via ::before (a 3px drag target is a miss-fest, and growing the element itself would steal that height from the terminal on every screen). */
 .dock-splitter {
   position: relative;
   flex: none;
@@ -189,45 +178,18 @@ a {
   background: var(--accent-cyan);
 }
 
-/* Both stacks collapsed: the dock shrinks to just their two headers (+ the log stack's one peek
-   line) instead of the old fixed 110px — each stack now dictates its own collapsed height via
-   .dock-stack.is-collapsed { flex: none }, so the container itself no longer needs a floor. */
-.dashboard-bottom.is-all-collapsed {
-  height: auto;
-}
-
-/* Dock stack — one independently collapsible panel (TerminalStack, LogStack). Two expanded
-   stacks split the 40vh 50/50 via flex: 1 1 0; a collapsed one drops to flex: none and
-   contributes only its header (+ #peek line, if any). */
+/* One independently collapsible panel (TerminalStack, LogStack). `flex` is set inline per stack by useDockLayout.js's dockStackFlex — each stack is exactly its own length and nothing grows, which is what keeps a sibling's collapse from resizing it. */
 .dock-stack {
   display: flex;
   flex-direction: column;
-  flex: 1 1 0;
   min-height: 0;
-  /* flex-grow/flex-basis, not the `flex` shorthand: only numeric-to-numeric endpoints animate -
-     `flex: none` resolves to a flex-basis of `auto`, and a transition can't interpolate between a
-     length and `auto`, so collapsing used to snap instead of easing shut. */
-  transition: flex-grow 0.25s ease, flex-basis 0.25s ease;
-  /* Load-bearing for bodyPersist (DockStack.vue): with no `v-show` toggling the body away, this box
-     is what hides it — as flex-basis eases down to the collapsed header height, anything taller than
-     the current box gets clipped in the same motion, instead of bleeding out over the sibling stack
-     below or the log stack underneath. Without this, the persisted terminal body stays fully painted
-     at its old size while the box shrinks around it. */
+  /* flex-grow/flex-basis, not the `flex` shorthand: only numeric endpoints animate. flex:none resolves flex-basis to auto, which a transition cannot interpolate, so collapsing would snap instead of easing shut. */
+  transition: flex-grow var(--dock-ease), flex-basis var(--dock-ease);
+  /* Load-bearing for bodyPersist (DockStack.vue): with no v-show toggling the body away, this box is what hides it, so as flex-basis eases to the collapsed header height the taller content is clipped in the same motion instead of bleeding over the sibling stack. */
   overflow: hidden;
 }
 
-.dock-stack.is-collapsed {
-  flex-grow: 0;
-  flex-shrink: 0;
-  /* Fixed px match for .terminal-header's real rendered height (--control-h content + 2px*2
-     padding + 1px border) - the only numeric value flex-basis can ease toward. */
-  flex-basis: calc(var(--control-h) + 5px);
-}
-
-/* Body wrapper for a stack rendered with body-persist (DockStack.vue's bodyPersist prop). It sits
-   INSIDE the flex chain .dashboard-bottom → .dock-stack → [here] → .terminal-mount-wrap that
-   TerminalView.vue's fit depends on, so `min-height: 0` is load-bearing, not tidiness: without it
-   this node cannot shrink below its content height and the terminal panel grows but never shrinks. */
+/* Body wrapper for a body-persist stack. It sits inside the flex chain (.dashboard-bottom > .dock-stack > here > .terminal-mount-wrap) TerminalView.vue's fit depends on, so min-height: 0 is load-bearing: without it this node can't shrink below content height and the terminal grows but never shrinks. */
 .dock-stack-body {
   display: flex;
   flex-direction: column;
@@ -235,13 +197,18 @@ a {
   min-height: 0;
 }
 
-.dock-stack + .dock-stack {
+/* General sibling, not adjacent: each expanded stack renders its own .dock-splitter immediately before itself, so `+` would no longer match. This is the 1px useDockLayout.js's dockHeightCss adds to the sum. */
+.dock-stack ~ .dock-stack {
   border-top: 1px solid var(--border-card);
 }
 
+/* Fixed height = --dock-peek-h (border-box) so the collapsed basis reserves it exactly. */
 .log-peek {
+  box-sizing: border-box;
+  height: var(--dock-peek-h);
   padding: 2px 12px;
   font-size: 11px;
+  line-height: 16px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
   white-space: nowrap;
   overflow: hidden;
@@ -327,7 +294,7 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--control-gap);
   font-family: inherit;
   font-size: 11px;
   font-weight: 800;
@@ -335,7 +302,7 @@ a {
   padding: 0 14px;
   height: var(--control-h);
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: rgba(15, 20, 30, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #FFF;
@@ -376,22 +343,6 @@ a {
   color: #FFF;
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.4);
-}
-
-.btn-icon {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #FFF;
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-icon:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* Table */
@@ -447,16 +398,6 @@ a {
 
 .row-syncing td {
   background: rgba(6, 182, 212, 0.05);
-}
-
-.col-project-info {
-  width: 220px;
-  max-width: 220px;
-}
-
-.col-git-status {
-  width: 170px;
-  padding-left: 24px;
 }
 
 @keyframes skeleton-pulse {
@@ -727,20 +668,69 @@ input:checked+.slider:before {
 }
 
 /* Terminal, VS Code and Git Action Buttons */
-.btn-action-git {
+/* Cell trigger: the icon button that opens a per-project panel from a table row. Shared box/size/radius for every row+header icon-square control (git, terminal, task/note, settings gear); position: relative is load-bearing (the .cell-badge overlay anchors to it); colour lives in the state/caller modifiers below, never here (pattern.A7, name by role not value). */
+.btn-cell-trigger {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control-h);
+  width: 32px;
   height: var(--control-h);
   box-sizing: border-box;
-  border-radius: 4px;
-  background: linear-gradient(135deg, #FF007A, #7928CA);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #FFFFFF;
+  border-radius: var(--radius-control);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(15, 20, 30, 0.6);
+  color: var(--text-muted);
+  font-size: 13px;
   cursor: pointer;
-  font-size: 18px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-cell-trigger:hover {
+  color: var(--accent-cyan);
+  border-color: rgba(0, 210, 255, 0.5);
+  background: rgba(0, 210, 255, 0.1);
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.25);
+}
+
+.btn-cell-trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* "This panel has something live in it", shown by the button's own colour, never an extra element (Extreme Narrow). Cyan is the neutral/terminal reading, amber the attention one (task in progress). */
+.btn-cell-trigger.is-live {
+  color: var(--accent-cyan);
+  border-color: rgba(0, 210, 255, 0.5);
+}
+
+.btn-cell-trigger.is-attention {
+  color: var(--accent-amber);
+  border-color: rgba(255, 140, 0, 0.5);
+}
+
+/* "The data behind this button could not be read" (unmounted volume or git-conflicted .akidevsync/notes.json). Third state alongside is-live/is-attention, shown the same way: colour plus tooltip. Still clickable so the modal can spell out the reason. */
+.btn-cell-trigger.is-muted {
+  color: var(--text-muted);
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.15);
+  opacity: 0.6;
+}
+
+.btn-cell-trigger.is-attention:hover {
+  color: var(--accent-amber);
+  background: rgba(255, 140, 0, 0.12);
+  border-color: rgba(255, 140, 0, 0.5);
+  box-shadow: 0 0 10px rgba(255, 140, 0, 0.25);
+}
+
+/* Git trigger: colour/icon-size modifier on .btn-cell-trigger — box/radius/height are the shared base, only presentation differs here. */
+.btn-action-git {
+  background: linear-gradient(135deg, #FF007A, #7928CA);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+  font-size: 18px;
   box-shadow: 0 2px 5px rgba(121, 40, 202, 0.3);
 }
 
@@ -763,78 +753,7 @@ input:checked+.slider:before {
   box-shadow: 0 0 6px rgba(59, 130, 246, 0.7);
 }
 
-.btn-icon-only {
-  width: var(--control-h);
-  height: var(--control-h);
-  padding: 0;
-  box-sizing: border-box;
-  font-size: 13px;
-}
-
-/* ── Cell trigger: the icon button that opens a per-project panel from a table row ──────────────
-   One pattern, previously copied byte-for-byte into TaskCell.vue (.btn-task-trigger) and
-   TerminalCell.vue (.btn-term-trigger, whose own comment admitted the copy). `position: relative`
-   is load-bearing, not cosmetic: .cell-badge below is an absolute overlay that anchors to it.
-   Colour lives in the state modifiers, never here (design.A7 — name by role, not by value). */
-.btn-cell-trigger {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: var(--control-h);
-  box-sizing: border-box;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(15, 20, 30, 0.6);
-  color: var(--text-muted);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.btn-cell-trigger:hover {
-  color: var(--accent-cyan);
-  border-color: rgba(0, 210, 255, 0.5);
-  background: rgba(0, 210, 255, 0.1);
-  box-shadow: 0 0 10px rgba(0, 210, 255, 0.25);
-}
-
-/* "This panel has something live in it" — communicated by the button's own colour, never by an
-   extra element (CLAUDE.md, UI Extreme Narrow). Cyan is the neutral/terminal reading, amber the
-   attention one (a task in progress). */
-.btn-cell-trigger.is-live {
-  color: var(--accent-cyan);
-  border-color: rgba(0, 210, 255, 0.5);
-}
-
-.btn-cell-trigger.is-attention {
-  color: var(--accent-amber);
-  border-color: rgba(255, 140, 0, 0.5);
-}
-
-/* "The data behind this button could not be read" — an unmounted volume or a git-conflicted
-   .akidevsync/notes.json. Third state alongside is-live/is-attention, communicated the same way:
-   the button's own colour plus its tooltip, never an extra element. Still clickable on purpose —
-   the modal is where the actual reason is spelled out. */
-.btn-cell-trigger.is-muted {
-  color: var(--text-muted);
-  border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.15);
-  opacity: 0.6;
-}
-
-.btn-cell-trigger.is-attention:hover {
-  color: var(--accent-amber);
-  background: rgba(255, 140, 0, 0.12);
-  border-color: rgba(255, 140, 0, 0.5);
-  box-shadow: 0 0 10px rgba(255, 140, 0, 0.25);
-}
-
-/* ── Count badge: an absolute overlay on a cell trigger, never an element in the flow ───────────
-   One geometry, three former copies (tasks/TaskCountBadges.vue, terminal/TerminalCountBadges.vue,
-   CountBadgeWrap.vue — the last with its own slightly different magic numbers). Only the colour
-   and which corner it sits in are left to the caller. The parent MUST be position:relative. */
+/* Count badge: an absolute overlay on a cell trigger, never an element in the flow. Caller sets only colour and corner. The parent MUST be position:relative. */
 .cell-badge {
   position: absolute;
   right: -6px;
@@ -858,8 +777,7 @@ input:checked+.slider:before {
   bottom: -6px;
 }
 
-/* Opt-in corner override: sits left instead of the default right (WS-F follow-up — push/pull's
-   delete indicator needs opposite corners so neither points at the shared DRY toggle between them). */
+/* Opt-in corner override: sits left instead of the default right, so push/pull's delete indicator can use opposite corners and neither points at the shared DRY toggle between them. */
 .cell-badge-left {
   left: -6px;
   right: auto;
@@ -869,9 +787,7 @@ input:checked+.slider:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  /* Extreme Narrow: 2px top/bottom is the whole vertical breathing room the header gets — the
-     row's actual height is set by its tallest child (.btn-terminal-action's inherited .btn-tech
-     height, i.e. :root's --control-h), not by this padding. */
+  /* Extreme Narrow: 2px top/bottom is the whole vertical breathing room; the row's real height is set by its tallest child (.btn-terminal-action's inherited .btn-tech height, i.e. --control-h), not this padding. */
   padding: 2px 12px;
   border-bottom: 1px solid var(--border-card);
   background: rgba(10, 15, 22, 0.9);
@@ -887,9 +803,7 @@ input:checked+.slider:before {
   letter-spacing: 1px;
 }
 
-/* Moved here from AppConsole.vue's scoped style block when the dock split into independent
-   stacks (DockStack.vue / dock/LogStack.vue / dock/TerminalStack.vue) — all three now use these
-   classes, so they need to be global rather than duplicated per-component. */
+/* Shared by DockStack.vue, dock/LogStack.vue and dock/TerminalStack.vue, so these classes are global rather than duplicated per-component. */
 .terminal-actions {
   display: flex;
   gap: 6px;
@@ -1032,9 +946,7 @@ input:checked+.slider:before {
   border-radius: 0 0 8px 8px;
 }
 
-/* Power-toggle icon shared by every toggleable usage/sync source (AgentUsageSlot's per-agent
-   tabs, ccRemote's REMOTE-tab toggle, ProjectTable's SYNC column switch) - global so it works
-   the same wherever a source needs its own on/off control. */
+/* Power-toggle icon shared by every toggleable usage/sync source (AgentUsageSlot per-agent tabs, ccRemote REMOTE toggle, ProjectTable SYNC switch); global so it works the same everywhere. */
 .src-power {
   font-size: 12px;
   padding: 3px;
@@ -1070,19 +982,25 @@ input:checked+.slider:before {
   font-size: 12px;
 }
 
-.btn-secondary {
+/* Shared skeleton for the modal-footer text buttons — colour/weight is the only thing each modifier changes. */
+.btn-secondary,
+.btn-save,
+.btn-delete {
   display: inline-flex;
   justify-content: center;
   align-items: center;
   background: rgba(15, 20, 30, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: var(--text-muted);
   padding: 6px 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   font-size: 11px;
-  font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.btn-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
+  font-weight: 700;
 }
 
 .btn-secondary:hover {
@@ -1091,19 +1009,14 @@ input:checked+.slider:before {
   border-color: rgba(255, 255, 255, 0.4);
 }
 
+.btn-save,
+.btn-delete {
+  font-weight: 800;
+}
+
 .btn-save {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  background: rgba(15, 20, 30, 0.6);
   color: var(--accent-cyan);
   border: 1px solid rgba(0, 210, 255, 0.4);
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
 .btn-save:hover:not(:disabled) {
@@ -1120,24 +1033,36 @@ input:checked+.slider:before {
 }
 
 .btn-delete {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  background: rgba(15, 20, 30, 0.6);
   color: var(--accent-red);
   border: 1px solid rgba(239, 68, 68, 0.4);
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
 .btn-delete:hover {
   background: rgba(239, 68, 68, 0.15);
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
   border-color: var(--accent-red);
+}
+
+/* Shared skeleton for a modal's OWN action-row buttons (flex:1 or auto per caller, colour stays a
+   component-local modifier) — hoisted out of ClaudeProfileModal/GeminiAllowlistModal/
+   ClaudeCleanupModal/ClaudeSettingModal, which each redefined this byte-for-byte. */
+.btn-modal-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--control-gap);
+  padding: 7px 12px;
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+.btn-modal-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Forms */
@@ -1374,6 +1299,44 @@ input:checked+.slider:before {
   border-color: var(--accent-red);
 }
 
+/* Compact inline host picker — shared by AgentUsageSlot.vue's REMOTE target and ProjectTable.vue's
+   row host select; `--wide` is the only per-caller difference (a project's host string runs longer
+   than an agent-slot host). */
+.host-select-mini {
+  background-color: var(--bg-tertiary);
+  color: var(--text-light);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-control);
+  padding: 1px 2px;
+  height: 19px;
+  max-width: 70px;
+  font-size: 9px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.host-select-mini:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.host-select-mini:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ProjectTable's row host: read like plain text (no chrome) until hovered, so it blends into the
+   dense row instead of looking like a boxed control. Hover still restores the shared bg/border. */
+.host-select-mini--wide {
+  width: auto;
+  max-width: 140px;
+  padding: 1px 0;
+  background: transparent;
+  border-color: transparent;
+}
+
 .changelog-modal {
   max-width: 820px;
   width: 90%;
@@ -1386,24 +1349,19 @@ input:checked+.slider:before {
   max-height: 70vh;
 }
 
-/* ---------------------------------------------------------------------------------------------
-   NARROW MODE - SSoT: 700px is the single narrow breakpoint for the whole app
-   (see docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so the
-   utilities work from inside any component's <style scoped>.
-   MUST stay last in this file: every rule below overrides a base rule declared above it at the
-   same specificity, so moving this block up silently disables it.
-   A component's own <style scoped> still outranks everything here (the data-v attribute adds
-   specificity) - a modal that restyles `.modal-body`/`.modal-footer` under a scoped name has to
-   repeat its own narrow override locally (ChangelogModal, ClaudeProfileModal, SshConfigModal,
-   UpdateModal do).
-   --------------------------------------------------------------------------------------------- */
+.global-note-modal {
+  max-width: 720px;
+  width: 90vw;
+}
+
+/* NARROW MODE. 700px is the single narrow breakpoint for the whole app (docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so the utilities work from inside any component's <style scoped>. */
+/* MUST stay last in this file: every rule below overrides a base rule declared above it at the same specificity, so moving this block up silently disables it. A component's own <style scoped> still outranks everything here, so a modal restyling .modal-body/.modal-footer repeats its own narrow override locally. */
 @media (max-width: 700px) {
   .u-narrow-hide {
     display: none !important;
   }
 
-  /* Pin/minimize/close were overflowing the titlebar at narrow widths - shrink a little, not
-     to icon-only, just enough to fit. */
+  /* Pin/minimize/close overflowed the titlebar at narrow widths; shrink a little, not to icon-only, just enough to fit. */
   .titlebar-button {
     width: 19px;
     height: 19px;
@@ -1411,16 +1369,13 @@ input:checked+.slider:before {
     font-size: 11px;
   }
 
-  /* Modal chrome eats a large share of a narrow window - trim the padding, keep the structure. */
+  /* Modal chrome eats a large share of a narrow window; trim the padding, keep the structure. */
   .modal-overlay { padding: 8px; }
   .modal-header  { padding: 8px 10px; }
   .modal-body    { padding: 10px; }
   .modal-footer  { padding: 8px 10px; }
 
-  /* A long project name in a modal title is a flex item with min-width:auto, so it pushed the
-     close button off the right edge. Let it shrink and ellipsize instead. Titles are either bare
-     text in the h2 (Config, Intro, Refresh) or a <span> inside an icon+text flex row (Git,
-     Changelog, Tasks, Update) - both shapes covered here rather than four times over. */
+  /* A long project name in a modal title is a flex item with min-width:auto, pushing the close button off the right edge; let it shrink and ellipsize. Covers both title shapes (bare text h2, or a span inside an icon+text row). */
   .modal-header h2,
   .modal-header h2 > *,
   .modal-header h2 span {
@@ -1432,8 +1387,7 @@ input:checked+.slider:before {
 
   .btn-close-modal { flex: 0 0 auto; }
 
-  /* Footer button rows are wider than a 420px window (GitModal alone carries five). Let them wrap
-     and tighten the button padding rather than letting the row overflow. */
+  /* Footer button rows are wider than a 420px window (GitModal carries five); let them wrap and tighten button padding rather than overflow. */
   .modal-footer {
     flex-wrap: wrap;
     gap: 6px;
@@ -1441,8 +1395,24 @@ input:checked+.slider:before {
 
   .modal-footer .btn-tech { padding: 0 10px; }
 
-  /* Two form columns leave ~180px each at 420px - not enough for a path input. Stack them. */
+  /* Two form columns leave ~180px each at 420px, not enough for a path input; stack them. */
   .form-grid { grid-template-columns: 1fr; }
+
+  .host-select-mini {
+    max-width: 46px;
+  }
+
+  /* ProjectTable's row select carries a full remote_host string, not an agent slot name — keep its
+     own wider floor instead of inheriting the 46px agent-slot shrink above. */
+  .host-select-mini--wide {
+    max-width: 50px;
+  }
+
+  /* Global Note is content-dense; at narrow let it fill the window (minus the overlay's 8px) instead
+     of the 90vw that leaves a wasted gap each side. */
+  .global-note-modal {
+    width: 100%;
+  }
 }
 
 @media (min-width: 701px) {

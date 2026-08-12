@@ -37,7 +37,7 @@
     </div>
 
     <div class="modal-footer">
-      <button class="btn-apply" @click="seedAllowlist" :disabled="busy || selectedHosts.length === 0" title="Merge the recommended allowlist into settings.json on the selected host(s). Only permissions.allow is touched.">
+      <button class="btn-modal-action btn-apply" @click="seedAllowlist" :disabled="busy || selectedHosts.length === 0" title="Merge the recommended allowlist into settings.json on the selected host(s). Only permissions.allow is touched.">
         <i class="fa-solid" :class="busy ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
         {{ busy ? 'Seeding…' : `Seed allowlist to ${selectedHosts.length} host${selectedHosts.length === 1 ? '' : 's'}` }}
       </button>
@@ -182,22 +182,10 @@ async function seedAllowlist() {
 
 .btn-apply {
   flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s;
   background: rgba(217, 119, 87, 0.15);
   border-color: rgba(217, 119, 87, 0.45);
   color: #d97757;
 }
 
-.btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
 </style>
