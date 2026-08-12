@@ -271,7 +271,15 @@ watch(terminalTabs, (tabs) => {
 export function useTerminalTabs() {
   const tabs = computed(() => terminalTabs.value) // FULL list — mount loop only, see TerminalStack.vue
   const scope = computed(() => activeTerminalScope.value) // read-only view
-  const scopedTabs = computed(() => terminalTabs.value.filter((t) => scopeOf(t) === activeTerminalScope.value))
+  // Owned tabs of this scope, PLUS any pinned tab from a foreign scope (batch-1.24 item A) — pinned
+  // ahead of unpinned via a stable sort, never off `owned`, which caps (below) key off instead: a
+  // pinned foreign tab is display-only and must never shrink or bypass another group's real cap.
+  const ownedScopeTabs = computed(() => terminalTabs.value.filter((t) => scopeOf(t) === activeTerminalScope.value))
+  const scopedTabs = computed(() => {
+    const curScope = activeTerminalScope.value
+    const visible = terminalTabs.value.filter((t) => scopeOf(t) === curScope || t.pinned)
+    return [...visible].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned))
+  })
   const scopeProject = computed(() =>
     activeTerminalScope.value === GLOBAL_SCOPE
       ? null
@@ -422,7 +430,8 @@ export function useTerminalTabs() {
 
   return {
     tabs,            // FULL list — mount loop only
-    scopedTabs,      // the strip, cycling, and the close-fallback use this
+    scopedTabs,      // the strip, cycling, and the close-fallback use this — owned + pinned-foreign
+    ownedScopeTabs,  // cap display only — never includes a pinned foreign tab (see comment above)
     scope, scopeProject,   // stack header identity
     activeTab, activeTabId, setActiveTab,
     newTab, closeTab, cycleTab,

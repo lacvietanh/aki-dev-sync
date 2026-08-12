@@ -56,12 +56,16 @@ export const GLOBAL_GROUP_TAB_LIMIT_MESSAGE = `The global group already has ${MA
 export const CEILING_TAB_LIMIT_MESSAGE = `All ${MAX_TABS} terminal tabs are in use. Close one in any group first.`
 
 /** [{ id: number, title: string, projectId: string|null, cwd: string|null, titleLocked?: boolean,
- *     resizeOwner?: 'host' | string }]
+ *     resizeOwner?: 'host' | string, pinned?: boolean }]
  *
  *  `resizeOwner`: who drives this tab's shared PTY size. Absent/'host' = the Mac (default). Any
  *  other value is the opaque companion connection id (`frame.from`) that last tapped "Fit to my
  *  screen" — only ever copied from an incoming frame, never constructed. Rides the normal mirror.
- *  docs/plan/wish-terminal-manual-resize-authority.md. */
+ *  docs/plan/wish-terminal-manual-resize-authority.md.
+ *
+ *  `pinned`: shows this tab in EVERY group's strip, not just its own — display-only. Ownership
+ *  (`projectId`) never changes, so the per-scope/global caps (enforced below by `scopeOf`-style
+ *  filters keyed on `projectId`) cannot be bypassed by pinning into a foreign group. */
 export const terminalTabs = ref([])
 
 /** PER-SCREEN — which tab THIS screen is looking at, exactly like logStore.activeLogProjectId.
@@ -111,7 +115,7 @@ export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ titl
     Toast.fire({ icon: 'error', title: CEILING_TAB_LIMIT_MESSAGE })
     return null
   }
-  const tab = { id: nextTabId(), title: title || 'Shell', projectId, cwd, runKind, pendingCmd }
+  const tab = { id: nextTabId(), title: title || 'Shell', projectId, cwd, runKind, pendingCmd, pinned: false }
   terminalTabs.value = [...terminalTabs.value, tab]
   return tab
 })
@@ -181,6 +185,18 @@ export const renameTerminalTab = action('terminalTabsStore.renameTerminalTab', (
   if (auto && tab.titleLocked) return
   const next = { ...tab, title: trimmed }
   if (!auto) next.titleLocked = true
+  terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
+})
+
+/** Flips ONE tab's pinned flag (Regression Guard - Multi-entity State, CLAUDE.md: scoped to the one
+ *  id, never a wholesale rewrite of the list). Pinning is display-only — `projectId` is untouched,
+ *  so `useTerminalTabs.js`'s cap checks (keyed on real ownership, not on what a strip currently
+ *  shows) cannot be bypassed by pinning a tab into a foreign group. */
+export const toggleTabPinned = action('terminalTabsStore.toggleTabPinned', (id) => {
+  const idx = terminalTabs.value.findIndex((t) => t.id === id)
+  if (idx === -1) return
+  const tab = terminalTabs.value[idx]
+  const next = { ...tab, pinned: !tab.pinned }
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
 })
 

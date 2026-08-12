@@ -27,6 +27,12 @@
       @click="onChipClick(t)"
       @contextmenu.prevent="startRename(t)"
     >
+      <i
+        class="fa-solid fa-thumbtack icon-pin"
+        :class="{ 'is-pinned': t.pinned }"
+        :title="t.pinned ? 'Unpin' : 'Pin — show in every group'"
+        @click.stop="togglePin(t.id)"
+      ></i>
       <i class="fa-solid fa-terminal icon-default"></i>
       <input
         v-if="renamingId === t.id"
@@ -51,21 +57,27 @@
 <script setup>
 import { computed, nextTick, ref } from 'vue'
 import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs'
-import { MAX_TABS_PER_SCOPE, renameTerminalTab } from '../store/terminalTabsStore'
+import { MAX_TABS_PER_SCOPE, renameTerminalTab, toggleTabPinned } from '../store/terminalTabsStore'
 
-const { scopedTabs: tabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
+const { scopedTabs: tabs, ownedScopeTabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
 
 // The per-group cap, carried by the tooltip the chip already had — no new element, no new row.
 // Never the global ceiling: that one is a machine guard and stays invisible until it fires.
-const scopeFull = computed(() => tabs.value.length >= MAX_TABS_PER_SCOPE)
+// Keyed off `ownedScopeTabs`, NOT `tabs` (the strip's display list) — a pinned tab borrowed from a
+// foreign group must never count against or inflate THIS group's own cap reading.
+const scopeFull = computed(() => ownedScopeTabs.value.length >= MAX_TABS_PER_SCOPE)
 const addTitle = computed(() =>
   scopeFull.value
-    ? `This group is full, ${tabs.value.length} of ${MAX_TABS_PER_SCOPE}. Close a tab to open another.`
-    : `New terminal tab in this group, ${tabs.value.length} of ${MAX_TABS_PER_SCOPE} (⌘T)`
+    ? `This group is full, ${ownedScopeTabs.value.length} of ${MAX_TABS_PER_SCOPE}. Close a tab to open another.`
+    : `New terminal tab in this group, ${ownedScopeTabs.value.length} of ${MAX_TABS_PER_SCOPE} (⌘T)`
 )
 
 function onChipClick(t) {
   setActiveTab(t.id)
+}
+
+function togglePin(id) {
+  toggleTabPinned(id)
 }
 
 // Rename, via right-click rather than a full context menu: the chip only ever has ONE thing a menu
@@ -127,6 +139,22 @@ function commitRename(t, value) {
   color: var(--text-darker);
   opacity: 0.6;
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+/* Left-edge pin toggle — reuses the chip's own existing accent color (the active-chip blue), no new
+   token. Sits inside the same 4px gap as every other chip icon, so the chip's width/height is
+   unchanged (Extreme Narrow) — it just claims a slice of the space the title already truncates into. */
+.term-tab .icon-pin {
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0.35;
+}
+.term-tab .icon-pin:hover {
+  opacity: 0.8;
+}
+.term-tab .icon-pin.is-pinned {
+  opacity: 1;
+  color: #60a5fa;
 }
 
 .tab-title {
