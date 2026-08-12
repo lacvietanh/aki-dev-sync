@@ -874,6 +874,9 @@ mod tests {
         let out = std::process::Command::new("bash")
             .arg(&path)
             .env("HOME", &home)
+            // If run from inside a Claude Code session, CLAUDE_CONFIG_DIR is inherited and
+            // overrides this fake HOME, leaking the real account into the script's output.
+            .env_remove("CLAUDE_CONFIG_DIR")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .spawn()
