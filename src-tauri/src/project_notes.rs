@@ -7,7 +7,7 @@
 //! live at `<local_path>/.akidevsync/notes.json`, a file meant to be committed.
 //!
 //! Everything about that file — its path, its shape, its atomic write, its lock — is owned here and
-//! nowhere else. The `.akidevsync/` literal is spelled exactly once in the Rust tree (`notes_path`).
+//! nowhere else. `sync.rs` spells the `.akidevsync/` literal once more, in the rsync protect filter that keeps a mirroring transfer from deleting it.
 //!
 //! WHY THE READ RETURNS A TAGGED STATUS AND NOT A DEFAULTED STRUCT. `global_note.rs`, the closest
 //! precedent, does `unwrap_or_default()` on a corrupt file. That is defensible there: the file is

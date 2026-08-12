@@ -49,36 +49,22 @@ function migratePushOnlyPaths(loadedProjects) {
   return changed
 }
 
-/** The directory this app stores a project's tasks & notes in, relative to `local_path`. Trailing
- *  slash is required: `is_under_dir_exclude` (Rust) only treats `/`-suffixed entries as directory
- *  entries, and `--exclude` needs it to match the directory rather than a same-named file. */
-export const NOTES_DIR_EXCLUDE = '.akidevsync/'
-
 /**
- * One-time migration adding `.akidevsync/` to BOTH exclude lists of every existing project
- * (docs/plan/done/1.22.0-notes-json-ssot.md §7).
+ * One-time migration removing `.akidevsync/` from BOTH exclude lists of every existing project
+ * (batch-1.24-tabs-sync-buttons.md item B). The owner wants notes/metadata to travel with the
+ * project, reversing the 1.22.0 decision that excluded it in both directions.
  *
- * THE PULL SIDE IS WHY THIS EXISTS AND WHY IT IS NOT NEW-PROJECTS-ONLY. `delete_on_pull` defaults
- * to `true`, and a mirror PULL passes `--delete`. The remote does not have `.akidevsync/`. So a
- * single PULL on a project whose `pull_excludes` lack this entry DELETES the user's task list and
- * notes, silently, with no undo. Leaving that to a config screen the user has no reason to visit is
- * not an option for a destructive default.
- *
- * The push side is excluded too: the host runs code, it does not read the task list, and the notes
- * field's own placeholder invites credentials — pushing it would copy those onto a shared server on
- * the user's behalf. `.claude/` (agent-local metadata inside the repo) is already excluded in both
- * directions and is the same class of thing.
- *
- * Additive and entry-scoped, like `migratePushOnlyPaths` beside it: adds exactly one entry per list
- * and never rewrites the rest (Regression Guard — a migration's blast radius must match its bug).
- * Idempotent by construction: `ensureEntry` is a no-op once the entry is present, so no flag is
+ * Entry-scoped, like `migratePushOnlyPaths` beside it: removes exactly one entry per list and
+ * never rewrites the rest (Regression Guard — a migration's blast radius must match its bug).
+ * Idempotent by construction: `removeEntry` is a no-op once the entry is absent, so no flag is
  * needed (and none may be added — see migratePushOnlyPaths' own note on why).
  */
-function migrateNotesExcludes(loadedProjects) {
+function migrateStripNotesExcludes(loadedProjects) {
+  const entry = '.akidevsync/'
   let changed = false
   for (const p of loadedProjects) {
-    const nextPull = ensureEntry(p.pull_excludes, NOTES_DIR_EXCLUDE)
-    const nextPush = ensureEntry(p.push_excludes, NOTES_DIR_EXCLUDE)
+    const nextPull = removeEntry(p.pull_excludes, entry)
+    const nextPush = removeEntry(p.push_excludes, entry)
     if (nextPull === p.pull_excludes && nextPush === p.push_excludes) continue
     p.pull_excludes = nextPull
     p.push_excludes = nextPush
@@ -185,12 +171,9 @@ export async function loadData(sshHosts, showToast = false) {
       migrated = true
       appendGlobalLog("MIGRATE", "Migrated sync_git toggle to push-only exclude-list semantics.")
     }
-    // Excludes BEFORE anything can be written into `.akidevsync/` (plan §5 WP-2): the failure this
-    // prevents (a mirror PULL deleting a directory the remote does not have) destroys the notes
-    // file rather than degrading it, so the guard must never trail the data.
-    if (migrateNotesExcludes(loaded)) {
+    if (migrateStripNotesExcludes(loaded)) {
       migrated = true
-      appendGlobalLog("MIGRATE", "Added .akidevsync/ to the default pull/push exclude lists.")
+      appendGlobalLog("MIGRATE", "Removed .akidevsync/ from the default pull/push exclude lists.")
     }
 
     for (const p of loaded) {
@@ -372,10 +355,8 @@ export async function createNewProject(sshHosts) {
       remote_host: sshHosts.value[0] || "localhost",
       remote_path: "~/",
       production_url: productionUrl,
-      // `.akidevsync/` in BOTH lists — see migrateNotesExcludes above for why the pull side is
-      // load-bearing rather than tidy (a mirror PULL would otherwise delete the project's notes).
-      pull_excludes: [".DS_Store", "*.log", ".git/", NOTES_DIR_EXCLUDE, "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
-      push_excludes: [".DS_Store", "*.log", NOTES_DIR_EXCLUDE, "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
+      pull_excludes: [".DS_Store", "*.log", ".git/", "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
+      push_excludes: [".DS_Store", "*.log", "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
       hooks: { pre_pull_cmd: null, post_pull_cmd: null, pre_push_cmd: null, post_push_cmd: null, run_hooks_on_remote: true },
       last_sync_action: null,
       last_sync_time: null,

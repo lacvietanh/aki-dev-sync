@@ -731,6 +731,9 @@ fn build_rsync_args(
         }
         if is_mirror {
             args.push("--delete".to_string());
+            // Protect the receiver's task list from a mirror wipe when the sender never had it
+            // (e.g. a PULL before the project's first PUSH) - --delete would otherwise remove it.
+            args.push("--filter=P .akidevsync/".to_string());
         }
 
         args.push(src.to_string());
@@ -1489,6 +1492,38 @@ mod tests {
         assert_eq!(args[r + 1], "a.txt");
         assert_eq!(args[r + 2], "b.txt");
         assert_eq!(args[args.len() - 1], "host:/remote/");
+    }
+
+    // ─── notes protected from a mirror wipe ───────────────────────────────────
+
+    const NOTES_PROTECT_FILTER: &str = "--filter=P .akidevsync/";
+
+    #[test]
+    fn mirror_push_protects_the_task_list_from_delete() {
+        let mut project = make_test_project(vec![], vec![]);
+        project.delete_on_push = true;
+        let args = build_rsync_args(&project, true, false, &[], "/local/", "host:/remote/");
+        assert!(args.contains(&"--delete".to_string()), "{args:?}");
+        assert!(args.contains(&NOTES_PROTECT_FILTER.to_string()), "{args:?}");
+    }
+
+    #[test]
+    fn mirror_pull_protects_the_task_list_from_delete() {
+        // The direction that actually caused the risk: a PULL before the project's first PUSH
+        // finds no .akidevsync/ on the remote, so --delete alone would erase the local one.
+        let mut project = make_test_project(vec![], vec![]);
+        project.delete_on_pull = true;
+        let args = build_rsync_args(&project, false, false, &[], "host:/remote/", "/local/");
+        assert!(args.contains(&"--delete".to_string()), "{args:?}");
+        assert!(args.contains(&NOTES_PROTECT_FILTER.to_string()), "{args:?}");
+    }
+
+    #[test]
+    fn a_non_mirror_transfer_carries_neither_delete_nor_the_protect_filter() {
+        let project = make_test_project(vec![], vec![]);
+        let args = build_rsync_args(&project, true, false, &[], "/local/", "host:/remote/");
+        assert!(!args.contains(&"--delete".to_string()), "{args:?}");
+        assert!(!args.contains(&NOTES_PROTECT_FILTER.to_string()), "{args:?}");
     }
 
     // ─── §3.22 missing local path ─────────────────────────────────────────────
