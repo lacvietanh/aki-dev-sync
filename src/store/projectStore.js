@@ -5,7 +5,7 @@ import { action } from '../services/action'
 
 export const Toast = Swal.mixin({
   toast: true,
-  position: 'bottom',
+  position: 'top-end',
   showConfirmButton: false,
   timer: 3000,
   timerProgressBar: true,
@@ -26,8 +26,9 @@ export const projectRuntime = ref({})
 
 // LIVE count of external Terminal.app windows/tabs standing in each project's directory:
 // `{ [projectId]: n }`. Not a tally the app accumulates — a SNAPSHOT the host re-derives from the
-// process table every few seconds (`count_external_terminals`, composables/useExternalTerminals.js),
-// which is why opening a window raises it and closing one lowers it again.
+// process table every few seconds (`list_terminal_sessions` + `utils/terminalOwnership.js`'s
+// attribution pass, composables/useExternalTerminals.js), which is why opening a window raises it and
+// closing one lowers it again.
 //
 // Multi-entity guard (CLAUDE.md): the whole map being replaced on each poll is not a "clear" — every
 // key is rewritten from the SAME single scan, so no project's value is ever dropped on another
@@ -40,20 +41,31 @@ export const externalTermCounts = ref({})
 
 /** Sibling of `externalTermCounts`: how many external `Terminal.app` sessions belong to NONE of the
  *  listed projects — the global-terminal header button's bottom badge
- *  (`docs/plan/done/terminal-ownership-model.md` §5, adoption-only MVP floor). Same mirroring, same
- *  re-derived-never-remembered discipline; see `useExternalTerminals.js`. */
+ *  (`docs/plan/done/terminal-ownership-model.md` §5). Same mirroring, same re-derived-never-remembered
+ *  discipline; see `useExternalTerminals.js`. */
 export const externalTermGlobalCount = ref(0)
 
-/** Ask the host to re-scan shortly after it opened an external Terminal, so the badge moves at once
- *  instead of on the next 5s tick. An `action()` because a companion's OPEN → Terminal must poke the
- *  HOST's scan (the companion has no process table of its own); the new count returns via the mirror.
- *  The import is dynamic for the same reason `Toast` is imported dynamically in services/action.js —
- *  the composable imports this store, and a static import back would close that cycle at bootstrap. */
-export const pokeExternalTermCounts = action('projectStore.pokeExternalTermCounts', () => {
-  import('../composables/useExternalTerminals')
-    .then(({ scheduleExternalTermRescan }) => scheduleExternalTermRescan())
-    .catch(e => console.error('[projectStore] external terminal re-scan could not be scheduled', e))
-})
+/** Single funnel for launching an external `Terminal.app` window (S4,
+ *  docs/plan/done/terminal-ownership-model.md): sends `owner` through to `open_local_terminal`, then
+ *  asks the host to re-scan shortly after, so the badge moves at once instead of on the next 5s
+ *  tick — no call site invokes `open_local_terminal` directly any more. `action()`-wrapped because a
+ *  companion's OPEN → Terminal (or the in-app tab's "open externally") must run both the launch and
+ *  the scan on the HOST (the companion has neither a shell nor a process table of its own); the new
+ *  count returns via the mirror. The re-scan import is dynamic for the same reason `Toast` is
+ *  imported dynamically in services/action.js — the composable imports this store, and a static
+ *  import back would close that cycle at bootstrap. */
+export const registerExternalTerminalLaunch = action(
+  'projectStore.registerExternalTerminalLaunch',
+  async ({ owner = null, path = null } = {}) => {
+    try {
+      await invoke('open_local_terminal', { localPath: path, owner })
+      const { scheduleExternalTermRescan } = await import('../composables/useExternalTerminals')
+      scheduleExternalTermRescan()
+    } catch (e) {
+      console.error('[projectStore] external terminal launch failed', e)
+    }
+  }
+)
 
 export const isReloading = ref(false)
 

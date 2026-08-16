@@ -80,8 +80,7 @@ pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String
     ));
     std::fs::write(&tmp, contents).map_err(|e| format!("Failed to write '{}': {}", tmp.display(), e))?;
     std::fs::rename(&tmp, path).map_err(|e| {
-        // Leaving the temp file behind after a failed rename only adds a second broken thing to
-        // explain; the target is still intact, which is the property that matters.
+        // Leaving the temp file behind after a failed rename only adds a second broken thing to explain; the target is still intact, which is the property that matters.
         let _ = std::fs::remove_file(&tmp);
         format!("Failed to replace '{}': {}", path.display(), e)
     })
@@ -182,8 +181,14 @@ pub fn shell_quote_remote_path(path: &str) -> String {
 /// Runs `shell_cmd` in Terminal.app via AppleScript, avoiding the double-window bug where a cold-started Terminal spawns its own default (home-dir) window at launch *and* `do script` spawns a second one for the command. When Terminal has to be launched from scratch, we reuse its freshly-created default window (`in window 1`) instead of letting `do script` open another; when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
 ///
 /// The wait for that default window is a poll (up to ~2s, checking every 100ms), not a fixed `delay` - a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the window isn't up yet when we check, we'd fall through to `do script` opening a *second* window, and the slow default window would still appear on its own moments later (the exact "one window at $HOME + one at the right target" bug this helper exists to prevent).
+///
+/// Returns the new session's tty (`/dev/ttysNNN`, as AppleScript reports it - normalized by the caller), or `""` when it could not be read back. That empty string is not handled here: reading it is the ONE subprocess boundary where osascript's output enters this app (`docs/plan/done/terminal-ownership-model.md` §3/§8), so this is where a failure or an empty result is logged - a Mac run can then tell "the AppleScript contract broke" apart from "this session genuinely has no tty" from the log alone. What a caller DOES with an empty tty (nothing: the session simply stays untagged and today's cwd-adoption reading applies unchanged) is decided in exactly one place downstream, `tag_terminal_launch` - never re-branched here or at each call site.
+///
+/// UNVERIFIED on this box (no `osascript` here): that `tty of t` resolves to a populated string in
+/// the same script that opened it, and that switching `.spawn()` to `.output()` only adds the
+/// AppleScript's own ~2s cold-start poll to this call's latency rather than a new failure mode.
 #[cfg(target_os = "macos")]
-fn open_terminal_with_command(shell_cmd: &str) -> Result<(), String> {
+fn open_terminal_with_command(shell_cmd: &str) -> Result<String, String> {
     let safe_cmd = applescript_escape(shell_cmd);
     let script = format!(
         "tell application \"Terminal\"\n\
@@ -196,21 +201,37 @@ fn open_terminal_with_command(shell_cmd: &str) -> Result<(), String> {
          \t\tend repeat\n\
          \tend if\n\
          \tif wasOff and (count of windows) > 0 then\n\
-         \t\tdo script \"{cmd}\" in window 1\n\
+         \t\tset t to do script \"{cmd}\" in window 1\n\
          \telse\n\
-         \t\tdo script \"{cmd}\"\n\
+         \t\tset t to do script \"{cmd}\"\n\
          \tend if\n\
          \tactivate\n\
+         \treturn tty of t\n\
          end tell",
         cmd = safe_cmd
     );
-    Command::new("osascript")
+    let out = Command::new("osascript")
         .arg("-e")
         .arg(&script)
-        .spawn()
+        .output()
         .map_err(|e| format!("Failed to open Terminal: {}", e))?;
     snap_frontmost_terminal_window();
-    Ok(())
+    let tty = if out.status.success() {
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    } else {
+        String::new()
+    };
+    if tty.is_empty() {
+        // Non-fatal by design: the window itself already opened (or the caller's own error path above already fired) - only the tty readback failed. Logged, not surfaced to the user (Extreme Narrow), so the degrade to cwd-adoption stays invisible in the UI.
+        crate::logger::info(
+            "terminal-owner",
+            &format!(
+                "tty readback empty (osascript exit={}); session falls back to cwd adoption",
+                out.status
+            ),
+        );
+    }
+    Ok(tty)
 }
 
 /// Resizes/repositions the Terminal window this call just opened to 124 columns, snapped to the top-right corner of the main display (below the menu bar, above the Dock), height filling the available screen height. Fire-and-forget in its own `osascript` process, started right after the one that opens the window - it sleeps briefly up front so the new window exists and has settled before being resized, matching every other caller of Terminal in this file (spawn, no wait).
@@ -316,10 +337,16 @@ fn ensure_local_dir(path: &str) -> Result<(), String> {
 /// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as the SSH terminal.
 ///
 /// `local_path` is optional (contract C-1 with the in-app terminal, which sends `null` when it cannot read the shell's cwd). Absent, empty, or the bare string `~` all mean **no `cd` at all** - the new shell then starts in `$HOME` by itself, which is what the caller wanted. Emitting `cd "~"` instead, as this used to, never worked: a tilde inside quotes is not expanded, so the window opened and immediately printed "no such file or directory".
+///
+/// `owner` is the spawn-origin tag (`docs/plan/done/terminal-ownership-model.md` §3/S3/S4) - a project id, or the global-scope token, passed straight through to `tag_terminal_launch` with no branch of its own here; whether it actually lands in the registry is decided in that one place.
 #[tauri::command]
-pub async fn open_local_terminal(local_path: Option<String>) -> Result<(), String> {
-    // spawn_blocking for `ensure_local_dir`: a project on a wedged network volume makes that
-    // single stat block for tens of seconds, and on the dispatch thread that is a frozen window.
+pub async fn open_local_terminal(
+    local_path: Option<String>,
+    owner: Option<String>,
+    state: tauri::State<'_, TerminalOwnership>,
+) -> Result<(), String> {
+    let ownership = state.inner().clone();
+    // spawn_blocking for `ensure_local_dir`: a project on a wedged network volume makes that single stat block for tens of seconds, and on the dispatch thread that is a frozen window.
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "macos")]
         {
@@ -331,11 +358,12 @@ pub async fn open_local_terminal(local_path: Option<String>) -> Result<(), Strin
                 ensure_local_dir(path)?;
                 format!("cd {}", shell_quote(path))
             };
-            open_terminal_with_command(&shell_cmd)?;
+            let tty = open_terminal_with_command(&shell_cmd)?;
+            tag_terminal_launch(&ownership, &tty, owner);
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = local_path;
+            let _ = (local_path, owner, ownership);
         }
         Ok::<(), String>(())
     })
@@ -367,10 +395,21 @@ pub fn build_remote_ssh_command(host: String, path: String) -> Result<String, St
 /// Subprocess-based remote openers that cannot be expressed as a plain `open` call:
 /// - `terminal`: SSH via AppleScript (macOS-only)
 /// - `antigravity`: `antigravity-ide --remote` CLI
+///
+/// `async fn` + `spawn_blocking` since S3 (`docs/plan/done/terminal-ownership-model.md` §8): this used to be a plain synchronous `pub fn` and got away with it only because it never waited on its child (`.spawn()`, fire-and-forget). The `terminal` branch now reads the AppleScript's stdout back via `open_terminal_with_command`'s `.output()`, which blocks on that child - so the whole function must move off the IPC dispatch thread in the same step (stack-tauri A1), not later.
+///
+/// `owner` is passed straight through to `tag_terminal_launch`, unconditionally, same as `open_local_terminal` - the `antigravity` branch never reads it, since it opens no `Terminal.app` session to tag.
 #[tauri::command]
-pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> Result<(), String> {
+pub async fn open_remote_subprocess(
+    ide_name: String,
+    host: String,
+    path: String,
+    owner: Option<String>,
+    state: tauri::State<'_, TerminalOwnership>,
+) -> Result<(), String> {
     validate_remote_host(&host)?;
-    match ide_name.as_str() {
+    let ownership = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || match ide_name.as_str() {
         "terminal" => {
             #[cfg(target_os = "macos")]
             {
@@ -385,7 +424,12 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
                 let qpath = shell_quote_remote_path(&path);
                 let remote_cmd = format!("mkdir -p {q} && cd {q} ; exec bash", q = qpath);
                 let shell_cmd = format!("ssh {} -t {}", host, shell_quote(&remote_cmd));
-                open_terminal_with_command(&shell_cmd)?;
+                let tty = open_terminal_with_command(&shell_cmd)?;
+                tag_terminal_launch(&ownership, &tty, owner);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (owner, ownership);
             }
             Ok(())
         }
@@ -410,7 +454,9 @@ pub fn open_remote_subprocess(ide_name: String, host: String, path: String) -> R
             Ok(())
         }
         _ => Err(format!("Unknown subprocess target: {}", ide_name)),
-    }
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 const SSH_COLOR_MARKER_BEGIN: &str = "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
@@ -497,8 +543,7 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
             let backup_path =
                 std::path::Path::new(&home).join(format!(".zshrc.aki-bak-{}", stamp));
             std::fs::copy(&zshrc_path, &backup_path).map_err(|e| e.to_string())?;
-            // Bounded after the copy succeeds - see `prune_timestamped_backups`. A `.zshrc` is
-            // often where a user keeps export-ed tokens, so the pile is not innocuous either.
+            // Bounded after the copy succeeds - see `prune_timestamped_backups`. A `.zshrc` is often where a user keeps export-ed tokens, so the pile is not innocuous either.
             prune_timestamped_backups(std::path::Path::new(&home), ".zshrc.aki-bak-", BACKUP_KEEP);
         }
         // Atomic: `.zshrc` is the user's own file and a truncated one breaks every new shell.
@@ -522,25 +567,34 @@ fn find_akiclaudedoc_install_script(home: &str) -> Option<String> {
 }
 
 /// Runs the local AkiClaudeDoc `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
+///
+/// `async fn` + `spawn_blocking`: `open_terminal_with_command` now reads the AppleScript's stdout
+/// back via `.output()`, which blocks - same reason as `open_local_terminal`/`open_remote_subprocess`
+/// (stack-tauri A1).
 #[tauri::command]
-pub fn install_akiclaudedoc() -> Result<(), String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    match find_akiclaudedoc_install_script(&home) {
-        #[cfg(target_os = "macos")]
-        Some(script) => {
-            let shell_cmd = format!("bash {}", shell_quote(&script));
-            open_terminal_with_command(&shell_cmd)
+pub async fn install_akiclaudedoc() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        match find_akiclaudedoc_install_script(&home) {
+            #[cfg(target_os = "macos")]
+            Some(script) => {
+                let shell_cmd = format!("bash {}", shell_quote(&script));
+                // No owner to tag here - this opens a one-off installer window, not a project session.
+                open_terminal_with_command(&shell_cmd).map(|_tty| ())
+            }
+            #[cfg(not(target_os = "macos"))]
+            Some(_) => Ok(()),
+            None => Err(
+                "Không tìm thấy AkiClaudeDoc trên máy này. Clone repo trước: https://github.com/lacvietanh/AkiClaudeDoc"
+                    .to_string(),
+            ),
         }
-        #[cfg(not(target_os = "macos"))]
-        Some(_) => Ok(()),
-        None => Err(
-            "Không tìm thấy AkiClaudeDoc trên máy này. Clone repo trước: https://github.com/lacvietanh/AkiClaudeDoc"
-                .to_string(),
-        ),
-    }
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::collections::HashMap;
 use crate::projects::SyncProject;
 
@@ -792,8 +846,7 @@ fn is_nuxt_project(path: &std::path::Path) -> bool {
 pub async fn check_project_stack(local_path: String) -> ProjectStackInfo {
     tauri::async_runtime::spawn_blocking(move || check_project_stack_blocking(&local_path))
         .await
-        // A join failure means the probe never ran; an all-false stack is exactly what "we could
-        // not detect anything" already means to the frontend, so no new error state is invented.
+        // A join failure means the probe never ran; an all-false stack is exactly what "we could not detect anything" already means to the frontend, so no new error state is invented.
         .unwrap_or_default()
 }
 
@@ -851,6 +904,71 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
 // (`docs/plan/done/dev-build-in-app-launch.md`), and these external-`Terminal.app` commands had no
 // remaining call site once `ProjectTable.vue` switched to `openRunCommand`.
 
+// Spawn-origin ownership registry - see docs/plan/done/terminal-ownership-model.md §3-4, §9. Per-key removal only; never add a bulk clear (multi-entity regression guard).
+
+/// One tagged session: who launched it, and the pid pinned to it on first reconcile (closes the tty
+/// recycling gap - macOS can hand a closed tab's tty number to an unrelated new one).
+#[derive(Clone)]
+struct OwnedSession {
+    owner: String,
+    pid: Option<u32>,
+}
+
+/// `app.manage()`d in `lib.rs`. `Clone` (an `Arc` underneath) so a command can hand its own copy into
+/// `spawn_blocking` without holding the Tauri `State` guard across an `.await`.
+#[derive(Clone, Default)]
+pub struct TerminalOwnership {
+    by_tty: Arc<Mutex<HashMap<String, OwnedSession>>>,
+}
+
+/// AppleScript's `tty of t` reports `/dev/ttysNNN`; `ps -axo tty=` reports the bare `sNNN` (or `??`
+/// for no controlling terminal). One normal form, used on both sides of every lookup, so a session
+/// tagged at launch is still found by the scan that reads it back.
+fn normalize_tty(raw: &str) -> String {
+    raw.strip_prefix("/dev/tty").map(str::to_string).unwrap_or_else(|| raw.to_string())
+}
+
+fn record_terminal_owner(state: &TerminalOwnership, tty: &str, owner: String) {
+    let mut map = state.by_tty.lock().unwrap();
+    map.insert(normalize_tty(tty), OwnedSession { owner, pid: None });
+}
+
+fn owner_of(state: &TerminalOwnership, tty: &str) -> Option<String> {
+    state.by_tty.lock().unwrap().get(&normalize_tty(tty)).map(|s| s.owner.clone())
+}
+
+/// Single funnel for both launch commands; empty tty/owner is a silent no-op, not an error - see docs/plan/done/terminal-ownership-model.md §3-4.
+fn tag_terminal_launch(state: &TerminalOwnership, tty: &str, owner: Option<String>) {
+    if tty.is_empty() {
+        return;
+    }
+    let Some(owner) = owner else { return };
+    record_terminal_owner(state, tty, owner);
+}
+
+/// Single funnel for both scan callers (docs/plan/done/terminal-ownership-model.md §9) - pins a still-`None` pid to the tty's lowest live pid on first sight; drops dead entries one key at a time, never a bulk clear.
+fn reconcile_terminal_owners(state: &TerminalOwnership, row_of: &HashMap<u32, PsRow>) {
+    let mut map = state.by_tty.lock().unwrap();
+    let mut dead: Vec<String> = Vec::new();
+    for (tty, session) in map.iter_mut() {
+        let live_pids: Vec<u32> =
+            row_of.values().filter(|r| normalize_tty(&r.tty) == *tty).map(|r| r.pid).collect();
+        if live_pids.is_empty() {
+            dead.push(tty.clone());
+            continue;
+        }
+        match session.pid {
+            None => session.pid = live_pids.iter().copied().min(),
+            Some(pid) if !live_pids.contains(&pid) => dead.push(tty.clone()),
+            Some(_) => {}
+        }
+    }
+    // Per-key removal only (§9) - deliberately not a `.clear()`, even though every entry in `dead` could in principle be everything the map holds; the shape must not generalize to "wipe it all".
+    for tty in dead {
+        map.remove(&tty);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // LIVE external-Terminal count (docs/feat/in-app-terminal.md, the `TERM` cell's bottom badge).
 //
@@ -871,47 +989,9 @@ fn normalize_dir(p: &str) -> &str {
     }
 }
 
-/// THE COUNTING RULE, pure and testable (no subprocess): for each requested path, count the
-/// processes whose cwd is that path and **whose parent's cwd is not also that path** - i.e. the
-/// ROOTS of matching subtrees.
-///
-/// Why roots and not every match: one Terminal window running `npm run dev` in a project is a shell
-/// plus node plus whatever node spawned, all inheriting that cwd. Counting matches would report 4
-/// windows for one window. Counting subtree roots reports exactly one per window/tab no matter what
-/// is running inside it, without having to recognise which executables are "a shell".
-///
-/// v1 semantics are **exact match only** - a shell sitting in `<project>/src` does not count. That
-/// keeps the badge's meaning crisp ("standing in the project root") and is trivially explainable;
-/// subdirectory counting can be added later if it turns out to be what users mean.
-///
-/// Returns counts aligned index-for-index with `paths` (so duplicate paths stay well-defined).
-pub fn count_cwd_subtree_roots(
-    ppid_of: &HashMap<u32, u32>,
-    cwd_of: &HashMap<u32, String>,
-    paths: &[String],
-) -> Vec<u32> {
-    paths
-        .iter()
-        .map(|want| {
-            let want = normalize_dir(want);
-            let matches = |pid: u32| -> bool {
-                cwd_of.get(&pid).map(|c| normalize_dir(c) == want).unwrap_or(false)
-            };
-            cwd_of
-                .keys()
-                .filter(|pid| matches(**pid))
-                .filter(|pid| match ppid_of.get(pid) {
-                    Some(parent) => !matches(*parent),
-                    None => true,
-                })
-                .count() as u32
-        })
-        .collect()
-}
-
 /// One row of the process table, as far as the external-terminal scan cares about it.
 ///
-/// `count_external_terminals` only ever needed pid -> ppid; `list_external_terminals` needs enough
+/// `list_terminal_sessions` only ever needed pid -> ppid; `describe_terminal_sessions` needs enough
 /// to describe a session to a human (what is running, on which tty, for how long). Both are served
 /// by ONE `ps` invocation and ONE parser rather than two formats drifting apart - the badge and the
 /// detail modal must never be able to disagree about which processes exist.
@@ -1021,68 +1101,73 @@ fn descendants_of(ppid_of: &HashMap<u32, u32>, roots: &[u32]) -> Vec<u32> {
 /// pathological; truncating keeps the command line (and the scan's cost) bounded.
 const MAX_SCANNED_PIDS: usize = 200;
 
-/// How many external `Terminal.app` windows/tabs are standing in each of `paths` **right now**.
-///
-/// Three subprocesses per call, all short and local, all on the blocking pool (CLAUDE.md
-/// never-block-the-UI): `pgrep -x Terminal`, one `ps -axo pid=,ppid=`, one batched `lsof`. Terminal
-/// not running (pgrep exits non-zero) is not an error - every count is simply 0. macOS-only: this
-/// app only ever opens `Terminal.app`, so no other terminal emulator is probed.
-#[tauri::command]
-pub async fn count_external_terminals(paths: Vec<String>) -> Result<HashMap<String, u32>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        if paths.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let zero = || -> HashMap<String, u32> { paths.iter().map(|p| (p.clone(), 0u32)).collect() };
-        let Some(tree) = scan_terminal_tree()? else {
-            return Ok(zero());
-        };
-        let counts = count_cwd_subtree_roots(&tree.ppid_of, &tree.cwd_of, &canonicalize_all(&paths));
-        Ok(paths.iter().cloned().zip(counts).collect())
-    })
-    .await
-    .map_err(|e| format!("count_external_terminals task join error: {}", e))?
+/// Whether `pid` is the ROOT of its cwd subtree (its parent's cwd differs, or is unknown) - one
+/// window/tab, not each process inside it. `describe_terminal_sessions` always applied this test
+/// inline; extracted here so the new `list_terminal_sessions` (S1,
+/// docs/plan/done/terminal-ownership-model.md §10) shares it instead of copying it a second time.
+fn is_subtree_root(tree: &TerminalTree, pid: u32) -> bool {
+    let Some(cwd) = tree.cwd_of.get(&pid) else { return false };
+    let parent_same_cwd = tree
+        .ppid_of
+        .get(&pid)
+        .and_then(|pp| tree.cwd_of.get(pp))
+        .map(|pc| normalize_dir(pc) == normalize_dir(cwd))
+        .unwrap_or(false);
+    !parent_same_cwd
 }
 
-/// How many external `Terminal.app` sessions belong to NONE of `paths` right now — the complement
-/// the global-terminal button's badge shows (`docs/plan/done/terminal-ownership-model.md` §5, MVP floor:
-/// adoption-only, no spawn-origin tagging). A session is a subtree root, the same unit
-/// `count_cwd_subtree_roots` counts; this walks every root once rather than summing the per-path
-/// counts, so a root matching two of `paths` at once is never double-subtracted.
+/// Compact per-session fact - no command line, no descendants - polled every 5s for the badge
+/// (`describe_terminal_sessions` is the on-demand detail call that adds those). Zero-argument by
+/// design: attributing a session to a project is now a frontend decision
+/// (`src/utils/terminalOwnership.js`, §3's priority rule), so the backend only reports what it knows -
+/// the session's own facts, plus the spawn-origin `owner` tag if one was recorded at launch.
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct TerminalSessionSummary {
+    pub pid: u32,
+    pub ppid: u32,
+    pub tty: String,
+    pub cwd: String,
+    pub owner: Option<String>,
+}
+
+/// Replaces `count_external_terminals` (docs/plan/done/terminal-ownership-model.md §10 S1/S2): same
+/// scan, same subtree-root rule, but returns the session inventory itself instead of pre-bucketing by
+/// a `paths` argument - bucketing moved to the frontend's pure attribution module.
 #[tauri::command]
-pub async fn count_external_terminals_global(paths: Vec<String>) -> Result<u32, String> {
+pub async fn list_terminal_sessions(
+    state: tauri::State<'_, TerminalOwnership>,
+) -> Result<Vec<TerminalSessionSummary>, String> {
+    let ownership = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let Some(tree) = scan_terminal_tree()? else {
-            return Ok(0);
+        let Some(tree) = scan_terminal_tree(&ownership)? else {
+            return Ok(vec![]);
         };
-        let wanted: std::collections::HashSet<String> = canonicalize_all(&paths)
-            .iter()
-            .map(|p| normalize_dir(p).to_string())
-            .collect();
-        let is_root = |pid: &u32| -> bool {
-            match tree.ppid_of.get(pid) {
-                Some(parent) => match (tree.cwd_of.get(pid), tree.cwd_of.get(parent)) {
-                    (Some(c), Some(pc)) => normalize_dir(c) != normalize_dir(pc),
-                    _ => true,
-                },
-                None => true,
-            }
-        };
-        let unowned = tree
+        let mut sessions: Vec<TerminalSessionSummary> = tree
             .cwd_of
             .iter()
-            .filter(|(pid, _)| is_root(pid))
-            .filter(|(_, cwd)| !wanted.contains(normalize_dir(cwd)))
-            .count() as u32;
-        Ok(unowned)
+            .filter(|(pid, _)| is_subtree_root(&tree, **pid))
+            .filter_map(|(pid, cwd)| {
+                let row = tree.row_of.get(pid)?;
+                Some(TerminalSessionSummary {
+                    pid: row.pid,
+                    ppid: row.ppid,
+                    tty: row.tty.clone(),
+                    cwd: cwd.clone(),
+                    owner: owner_of(&ownership, &row.tty),
+                })
+            })
+            .collect();
+        // Deterministic order - HashMap iteration order is arbitrary and a reshuffling poll reads as a bug.
+        sessions.sort_by_key(|s| s.pid);
+        Ok(sessions)
     })
     .await
-    .map_err(|e| format!("count_external_terminals_global task join error: {}", e))?
+    .map_err(|e| format!("list_terminal_sessions task join error: {}", e))?
 }
 
 /// One external `Terminal.app` window/tab, as the detail modal shows it.
 ///
-/// "One session" is the SAME rule the badge counts by (`count_cwd_subtree_roots`): the ROOT of a
+/// "One session" is the SAME rule the badge counts by (`is_subtree_root`): the ROOT of a
 /// cwd subtree, i.e. the shell, not the four processes it spawned. Keeping one rule for both is what
 /// guarantees that **the sessions listed for a given project always match that project's badge** -
 /// a second, parallel definition of "a session" is exactly how the two would come to disagree.
@@ -1109,20 +1194,32 @@ pub struct ExternalTerminalSession {
     /// means an idle shell sitting at its prompt. This is the MVP stand-in for "see the screen" -
     /// we cannot read the window's pixels, but we can say truthfully what it is executing.
     pub running: Vec<PsRow>,
+    /// Spawn-origin tag (S3/S6): the project id or global-scope token this session was launched with, if any. `None` for a session opened by hand, from before the app started, or whose tag never landed - the frontend resolves this against its own `projects` list at read time (§4: "listed" is a frontend question), so this field alone never asserts a project name.
+    pub owner: Option<String>,
 }
 
 /// Detail behind the external-terminal badge: every `Terminal.app` session and what runs in it.
+/// Renamed from `list_external_terminals` (docs/plan/done/terminal-ownership-model.md §10 S1) - the
+/// old name differed from `list_terminal_sessions` by one word for two very different cadences,
+/// which was a naming hazard worth retiring while the file was open.
 ///
-/// Same three subprocesses as `count_external_terminals`, on the blocking pool for the same reason
+/// `paths` still drives `project_path` here (unlike `list_terminal_sessions`): the modal
+/// (`ExternalTerminalsModal.vue`) reads `project_path` for its "in X's folder" adoption label, so
+/// dropping the argument now - as §4's command table describes as the end state - would silently
+/// break that label without a modal-side rewrite (S6), which is out of this step's scope.
+///
+/// Same three subprocesses as `list_terminal_sessions`, on the blocking pool for the same reason
 /// (CLAUDE.md never-block-the-UI). Called on demand from the modal, NOT on the 5s badge cadence -
 /// this returns command lines for every process in the Terminal tree and has no business being
 /// polled.
 #[tauri::command]
-pub async fn list_external_terminals(
+pub async fn describe_terminal_sessions(
     paths: Vec<String>,
+    state: tauri::State<'_, TerminalOwnership>,
 ) -> Result<Vec<ExternalTerminalSession>, String> {
+    let ownership = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let Some(tree) = scan_terminal_tree()? else {
+        let Some(tree) = scan_terminal_tree(&ownership)? else {
             return Ok(vec![]);
         };
         // Canonical form -> the ORIGINAL path string the caller knows the project by. The modal
@@ -1136,15 +1233,7 @@ pub async fn list_external_terminals(
 
         let mut sessions: Vec<ExternalTerminalSession> = Vec::new();
         for (pid, cwd) in &tree.cwd_of {
-            // Subtree ROOT test, identical in meaning to count_cwd_subtree_roots: a process whose
-            // parent sits in the same directory is part of a session, not a session of its own.
-            let parent_same_cwd = tree
-                .ppid_of
-                .get(pid)
-                .and_then(|pp| tree.cwd_of.get(pp))
-                .map(|pc| normalize_dir(pc) == normalize_dir(cwd))
-                .unwrap_or(false);
-            if parent_same_cwd {
+            if !is_subtree_root(&tree, *pid) {
                 continue;
             }
             let Some(root_row) = tree.row_of.get(pid) else { continue };
@@ -1167,6 +1256,7 @@ pub async fn list_external_terminals(
                 cwd: cwd.clone(),
                 project_path: project_of.get(normalize_dir(cwd)).map(|s| s.to_string()),
                 running,
+                owner: owner_of(&ownership, &row.tty),
             });
         }
         // Sessions matching a known project first (that is what the user opened the modal for),
@@ -1181,7 +1271,7 @@ pub async fn list_external_terminals(
         Ok(sessions)
     })
     .await
-    .map_err(|e| format!("list_external_terminals task join error: {}", e))?
+    .map_err(|e| format!("describe_terminal_sessions task join error: {}", e))?
 }
 
 /// Is this `ps` command line macOS's `login` wrapper rather than the user's shell?
@@ -1199,8 +1289,7 @@ fn is_login_wrapper(command: &str) -> bool {
 /// readable child is still a session, and reporting it honestly beats dropping it).
 fn promote_past_login(tree: &TerminalTree, row: &PsRow) -> PsRow {
     let mut current = row.clone();
-    // Bounded: `login` nests at most once in practice, but a cycle in a hand-built ppid map (or a
-    // pathological tree) must not spin forever.
+    // Bounded: `login` nests at most once in practice, but a cycle in a hand-built ppid map (or a pathological tree) must not spin forever.
     for _ in 0..4 {
         if !is_login_wrapper(&current.command) {
             break;
@@ -1254,9 +1343,16 @@ struct TerminalTree {
 /// descendants. That is not an error: it is the ordinary state of a Mac with no terminal open, and
 /// both callers turn it into an empty answer rather than a failure. macOS-only: this app only ever
 /// opens `Terminal.app`, so no other terminal emulator is probed.
-fn scan_terminal_tree() -> Result<Option<TerminalTree>, String> {
+///
+/// Reconciles `ownership` against whatever this scan finds (S3, §4's lifecycle table) before
+/// returning, on every branch - including the empty ones, where an empty row set correctly drops any
+/// registry entry left over from a session that has since closed. This is the single funnel both the
+/// 5s badge poll and the on-demand detail call fall through, so reconcile never needs a second call
+/// site.
+fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTree>, String> {
     #[cfg(not(target_os = "macos"))]
     {
+        reconcile_terminal_owners(ownership, &HashMap::new());
         return Ok(None);
     }
 
@@ -1271,6 +1367,7 @@ fn scan_terminal_tree() -> Result<Option<TerminalTree>, String> {
             .filter_map(|l| l.trim().parse::<u32>().ok())
             .collect();
         if terminal_pids.is_empty() {
+            reconcile_terminal_owners(ownership, &HashMap::new());
             return Ok(None);
         }
 
@@ -1284,6 +1381,7 @@ fn scan_terminal_tree() -> Result<Option<TerminalTree>, String> {
         let mut kids = descendants_of(&ppid_of, &terminal_pids);
         kids.truncate(MAX_SCANNED_PIDS);
         if kids.is_empty() {
+            reconcile_terminal_owners(ownership, &HashMap::new());
             return Ok(None);
         }
         let kid_set: std::collections::HashSet<u32> = kids.iter().copied().collect();
@@ -1303,6 +1401,7 @@ fn scan_terminal_tree() -> Result<Option<TerminalTree>, String> {
             .map_err(|e| format!("Failed to read process directories: {}", e))?;
         let cwd_of = parse_lsof_cwds(&String::from_utf8_lossy(&lsof.stdout));
 
+        reconcile_terminal_owners(ownership, &row_of);
         Ok(Some(TerminalTree { ppid_of, cwd_of, row_of }))
     }
 }
@@ -1474,8 +1573,7 @@ mod tests {
 
     #[test]
     fn a_host_that_looks_like_an_ssh_option_is_refused() {
-        // The payload that made this a blocker: every character is in the allowlist, so only the
-        // leading-dash rule stops it. ssh would read it as an option and run the command locally.
+        // The payload that made this a blocker: every character is in the allowlist, so only the leading-dash rule stops it. ssh would read it as an option and run the command locally.
         assert!(validate_remote_host("-oProxyCommand=touch /tmp/pwned").is_err());
         assert!(validate_remote_host("-lroot").is_err());
         // A dash elsewhere is ordinary and must keep working.
@@ -1490,8 +1588,7 @@ mod tests {
         let target = dir.join("settings.json");
         std::fs::write(&target, "{\"keep\":true}").unwrap();
 
-        // A directory where the file should be makes the rename fail. The point of the assertion
-        // is what survives: the original contents, not a truncated stump.
+        // A directory where the file should be makes the rename fail. The point of the assertion is what survives: the original contents, not a truncated stump.
         let blocked = dir.join("blocked");
         std::fs::create_dir_all(&blocked).unwrap();
         assert!(write_atomic(&blocked, "new").is_err());
@@ -1511,7 +1608,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── the live external-Terminal count: the pure counting rule ────────────────────────────
     fn maps(rows: &[(u32, u32, Option<&str>)]) -> (HashMap<u32, u32>, HashMap<u32, String>) {
         let mut ppid = HashMap::new();
         let mut cwd = HashMap::new();
@@ -1522,64 +1618,6 @@ mod tests {
             }
         }
         (ppid, cwd)
-    }
-
-    #[test]
-    fn one_window_running_a_dev_server_counts_once() {
-        // Terminal(100) -> login(200) -> zsh(300, in the project) -> npm(400) -> node(500),
-        // the last three all inheriting the project cwd. One window must read as one.
-        let (ppid, cwd) = maps(&[
-            (100, 1, Some("/Users/aki")),
-            (200, 100, Some("/Users/aki")),
-            (300, 200, Some("/proj")),
-            (400, 300, Some("/proj")),
-            (500, 400, Some("/proj")),
-        ]);
-        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![1]);
-    }
-
-    #[test]
-    fn two_windows_in_the_same_directory_count_twice() {
-        let (ppid, cwd) = maps(&[
-            (200, 100, Some("/Users/aki")),
-            (300, 200, Some("/proj")),
-            (301, 200, Some("/proj")),
-        ]);
-        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![2]);
-    }
-
-    #[test]
-    fn a_subdirectory_does_not_count_as_the_project() {
-        // v1 semantics: exact match only.
-        let (ppid, cwd) = maps(&[(300, 200, Some("/proj/src"))]);
-        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![0]);
-    }
-
-    #[test]
-    fn trailing_slashes_are_the_same_directory() {
-        let (ppid, cwd) = maps(&[(300, 200, Some("/proj/"))]);
-        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![1]);
-    }
-
-    #[test]
-    fn each_project_is_counted_independently() {
-        let (ppid, cwd) = maps(&[
-            (300, 200, Some("/a")),
-            (400, 300, Some("/a")),
-            (500, 200, Some("/b")),
-            (600, 200, Some("/c")),
-        ]);
-        assert_eq!(
-            count_cwd_subtree_roots(&ppid, &cwd, &["/a".to_string(), "/b".to_string(), "/z".to_string()]),
-            vec![1, 1, 0]
-        );
-    }
-
-    #[test]
-    fn a_process_whose_parent_is_unknown_still_counts() {
-        // The parent is outside the scanned set (its cwd was never read) - the child is a root.
-        let (ppid, cwd) = maps(&[(300, 999, Some("/proj"))]);
-        assert_eq!(count_cwd_subtree_roots(&ppid, &cwd, &["/proj".to_string()]), vec![1]);
     }
 
     #[test]
@@ -1595,8 +1633,7 @@ mod tests {
 
     #[test]
     fn ps_command_column_keeps_its_own_spacing_and_is_never_cut_short() {
-        // The command repeats BOTH the tty string and a pid — the exact case a `line.find(token)`
-        // implementation slices at the wrong offset.
+        // The command repeats BOTH the tty string and a pid — the exact case a `line.find(token)` implementation slices at the wrong offset.
         let rows = parse_ps_rows("  400   300 s000  00:04 /bin/my app/s000 --pid=400 -x\n");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].tty, "s000");
@@ -1617,8 +1654,7 @@ mod tests {
 
     #[test]
     fn ps_row_with_no_command_column_is_dropped_not_mangled() {
-        // A kernel thread prints an empty command; `ps` still emits the row. Four columns and
-        // nothing after them means there is no session to describe.
+        // A kernel thread prints an empty command; `ps` still emits the row. Four columns and nothing after them means there is no session to describe.
         let rows = parse_ps_rows("  1   0 ??   10-00:00:01\n");
         assert!(rows.is_empty());
     }
@@ -1671,12 +1707,134 @@ mod tests {
 
     #[test]
     fn read_for_rewrite_non_notfound_error_aborts() {
-        // A directory is a portable, root-proof way to produce a read error that is NOT NotFound -
-        // the exact case `unwrap_or_default()` used to flatten into "" before overwriting the file.
+        // A directory is a portable, root-proof way to produce a read error that is NOT NotFound - the exact case `unwrap_or_default()` used to flatten into "" before overwriting the file.
         let dir = scratch("isdir");
         let err = read_for_rewrite(&dir).unwrap_err();
         assert!(err.contains("Nothing was written"), "error must say no write happened: {}", err);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── session inventory (S1) ────────────────────────────────────────────────────────────────
+
+    fn tree_of(rows: &[(u32, u32, &str)]) -> TerminalTree {
+        let mut ppid_of = HashMap::new();
+        let mut cwd_of = HashMap::new();
+        let mut row_of = HashMap::new();
+        for (pid, ppid, cwd) in rows {
+            ppid_of.insert(*pid, *ppid);
+            cwd_of.insert(*pid, cwd.to_string());
+            row_of.insert(
+                *pid,
+                PsRow { pid: *pid, ppid: *ppid, tty: "s004".to_string(), etime: "00:01".to_string(), command: "-zsh".to_string() },
+            );
+        }
+        TerminalTree { ppid_of, cwd_of, row_of }
+    }
+
+    #[test]
+    fn is_subtree_root_true_when_the_parent_sits_elsewhere() {
+        let tree = tree_of(&[(100, 1, "/Users/aki"), (200, 100, "/proj")]);
+        assert!(is_subtree_root(&tree, 200));
+    }
+
+    #[test]
+    fn is_subtree_root_false_when_the_parent_shares_the_same_cwd() {
+        let tree = tree_of(&[(200, 100, "/proj"), (300, 200, "/proj")]);
+        assert!(!is_subtree_root(&tree, 300));
+    }
+
+    #[test]
+    fn is_subtree_root_false_when_the_parent_cwd_only_differs_by_a_trailing_slash() {
+        let tree = tree_of(&[(200, 100, "/proj"), (300, 200, "/proj/")]);
+        assert!(!is_subtree_root(&tree, 300));
+    }
+
+    #[test]
+    fn is_subtree_root_true_when_the_parent_is_unknown() {
+        let tree = tree_of(&[(200, 999, "/proj")]);
+        assert!(is_subtree_root(&tree, 200));
+    }
+
+    #[test]
+    fn is_subtree_root_false_for_a_pid_with_no_recorded_cwd() {
+        let tree = tree_of(&[(200, 100, "/proj")]);
+        assert!(!is_subtree_root(&tree, 404));
+    }
+
+    // ── spawn-origin ownership registry (S3) ─────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_tty_strips_dev_tty_prefix_only() {
+        assert_eq!(normalize_tty("/dev/ttys004"), "s004");
+        assert_eq!(normalize_tty("s004"), "s004");
+        assert_eq!(normalize_tty("??"), "??");
+    }
+
+    fn ps_row(pid: u32, tty: &str) -> PsRow {
+        PsRow { pid, ppid: 1, tty: tty.to_string(), etime: "00:01".to_string(), command: "-zsh".to_string() }
+    }
+
+    #[test]
+    fn reconcile_pins_the_lowest_pid_on_first_sight() {
+        let ownership = TerminalOwnership::default();
+        record_terminal_owner(&ownership, "/dev/ttys004", "proj-a".to_string());
+        let rows: HashMap<u32, PsRow> = [(500, ps_row(500, "s004")), (300, ps_row(300, "s004"))].into();
+        reconcile_terminal_owners(&ownership, &rows);
+        let map = ownership.by_tty.lock().unwrap();
+        assert_eq!(map.get("s004").unwrap().pid, Some(300));
+    }
+
+    #[test]
+    fn reconcile_drops_an_entry_whose_tty_has_vanished() {
+        let ownership = TerminalOwnership::default();
+        record_terminal_owner(&ownership, "/dev/ttys004", "proj-a".to_string());
+        reconcile_terminal_owners(&ownership, &HashMap::new());
+        assert!(ownership.by_tty.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconcile_drops_an_entry_whose_pinned_pid_is_gone_even_though_the_tty_still_exists() {
+        let ownership = TerminalOwnership::default();
+        record_terminal_owner(&ownership, "/dev/ttys004", "proj-a".to_string());
+        let rows: HashMap<u32, PsRow> = [(300, ps_row(300, "s004"))].into();
+        reconcile_terminal_owners(&ownership, &rows); // pins pid 300
+        // The tab closed and a NEW one was assigned the same recycled tty number.
+        let rows: HashMap<u32, PsRow> = [(900, ps_row(900, "s004"))].into();
+        reconcile_terminal_owners(&ownership, &rows);
+        assert!(ownership.by_tty.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconcile_touches_no_other_entry() {
+        let ownership = TerminalOwnership::default();
+        record_terminal_owner(&ownership, "/dev/ttys004", "proj-a".to_string());
+        record_terminal_owner(&ownership, "/dev/ttys005", "proj-b".to_string());
+        let rows: HashMap<u32, PsRow> = [(300, ps_row(300, "s004"))].into(); // s005 has no live process
+        reconcile_terminal_owners(&ownership, &rows);
+        let map = ownership.by_tty.lock().unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("s004").unwrap().owner, "proj-a");
+    }
+
+    #[test]
+    fn tag_terminal_launch_is_a_no_op_when_tty_is_empty() {
+        let ownership = TerminalOwnership::default();
+        tag_terminal_launch(&ownership, "", Some("proj-a".to_string()));
+        assert!(ownership.by_tty.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn tag_terminal_launch_is_a_no_op_when_owner_is_absent() {
+        let ownership = TerminalOwnership::default();
+        tag_terminal_launch(&ownership, "/dev/ttys004", None);
+        assert!(ownership.by_tty.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn tag_terminal_launch_records_when_both_are_present() {
+        let ownership = TerminalOwnership::default();
+        tag_terminal_launch(&ownership, "/dev/ttys004", Some("proj-a".to_string()));
+        assert_eq!(owner_of(&ownership, "/dev/ttys004"), Some("proj-a".to_string()));
     }
 
     #[cfg(unix)]

@@ -25,6 +25,8 @@ pub fn run() {
             web_server::init(app.handle());
             Ok(())
         })
+        // Spawn-origin ownership registry (docs/plan/done/terminal-ownership-model.md §3, S3) — RAM-only, rebuilt empty on every launch (registry non-persistence is a decided, non-lossy degrade, §6).
+        .manage(system::TerminalOwnership::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -95,9 +97,8 @@ pub fn run() {
             system::find_in_downloads,
             system::check_project_stack,
             system::read_project_changelog,
-            system::count_external_terminals,
-            system::count_external_terminals_global,
-            system::list_external_terminals,
+            system::list_terminal_sessions,
+            system::describe_terminal_sessions,
             // global note
             global_note::read_global_note,
             global_note::write_global_note,
@@ -108,8 +109,7 @@ pub fn run() {
             // claude profile switcher
             claude_profile::get_claude_mode,
             claude_profile::set_claude_profile,
-            // Claude Code cleanup (docs/plan/done/claudecode-cleanup.md) — host-only by design; both
-            // commands are deliberately absent from COMPANION_ALLOWED_COMMANDS.
+            // Claude Code cleanup (docs/plan/done/claudecode-cleanup.md) — host-only by design; both commands are deliberately absent from COMPANION_ALLOWED_COMMANDS.
             claude_cleanup::scan_claude_cleanup,
             claude_cleanup::run_claude_cleanup,
             // statusline customizer
@@ -141,13 +141,11 @@ pub fn run() {
             pty::pty_restart,
             pty::pty_clear,
             pty::pty_cwd,
-            // Multi-tab surface: enumerate the backend's tabs (scrollback replay + host re-adoption
-            // after a frontend reload) and close exactly one of them.
+            // Multi-tab surface: enumerate the backend's tabs (scrollback replay + host re-adoption after a frontend reload) and close exactly one of them.
             pty::pty_list_tabs,
             pty::pty_close_tab,
         ])
-        // `build` + `run(closure)` rather than `run(context)` purely so there is somewhere to hang
-        // the exit hook below — the two are otherwise equivalent.
+        // `build` + `run(closure)` rather than `run(context)` purely so there is somewhere to hang the exit hook below — the two are otherwise equivalent.
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, event| {

@@ -82,12 +82,24 @@ import {
   closeExternalTermModal,
 } from '../../composables/useExternalTerminals'
 
+// One existing line's text (docs/plan/done/terminal-ownership-model.md §5/S6), no new row: TAGGED
+// (`owner` matches a currently-listed project id — S3's spawn-origin tag, authoritative, cwd not
+// consulted at all) reads "launched from X" even when the session's cwd doesn't say so (an SSH
+// session's cwd is the local $HOME). ADOPTED (untagged, cwd matches a listed project's `local_path`)
+// reads "in X's folder" — today's existing reading, unchanged. Neither matching: the plain short
+// name, same as before S6.
+//
 // `project_path` comes back as the ORIGINAL path string the scan was given (the backend resolves
 // symlinks for matching but reports the un-resolved name), so this lookup is a plain string compare
 // against the same field the store holds.
 function projectNameOf(s) {
+  if (s.owner) {
+    const tagged = projects.value.find(p => p.id === s.owner)
+    if (tagged) return `launched from ${tagged.name}`
+  }
   if (!s.project_path) return shortDir(s.cwd)
-  return projects.value.find(p => p.local_path === s.project_path)?.name || shortDir(s.cwd)
+  const adopted = projects.value.find(p => p.local_path === s.project_path)
+  return adopted ? `in ${adopted.name}'s folder` : shortDir(s.cwd)
 }
 
 /** Last path segment, `~` for home. A full path is already on the line below; the heading wants the

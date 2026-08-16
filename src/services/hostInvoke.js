@@ -43,8 +43,8 @@ import { FRAME_INVOKE, FRAME_INVOKE_RESULT } from '../constants/protocol'
  *   list_paired_devices, revoke_device -> remote-control admin; that UI is host-only (`isHost`)
  *   get_sync_delete_preview,
  *   get_file_conflict_info           -> only ever called from inside a host-side sync/drop flow
- *   count_external_terminals,
- *   list_external_terminals          -> the scan reads `Terminal.app`'s process tree, which only
+ *   list_terminal_sessions,
+ *   describe_terminal_sessions       -> the scan reads `Terminal.app`'s process tree, which only
  *                                       exists on the Mac; both callers are `isHost`-gated, and the
  *                                       detail modal's own button is hidden on a companion
  *   cleanup_legacy_baselines         -> host-boot / host-gated callers only
@@ -91,8 +91,7 @@ export const COMPANION_ALLOWED_COMMANDS = new Set([
   'open_remote_subprocess',
   // Git modal — fetch/pull/push/commit from the phone.
   'run_git_command',
-  // SSH config editor: composables/useSsh.js documents these writes as running from the clicker,
-  // with only the reactive reconcile routed host-side through an action.
+  // SSH config editor: composables/useSsh.js documents these writes as running from the clicker, with only the reactive reconcile routed host-side through an action.
   'save_ssh_config',
   'undo_ssh_config',
   'redo_ssh_config',
@@ -128,12 +127,10 @@ async function respondToInvoke(frame) {
   }
   try {
     const ok = await invoke(cmd, args)
-    // JSON.stringify drops an `undefined` value, so a void command serializes to a frame with
-    // neither `ok` nor `err` — the companion reads that as resolve(undefined), which is correct.
+    // JSON.stringify drops an `undefined` value, so a void command serializes to a frame with neither `ok` nor `err` — the companion reads that as resolve(undefined), which is correct.
     send({ t: FRAME_INVOKE_RESULT, id, to, ok })
   } catch (e) {
-    // Preserve the host's real error text so the phone console shows the actual Tauri failure,
-    // not a generic "rejected". Tauri command errors are usually plain strings already.
+    // Preserve the host's real error text so the phone console shows the actual Tauri failure, not a generic "rejected". Tauri command errors are usually plain strings already.
     const err = e && e.message ? e.message : String(e)
     console.error(`[hostInvoke] command "${cmd}" failed`, e)
     send({ t: FRAME_INVOKE_RESULT, id, to, err })

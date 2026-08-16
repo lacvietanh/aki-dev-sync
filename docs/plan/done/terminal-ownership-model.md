@@ -1,6 +1,13 @@
 # WS-A — External terminal ownership model
 
-**Status**: MVP floor shipped (2026-07-28), S3-S7 still planning · **Batch**: `docs/plan/done/backlog-jul27.md` (WS-A), `docs/plan/done/backlog-jul28-terminal-ux.md` (WS-N) · **Version state**: `package.json` is `1.21.0`; this accumulates in `CHANGELOG.md`'s `[Unreleased]`. No version number appears in this doc or in any file it creates.
+**Status (2026-08-16): S1–S7 all built.** S1/S2 (session-inventory command + frontend attribution module) landed last, closing the gap `docs/plan/remaining-1.22.md`'s WS-A-S1-2 row tracked — see "S1/S2 — built 2026-08-16" below for the two deviations from this doc's original design. **Batch**: `docs/plan/done/backlog-jul27.md` (WS-A), `docs/plan/done/backlog-jul28-terminal-ux.md` (WS-N) · **Version state**: this accumulates in `CHANGELOG.md`'s `[Unreleased]`. No version number appears in this doc or in any file it creates.
+
+### S1/S2 — built 2026-08-16, two deviations from the design below
+
+- **`describe_terminal_sessions` kept its `paths` argument** — §10's S1 acceptance said to drop it, but the sessions modal's "in X's folder" label needs each session's `project_path` match, which only `paths` supplies. Dropping it would have broken that label; code reality overrode the doc's stated end-state.
+- **`count_external_terminals_global` was deleted too**, not just `count_external_terminals` — §10's S2 only names the latter because `count_external_terminals_global` did not exist when §10 was written; it was added later by `docs/plan/done/backlog-jul28-terminal-ux.md` WS-M (see the 2026-07-28 note below), computing §5's complement directly in Rust. Its result is now subsumed by `src/utils/terminalOwnership.js`'s pure-module `globalCount`, so it was removed in the same step as `count_external_terminals`.
+
+Both badge counts (`byProjectId`, `globalCount`) now consult the `TerminalOwnership` registry via `list_terminal_sessions` + `attributeTerminalSessions`, closing the gap the 2026-08-16 correction below and `docs/plan/remaining-1.22.md` both recorded: the modal's provenance label and the badge's count are the same fact now, not two.
 
 **2026-07-28 note — what actually shipped is NOT §10's S1/S2/S5 as written.** The user's immediate complaint was narrower than this whole doc: the global button showed neither badge at all. Rather than build the full session-inventory/pure-selector/component-rename shape (§10 S1, S2, S5), a smaller command was added instead:
 - `src-tauri/src/system.rs`'s new `count_external_terminals_global(paths)` computes §5's complement (`unowned = all subtree roots − roots matching any of paths`) directly in Rust and returns one `u32` — no `list_terminal_sessions()`, no `owner` field, no `src/utils/terminalOwnership.js` pure module. It is the §5 formula, computed in a different shape than §10 specifies.
@@ -86,7 +93,7 @@ Adoption is not a compromise bolted on; it is what makes the tty capture (§8, t
 **Shape:**
 
 ```rust
-struct OwnedSession { owner: String, pid: Option<u32>, tagged_at: SystemTime }
+struct OwnedSession { owner: String, pid: Option<u32> }
 struct TerminalOwnership { by_tty: Mutex<HashMap<String, OwnedSession>> }  // app.manage(...)
 ```
 
@@ -200,11 +207,15 @@ Each step is independently reviewable and independently revertible. **S1 + S2 al
 
 ### S1 — Rust: publish a session inventory, no behavior change
 
+**Built 2026-08-16**, with one deviation: `describe_terminal_sessions` kept its `paths` argument rather than dropping it — see "S1/S2 — built 2026-08-16" above.
+
 Add `list_terminal_sessions()` returning `{ pid, ppid, tty, cwd, owner: null }` for each subtree root, derived from the existing `scan_terminal_tree` and the existing root rule. Rename `list_external_terminals` → `describe_terminal_sessions` and drop its `paths` argument. Leave `count_external_terminals` in place and untouched.
 
 *Acceptance*: the root-selection code is shared, not copied — one function computes roots for both commands, and the diff shows the existing root test moved rather than duplicated. New unit tests in `system.rs`'s `mod tests` cover tty normalization (`s004`, `/dev/ttys004`, `??`) with no subprocess. `lib.rs`'s `invoke_handler` lists the new and renamed commands. No frontend file changes in this step.
 
 ### S2 — Frontend: attribution moves here; global count appears
+
+**Built 2026-08-16**, with one deviation: `count_external_terminals_global` was deleted alongside `count_external_terminals`, not left in place — it did not exist when this section was written; see "S1/S2 — built 2026-08-16" above.
 
 New pure module `src/utils/terminalOwnership.js` — no Vue, no `invoke`: given `(sessions, projects)` it returns `{ byProjectId, globalCount, ownerOf }` implementing §3's three-rule priority and §5's dedup-by-session complement. `useExternalTerminals.js` polls `list_terminal_sessions()` instead of `count_external_terminals(paths)` and feeds the pure module. `externalTermGlobalCount` is added to `src/store/projectStore.js` beside `externalTermCounts`. `count_external_terminals` and its Rust code are deleted.
 
