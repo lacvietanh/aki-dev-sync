@@ -45,15 +45,7 @@ export function useSsh() {
     }, 0);
   }
 
-  // The reactive fallout of an SSH-config write — refreshing the mirrored `sshHosts` list, the
-  // undo/redo availability flags, and migrating any project pinned to a now-missing host — MUST run
-  // on the HOST so it lands in the Mac's reactive state and mirrors to every screen (ACT-1 / feat
-  // matrix "SSH config → Save"). Before this it ran on the clicker: a companion set its own copy of
-  // `sshHosts` and mutated its own `projects`, none of which reached the Mac. The RPC file writes
-  // (`save/undo/redo_ssh_config`) already hit the Mac's disk from the clicker; only the reactive
-  // reconcile is routed host-side, through `applySshHostsChange`. UI-only bits (Toast, close modal,
-  // logging, showing the reverted text in the editor) stay on the clicker. Dynamic import avoids the
-  // useSsh ⇄ remoteActions eager cycle (remoteActions imports composables).
+  // Reconcile host-side reactive state (sshHosts, undo/redo, host migration); dynamic import avoids useSsh <-> remoteActions cycle.
   async function reconcileSshHostsOnHost() {
     const { applySshHostsChange } = await import("../store/remoteActions");
     await applySshHostsChange();

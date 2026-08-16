@@ -3,11 +3,7 @@ import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from
 import { syncCheckEnabled } from '../store/syncCheckStore'
 import { useLogs } from './useLogs'
 
-// One of the three per-project status checks. Like fetchGitStatus, it reports its own busy state
-// through the shared beginRefresh/endRefresh counter (projectStore.js), so every trigger - the
-// background diff timer, the per-project Refresh button, the global Refresh - drives the same
-// visible indicator. The epoch check discards a result for a project whose host/path changed, or
-// whose sync check was turned off, mid-flight - see bumpEpoch in projectStore.js.
+// Status check sharing beginRefresh/endRefresh indicator; uses epoch check (bumpEpoch) to discard stale mid-flight results.
 export async function checkProjectSyncStatus(project) {
   if (!syncCheckEnabled.value) return
   if (projectRuntime.value[project.id]?.syncing) return
@@ -18,10 +14,7 @@ export async function checkProjectSyncStatus(project) {
     const result = await invoke('check_sync_status', { project })
     if (currentEpoch(project.id) !== epoch) return // stale - superseded mid-flight, discard silently
     const current = projectRuntime.value[project.id]
-    // The runtime entry IS the project's liveness record (projectStore: a missing entry reports
-    // epoch 0 = removed). Writing one back for a project that no longer has one resurrects it -
-    // §3.2's bug, whose other half was new projects starting at epoch 0. beginRefresh guarantees
-    // this entry exists for a live project, so `undefined` here means exactly one thing.
+    // Missing runtime entry means project was removed; abort to avoid resurrecting deleted project state.
     if (!current) return
 
     { // (block kept so the logging below stays where it was - `current` is now always defined here)

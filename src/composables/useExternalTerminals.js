@@ -1,18 +1,7 @@
 // Live external-`Terminal.app` count — the producer behind the `TERM` cell's bottom (slate) badge.
-//
-// The badge used to be a session counter: the app can watch itself open a window, so the number only
-// ever grew, and it kept claiming "3 windows" long after all three were closed. It is now derived
-// instead of remembered — the host re-scans the process table on a fixed cadence
-// (`list_terminal_sessions` in src-tauri/src/system.rs) and publishes a snapshot, so closing a
-// window drops the badge within one tick.
-//
-// Attribution (which project's badge, or the global complement, each session counts on) is decided
-// once, in the pure `utils/terminalOwnership.js` module — this file only owns the poll
-// (docs/plan/done/terminal-ownership-model.md §10 S2).
-//
-// HOST ONLY (seam P, utils/scheduler.js): the scan needs `Terminal.app`'s process tree, which exists
-// on the Mac and nowhere else. The companion never polls — its copy of `externalTermCounts` arrives
-// through the state mirror like every other piece of shared state.
+// Derived live count via host process-table scan (`list_terminal_sessions` in system.rs) instead of an ever-growing session counter.
+// Attribution is decided in `utils/terminalOwnership.js`; this file only owns the poll (docs/plan/done/terminal-ownership-model.md §10 S2).
+// HOST ONLY: scan needs Mac process tree. Companion receives `externalTermCounts` through state mirror.
 import { ref } from 'vue'
 import { hostInterval } from '../utils/scheduler'
 import { isHost } from '../services/bridge'
@@ -28,9 +17,7 @@ const RESCAN_DELAY_MS = 800
 
 let timer = null
 
-/** One scan → one whole-map snapshot, plus the global complement, from the SAME session inventory
- *  and the SAME attribution pass (`attributeTerminalSessions`) — the per-project and global badges
- *  can never disagree because they are two fields of one result, not two separate calls. */
+// Single snapshot pass: per-project and global badges derive from one attribution result and never disagree.
 export async function refreshExternalTermCounts() {
   if (!isHost) return
   try {
@@ -44,13 +31,13 @@ export async function refreshExternalTermCounts() {
   }
 }
 
-/** Poke a scan just after an external Terminal was opened, so the badge doesn't wait out the tick. */
+// Rescan immediately after opening a Terminal window so the badge does not wait for the next poll tick.
 export function scheduleExternalTermRescan() {
   if (!isHost) return
   setTimeout(refreshExternalTermCounts, RESCAN_DELAY_MS)
 }
 
-/** Boot the cycle. Idempotent — a second call keeps the existing timer. */
+// Start polling loop. Idempotent: subsequent calls preserve existing timer.
 export function startExternalTerminalWatch() {
   if (!isHost || timer) return
   refreshExternalTermCounts()
@@ -58,29 +45,15 @@ export function startExternalTerminalWatch() {
 }
 
 // ── Detail view (1.22.0) ────────────────────────────────────────────────────────────────────────
-//
-// The badge above answers "how many"; this answers "which, and what is running in them". Same scan,
-// same subtree-root rule on the Rust side (`scan_terminal_tree`), so the modal can never disagree
-// with the number the badge shows.
-//
-// ON DEMAND ONLY, never on the badge's 5s cadence: `describe_terminal_sessions`
-// (docs/plan/done/terminal-ownership-model.md §10 S1) returns a command line for every process in
-// Terminal.app's tree, which is far more than a count and has no business being polled in the
-// background.
+// Detail inspection (`describe_terminal_sessions`): fetched on demand when modal opens, never polled on cadence.
 
-/** Is the detail view even meaningful on this screen? HOST ONLY, and published as a CAPABILITY so
- *  dock/TerminalStack.vue asks what it can DO rather than who it is: the scan reads the Mac's
- *  process table, and `describe_terminal_sessions` is deliberately absent from
- *  services/hostInvoke.js's companion allowlist, so on a phone the button would open a modal that
- *  can only ever show an error. */
+// Host-only capability: process tree scan requires local Mac access and is omitted from companion allowlist.
 export const externalTerminalsSupported = isHost
 
 export const showExternalTermModal = ref(false)
 export const externalTermSessions = ref([])
 export const externalTermLoading = ref(false)
-/** Non-empty means the LAST refresh failed. Kept separate from `externalTermSessions` so a failed
- *  re-scan shows the error *next to* the previous list rather than blanking it — an empty list and
- *  a failed scan are different facts and must not render the same. */
+// Separate from externalTermSessions so failed rescans preserve previous session list alongside error.
 export const externalTermError = ref('')
 
 export async function refreshExternalTermSessions() {

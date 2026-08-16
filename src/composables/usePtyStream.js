@@ -20,20 +20,20 @@ export function usePtyStream(tabId = 0) {
   const alive = ref('unknown') // 'unknown' | true | false
 
   const parser = createAnsiParser()
-  // Stateful UTF-8 decoder — survives PTY read() boundaries so a multi-byte sequence split across two chunks is correctly reassembled. The `stream: true` flag tells the decoder to buffer incomplete trailing bytes rather than emitting a replacement character.
+  // Stateful UTF-8 decoder with stream:true to reassemble multi-byte sequences split across PTY read boundaries.
   const textDecoder = new TextDecoder('utf-8', { fatal: false })
 
   let unsubscribeFrame = null
   let disposed = false
 
-  // Live-frame queue: frames arriving during scrollback hydration (step 2 of start()) are held here and drained in arrival order after the scrollback is fully ingested, so the parser's statefulness is never fed out-of-order.
+  // Holds frames arriving during scrollback hydration to drain in order without breaking parser statefulness.
   let liveQueue = []
   let feedingLive = false
 
   // ── Token application ───────────────────────────────────────────────────────
-  // The token → ref mutation table pinned in BRIEF.md. `buffer` is the in-progress uncommitted line; `lines` is committed lines capped at MAX_LINES.
+  // Token mutation handlers. buffer = uncommitted line; lines = committed lines capped at MAX_LINES.
 
-  // Push a completed line onto `lines` and re-apply the MAX_LINES cap. Uses .push (in place) instead of spread-rebuild — Vue 3 ref arrays stay reactive under .push, and this avoids an O(n) copy per committed line.
+  // In-place push + splice avoids O(n) array copy while preserving Vue 3 reactivity.
   function commitLine(text) {
     lines.value.push(text)
     if (lines.value.length > MAX_LINES) {
@@ -46,7 +46,7 @@ export function usePtyStream(tabId = 0) {
     switch (token.t) {
       case 'text':
         buffer.value += token.v
-        // Defensive cap: no newline for a long time (pathological single line) would otherwise grow `buffer` unbounded. Force-commit it as a line and keep going.
+        // Force-commit pathological single lines to prevent unbounded buffer growth.
         if (buffer.value.length > MAX_LINE) {
           commitLine(buffer.value)
           buffer.value = ''
@@ -111,7 +111,7 @@ export function usePtyStream(tabId = 0) {
       if (!isForThisTab(frame)) return
       if (typeof frame.alive === 'boolean') alive.value = frame.alive
       if (frame.reset) {
-        // reset:true = "replace everything on screen" (src-tauri/src/pty.rs). Unlike EXIT (which keeps scrollback), a reset frame MUST also clear committed `lines`, or CLEAR/RESTART, companion-join replay and congestion resync would append their fresh payload BELOW the stale scrollback instead of replacing it — the xterm peer wipes both screen and scrollback here (usePtyTerminal.js's `term.reset()`), and this must match.
+        // reset:true wipes screen + scrollback (matches xterm term.reset()) so replay payloads do not append below stale lines.
         lines.value = []
         resetDisplay()
       }
@@ -119,13 +119,13 @@ export function usePtyStream(tabId = 0) {
     } else if (frame.t === FRAME_PTY_EXIT) {
       if (!isForThisTab(frame)) return
       alive.value = false
-      // EXIT is a bare notice with no `data` and no `reset` flag (src/services/ptyBridge.js:178-181). It must clear tail + buffer independently so a stale fragment does not corrupt the first line after the common respawn path (typing to restart, via idempotent pty_spawn, which emits no reset frame at all).
+      // Bare notice without data/reset; clear tail + buffer so stale fragments do not corrupt respawn lines.
       resetDisplay()
     }
   }
 
   // ── sendRaw — keystroke funnel ──────────────────────────────────────────────
-  // Mirrors usePtyTerminal's companion path: encodes the string as UTF-8 bytes, then base64, then sends as a raw FRAME_PTY_INPUT frame. No isHost branch — SimpleView is a companion surface by design and never reads the role marker.
+  // Encodes UTF-8 bytes to base64 for FRAME_PTY_INPUT; companion-only surface so no isHost branch.
 
   function sendRaw(str) {
     if (!str) return
@@ -134,10 +134,7 @@ export function usePtyStream(tabId = 0) {
   }
 
   // ── start() — four-step ordering ────────────────────────────────────────────
-  // 1. Subscribe FRAME_PTY_OUTPUT + FRAME_PTY_EXIT via onFrame() first, so no live frame is lost.
-  // 2. Live frames arriving from here on go into a queue, not into the parser — the parser is stateful and order-sensitive.
-  // 3. await invoke('pty_get_scrollback', { tabId }), decode, feed through parser.
-  // 4. Only then drain the queue through the same parser, in arrival order, and switch to feeding live.
+  // Four-step start ordering: subscribe -> queue live frames -> hydrate scrollback -> drain queue in order.
 
   async function start() {
     // Step 1 — subscribe first

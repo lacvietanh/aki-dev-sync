@@ -61,7 +61,7 @@ const CONTROLS = [
     key: 'externalTerminals',
     label: 'External terminals',
     title: 'Which external Terminal.app sessions are running.',
-    // Tied to the SAME capability flag TerminalStack.vue's own button v-if reads (WS-A owned, §7): if that flag's condition ever changes, this row's availability follows it with no edit here.
+    // Capability sync (§7): availability tracks externalTerminalsSupported without call-site checks.
     hostAvailable: externalTerminalsSupported,
     companionAvailable: false,
     hostDefault: false,
@@ -86,14 +86,14 @@ function load() {
   }
 }
 
-// Sparse storage (§5): only explicitly-changed controls are written, and every control not yet touched falls back to its role default at read time — so a control added in a later release picks up its role default instead of `undefined`, with no migration step.
+// Sparse storage (§5): untouched controls fall back to role defaults, avoiding migrations when new controls are added.
 const stored = reactive(load())
 
 function persist() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
   } catch {
-    // Private-mode / quota failure: the preference still applies for this session (useTerminalFont.js's pattern).
+    // Private-mode / quota failure: preference still applies for this session (useTerminalFont.js pattern).
   }
 }
 
@@ -116,14 +116,14 @@ function preferenceFor(control) {
   return typeof v === 'boolean' ? v : roleDefault(control)
 }
 
-/** `visible = capability(control, thisScreen) && preference[control]` (§4) — preference never widens capability, so a control this screen cannot support never turns true even if the stored object (carried over from another device's export, or hand-edited) says otherwise. */
+/** visible = capability(control, thisScreen) && preference[control] (§4): preference never widens capability. */
 export const chromeVisible = computed(() => {
   const out = {}
   for (const control of CONTROLS) out[control.key] = isAvailable(control) && preferenceFor(control)
   return out
 })
 
-/** Menu rows, in inventory order (§8.3), already filtered to what this device can offer — a control this screen has no capability for is never listed, not listed-and-disabled (§4's "absent, not disabled-with-reason" rule). */
+/** Menu rows filtered to device capability in inventory order (§8.3; §4 absent, not disabled-with-reason rule). */
 export const chromeMenuRows = computed(() =>
   CONTROLS.filter(isAvailable).map((control) => ({
     key: control.key,
@@ -141,7 +141,7 @@ export function setChromePreference(key, value) {
   persist()
 }
 
-/** "Show all" (§5): touches only the controls this device offers and can actually change — never a blanket wipe of the stored object (CLAUDE.md's multi-entity regression guard). */
+/** "Show all" (§5): touches only available controls, preserving multi-entity regression safety (CLAUDE.md). */
 export const showAllVisible = computed(() =>
   CONTROLS.some((control) => isAvailable(control) && !isLocked(control) && !preferenceFor(control))
 )
@@ -163,7 +163,7 @@ function loadSeen() {
 
 const chromeMenuSeen = ref(loadSeen())
 
-/** §6.3 mitigation: tints the trigger once, until the menu has been opened, so a first-run device with every available control hidden gets a recognition cue instead of a recall problem. */
+/** §6.3: tints trigger until opened, providing a recognition cue when all controls are hidden. */
 export const chromeMenuArmed = computed(
   () => !chromeMenuSeen.value && CONTROLS.every((control) => !isAvailable(control) || !preferenceFor(control))
 )
@@ -174,6 +174,6 @@ export function markChromeMenuSeen() {
   try {
     localStorage.setItem(SEEN_KEY, '1')
   } catch {
-    // Session-only tint state is an acceptable, harmless fallback (delete-safe per §6.3).
+    // Session-only tint state is an acceptable fallback (delete-safe per §6.3).
   }
 }

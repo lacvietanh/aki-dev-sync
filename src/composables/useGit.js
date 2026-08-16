@@ -10,20 +10,11 @@ export const projectChangelogText = ref(null)
 
 const { appendGlobalLog } = useLogs()
 
-// updateModalLog=false lets callers refresh the git_status/git_changed_count badge in the
-// background (e.g. right after a fetch/push/pull/commit) without clobbering the action's
-// own output that's currently on display in the Git Modal.
-//
-// One of the three per-project status checks. It reports its own busy state through the shared
-// beginRefresh/endRefresh counter (projectStore.js) rather than through anything owned by its
-// caller - that is what makes a background timer tick, a per-project button click and a global
-// refresh all light up the same indicator with no per-caller bookkeeping. The epoch check
-// discards a result whose project was superseded mid-flight (host/path edited, projects
-// reloaded) - see bumpEpoch in projectStore.js.
+// updateModalLog=false protects active modal output during background badge refresh; epoch check drops stale responses.
 export async function fetchGitStatus(projectId, silent = false, updateModalLog = true) {
   const project = projects.value.find(p => p.id === projectId)
   if (!project) return
-  // beginRefresh first: it guarantees the epoch exists, so the captured value is never the 0 that means "project removed".
+  // beginRefresh first guarantees epoch exists so captured value is never 0 ("project removed").
   beginRefresh(projectId)
   const epoch = currentEpoch(projectId)
   try {
@@ -36,7 +27,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       git_log: info.log,
       remote_url: info.remote_url || "",
       git_changed_count: info.changed_count || 0,
-      // Distinct from "No Git": the directory itself is gone (unmounted volume). ProjectTable renders its own badge state for this, because "mount the drive" and "run git init" are different fixes.
+      // Distinct from "No Git": directory is missing (e.g. unmounted volume), requiring separate badge state in ProjectTable.
       local_path_missing: !!info.local_path_missing,
     }
     if (!silent) appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`)
@@ -57,7 +48,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       gitStatusText.value = errorLog
     }
   } finally {
-    // Only the generation that started this counts its own completion - a stale run's epoch was already force-reset to 0 by bumpEpoch, so decrementing here would underflow the new one.
+    // Only original epoch decrements refresh counter; stale runs were reset to 0 by bumpEpoch.
     if (currentEpoch(projectId) === epoch) endRefresh(projectId)
   }
 }
@@ -94,13 +85,10 @@ export function closeGitModal() {
 
 export const isGitLoading = ref(false)
 
-// `-c color.ui=always` forces git to emit ANSI color codes even though it isn't attached to a
-// TTY (it's a subprocess), so the modal can show the same colored output a real terminal would.
+// -c color.ui=always forces ANSI color codes in subprocess output for terminal-like display in Git modal.
 const COLOR_ARGS = ["-c", "color.ui=always"]
 
-// Shared runner for fetch/push/pull/commit: each is one or more `run_git_command` invocations
-// whose combined output replaces the Git Modal's status pane (real terminal-like feedback,
-// not just a line in the global console), followed by a silent badge-only status refresh.
+// Runs git step sequence, displays combined output in Git modal status pane, then triggers silent badge refresh.
 async function runGitAction(project, verb, steps) {
   if (!project) return
   isGitLoading.value = true
