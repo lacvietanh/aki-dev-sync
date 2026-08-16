@@ -1095,7 +1095,7 @@ fieldset:disabled .switch {
 /* Narrow container layout adjustments (<=700px). */
 @container main-view (max-width: 700px) {
   .projects-table-container {
-    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem 1fr;
+    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.0rem 4.2rem 1fr;
     --grid-gap: 0.4rem;
   }
 
@@ -1161,9 +1161,9 @@ fieldset:disabled .switch {
     transform: translateX(8px);
   }
 
-  /* Slight margin adjustment between GIT and TERM columns. */
+  /* Tighten spacing between terminal and action columns in narrow mode. */
   .col-terminal {
-    margin-left: -6px;
+    margin-left: 0;
   }
 
   /* LAST ACTION font-size in narrow mode (9px). */
