@@ -1,44 +1,24 @@
-// Companion pairing state — docs/plan/done/remote-control.md §7.1 (pairing), §9 (ENV-1).
-//
-// Boundary module: reads `isHost` so `PairingGate.vue` never has to. Without this the phone had no
-// way to submit the 6-digit code at all — `services/bridge.js` set `connectionState = 'unpaired'`
-// and nothing in the UI consumed it, so a fresh device could never get a token.
-//
-// Host: `needsPairing` is permanently false and the gate renders nothing.
+// Companion pairing state (docs/plan/done/remote-control.md §7.1, §9 ENV-1).
 import { ref, computed, watch } from 'vue'
 import { isHost, connectionState, hasDeviceToken, pairDevice, clearDeviceToken } from '../services/bridge'
 
-// True only until the phone has an ACCEPTED token — used to tune the gate's heading text, NOT to
-// decide whether the code input shows. PairingGate renders the code form for EVERY not-ready
-// companion state (see ROBUST-1 below), so a stale or failing token can never trap the user on a
-// dead "Connecting…" screen with no way to re-enter a code.
+// True until phone gets an accepted token; tunes gate heading without blocking code input.
 const needsPairing = ref(!isHost && !hasDeviceToken())
 const busy = ref(false)
 const error = ref('')
 
-// The gate the WHOLE dashboard mounts behind (App.vue). The host is always ready. A companion is
-// ready ONLY once its relay socket is actually open — before that, every mirrored store is empty
-// and every `invoke` the dashboard fires on mount would go out over a closed socket and reject
-// ("send dropped, socket not open"). Gating the subtree, not just overlaying PairingGate on top of
-// a live dashboard, is what stops that burst structurally: the components never mount early.
+// Ready gate for dashboard mounting: host is always ready; companion waits for open socket.
 const ready = computed(() => isHost || connectionState.value === 'open')
 
 if (!isHost) {
   watch(connectionState, (s) => {
     if (s === 'unpaired') {
-      // Close 4001 — and, since 1.20.0, ONLY the token-rejected case. ROBUST-1 still holds for it:
-      // a rejected token fails identically on every reconnect, so drop it and fall back to fresh
-      // code entry rather than looping on a dead credential.
+      // Close 4001: rejected token on reconnect falls back to fresh code entry.
       clearDeviceToken()
       needsPairing.value = true
       if (!busy.value) error.value = 'This device is not paired with the Mac. Enter the code to pair.'
     } else if (s === 'host-off') {
-      // Close 4002 — remote control is off on the Mac (it restarted, or the toggle was flipped).
-      // The token is NOT touched: the person holding this phone is usually in another room and
-      // cannot walk over to read a new code, and the Mac restarting is the ordinary case, not a
-      // revocation. Guessing "keep" is also the cheap error — a token that really was revoked just
-      // fails again on the next attempt and clears then, whereas guessing "clear" stranded every
-      // phone on every restart. bridge.js keeps reconnecting, so this heals with no user action.
+      // Close 4002: remote control off on host; keep token while reconnecting.
       needsPairing.value = !hasDeviceToken()
       if (!busy.value) {
         error.value = needsPairing.value
@@ -64,9 +44,7 @@ async function submitCode(rawCode) {
   error.value = ''
   try {
     await pairDevice(code)
-    // `pairDevice` stores the token and calls connect(); the watch above hides the gate once the
-    // socket actually opens, so a token the host accepts but a socket that never opens keeps the
-    // gate visible instead of dropping the user into a dead, empty app.
+    // pairDevice stores token and reconnects; gate hides once socket opens.
     return true
   } catch (e) {
     error.value = String(e && e.message ? e.message : e)

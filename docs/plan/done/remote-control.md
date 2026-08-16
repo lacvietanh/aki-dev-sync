@@ -284,22 +284,18 @@ Case 4 is the strongest evidence: with the seams in place it is **literally a ze
 
 ## 7. Rust — relay only
 
-`src-tauri/src/web_server.rs`, new deps `axum` + `tokio` (`ws` feature) + `if-addrs` (LAN IP without
-shelling out).
+`src-tauri/src/web_server.rs`, new deps `axum` + `tokio` (`ws` feature) + `if-addrs` (LAN IP without shelling out).
 
 | Route | Purpose |
 | :-- | :-- |
 | `GET /ws?role=host\|companion&token=…` | the relay. host frame → all companions; companion frame → host. No parsing of payloads beyond the role tag. |
 | `GET /*` (prod only) | static `dist/` |
 
-New commands: `start_companion_server()`, `stop_companion_server()`, `get_companion_url()`,
-`list_paired_devices()`, `revoke_device(id)`, `get_project_icons_map()`, `read_text_file(path)`.
+New commands: `start_companion_server()`, `stop_companion_server()`, `get_companion_url()`, `list_paired_devices()`, `revoke_device(id)`, `get_project_icons_map()`, `read_text_file(path)`.
 
 ### 7.0 Icons — backend scans and HOLDS, so nothing can 404 (learned from the parked WIP)
 
-The parked attempt died to a **404 storm on icons**: the browser (and even the Mac) kept *requesting*
-each icon and getting 404s in a loop. Root cause: icons were treated as a *fetchable resource*. The
-decision, applied everywhere:
+The parked attempt died to a **404 storm on icons**: the browser (and even the Mac) kept *requesting* each icon and getting 404s in a loop. Root cause: icons were treated as a *fetchable resource*. The decision, applied everywhere:
 
 > **Invariant ICON-1 — an icon is HELD STATE, never a request.** The backend scans project dirs once,
 > holds a **complete** map in memory (every project id → either its icon bytes+mime, or an explicit
@@ -307,21 +303,13 @@ decision, applied everywhere:
 > mirrored state. **There is no icon endpoint and no icon fetch on either side, so a 404 is
 > structurally impossible.**
 
-* `get_project_icons_map()` (async, `spawn_blocking`) returns `{ id: "data:image/png;base64,…" | null }`,
-  built from a held in-memory scan. `null` = "scanned, none found" — a *terminal* answer that stops
-  any retry, not a miss that re-requests.
-* The map is a mirrored key (`projectStore.projectIcons` in §2), so the browser gets it via the state
-  mirror like everything else — **no `/icon/` route, no custom-scheme dependency on the browser.**
-* Re-scan is an explicit host event (projects changed / reload), never a per-render pull. The old
-  `aki-devsync-icon://` scheme may stay for the *native* window if convenient, but it is no longer on
-  any hot path and never reached from a browser.
+* `get_project_icons_map()` (async, `spawn_blocking`) returns `{ id: "data:image/png;base64,…" | null }`, built from a held in-memory scan. `null` = "scanned, none found" — a *terminal* answer that stops any retry, not a miss that re-requests.
+* The map is a mirrored key (`projectStore.projectIcons` in §2), so the browser gets it via the state mirror like everything else — **no `/icon/` route, no custom-scheme dependency on the browser.**
+* Re-scan is an explicit host event (projects changed / reload), never a per-render pull. The old `aki-devsync-icon://` scheme may stay for the *native* window if convenient, but it is no longer on any hot path and never reached from a browser.
 
 ### 7.1 Security — pair once per device, then silent reconnect (resolved)
 
-The three textbook options were each rejected as a *sole* mechanism: per-launch token = re-pair every
-time the app restarts (annoying); open-LAN = unsafe on café/public wifi; Tailscale-only = would make a
-third party mandatory. The chosen model is **trusted-device pairing**, which has none of those costs
-and is **transport-agnostic** — so it secures LAN and Tailscale with the *same* token, no extra path:
+The three textbook options were each rejected as a *sole* mechanism: per-launch token = re-pair every time the app restarts (annoying); open-LAN = unsafe on café/public wifi; Tailscale-only = would make a third party mandatory. The chosen model is **trusted-device pairing**, which has none of those costs and is **transport-agnostic** — so it secures LAN and Tailscale with the *same* token, no extra path:
 
 ```
 FIRST TIME (pairing)                          EVERY TIME AFTER
@@ -337,31 +325,12 @@ per-device token, returns it
       survives app restarts on BOTH ends)
 ```
 
-* **Persistence is per-device, both ends.** The phone keeps its `deviceToken` in `localStorage`; the
-  Mac keeps the paired-token set in a small JSON next to `projects.json` (`dirs`-resolved app config
-  dir). Restarting the Mac app does **not** invalidate already-paired phones → no reconnect friction,
-  the exact complaint about the per-launch option.
-* **Bound `0.0.0.0`, but useless without a token.** A stranger on the same wifi hitting `:1421` gets
-  only the pairing page and cannot mirror or send intents without the 6-digit code shown on the Mac
-  screen (which they don't have physical access to).
-* **Revocable.** `list_paired_devices()` / `revoke_device(id)` back a tiny "paired devices" list in a
-  settings modal (lost/old phone → revoke one token, others unaffected — this is a multi-entity store,
-  so CLAUDE.md's scoped-clear rule applies: revoke removes ONE token, never wipes the set).
-* **WS gate:** `/ws?role=companion&token=…`; a bad/absent token → close code 4001, the companion UI
-  shows "pair this device", never a blank mirror.
-* This is not multi-tenant (SCOPE-1): paired devices are all mirror screens of the **one** Mac
-  session, not separate accounts.
-* **Host entry point — the header dropdown "Remote Control" section (shipped 1.18.x, host-only).**
-  The on/off toggle lives in the existing hamburger menu (`AppHeader.vue`), next to SSH config / Claude
-  profile / window presets, per the Extreme-Narrow rule (a section in the one app-level menu, not a new
-  header button). ON → calls `start_companion_server()` and shows the 6-digit **pair code** inline plus
-  every reachable **IP:PORT** (LAN + Tailscale, from `get_companion_url()`, click-to-copy); OFF →
-  `stop_companion_server()`. Logic in `src/composables/useRemoteControl.js` (module-scope singleton),
-  `invoke` via the Seam-N wrapper (`utils/tauri.js`). This minimal surface is enough to *pair and know
-  the address*; the **full pairing modal** (QR code + paired-device list backed by
-  `list_paired_devices()`/`revoke_device()`) is **Wave 2** — the menu section will gain a "Manage
-  devices…" link into it. The section is `v-if="isHost"`, so a companion (phone) never sees a control
-  it cannot action.
+* **Persistence is per-device, both ends.** The phone keeps its `deviceToken` in `localStorage`; the Mac keeps the paired-token set in a small JSON next to `projects.json` (`dirs`-resolved app config dir). Restarting the Mac app does **not** invalidate already-paired phones → no reconnect friction, the exact complaint about the per-launch option.
+* **Bound `0.0.0.0`, but useless without a token.** A stranger on the same wifi hitting `:1421` gets only the pairing page and cannot mirror or send intents without the 6-digit code shown on the Mac screen (which they don't have physical access to).
+* **Revocable.** `list_paired_devices()` / `revoke_device(id)` back a tiny "paired devices" list in a settings modal (lost/old phone → revoke one token, others unaffected — this is a multi-entity store, so CLAUDE.md's scoped-clear rule applies: revoke removes ONE token, never wipes the set).
+* **WS gate:** `/ws?role=companion&token=…`; a bad/absent token → close code 4001, the companion UI shows "pair this device", never a blank mirror.
+* This is not multi-tenant (SCOPE-1): paired devices are all mirror screens of the **one** Mac session, not separate accounts.
+* **Host entry point — the header dropdown "Remote Control" section (shipped 1.18.x, host-only).** The on/off toggle lives in the existing hamburger menu (`AppHeader.vue`), next to SSH config / Claude profile / window presets, per the Extreme-Narrow rule (a section in the one app-level menu, not a new header button). ON → calls `start_companion_server()` and shows the 6-digit **pair code** inline plus every reachable **IP:PORT** (LAN + Tailscale, from `get_companion_url()`, click-to-copy); OFF → `stop_companion_server()`. Logic in `src/composables/useRemoteControl.js` (module-scope singleton), `invoke` via the Seam-N wrapper (`utils/tauri.js`). This minimal surface is enough to *pair and know the address*; the **full pairing modal** (QR code + paired-device list backed by `list_paired_devices()`/`revoke_device()`) is **Wave 2** — the menu section will gain a "Manage devices…" link into it. The section is `v-if="isHost"`, so a companion (phone) never sees a control it cannot action.
 
 ### 7.1a Reach from outside the LAN — Tailscale, natively, no patchwork
 
@@ -518,9 +487,7 @@ export const isHost = typeof window !== 'undefined' && window.__AKI_ROLE__ === '
 Verified with a plain Node ESM spike (`scratchpad/glob-spike/`, no Tauri/Vite needed): a module namespace value **is** the same function object as the named export (`ns.setProjectFlag === setProjectFlag` → `true`), so a companion `action()` stub finds its own key by identity — for both the host-unchanged fn and the companion stub. Non-function exports (refs) stay enumerable for mirror discovery. The only Vite-specific residue — that `import.meta.glob({eager:true})` yields namespace objects — is documented Vite behaviour, not a risk. Fallback if ever needed: explicit key `action('setProjectFlag', fn)`, a one-word change.
 
 ### S-1 · host vs companion detection — DECIDED: our own role marker, not Tauri's globals
-We do **not** depend on Tauri's `window.isTauri` (could be renamed across Tauri versions). We define
-**our own** marker, `window.__AKI_ROLE__`, stamped positively at each entry point, and default to the
-safe side (companion):
+We do **not** depend on Tauri's `window.isTauri` (could be renamed across Tauri versions). We define **our own** marker, `window.__AKI_ROLE__`, stamped positively at each entry point, and default to the safe side (companion):
 
 ```js
 // services/bridge.js
@@ -576,8 +543,7 @@ Added after a review pass that read every file, reported the 18 modules importin
 
 ## 13. Wire protocol contract — FROZEN (shared by every implementer, do not diverge)
 
-This is the single contract the Rust relay and the JS seams both implement. Parallel work must not
-invent variants. **All frames are JSON text over WS.** Envelope: `{ t: <type>, ... }`.
+This is the single contract the Rust relay and the JS seams both implement. Parallel work must not invent variants. **All frames are JSON text over WS.** Envelope: `{ t: <type>, ... }`.
 
 > **Amended by `docs/plan/done/1.21.1-terminal-limits-and-structure.md` §4.2** (per-connection addressing): two *optional* fields, `to` and `from`, were added to existing frames so a scrollback replay and an `invoke_result` can be routed to one companion CONNECTION instead of broadcast. No new frame tag, so this freeze holds — a frame carrying neither field behaves exactly as documented below. One field below did change meaning: `companion-connected`'s `id` now carries that connection key rather than the device id. See `docs/feat/remote-control.md` for the routing table.
 

@@ -1,11 +1,8 @@
 <template>
   <div class="dashboard-layout">
-    <!-- The whole dashboard mounts only when `ready` (host: always; companion: relay socket open).
-         On an unpaired/still-connecting phone these components must NOT mount — every store is empty
-         and their onMounted `invoke`s would fire over a closed socket. PairingGate covers that gap.
-         See useCompanionPairing.js `ready`. -->
+    <!-- Mounts only when ready (host: always; companion: relay socket open). See useCompanionPairing.js. -->
     <template v-if="ready">
-      <!-- AppHeader spans the FULL window width as the titlebar. Must NOT be inside dashboard-left: that column is only 420px in right-dock mode, leaving the terminal column's top 42px in the titlebar zone — blocking ⋮, COLLAPSE, and tab-strip clicks. -->
+      <!-- AppHeader spans full window width as titlebar outside dashboard-left columns. -->
       <AppHeader />
 
       <div class="dashboard-main" :class="{ 'is-right-dock': rightDockActive }">
@@ -13,7 +10,7 @@
         <div class="dashboard-left">
           <AgentUsageSection />
           <ProjectTable />
-          <!-- Global Event Log stays in the main view column in right-dock mode so the terminal column (AppConsole) is terminal-only. In narrow mode it lives inside AppConsole. -->
+          <!-- Global Event Log: rendered in main column in right-dock mode, inside AppConsole in narrow mode. -->
           <LogStack v-if="rightDockActive" />
         </div>
 
@@ -27,15 +24,11 @@
       <ProjectTasksModal />
       <ExternalTerminalsModal />
 
-      <!-- Renders the mirrored `dialogStore.pendingDialog` (docs/plan/done/remote-control.md §3.4,
-           docs/plan/done/1.20.0-terminal-and-remote-sync.md §3). Mounted on BOTH roles and unconditionally:
-           a decision dialog is a data event under SYNC-1, so it must appear on whichever screen is
-           looking and be answerable from either. Renders nothing until a dialog is actually pending. -->
+      <!-- Mirrored dialog host for pendingDialog across both roles (docs/plan/done/remote-control.md §3.4). -->
       <DialogHost />
     </template>
 
-    <!-- Companion-only: shown whenever NOT ready (enter-code, or connecting…). Renders nothing on
-         the host. Last in the tree so it paints over everything. -->
+    <!-- Companion-only overlay when not ready; last in tree to paint over content. -->
     <PairingGate />
   </div>
 </template>
@@ -78,10 +71,10 @@ const { sshHosts } = useSsh();
 const LEGACY_BASELINE_CLEANUP_KEY = 'aki-legacy-baseline-cleanup-v1';
 
 onMounted(() => {
-  // Remote-control bring-up (docs/plan/done/remote-control.md §1). Idempotent, safe on both roles: host opens its relay socket + broadcasts store state; companion mirrors incoming state. MUST run before the producers below so the host's first broadcast reflects loaded data.
+  // Remote-control bring-up (docs/plan/done/remote-control.md §1); must run before boot producers.
   initRemote();
 
-  // Seam P (§5): the whole boot sequence is *production* — it reads the disk, hits the network and mutates state. A companion must run none of it: its copy of every store arrives through the mirror, and at this point its socket is not even open yet, so these calls would only produce a burst of failed RPCs. On the host `onHostBoot` runs the callback immediately, unchanged.
+  // Host-only boot sequence (Seam P §5); companion receives store state via remote mirror.
   onHostBoot(() => {
     loadData(sshHosts, false);
     initGlobalNote();
