@@ -1,5 +1,7 @@
 # Sync Flow (Push, Pull, Select)
 
+> updated 2026-08-16 · v1.24.0
+
 This document covers the core synchronization capabilities of Aki Dev Sync, designed to support the **Lạc Việt Anh Workflow** where the Local machine acts as the Source of Truth and the Remote acts as the AI Engine.
 
 ---
@@ -17,7 +19,7 @@ This document covers the core synchronization capabilities of Aki Dev Sync, desi
 - PULL must not light because `--delete` would erase local files that remote no longer has. That is a deletion on the remote side, not new incoming content.
 - PUSH must not light because `--delete` would erase remote files that local no longer has. That is the correct direction, but only when the user explicitly chose to mirror.
 
-**Consequence:** The status checker (`count_rsync_changes`) must count **additive transfers only** - files the source has to send to the destination. `deleting …` lines from rsync must be excluded from the count. See `sync.rs → count_rsync_changes`.
+**Consequence:** The status checker (`rsync_change_files`) must count **additive transfers only** - files the source has to send to the destination. `deleting …` lines from rsync must be excluded from the count. See `sync.rs → rsync_change_files`.
 
 **Resolved (Tier 2 Baseline Manifest - v1.7.0):**  
 rsync is stateless. Without extra context it cannot distinguish "remote created file X" from "local deleted file X" (PULL ambiguity), nor "Mac created file Y" from "remote deleted file Y" (PUSH ambiguity). Both issues are now resolved using a local baseline snapshot written to `{appDataDir}/baselines/{project_id}.json` after every full sync. See §2 Sync Status Checker below for the full reclassification logic.
@@ -34,7 +36,7 @@ rsync is stateless. Without extra context it cannot distinguish "remote created 
 - **Delete on Push Toggle** (Config Modal): 
   - **OFF (Default)**: Safe mode. Pushing only adds or overwrites files. It will not delete files on the Remote, even if they were removed locally.
   - **ON**: Strict mirror mode. Pushing passes `--delete` to rsync, permanently deleting any file on the Remote that does not exist Locally.
-  - **Safety Guard**: If `delete_on_push` is ON and the app detects pending Pull changes (i.e., the AI generated new files remotely), clicking Push will trigger a **SweetAlert2 confirmation dialog**. This prevents accidental destruction of AI-generated work.
+  - **Safety Guard**: Before any delete-enabled sync runs, the app previews exactly what `--delete` would remove (`get_sync_delete_preview`). If anything is at risk, a typed-confirmation dialog blocks the sync until the project name is typed exactly - mirrored to a paired phone (`docs/feat/remote-control.md`), not a Mac-only SweetAlert2. Flow-app artifacts (e.g. `REPORT.html`) unchanged since the last sync, and deletions confined to a push-only excluded dir (e.g. `.git/`), auto-approve without asking.
 
 ### PULL (Remote → Local)
 - Retrieves files modified or created by the AI on the Remote back to the Local machine.
@@ -65,7 +67,8 @@ rsync is stateless. Without extra context it cannot distinguish "remote created 
   |------|-----------|---------------|----------------|
   | PULL file + in baseline + absent locally | remote has X, Mac doesn't | X existed at last sync | Mac deleted X → `push_count` |
   | PULL file + not in baseline | remote has X, Mac doesn't | X is new | Remote created X → `pull_count` |
-  | PUSH file + in baseline | Mac has X, remote doesn't | X existed at last sync | Remote deleted X → suppress from `push_count` |
+  | PUSH file + in baseline + local mtime unchanged since baseline | Mac has X, remote doesn't | X existed at last sync, not edited locally | Remote deleted X → suppress from `push_count` |
+  | PUSH file + in baseline + local mtime changed since baseline | Mac has X, remote doesn't | X existed at last sync, edited locally | User modified X → keep in `push_count` |
   | PUSH file + not in baseline | Mac has X, remote doesn't | X is new | Mac created X → `push_count` |
 
   The PUSH-side suppression is especially important for workflows where most coding happens on the remote server - without it, every file deleted on the remote would falsely light the PUSH badge on Mac.

@@ -63,8 +63,7 @@ export async function hydrateProjectNotes(projectList) {
     .filter((p) => p?.id && p?.local_path)
     .map((p) => ({ id: p.id, local_path: p.local_path }))
   if (targets.length === 0) return
-  // Same staleness guard as the single read below, one token per id — a boot hydrate on a slow
-  // network mount can easily still be in flight when the user opens a modal and starts typing.
+  // Same staleness guard as the single read below, one token per id — a boot hydrate on a slow network mount can easily still be in flight when the user opens a modal and starts typing.
   const tokens = new Map(targets.map((t) => [t.id, bumpProjectNotesGeneration(t.id)]))
   try {
     const map = await invoke('read_project_notes_map', { targets })
@@ -93,8 +92,7 @@ export async function refreshProjectNotes(id, localPath) {
     if (!isCurrentProjectNotesGeneration(id, token)) return
     setProjectNotesEntry(id, toEntry(read))
   } catch (e) {
-    // Unlike the batch above, a single failed read IS about this project — record it so the UI goes
-    // read-only rather than offering to save into something we could not read.
+    // Unlike the batch above, a single failed read IS about this project — record it so the UI goes read-only rather than offering to save into something we could not read.
     console.error('[projectNotes] refresh failed', e)
     if (!isCurrentProjectNotesGeneration(id, token)) return
     // MERGED over the existing entry, never spread over the empty default: whatever text is on
@@ -134,8 +132,7 @@ export async function migrateLegacyProjectNotes(projectList) {
       Object.prototype.hasOwnProperty.call(p || {}, 'tasks') ||
       Object.prototype.hasOwnProperty.call(p || {}, 'notes')
     if (!hasLegacyKey) continue
-    // Present but empty: nothing to move, just drop the keys so this project stops being a
-    // migration candidate on every launch.
+    // Present but empty: nothing to move, just drop the keys so this project stops being a migration candidate on every launch.
     if (legacyTasks.length === 0 && legacyNotes === '') {
       delete p.tasks
       delete p.notes
@@ -144,12 +141,10 @@ export async function migrateLegacyProjectNotes(projectList) {
     }
 
     const entry = getProjectNotesEntry(p.id)
-    // NEVER migrate against a directory we could not read: writing is refused there anyway, and
-    // deleting the legacy fields on a failed write would destroy the only copy. Retry next launch.
+    // NEVER migrate against a directory we could not read: writing is refused there anyway, and deleting the legacy fields on a failed write would destroy the only copy. Retry next launch.
     if (entry.status !== 'ok' && entry.status !== 'missing') continue
 
-    // The file wins when it already has content — local repo is SSOT (plan §1). An `ok` but empty
-    // file is treated exactly like `missing`: there is nothing there to lose.
+    // The file wins when it already has content — local repo is SSOT (plan §1). An `ok` but empty file is treated exactly like `missing`: there is nothing there to lose.
     const fileHasContent = entry.status === 'ok' && (entry.tasks.length > 0 || entry.notes !== '')
     if (fileHasContent) {
       delete p.tasks

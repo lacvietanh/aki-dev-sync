@@ -51,8 +51,7 @@ pub fn init(handle: &tauri::AppHandle) {
 
     maybe_truncate_log(&path);
 
-    // STARTUP is always written to file as a session boundary marker.
-    // stderr only in debug mode (end users don't see stderr in production).
+    // STARTUP is always written to file as a session boundary marker. stderr only in debug mode (end users don't see stderr in production).
     let ts = now_human();
     let msg = format!("aki-dev-sync started debug={} log={}", debug, path.display());
     let line = format!("[{}][STARTUP] {}\n", ts, msg);
@@ -269,8 +268,7 @@ mod tests {
             append_line(&path, &line);
         }
         let size = std::fs::metadata(&path).unwrap().len();
-        // 2 MB was written; anything near that means rotation never ran. The ceiling plus one
-        // check window is the honest bound.
+        // 2 MB was written; anything near that means rotation never ran. The ceiling plus one check window is the honest bound.
         assert!(size < 1_048_576 + CHECK_EVERY_BYTES, "log grew unchecked: {} bytes", size);
         let _ = std::fs::remove_file(&path);
     }

@@ -1,5 +1,7 @@
 # Window Presets (AppWindow)
 
+> updated 2026-08-16 · v1.24.0
+
 Bốn preset kích thước/vị trí cửa sổ nằm trong menu ☰ ở titlebar, mục `AppWindow:`, kèm tuỳ chọn ghi nhớ để lần mở app sau tự áp lại. App chỉ ship cho macOS nên phím tắt in thẳng ký hiệu `⌘`, không có nhánh dò hệ điều hành.
 
 Code: `src/composables/useAppWindow.js` (toàn bộ state + logic) và `src/components/AppHeader.vue` (markup menu, phím tắt, CSS).

@@ -78,7 +78,7 @@ Còn đúng **3 file** về chủ đề này:
 |---|---|
 | `docs/arch/usage-claudecode.md` | Kiến trúc **đang chạy**. Viết lại gọn, xoá 5 chỗ đính chính/gạch bỏ inline (giữ kết luận đúng, bỏ dấu vết tranh cãi) |
 | `docs/research/claudecode-usage-FINAL.md` | Sự thật đã kiểm chứng + nhật ký đã thử/đã bỏ + ràng buộc bất biến |
-| `docs/plan/claudecode-usage-cleanup-FINAL.md` | File này. Chuyển `docs/plan/done/` sau khi xong |
+| `docs/plan/done/claudecode-usage-cleanup-FINAL.md` | File này. Chuyển `docs/plan/done/` sau khi xong |
 
 **Xoá 8 file** - nội dung đã được cô đọng vào research §5 (nhật ký) và §4 (bài học):
 

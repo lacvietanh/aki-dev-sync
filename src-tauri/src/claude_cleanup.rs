@@ -94,8 +94,7 @@ fn is_accounted_for(name: &str) -> bool {
         .iter()
         .any(|e| e.rel.strip_prefix(".claude/") == Some(name))
         || KEPT.iter().any(|(rel, _)| rel.strip_prefix(".claude/") == Some(name))
-        // Aki rule-corpus backups (`CLAUDE.md.akidevrule-backup-*`, `settings.json.aki-bak-*`) are
-        // rolling filenames, so they cannot be listed literally the way KEPT's entries are.
+        // Aki rule-corpus backups (`CLAUDE.md.akidevrule-backup-*`, `settings.json.aki-bak-*`) are rolling filenames, so they cannot be listed literally the way KEPT's entries are.
         || name.contains(".aki")
 }
 
@@ -545,8 +544,7 @@ mod tests {
         assert!(!slug.join("subdir").exists());
         assert!(slug.exists(), "slug dir with surviving memory must be kept");
 
-        // …and ticking memory as well finishes the job: memory goes, and the now-empty slug folder
-        // goes with it rather than being left behind as a hollow directory.
+        // …and ticking memory as well finishes the job: memory goes, and the now-empty slug folder goes with it rather than being left behind as a hollow directory.
         let (bytes, count) = memory_dirs(&root);
         assert_eq!(count, 1);
         assert_eq!(bytes, "keep me".len() as u64);

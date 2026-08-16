@@ -43,8 +43,7 @@ export function useProjectTaskCollection(projectRef) {
 // ProjectTable.vue) don't have to import utils/tasks.js directly and so the count/normalize step
 // stays in exactly one place. These never write anything back.
 //
-// They take the project (not just an id) because every call site already has one, but they read
-// through `project.id` — the tasks no longer live on the record (1.22.0).
+// They take the project (not just an id) because every call site already has one, but they read through `project.id` — the tasks no longer live on the record (1.22.0).
 export function openTaskCount(project) {
   return countOpen(normalizeTasks(projectNotesFor(project?.id).tasks))
 }

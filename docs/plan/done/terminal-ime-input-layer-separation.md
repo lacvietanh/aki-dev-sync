@@ -160,7 +160,7 @@ This means `useTerminalInput.js` does NOT import xterm at all. It only manages t
 // Terminal input layer — app-owned textarea overlay that separates keyboard
 // capture from xterm.js, so xterm is a pure renderer.
 //
-// Architecture: docs/plan/terminal-ime-input-layer-separation.md
+// Architecture: docs/plan/done/terminal-ime-input-layer-separation.md
 //
 // Replaces useWkImeGuard.js. The problem that guard solved (WKWebView's
 // keyCode 229 tagging of synthetic keystrokes, which xterm 5.5.0's IME
@@ -308,7 +308,7 @@ if (inputMode === 'legacy') {
 - Update `__akiIme` references to `__akiTermInput`
 
 ### 4.5 Modified: `docs/research/terminal-vietnamese-ime-root-cause-2.md`
-- Add status line: "Superseded by docs/plan/terminal-ime-input-layer-separation.md"
+- Add status line: "Superseded by docs/plan/done/terminal-ime-input-layer-separation.md"
 
 ## 5. What stays unchanged
 

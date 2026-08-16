@@ -96,7 +96,7 @@ Pass `{ maxBuffer: 10 * 1024 * 1024 }` to the Unix `execAsync`, matching `:144`.
 - **No Windows path work.** The app ships macOS-only.
 - **No new UI.**
 
-## 7. Warning to whoever executes WS-C (`docs/plan/usage-probe-oop.md`)
+## 7. Warning to whoever executes WS-C (`docs/plan/done/usage-probe-oop.md`)
 
 **WS-C §3 item P10 ports the `agy` CLI detection block verbatim, including `csrfToken: undefined`.** That is breakpoint A-2. Executed as written:
 
@@ -105,7 +105,7 @@ Pass `{ maxBuffer: 10 * 1024 * 1024 }` to the Unix `execAsync`, matching `:144`.
 
 P10 must be ported together with Fix 2, and the parity baseline for that row re-captured afterwards. WS-C §3 P34/P35 (`exit 1` on zero snapshots) and N1 (a dedicated exit code for a permanent condition) are the natural carriers — Fix 2 is the same idea, one case earlier.
 
-## 8. `docs/plan/investigate-ag-account-switch-detection.md` — closable by reasoning, no Mac test needed
+## 8. `docs/plan/done/investigate-ag-account-switch-detection.md` — closable by reasoning, no Mac test needed
 
 That plan has sat unexecuted since 2026-07-08 waiting for a PID comparison. It can be closed now, and this analysis is why.
 
@@ -159,8 +159,8 @@ Land these in the same task as the fix. Read each before editing — if one turn
 - `src-tauri/src/agent_usage.rs` — transport and the `AgentUsageResult` envelope.
 - `docs/research/test-case-check-flow.md` §B10 — finding 🔴 #5, the first form of this defect; §B11 — the no-clearing-function property this change must preserve.
 - `docs/research/antigravity-multi-instance-cli-discovery-jul22.md` §2 — the captured `agy` process line showing no `--csrf_token` argv.
-- `docs/plan/usage-probe-oop.md` — WS-C. See §7.
-- `docs/plan/investigate-ag-account-switch-detection.md` — closable. See §8.
+- `docs/plan/done/usage-probe-oop.md` — WS-C. See §7.
+- `docs/plan/done/investigate-ag-account-switch-detection.md` — closable. See §8.
 
 ## 13. Closing note (2026-07-30) — what actually shipped, against what was decided in §5
 

@@ -1,5 +1,7 @@
 # Drag & Drop Live Sorting
 
+> updated 2026-08-16 · v1.24.0
+
 Tài liệu chi tiết về tính năng kéo thả trực quan (Live Sorting) để sắp xếp thứ tự dự án trong Aki Dev Sync. Tính năng này được xây dựng thuần tuý bằng HTML5 Drag & Drop API kết hợp Vue 3 Transition Group và tối ưu hoá hệ thống ở lớp Tauri/WebKit mà không sử dụng bất kỳ thư viện bên thứ ba nào.
 
 ---
@@ -9,11 +11,11 @@ Tài liệu chi tiết về tính năng kéo thả trực quan (Live Sorting) đ
 ### 1. Live Sắp xếp và Persist Cấu hình
 - Người dùng rê chuột vào grip handle (Project Icon) ở cột đầu tiên và kéo để thay đổi vị trí.
 - Các hàng dự án xung quanh tự động trượt ra nhường chỗ một cách trực quan nhờ hiệu ứng chuyển động FLIP của `<transition-group>` trong Vue 3.
-- Khi người dùng thả chuột (kết thúc hành động drag), vị trí mới được ghi đè trực tiếp xuống file cấu hình `projects.json` trên đĩa thông qua Rust Command `save_projects` để lưu lại vĩnh viễn.
+- Khi người dùng thả chuột (kết thúc hành động drag), vị trí mới được persist qua action `reorderProjects` (`src/store/remoteActions.js`) - id-based, host-resolved (PERSIST-1) để một companion kéo thả cũng ghi đè đúng `projects.value` của HOST - action này gọi Rust Command `save_projects` để ghi lại `projects.json` trên đĩa.
 
 ### 2. Thiết kế Spacing Nhất quán và Khoa học (Đồng bộ Grid bằng CSS Variables)
-- **Đồng bộ cột bằng CSS Variables:** Để tránh lệch cột giữa `.grid-header` và các `.grid-row` khi nội dung thay đổi, ứng dụng sử dụng CSS Variables `--grid-cols: 12rem 2.5rem 2.5rem 2.5rem 7rem 1fr;` định nghĩa một lần duy nhất tại container cha (`.projects-table-container`, `ProjectTable.vue`). Cả header và row đều kế thừa biến này để áp dụng cho `grid-template-columns`, đảm bảo tất cả các cột được xếp thẳng hàng tăm tắp với pixel-perfect.
-- **Dùng Grid Gap theo rem:** Sử dụng `--grid-gap: 0.5rem` (Desktop) và narrow mode (`<=700px`, breakpoint dùng chung toàn app) thu cả `--grid-cols` (`6.5rem 2.1rem 1.9rem 2.5rem 4.2rem 1fr`) lẫn `--grid-gap: 0.4rem` kết hợp với `column-gap` giúp quản lý khoảng cách giữa các cột một cách hệ thống, nhất quán và khoa học mà không cần chắp vá padding hay margin cục bộ.
+- **Đồng bộ cột bằng CSS Variables + subgrid:** Để tránh lệch cột giữa `.grid-header` và các `.grid-row` khi nội dung thay đổi, ứng dụng sử dụng CSS Variables `--grid-cols: minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr;` định nghĩa một lần duy nhất tại container cha (`.projects-table-container`, `ProjectTable.vue`). `.projects-grid` là grid thật duy nhất áp `grid-template-columns: var(--grid-cols)`; cả `.grid-header` và mỗi `.grid-row` đều là `subgrid` của nó (qua `display: contents` trên wrapper `.grid-body`), nên auto-floor của mỗi cột được tính chung một lần trên toàn bộ grid thay vì lệch nhau giữa header và row.
+- **Dùng Grid Gap theo rem:** Sử dụng `--grid-gap: 0.5rem` (Desktop) và narrow mode (`<=700px`, breakpoint dùng chung toàn app) thu cả `--grid-cols` (`minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem 1fr`) lẫn `--grid-gap: 0.4rem` kết hợp với `column-gap` giúp quản lý khoảng cách giữa các cột một cách hệ thống, nhất quán và khoa học mà không cần chắp vá padding hay margin cục bộ.
 - **Căn lề trục dọc nhất quán:** Tất cả tiêu đề cột và nội dung hiển thị đều được căn lề trái (`text-align: left`) tạo nên trục dọc gọn gàng và khoa học.
 
 ---

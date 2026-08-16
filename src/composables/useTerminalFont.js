@@ -10,16 +10,14 @@ import { ref, watch } from 'vue'
 
 const STORAGE_KEY = 'aki-terminal-font-scale'
 
-// 0.1 steps rather than VS Code's ±1px: the phone's effective size is a measured float, so a pixel
-// delta has no fixed meaning there. Two taps ≈ one comfortable notch on both surfaces.
+// 0.1 steps rather than VS Code's ±1px: the phone's effective size is a measured float, so a pixel delta has no fixed meaning there. Two taps ≈ one comfortable notch on both surfaces.
 const STEP = 0.1
 const MIN_SCALE = 0.5
 const MAX_SCALE = 3
 
 function clamp(v) {
   if (!Number.isFinite(v)) return 1
-  // Rounded to 2dp so repeated ±0.1 cannot accumulate float dust (0.7999999999999999) into the
-  // stored value and, from there, into every font-size calculation downstream.
+  // Rounded to 2dp so repeated ±0.1 cannot accumulate float dust (0.7999999999999999) into the stored value and, from there, into every font-size calculation downstream.
   return Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, v)) * 100) / 100
 }
 

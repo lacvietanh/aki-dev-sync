@@ -1121,8 +1121,7 @@ mod tests {
             "the closed tab's scrollback must actually be gone, not merely emptied"
         );
 
-        // And the surviving tabs must still be WRITABLE — a fence left behind by the close would
-        // make them look intact here and go mute a moment later.
+        // And the surviving tabs must still be WRITABLE — a fence left behind by the close would make them look intact here and go mute a moment later.
         append_scrollback(KEEP_LOW, b" +more", Some(50));
         append_scrollback(KEEP_HIGH, b" +more", Some(52));
         assert_eq!(scrollback_text(KEEP_LOW), "tab 12 output +more");
@@ -1163,8 +1162,7 @@ mod tests {
             drain_input_queue(rx, &mut w).expect("a recording sink never fails a write");
         });
 
-        // 4096 distinct chunks: enough that any reordering shows up, and enough that the writer is
-        // draining concurrently with the producer rather than starting after it.
+        // 4096 distinct chunks: enough that any reordering shows up, and enough that the writer is draining concurrently with the producer rather than starting after it.
         let mut expected = Vec::new();
         for i in 0..4096u32 {
             let chunk = format!("<{}>", i).into_bytes();

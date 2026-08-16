@@ -44,7 +44,7 @@ The narrow-mode block and the 42px floor already landed (`verify-pending.md` U2/
 
 ## Closure — 2026-08-12
 
-All five items built, code-complete, uncommitted. Everything below is settled by static reading; the runtime checks are `docs/plan/verify-pending.md` T6, U5, U6, I3.
+All five items built, code-complete, uncommitted. Everything below is settled by static reading; the runtime checks are `docs/plan/done/verify-pending.md` T6, U5, U6, I3.
 
 **Did this answer what was asked?** Yes on all five, checked against the owner's own words rather than a restatement. The one place the build went past the literal request is B: the owner asked only that notes travel with rsync, and simply deleting the exclude would have satisfied the sentence while re-opening the delete-on-first-pull hole that the exclude was added to plug in 1.22.0. The `--filter=P .akidevsync/` protect rule is what makes "travels" and "cannot be erased" hold at once, so it was built rather than handed back as a question.
 

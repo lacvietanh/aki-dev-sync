@@ -1,6 +1,6 @@
 # Terminal input — bản ghi phiên test trên máy thật
 
-**Plan song sinh:** [`docs/plan/terminal-input-jul31.md`](../plan/done/terminal-input-jul31.md) — cùng tên,
+**Plan song sinh:** [`docs/plan/done/terminal-input-jul31.md`](../plan/done/terminal-input-jul31.md) — cùng tên,
 cùng ngày. File này là **bản ghi sự kiện, không sửa về sau** (`docs.B2`); mọi quyết định và việc còn
 phải làm nằm ở plan.
 
@@ -152,7 +152,7 @@ Không chạy. Lý do nêu ra: đường legacy vốn đầy lỗi, giữ lại 
 
 ## 6. Decision
 
-**Action** — mở [`docs/plan/terminal-input-jul31.md`](../plan/done/terminal-input-jul31.md) để sắp xếp
+**Action** — mở [`docs/plan/done/terminal-input-jul31.md`](../plan/done/terminal-input-jul31.md) để sắp xếp
 phần còn lại: một blocker (§5.2), một defect Android (§5.5), một defect hiển thị (§5.1), và một việc
 gỡ bỏ (§5.6). Blocker được giao cho một phiên hội đồng riêng.
 
@@ -170,4 +170,4 @@ gỡ bỏ (§5.6). Blocker được giao cho một phiên hội đồng riêng.
 
 **Cross-references** — các doc chịu ảnh hưởng của quyết định này, ngoài plan song sinh:
 `docs/index.md` (mục lục), `CHANGELOG.md` (mục `[Unreleased]` mô tả text drain phải nói rõ hai defect
-còn mở), `docs/plan/terminal-input-surface.md` (nay chỉ còn hiệu lực cho §5.1).
+còn mở), `docs/plan/done/terminal-input-surface.md` (nay chỉ còn hiệu lực cho §5.1).

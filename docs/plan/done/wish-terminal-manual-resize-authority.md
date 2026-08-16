@@ -1,10 +1,15 @@
 # wish — Manual, explicit resize-authority handoff (Direction C, executed)
 
-> **Status:** Design settled 2026-08-11, building against this doc. Supersedes Direction C's
-> sketch in `docs/plan/restore-terminal-mobile-ux.md` (that doc's Directions A/B are now
-> rejected/closed — see its own status update). Companion goes back to mounting `TerminalView`
-> (real xterm.js), `SimpleView` becomes unused code, kept in the tree pending a follow-up
-> deletion decision (not deleted by this change — see "SimpleView disposition" below).
+> **Status:** Design settled 2026-08-11. Steps 1-7 landed in code and shipped in 1.24.0
+> (2026-08-12). Step 8, the on-device runtime test (a companion phone taps "Fit to my screen" in
+> a plain shell and in a full TUI, then taps the Mac's reclaim pill, confirming authority handoff
+> works both ways with no hijack), was confirmed verified on a real Mac+phone on 2026-08-15 —
+> tracked as row T6 in `docs/plan/done/verify-pending.md`. All 8 steps of the V1 plan are now
+> fully shipped and verified. Supersedes Direction C's sketch in
+> `docs/plan/done/restore-terminal-mobile-ux.md` (that doc's Directions A/B are now rejected/closed —
+> see its own status update). Companion goes back to mounting `TerminalView` (real xterm.js),
+> `SimpleView` becomes unused code, kept in the tree pending a follow-up deletion decision (not
+> deleted by this change — see "SimpleView disposition" below).
 
 ## Provenance — how this design was reached
 
@@ -268,7 +273,7 @@ Step 5  PATCH  src/components/TerminalView.vue          companion key-row "Fit t
                                                          Mac-side reclaim pill (v-if on resizeOwner)
 Step 6  PATCH  docs/arch/terminal-stack.md,
                docs/feat/in-app-terminal.md              T-4 wording update
-Step 7  PATCH  docs/plan/restore-terminal-mobile-ux.md,
+Step 7  PATCH  docs/plan/done/restore-terminal-mobile-ux.md,
                docs/index.md, CHANGELOG.md                status + release notes
 Step 8  TEST   Mac: window/dock resize still auto-drives when resizeOwner is 'host' (unchanged
                default). Phone: tap "Fit to my screen" during a plain shell prompt (normal-buffer
@@ -278,8 +283,7 @@ Step 8  TEST   Mac: window/dock resize still auto-drives when resizeOwner is 'ho
 
 ## Cross-references
 
-- `docs/plan/restore-terminal-mobile-ux.md` — the research/decision doc this executes; its
-  Directions A/B are now closed in favor of this one.
+- `docs/plan/done/restore-terminal-mobile-ux.md` — the research/decision doc this executes; its Directions A/B are now closed in favor of this one.
 - `docs/research/simpleview-mobile-regression.md` — original regression report this traces back to.
 - `docs/plan/wish-terminal-split-simpleview.md`, `docs/research/audit-terminal-split-wish.md` —
   SimpleView's own design/review; this doc supersedes SimpleView as the companion's default mount

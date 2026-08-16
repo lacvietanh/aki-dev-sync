@@ -1,10 +1,8 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
+> updated 2026-08-16 · v1.24.0
 
-> **Updated 2026-07-22:** Multi-Surface Integration (v1.17.0: Antigravity Desktop App `AG`, IDE `IDE`, CLI `CLI`). See [docs/plan/done/1.17.0-ag-multi-surface.md](../plan/done/1.17.0-ag-multi-surface.md).
->
-> **Updated 2026-07-30:** Entity model simplified to `(host, email)` — `sourceType` (ide/cli/desktop) is now transport metadata, not identity. A Google account has one quota; the same email on the same host has one cache slot regardless of which surface reported it. Cache key scheme bumped to v4. See §Per-Account Cache.
+This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
 ## Multi-Surface Directory Structure & Settings
 

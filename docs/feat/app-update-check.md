@@ -1,5 +1,7 @@
 # App Update Check
 
+> updated 2026-08-16 · v1.24.0
+
 A background update checking mechanism that automatically queries the latest release on GitHub upon app startup, with an option to trigger manual checks and receive instant Toast notifications.
 
 ```mermaid

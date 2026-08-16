@@ -18,8 +18,7 @@ import { action } from '../services/action'
 // never a function, DOM node, Vue component ref, or a project object with cyclic links. Every
 // call site below passes ids/strings/plain data, never a live store object.
 //
-// It publishes the HEAD OF THE QUEUE below — exactly one dialog at a time, same shape as before, so
-// the wire protocol and DialogHost are unchanged.
+// It publishes the HEAD OF THE QUEUE below — exactly one dialog at a time, same shape as before, so the wire protocol and DialogHost are unchanged.
 export const pendingDialog = ref(null)
 
 // FIFO of dialogs waiting to be answered; `_queue[0]` is what `pendingDialog` publishes.

@@ -33,8 +33,7 @@ pub async fn read_global_note(app: tauri::AppHandle) -> Result<GlobalNoteFile, S
     }
 
     let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    // Unparseable (corrupt/truncated) file falls back to default, matching the previous
-    // behaviour's unwrap_or_default() rather than surfacing a hard error to the user.
+    // Unparseable (corrupt/truncated) file falls back to default, matching the previous behaviour's unwrap_or_default() rather than surfacing a hard error to the user.
     Ok(serde_json::from_str(&raw).unwrap_or_default())
 }
 
@@ -81,7 +80,6 @@ pub async fn write_global_note(
     }
 
     let json = serde_json::to_string(&current).map_err(|e| e.to_string())?;
-    // Atomic (temp + rename): the note is the user's own writing and this is its only copy, so a
-    // write torn by a crash or a full disk destroys it outright.
+    // Atomic (temp + rename): the note is the user's own writing and this is its only copy, so a write torn by a crash or a full disk destroys it outright.
     crate::system::write_atomic(&path, &json)
 }

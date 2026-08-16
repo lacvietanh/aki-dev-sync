@@ -148,7 +148,7 @@ The E0761 conclusion is the one item derived rather than observed: it follows fr
 ## Corroborating links
 
 - `docs/plan/done/usage-probe-oop.md` — the WS-C plan, at `HEAD`, status `implemented`; the copy at `docs/plan/usage-probe-oop.md` is the leftover
-- `docs/plan/backlog-jul27.md` — the live workstream tracker; findings D-7 (inverted), D-12 (non-compiling tree), D-13 (P10 live in the build)
+- `docs/plan/done/backlog-jul27.md` — the live workstream tracker; findings D-7 (inverted), D-12 (non-compiling tree), D-13 (P10 live in the build)
 - `docs/research/terminal-vietnamese-ime-root-cause-4.md` — the single-source failure named in §8, and its correction
 - `RULE-agent-behavior.md` B5 — audits are read-only and never auto-classify ambiguous work; the rule that stopped this from becoming a cleanup commit
 - `RULE-docs.md` §C — drift severity grading; this session re-graded its own output from wrong 0 to wrong 1 on the strength of §5

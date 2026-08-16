@@ -38,8 +38,7 @@ export function useTaskCollection({ read, apply }) {
     return task
   }
 
-  // toggleProp(task,'done') auto-unpins (done tasks never stay pinned); every prop toggle stamps
-  // updated_at. Builds a brand new array via map — never mutates `task` or `tasks.value` in place.
+  // toggleProp(task,'done') auto-unpins (done tasks never stay pinned); every prop toggle stamps updated_at. Builds a brand new array via map — never mutates `task` or `tasks.value` in place.
   function toggleProp(task, prop) {
     const now = Date.now()
     const next = tasks.value.map((t) => {

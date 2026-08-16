@@ -43,8 +43,7 @@ watch(
 )
 
 function handleChange() {
-  // Backstop for `readonly`: the attribute stops typing, but a paste-via-menu or an automation can
-  // still fire `change`. Emitting then would push an edit the store is going to refuse anyway.
+  // Backstop for `readonly`: the attribute stops typing, but a paste-via-menu or an automation can still fire `change`. Emitting then would push an edit the store is going to refuse anyway.
   if (props.readonly) return
   local.value = (local.value || '').trim()
   emit('update:modelValue', local.value)

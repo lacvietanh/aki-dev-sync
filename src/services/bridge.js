@@ -96,8 +96,7 @@ const INVOKE_TIMEOUT_MS_BY_CMD = {
   open_remote_subprocess: 120000,
   install_akiclaudedoc: 120000,
   install_ssh_terminal_color: 120000,
-  // No upper bound worth guessing: a git push/pull and a REPORT.html transfer are both "as long as
-  // the repo/file and the network need".
+  // No upper bound worth guessing: a git push/pull and a REPORT.html transfer are both "as long as the repo/file and the network need".
   run_git_command: 0,
   resolve_report_html: 0,
 }
@@ -206,8 +205,7 @@ export function onFrame(cb) {
 //     terminal bytes is recoverable by one `reset` replay, which is what services/ptyBridge.js does
 //     when this function turns it down.
 //   * high/low water rather than one threshold, so a socket hovering at the limit does not
-//     alternate between relaying and dropping every other frame — it drops until it has genuinely
-//     caught up, then resumes with one clean re-hydrate.
+//     alternate between relaying and dropping every other frame — it drops until it has genuinely caught up, then resumes with one clean re-hydrate.
 //
 // The frame-kind rule is mirrored in `is_coalescible()` in web_server.rs — same two-file mirroring
 // (and same reason) as the close codes: `constants/protocol.js` is the protocol SSoT, and Rust
@@ -245,8 +243,7 @@ export function send(frame) {
     console.warn('[bridge] send dropped, socket not open', frame && frame.t)
     return false
   }
-  // Deliberately silent — a congested socket drops many frames in a row, and a warn per frame would
-  // bury the console at exactly the moment someone is trying to read it. The caller reports it once.
+  // Deliberately silent — a congested socket drops many frames in a row, and a warn per frame would bury the console at exactly the moment someone is trying to read it. The caller reports it once.
   if (frame && frame.t === FRAME_PTY_OUTPUT && isSocketCongested()) return false
   ws.send(JSON.stringify(frame))
   return true

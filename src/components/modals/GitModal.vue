@@ -122,8 +122,7 @@ const formattedGitLog = computed(() => {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-  // Map ANSI color codes to styled HTML spans. Covers what `git status`/`log` emit plus the
-  // extra codes `fetch`/`push`/`pull` use for progress and ref updates (magenta, blue, etc).
+  // Map ANSI color codes to styled HTML spans. Covers what `git status`/`log` emit plus the extra codes `fetch`/`push`/`pull` use for progress and ref updates (magenta, blue, etc).
   html = html
     .replace(/\u001b\[31m/g, '<span style="color: var(--accent-red, #ef4444);">')
     .replace(/\u001b\[32m/g, '<span style="color: var(--accent-green, #10b981);">')
@@ -133,8 +132,7 @@ const formattedGitLog = computed(() => {
     .replace(/\u001b\[36m/g, '<span style="color: #06b6d4;">')
     .replace(/\u001b\[1m/g, '<span style="font-weight: bold;">')
     .replace(/\u001b\[(?:0)?m/g, '</span>')
-    // Any other/unrecognized SGR or cursor-control sequence (e.g. \x1b[K clear-line during
-    // fetch/push progress) - drop silently rather than leaving raw escape bytes on screen.
+    // Any other/unrecognized SGR or cursor-control sequence (e.g. \x1b[K clear-line during fetch/push progress) - drop silently rather than leaving raw escape bytes on screen.
     .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '')
 
   return html

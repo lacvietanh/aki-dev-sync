@@ -44,8 +44,7 @@ export const STATUSLINE_TIERS = [
   { key: 'red',    label: 'red',    ansi: '01;31',       hex: '#FF0000' },
 ];
 
-// Tooltip for any swatch drawn from a record above: names the code the terminal will actually
-// print, so the app's color can be compared against the real line instead of trusted.
+// Tooltip for any swatch drawn from a record above: names the code the terminal will actually print, so the app's color can be compared against the real line instead of trusted.
 export function swatchTitle(c) {
   return `${c.label} - ANSI ${c.ansi} (${c.hex})`;
 }

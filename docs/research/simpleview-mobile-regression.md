@@ -75,7 +75,7 @@ below asks before scoping a fix.
 - `CHANGELOG.md` `[1.23.0]` — the shipped, owner-visible description of the change.
 
 **Decision:** Follow-up research needed before any fix is scoped — see Action.
-- **Action:** `docs/plan/restore-terminal-mobile-ux.md` — lays out three restoration
+- **Action:** `docs/plan/done/restore-terminal-mobile-ux.md` — lays out three restoration
   directions and asks the owner to confirm both the exact symptom and which direction to take,
   since a straight revert reopens closed defects (see that doc).
 - **Cross-references:** `docs/plan/wish-terminal-split-simpleview.md` (status line should be

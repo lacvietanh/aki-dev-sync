@@ -53,7 +53,6 @@ export function usageReading(id) {
  */
 export function patchUsageReading(id, patch) {
   const prev = usageReadings.value[id] || EMPTY_READING
-  // Replace the map object rather than mutating in place, matching usageMonitorStore: the mirror's
-  // watcher and every computed reading downstream key off the identity change.
+  // Replace the map object rather than mutating in place, matching usageMonitorStore: the mirror's watcher and every computed reading downstream key off the identity change.
   usageReadings.value = { ...usageReadings.value, [id]: { ...prev, ...patch } }
 }

@@ -1,8 +1,10 @@
 # Roadmap — Remote view subsystem (Explorer View + Terminal View)
 
-Relocated 2026-07-30 from `docs/plan/remote-views-roadmap.md`. It is a **target-state design, not an executable plan** — nobody is working it, it has no steps and no acceptance criteria, and half of it has already shipped, so `docs/plan/` was never the right home (`docs.A2`: `arch/` holds current *and* target state). It is also load-bearing beyond its own scope: the § "Terminal View — BUILT" section is where the host-sole-resize-authority rule is actually written down, which is what T-9 of `docs/plan/done/backlog-jul27.md` cites (now tracked as T5 in `docs/plan/remaining-1.22.md`). The § "Original sketch (kept for the record)" subsection is history and is the one part that sits oddly in `arch/`; left in place rather than deleted, since removing it would break the reading of the section above it.
+> updated 2026-08-16 · v1.24.0
 
-> **Next round, NOT the current one.** The current round (`docs/plan/done/remote-control.md`) ships only the mirror/intent/native/pairing foundation plus a minimal `FileView` that renders `REPORT.html` on the phone. This file pins the *shape* of the two views that come after, so the foundation built now stays generic enough to carry them without rework.
+Relocated 2026-07-30 from `docs/plan/remote-views-roadmap.md`. It is a **target-state design, not an executable plan** — nobody is working it, it has no steps and no acceptance criteria, and half of it has already shipped, so `docs/plan/` was never the right home (`docs.A2`: `arch/` holds current *and* target state). It is also load-bearing beyond its own scope: the § "Terminal View — BUILT" section is where the host-sole-resize-authority rule is actually written down, which is what T-9 of `docs/plan/done/backlog-jul27.md` cited (tracked as T5 in `docs/plan/remaining-1.22.md`, closed 2026-08-15 — see that file's "Resolved (2026-08-15)" section). The pre-build sketch this section was built from moved to `docs/research/remote-views-terminal-sketch.md` — history, not current architecture.
+
+> **Next round, NOT the current one.** The current round (`docs/plan/done/remote-control.md`) shipped the mirror/intent/native/pairing foundation and the backend half of file-view support: `read_text_file` (`src-tauri/src/web_server.rs`, FILE-1 allow-list) is registered and reachable via the generic `invoke` intent. **No frontend `FileView` component exists yet** — nothing in `src/` calls `read_text_file`, so `REPORT.html` does not currently render on the phone; the plan's §7.5 acceptance line describes intended, not shipped, behavior. This file pins the *shape* of the two views that come after, so the backend seam built now stays generic enough to carry them without rework once the frontend half lands.
 
 ## Why this exists
 
@@ -15,7 +17,7 @@ Both build on the current round's seams (state mirror, intent relay, native RPC,
 
 ## What the current round must NOT foreclose
 
-* `read_text_file(path)` and `FileView` are the **first members of a view subsystem** — keep them generic, not `REPORT.html`-specific. Explorer just points `FileView` at a different path.
+* `read_text_file(path)` is the **first member of a view subsystem** — keep it generic, not `REPORT.html`-specific, so a future `FileView` component (not yet built, see the callout above) can point it at any path.
 * `FILE-1` (allow-list roots for reads) is the seed of the Explorer's permission boundary — build it now so Explorer inherits it.
 * The relay already carries arbitrary framed messages; Terminal I/O is just two more message kinds (`PTY_INPUT` / `PTY_OUTPUT`) on the same socket — do not design the protocol so tightly that adding them means reworking the frame envelope.
 
@@ -35,22 +37,18 @@ Both build on the current round's seams (state mirror, intent relay, native RPC,
 > Full design and the deviations: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4, §4.7 and §6a.
 > Still deferred from here: multiple sessions/tabs, split panes, and redirecting the DEV/BUILD `Terminal.app` launchers into this view (they need per-project cwd + multi-session first).
 
-### Original sketch (kept for the record)
+### Original sketch — moved to `docs/research/remote-views-terminal-sketch.md`
 
-* **Native side:** `portable-pty` spawns a shell; its output streams as `PTY_OUTPUT` frames, input arrives as `PTY_INPUT`. The PTY lives on the Mac (the only place a real shell makes sense); the phone is a dumb terminal surface.
-* **Frontend:** `xterm.js` in a `TerminalView` component (same bundle, host + companion). Keystrokes are `PTY_INPUT` intents; rendered output is driven by `PTY_OUTPUT` frames.
-* **SYNC-1 nuance:** terminal *output* is a data event (both screens see the same session — this is the point, a shared terminal). Terminal *input* keystrokes are forwarded as intents but are **not** echoed locally before the PTY echoes them — the PTY is the SSOT for what the terminal shows, exactly like every other bit of state. So two people watching the same terminal see identical output.
-* **Security:** a remote shell over Tailscale is the highest-value target in the whole app. Gate Terminal View behind the paired-device token like everything else, and consider a per-session opt-in on the Mac before a companion may open a PTY. Decide the exact posture when building it.
-* **NEVER BLOCK UI / cold-start PATH race:** the PTY spawn and every shell it runs are subprocess work — `spawn_blocking` and the shared PATH-resolution preamble (CLAUDE.md GLOBAL TAURI STACK) apply.
+The pre-build design this section was built from (native/frontend split, SYNC-1 semantics, security/blocking notes) now lives there as history; the "BUILT" section above is the current architecture.
 
 ## Dependency order
 
 ```
-current round: seams + pairing + FileView(REPORT.html)   ← must land first
+current round: seams + pairing + read_text_file backend (FileView frontend not yet built)
         │
         ├── Explorer View   (list_dir + FileView on any path)
-        └── Terminal View   (portable-pty + xterm.js + PTY_INPUT/OUTPUT)
+        └── Terminal View   (portable-pty + xterm.js + PTY_INPUT/OUTPUT) — BUILT, see above
 ```
 
-Explorer and Terminal are independent of each other and can be built in parallel once the foundation lands — but both depend on the current round's `FileView` + seam layer, so neither starts until that is in and building clean on the Mac.
+Explorer and Terminal were meant to be independent of each other, both depending only on the seam layer — Terminal View's actual build confirms that: it shipped in 1.20.0 with no `FileView` frontend ever having landed, so the "must land first" framing this diagram originally assumed does not hold. Explorer still needs `FileView` built before it can start.
 

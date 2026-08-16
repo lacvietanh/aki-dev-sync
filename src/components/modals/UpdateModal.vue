@@ -50,8 +50,7 @@ async function download() {
     const filename = decodeURIComponent(props.downloadUrl.split('/').pop().split('?')[0]);
     const existing = await invoke('find_in_downloads', { filename });
     if (existing) {
-      // Already downloaded - open the local file directly (mounts the DMG) instead
-      // of re-triggering a browser download.
+      // Already downloaded - open the local file directly (mounts the DMG) instead of re-triggering a browser download.
       invoke('macos_open', { args: [existing] }).catch(console.error);
       return;
     }

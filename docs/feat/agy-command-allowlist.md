@@ -1,5 +1,7 @@
 # Pre-allow AGY Commands
 
+> updated 2026-08-16 · v1.24.0
+
 Menu action (`AppHeader.vue` → "Pre-allow AGY Commands") that seeds a checked-in, recommended set of
 dev commands into `permissions.allow` in `~/.gemini/antigravity-cli/settings.json` on one or more
 hosts, so a new machine or a new agy account stops hitting a permission prompt for every routine

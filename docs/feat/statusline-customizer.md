@@ -1,5 +1,7 @@
 # Statusline Customizer
 
+> updated 2026-08-16 · v1.24.0
+
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
 **One physical script serves both CLIs.** It is installed byte-identically at two paths and works out at run time which CLI is running it, from its own invocation path (`$0`):
@@ -91,6 +93,8 @@ A **field** is one key that prints one piece of text. A **group** is a set of fi
 
 `cache` sits directly after `context` on purpose: the two are read together ("how many tokens, and how much of that came from cache").
 
+On the Vue side, the `rows` computed is a pure read projection of the persisted `cfg.fields` array (each declarative `GROUPS` entry collapsed into one draggable row, everything else rendered as a bare field) - `cfg.fields` stays the only stored order. `applyRowOrder()` writes a new drag order back through that same shape, reusing the existing field objects in place so `enabled`/`color` survive the move untouched. A group's `sep` follows one rule: `undefined` defaults to a space (matches `statusline.rs`), an explicit `''` means "glue the members together" - the check is `=== undefined`, not truthiness, so the empty string survives it. A non-space separator renders white, like a label, since it is punctuation the user reads.
+
 ## Gated fieldset (non-destructive master switch)
 
 `cache` gates `cache_pct` / `cache_tokens`; `rate_limits_5h` gates `rate_reset_5h`; `model` gates `effort`. The rule, which matches HTML's `<fieldset disabled>`:
@@ -101,6 +105,8 @@ Declared once, in `DEPENDS`:
 
 - Vue reads it in `fieldActive()` (what the preview and the checkboxes ask - never raw `enabled`) and `controlBlocked()` (what greys a control out).
 - Rust mirrors the same table and resolves it into the generated flags: a child whose parent is off arrives as `EN_child=0`. No shell gate re-checks a parent, and the stored config is never mutated.
+
+`fieldActive()` walks the chain, not just the field's own `enabled`: checking `enabled` alone would let a reset ETA print with no window to reset, or an effort level print with no model name in front of it.
 
 `rate_reset_5h` / `rate_reset_7d` are modifiers, not blocks: they add the ETA to another field's output and never print anything of their own.
 
@@ -189,6 +195,8 @@ Per-field, because the widths are not interchangeable: a directory or branch nam
 
 The script clamps these itself, so a bad generated value degrades instead of rendering garbage; the generator does not duplicate the clamp. **Account strips the domain first** (`${email%%@*}`), then truncates - AGY sends a full address, so a raw 4-character cut of `lva@akitao.com` would print the useless `lva@`.
 
+`TRUNC_MIN`/`TRUNC_MAX` (3..12) are a contract shared by the UI, the generator and the script's own clamp: below 3 a name stops being recognisable, above 12 a single field can eat a narrow terminal's whole line.
+
 ## Account resolution
 
 Neither CLI puts an email in its statusline payload reliably, so both fall back to disk when the `account` field is on. The two branches are **mutually exclusive, not sequential**: on a machine with both files, trying them in order would show the other CLI's account.
@@ -232,7 +240,7 @@ Each target's installer keeps a one-time `.aki-bak` of the script it replaces. `
 
 The probe answers **per CLI** (`cc_present`/`cc_configured`, `ag_present`/`ag_configured`), and "configured" requires both halves - the script on disk *and* the settings key naming it. A host chip draws one tag per CLI it actually has: filled green = renders a line, hollow amber = the CLI is there with nothing wired up. A CLI the host does not have draws nothing, which is both the honest reading and the cheapest one in width.
 
-Auto-repair stays Claude Code-only: a host with Claude Code but no statusline gets one written (the quota reading depends on that hook existing), while AGY is never written without being asked.
+Auto-repair stays Claude Code-only: a host with Claude Code but no statusline gets one written (the quota reading depends on that hook existing), while AGY is never written without being asked. The probe (`check_statusline_status`) only checks for the Claude Code statusline, so the repair write must target `selectedTargets: ['cc']` explicitly - leaving it to the backend default once installed the AGY file instead, which left the CC probe failing again on every reopen.
 
 ## Verification
 

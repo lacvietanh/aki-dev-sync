@@ -28,8 +28,7 @@ export function dispatchIntent(frame) {
     console.warn(`[intents] unknown intent key "${key}" — ignored`)
     return
   }
-  // Args arrive as JSON from an untrusted peer: anything but an array is a malformed frame, and
-  // spreading a non-array would throw before the action ever ran.
+  // Args arrive as JSON from an untrusted peer: anything but an array is a malformed frame, and spreading a non-array would throw before the action ever ran.
   const args = Array.isArray(frame.args) ? frame.args : []
   try {
     fn(...args)

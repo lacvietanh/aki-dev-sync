@@ -27,13 +27,13 @@ import {
   FRAME_PTY_RESIZE_REQUEST,
   FRAME_PTY_EXIT,
 } from '../constants/protocol'
-import { consumeTabPendingCmd, terminalTabs, setResizeOwner } from '../store/terminalTabsStore'
+import { consumeTabPendingCmd, terminalTabs, setResizeOwner, GLOBAL_SCOPE } from '../store/terminalTabsStore'
 
 // ── Module-level tab liveness tracker (S3 fix) ──────────────────────────────────────────────────
 //
 // Per-tab liveness that SURVIVES every TerminalView mount/unmount, unlike each composable
 // instance's own `alive` ref above. Before this, useTerminalTabs.js's `tabAlive` map (consumed by
-// TerminalTabStrip.vue's per-chip tint and TerminalCell.vue's dot badge) had exactly one writer:
+// TerminalTabStrip.vue's per-chip tint and TerminalScopeButton.vue's dot badge) had exactly one writer:
 // dock/TerminalStack.vue's `watchEffect`, which aggregated every MOUNTED tab's own `alive`. That
 // stopped updating the moment the dock stack collapsed (the whole stack body unmounts — see
 // TerminalStack.vue's own doc comment) and never ran at all on a companion, which does not mount
@@ -46,7 +46,7 @@ import { consumeTabPendingCmd, terminalTabs, setResizeOwner } from '../store/ter
 // into a file that must stay role-neutral.
 /** `{ [tabId]: 'unknown' | true | false }` — same tri-state semantics as each instance's own
  *  `alive`. Re-exported by useTerminalTabs.js as `tabAlive` so existing consumers
- *  (TerminalTabStrip.vue, TerminalCell.vue) need no changes. */
+ *  (TerminalTabStrip.vue, TerminalScopeButton.vue) need no changes. */
 export const tabLiveness = ref({})
 
 function setTabLiveness(tabId, value) {
@@ -269,8 +269,7 @@ export function usePtyTerminal(term, tabId = 0) {
     try {
       await invoke('pty_restart', { tabId, cwd: bootCwd ?? null })
       alive.value = true
-      // Fresh shell resets to default authority, not a stale companion claim (host-only mirrored
-      // state). docs/plan/wish-terminal-manual-resize-authority.md lifecycle item 6.
+      // Fresh shell resets to default authority, not a stale companion claim (host-only mirrored state). docs/plan/done/wish-terminal-manual-resize-authority.md lifecycle item 6.
       if (isHost) setResizeOwner(tabId, 'host')
     } catch (e) {
       // 'unknown', never `false` — same reasoning as `ensureSpawned`.
@@ -340,17 +339,20 @@ export function usePtyTerminal(term, tabId = 0) {
   async function openExternal() {
     try {
       const cwd = await invoke('pty_cwd', { tabId })
+      // owner (S3/S4, docs/plan/done/terminal-ownership-model.md) — this tab's own scope: the
+      // project id it belongs to, or GLOBAL_SCOPE for the global group's tabs. The tab already
+      // knows its scope; nothing here infers it.
+      const owner = terminalTabs.value.find((t) => t.id === tabId)?.projectId ?? GLOBAL_SCOPE
       // Contract C-1 (docs/plan/done/1.20.1-flow-audit-fixes.md §1.1): `null`, never the literal `'~'`.
       // The host side does no shell expansion, so `cd "~"` looks for a directory actually named
       // `~` and always fails; a null path means "no cd at all" and the shell opens in $HOME by
       // itself, which is the fallback that was intended all along.
-      await invoke('open_local_terminal', { localPath: cwd || null })
-      // Same poke the OPEN popup's Terminal item sends: the live scan would count this window on
-      // its next tick anyway, this only stops the badge lagging ~5s behind the click. Dynamic
-      // import because projectStore's poke reaches back into useExternalTerminals — see its own
-      // comment on why that direction is lazily resolved.
-      const { pokeExternalTermCounts } = await import('../store/projectStore')
-      pokeExternalTermCounts()
+      // Same funnel the OPEN popup's Terminal item uses (S4, docs/plan/done/terminal-ownership-model.md):
+      // launch plus the re-scan poke in one call. Dynamic import because projectStore reaches back
+      // into useExternalTerminals — see that funnel's own comment on why that direction is lazily
+      // resolved.
+      const { registerExternalTerminalLaunch } = await import('../store/projectStore')
+      await registerExternalTerminalLaunch({ owner, path: cwd || null })
     } catch (e) {
       console.error('[usePtyTerminal] openExternal failed', e)
     }
@@ -375,12 +377,10 @@ export function usePtyTerminal(term, tabId = 0) {
       if (disposed) return
       if (cols && rows) term.resize(cols, rows)
       writeChunk(data, true)
-      // The one place a `false` is legitimately derived from a call's RESULT rather than from a
-      // pushed liveness statement — the host read its own session map to answer this.
+      // The one place a `false` is legitimately derived from a call's RESULT rather than from a pushed liveness statement — the host read its own session map to answer this.
       alive.value = !!isAlive
     } catch (e) {
-      // The hydrate failing says nothing about the shell — leave whatever belief we already hold
-      // rather than inventing `false`. See `alive`'s doc comment.
+      // The hydrate failing says nothing about the shell — leave whatever belief we already hold rather than inventing `false`. See `alive`'s doc comment.
       console.error('[usePtyTerminal] pty_get_scrollback failed', e)
     }
   }
@@ -404,12 +404,10 @@ export function usePtyTerminal(term, tabId = 0) {
       // emits this Tauri event directly — no WS round-trip. services/ptyBridge.js separately
       // relays the same event to companions.
       listen('pty-output', (event) => {
-        // An event delivered in the gap between subscribing and unsubscribing would otherwise
-        // write into a Terminal the component has already disposed.
+        // An event delivered in the gap between subscribing and unsubscribing would otherwise write into a Terminal the component has already disposed.
         if (disposed) return
         const payload = (event && event.payload) || {}
-        // Another tab's bytes — and another tab's liveness. Dropped before EITHER is applied: a
-        // sibling tab's `alive: false` would be just as wrong as its bytes.
+        // Another tab's bytes — and another tab's liveness. Dropped before EITHER is applied: a sibling tab's `alive: false` would be just as wrong as its bytes.
         if (!isForThisTab(payload)) return
         if (payload.data || payload.reset) writeChunk(payload.data, !!payload.reset)
         // A liveness-only payload carries neither bytes nor `reset` (that is how the host says
@@ -428,7 +426,7 @@ export function usePtyTerminal(term, tabId = 0) {
       // Companion -> host resize claim. The one WS frame the host listens for here: it needs THIS
       // tab's `term` ref to sync the Mac's render to a size it didn't measure. Honored
       // unconditionally — safety is that the companion only sends it off one deliberate tap.
-      // docs/plan/wish-terminal-manual-resize-authority.md.
+      // docs/plan/done/wish-terminal-manual-resize-authority.md.
       unsubscribeFrame = onFrame((frame) => {
         if (disposed || !frame || frame.t !== FRAME_PTY_RESIZE_REQUEST) return
         if (!isForThisTab(frame)) return
@@ -453,8 +451,7 @@ export function usePtyTerminal(term, tabId = 0) {
           alive.value = false
         } else if (frame.t === FRAME_PTY_RESIZE) {
           if (!isForThisTab(frame)) return
-          // T-4: the ONLY path a companion's xterm is ever resized through — it never calls
-          // pty_resize itself, and never derives a size from its own container.
+          // T-4: the ONLY path a companion's xterm is ever resized through — it never calls pty_resize itself, and never derives a size from its own container.
           term.resize(frame.cols, frame.rows)
         }
       })
@@ -585,7 +582,7 @@ export function usePtyTerminal(term, tabId = 0) {
 
   /** This tab's current resize-authority holder, read fresh off the mirrored store — 'host'
    *  (default) or a companion's opaque connection id. Never cached (a stale read is Finding 4's
-   *  "Mac pinned to a stale size" bug). docs/plan/wish-terminal-manual-resize-authority.md. */
+   *  "Mac pinned to a stale size" bug). docs/plan/done/wish-terminal-manual-resize-authority.md. */
   function resizeOwnerFor() {
     return terminalTabs.value.find((t) => t.id === tabId)?.resizeOwner || 'host'
   }
@@ -625,7 +622,7 @@ export function usePtyTerminal(term, tabId = 0) {
 
   /** Companion "Fit to my screen": send the locally-measured size as a claim (a companion has no
    *  Tauri IPC to resize the PTY itself). One tap, one frame = the whole claim mechanism.
-   *  docs/plan/wish-terminal-manual-resize-authority.md. */
+   *  docs/plan/done/wish-terminal-manual-resize-authority.md. */
   function requestResize(cols, rows) {
     if (isHost || !cols || !rows) return
     send({ t: FRAME_PTY_RESIZE_REQUEST, tab_id: tabId, cols, rows })
@@ -660,7 +657,7 @@ export function usePtyTerminal(term, tabId = 0) {
     /** T-4 capability: does this screen decide the PTY's cols/rows right now? Host, and only while
      *  no companion holds a claim — else the Mac's ResizeObserver steals authority back on any
      *  window touch. A getter (not a captured value) so doFit reads the current owner each tick;
-     *  still returns a plain boolean. docs/plan/wish-terminal-manual-resize-authority.md. */
+     *  still returns a plain boolean. docs/plan/done/wish-terminal-manual-resize-authority.md. */
     get ownsPtySize() {
       return isHost && resizeOwnerFor() === 'host'
     },

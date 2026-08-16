@@ -1,8 +1,8 @@
 # Kiến trúc: theo dõi quota Claude Code
 
+> updated 2026-08-16 · v1.24.0
+
 > Mô tả hệ thống **đang chạy**. Vì sao nó thành ra thế này, và những gì đã thử rồi bỏ: `docs/research/claudecode-usage-FINAL.md` - **đọc §5 (nhật ký) trước khi đề xuất thay đổi**.
->
-> Viết lại 2026-07-20 (v1.14.0), sau khi xoá toàn bộ luồng active. Bản trước dài 388 dòng và chứa 5 chỗ tự đính chính inline; những đoạn sai đã bỏ, kết luận đúng giữ lại.
 
 ## 1. Nguyên lý - một nguồn dữ liệu duy nhất
 
@@ -57,7 +57,7 @@ Pool quota Pro/Max **dùng chung** cho claude.ai web, Desktop, mobile, Cowork v�
 ~/.claude/.credentials.json        → ⚠️ KHÔNG còn tồn tại trên bản CC mới (keychain)
 ```
 
-**Đường dẫn chính xác của `.claude.json` là `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json`, KHÔNG PHẢI `$HOME/.claude.json`.** Đây là bug thứ hai phát hiện ngày 2026-07-30 (chi tiết: `docs/plan/cc-account-identity-ssot.md` §14).
+**Đường dẫn chính xác của `.claude.json` là `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json`, KHÔNG PHẢI `$HOME/.claude.json`.** Đây là bug thứ hai phát hiện ngày 2026-07-30 (chi tiết: `docs/plan/done/cc-account-identity-ssot.md` §14).
 
 **`.claude.json` KHÔNG phải nguồn danh tính đáng tin cho email/org (sửa lần 3, cùng ngày 2026-07-30 - xem SSOT §15).** Nó do chính CLI ghi, nhưng theo lịch refresh nội bộ của CLI, không phải theo lượt lệnh - và khi hai tiến trình `claude` cùng dùng một `CLAUDE_CONFIG_DIR` (hai account thật, cùng đăng nhập, một workflow bình thường của owner - xem `docs/ref/multiple-account-config-dir.md`), tiến trình nào flush sau cùng thắng ở file này, bất kể tiến trình nào vừa đăng nhập gần nhất. Danh tính hiển thị (email/org) giờ luôn đọc từ `claude auth status` chạy **live** (script) hoặc cache TTL 15s của cùng lệnh đó (statusline) - lệnh này resolve đúng danh tính của **phiên gọi nó**, không đụng tới `.claude.json` nên không dính race chia sẻ file. `.claude.json` chỉ còn dùng cho `organizationRateLimitTier`/`organizationType` (tier/gói) và `accountUuid` (so khớp chủ sở hữu cache quota) - không dùng cho email/orgName hiển thị nữa.
 

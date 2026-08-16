@@ -1,5 +1,7 @@
 # Remote Control (companion) — feature
 
+> updated 2026-08-16 · v1.24.0
+
 Control the Mac app from a phone (or any browser) on the same LAN or over Tailscale. The Mac webview stays the single source of truth; the phone is a thin mirror that shows the same state and sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`.
 
 > **Status:** foundation + host entry point + **companion control (R-2)** + pairing gate shipped. The Rust relay (`src-tauri/src/web_server.rs`) must be built on the Mac before it works end-to-end. A phone can now push, pull, flip DRY, refresh and toggle sync-check; the full pairing modal (QR + device management) is still Wave 2. Every companion state and failure case is enumerated in **"Companion states — every case"** below.

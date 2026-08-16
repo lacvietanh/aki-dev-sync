@@ -37,8 +37,7 @@ fn ensure_app_data_dir(app: &tauri::AppHandle) {
 // TCP connection and then went silent left `syncing: true` for the rest of the session, with no
 // way to stop it (see the process registry below).
 
-// One answer in the whole app to "how long before we call a host dead" - the same value the
-// usage poller uses (`agent_usage.rs::polling_ssh`).
+// One answer in the whole app to "how long before we call a host dead" - the same value the usage poller uses (`agent_usage.rs::polling_ssh`).
 const SSH_CONNECT_TIMEOUT: &str = "ConnectTimeout=10";
 
 // rsync's own mid-transfer stall detector. Deliberately generous: a slow large file must never
@@ -304,8 +303,7 @@ fn kill_process_group(_pid: u32) {}
 #[cfg(unix)]
 fn detach_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
-    // SAFETY: `setpgid` is async-signal-safe and mutates only the freshly-forked child's own
-    // process group - within what `pre_exec` permits between fork and exec.
+    // SAFETY: `setpgid` is async-signal-safe and mutates only the freshly-forked child's own process group - within what `pre_exec` permits between fork and exec.
     unsafe {
         command.pre_exec(|| {
             libc::setpgid(0, 0);
@@ -521,8 +519,7 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 // command call). If APP_DATA_DIR is not yet set, the legacy ~/.aki path is used
 // as a fallback so read_baseline can also find baselines written by old builds.
 
-// Pre-appDataDir (<1.7.1) baseline location - sole source of truth for that path,
-// used by baseline_dir()'s fallback, legacy_baseline_path(), and cleanup_legacy_baselines().
+// Pre-appDataDir (<1.7.1) baseline location - sole source of truth for that path, used by baseline_dir()'s fallback, legacy_baseline_path(), and cleanup_legacy_baselines().
 fn legacy_baseline_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(home).join(".aki").join("devsync-baselines")
@@ -553,8 +550,7 @@ fn legacy_baseline_path(project_id: &str) -> PathBuf {
 fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
     dir_excludes.iter().any(|e| {
         let trimmed = e.trim();
-        // Only dir-entries (`/`-suffixed) carry push-only/exclude semantics here  - 
-        // glob entries (`*.log`) never appear in the change list to reconcile against.
+        // Only dir-entries (`/`-suffixed) carry push-only/exclude semantics here  - glob entries (`*.log`) never appear in the change list to reconcile against.
         if !trimmed.ends_with('/') {
             return false;
         }
@@ -685,8 +681,7 @@ fn read_baseline(project_id: &str) -> Option<HashMap<String, u64>> {
     if let Ok(map) = serde_json::from_str::<HashMap<String, u64>>(&content) {
         return Some(map);
     }
-    // Old format (<1.7.1): Vec<String> - migrate with mtime=0 so suppression is disabled
-    // for all entries until the next successful sync writes a new-format baseline.
+    // Old format (<1.7.1): Vec<String> - migrate with mtime=0 so suppression is disabled for all entries until the next successful sync writes a new-format baseline.
     if let Ok(files) = serde_json::from_str::<Vec<String>>(&content) {
         return Some(files.into_iter().map(|f| (f, 0u64)).collect());
     }
@@ -756,8 +751,7 @@ pub async fn run_sync(
     validate_project(&project)?;
     validate_specific_paths(&specific_paths)?;
     let project_id = project.id.clone();
-    // Held until this command returns, so a second invoke (companion seam included) is refused
-    // rather than run concurrently against the same tree.
+    // Held until this command returns, so a second invoke (companion seam included) is refused rather than run concurrently against the same tree.
     let _slot = SyncSlot::acquire(&project_id)?;
     // Drop any flag left by a previous run so this sync's outcome is judged on its own.
     consume_cancelled(&project_id);
@@ -772,8 +766,7 @@ pub async fn run_sync(
     .await
     .map_err(|e| format!("Sync task error: {}", e))?;
 
-    // A cancelled sync fails as "rsync exited with code: -1" (killed by a signal). Say what
-    // actually happened instead - the user pressed STOP; that is not an error they need to debug.
+    // A cancelled sync fails as "rsync exited with code: -1" (killed by a signal). Say what actually happened instead - the user pressed STOP; that is not an error they need to debug.
     match result {
         Err(_) if consume_cancelled(&project_id) => Err("Sync stopped".to_string()),
         other => other,
@@ -799,8 +792,7 @@ fn run_sync_blocking(
 
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
     let remote = project.remote_path.trim_end_matches('/');
-    // Refused here, before the remote mkdir and before rsync spawns, if this rsync cannot protect
-    // the path from the remote shell.
+    // Refused here, before the remote mkdir and before rsync spawns, if this rsync cannot protect the path from the remote shell.
     let remote_full = format!("{}/", remote_rsync_arg(&project.remote_host, remote)?);
 
     let (src, dest) = if is_push { (&local, &remote_full) } else { (&remote_full, &local) };
@@ -869,8 +861,7 @@ fn run_sync_blocking(
 
     spawn_and_stream(command.args(&args), &window, &project.id, "rsync")?;
 
-    // Write baseline after a full (non-dry, non-partial) sync so the next status
-    // check can classify PULL/PUSH files against the last-known-good state (EC-3).
+    // Write baseline after a full (non-dry, non-partial) sync so the next status check can classify PULL/PUSH files against the last-known-good state (EC-3).
     if !dry_run && specific_paths.is_empty() {
         ensure_app_data_dir(window.app_handle());
         let local_path = project.local_path.clone();
@@ -893,8 +884,7 @@ fn run_sync_blocking(
 /// push/pull pipeline in `build_rsync_args`/`run_sync` (which only honors `specific_paths` on
 /// push) - reuse this instead of hand-rolling another `create_command("rsync")` call site.
 pub fn rsync_pull_file(host: &str, remote_dir: &str, filename: &str, local_dir: &str) -> Result<(), String> {
-    // Directory and filename are one remote-shell word each - guard the joined path, since the
-    // filename reaches the same shell the directory does.
+    // Directory and filename are one remote-shell word each - guard the joined path, since the filename reaches the same shell the directory does.
     let remote_src = remote_rsync_arg(
         host,
         &format!("{}/{}", remote_dir.trim_end_matches('/'), filename),
@@ -1038,8 +1028,7 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
         }
     });
 
-    // PUSH side: suppress only when local mtime matches baseline mtime, meaning the file
-    // was NOT modified locally since last sync → remote deleted it (not a local edit).
+    // PUSH side: suppress only when local mtime matches baseline mtime, meaning the file was NOT modified locally since last sync → remote deleted it (not a local edit).
     let (_, real_push): (Vec<_>, Vec<_>) = push_files.into_iter().partition(|f| {
         if let Some(ref bl) = baseline {
             if let Some(&baseline_mtime) = bl.get(f) {
@@ -1072,8 +1061,7 @@ pub async fn check_sync_status(app: tauri::AppHandle, project: SyncProject) -> R
     validate_project(&project)?;
     ensure_app_data_dir(&app);
     tauri::async_runtime::spawn_blocking(move || {
-        // Inside the closure, not before it: this command is on the periodic refresh path, so an
-        // unmounted network volume whose `is_dir()` stalls would freeze the UI on every tick.
+        // Inside the closure, not before it: this command is on the periodic refresh path, so an unmounted network volume whose `is_dir()` stalls would freeze the UI on every tick.
         ensure_local_path_present(&project.local_path)?;
         let (push_count, pull_count) = compute_sync_counts(&project)?;
         Ok(SyncStatusResult {
@@ -1184,6 +1172,7 @@ mod tests {
             notes: None,
             dev_cmd_override: None,
             build_cmd_override: None,
+            disabled: false,
         }
     }
 
@@ -1201,8 +1190,7 @@ mod tests {
 
     #[test]
     fn is_under_dir_exclude_respects_component_boundary() {
-        // ".wrangler-backup" shares a prefix with ".wrangler/" but is a sibling
-        // directory, not a nested path - a naive starts_with would wrongly match.
+        // ".wrangler-backup" shares a prefix with ".wrangler/" but is a sibling directory, not a nested path - a naive starts_with would wrongly match.
         let excludes = vec![".wrangler/".to_string()];
         assert!(!is_under_dir_exclude(".wrangler-backup/foo", &excludes));
     }
@@ -1256,8 +1244,7 @@ mod tests {
 
     #[test]
     fn direction_excludes_pull_only_dir_present_in_pull_direction() {
-        // Same dir must still be excluded from the pull-direction status check  - 
-        // pull never brings it back, so it must never count as a pull change.
+        // Same dir must still be excluded from the pull-direction status check  - pull never brings it back, so it must never count as a pull change.
         let project = make_test_project(vec![], vec![".git/"]);
         let pull_excludes = direction_excludes(&project, false);
         assert!(pull_excludes.contains(&".git/".to_string()));
@@ -1426,8 +1413,7 @@ mod tests {
 
     #[test]
     fn first_shell_active_char_leaves_ordinary_paths_alone() {
-        // Non-ASCII is not shell-active, and `~` / wildcards mean the same thing on old and new
-        // rsync - flagging any of these would refuse a config that works today for no gain.
+        // Non-ASCII is not shell-active, and `~` / wildcards mean the same thing on old and new rsync - flagging any of these would refuse a config that works today for no gain.
         for raw in ["/var/www/app", "~", "~/app", "~/a/~/b", "~user/app", "/srv/tàiliệu", "/srv/日本語", "/srv/app*", "/srv/log[0-9]", "/srv/a?b"] {
             assert_eq!(first_shell_active_char(raw), None, "{raw}");
         }
@@ -1443,8 +1429,7 @@ mod tests {
 
     #[test]
     fn rsync_protects_remote_args_fails_closed_on_an_unknown_banner() {
-        // macOS's stock /usr/bin/rsync is openrsync; its first line carries a "version 29" token
-        // that must never be read as a version number.
+        // macOS's stock /usr/bin/rsync is openrsync; its first line carries a "version 29" token that must never be read as a version number.
         assert!(!rsync_protects_remote_args("openrsync: protocol version 29"));
         assert!(!rsync_protects_remote_args("unknown"));
         assert!(!rsync_protects_remote_args(""));
@@ -1475,8 +1460,7 @@ mod tests {
 
     #[test]
     fn rsync_args_keep_src_and_dest_last() {
-        // get_sync_delete_preview inserts --modify-window at len-2, so the transport flags must
-        // never displace src/dest from the tail.
+        // get_sync_delete_preview inserts --modify-window at len-2, so the transport flags must never displace src/dest from the tail.
         let project = make_test_project(vec!["x/"], vec![]);
         let args = build_rsync_args(&project, true, true, &[], "/local/", "host:/remote/");
         assert_eq!(args[args.len() - 2], "/local/");
@@ -1509,8 +1493,7 @@ mod tests {
 
     #[test]
     fn mirror_pull_protects_the_task_list_from_delete() {
-        // The direction that actually caused the risk: a PULL before the project's first PUSH
-        // finds no .akidevsync/ on the remote, so --delete alone would erase the local one.
+        // The direction that actually caused the risk: a PULL before the project's first PUSH finds no .akidevsync/ on the remote, so --delete alone would erase the local one.
         let mut project = make_test_project(vec![], vec![]);
         project.delete_on_pull = true;
         let args = build_rsync_args(&project, false, false, &[], "host:/remote/", "/local/");

@@ -98,8 +98,7 @@ export function usePtyStream(tabId = 0) {
     feedTokens(tokens)
   }
 
-  // ── Frame filter ────────────────────────────────────────────────────────────
-  // onFrame is a broadcast channel — every listener sees every tab's frames.
+  // Frame filter: onFrame is a broadcast channel — every listener sees every tab's frames.
 
   function isForThisTab(frame) {
     return (frame.tab_id ?? 0) === tabId

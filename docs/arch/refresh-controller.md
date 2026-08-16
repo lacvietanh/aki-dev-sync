@@ -1,5 +1,7 @@
 # Refresh Controller - one unit of work, one scheduler
 
+> updated 2026-08-16 · v1.24.0
+
 Status layer architecture: how a project's *derived* state (git status, remote diff, dev/build commands) gets refreshed, who is allowed to trigger it, where the busy indicator comes from, and how an in-flight check is cancelled.
 
 Source of truth: `src/composables/useBackgroundRefresh.js` (controller) + `src/store/projectStore.js` (busy counter + generation token).

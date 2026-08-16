@@ -135,7 +135,7 @@ Per `RULE-agent-behavior.md` §B2: none of the three is asserted as *the* cause.
 
 **Follow-up research** — whichever candidate the Mac `__akiIme.tail(20)`/`dump()` output confirms becomes the opening fact of a `-4` doc (or this doc's Result stands as closed if the recipe instead shows something not yet enumerated here). Do not attempt a v3 guard change without that dump, per the same rule that governed v2.
 
-**Cross-references**: `terminal-vietnamese-ime-root-cause-2.md` (needs its `Status: superseded by` line added by the orchestrator, per this doc's own opening note — not edited here), `docs/feat/in-app-terminal.md` §Vietnamese input (unchanged pending the confirmed cause), `src/composables/useWkImeGuard.js` (unchanged — traced, not patched), `docs/plan/backlog-jul27.md` WS-D (still blocked on Mac evidence per its own dependency-order note).
+**Cross-references**: `terminal-vietnamese-ime-root-cause-2.md` (needs its `Status: superseded by` line added by the orchestrator, per this doc's own opening note — not edited here), `docs/feat/in-app-terminal.md` §Vietnamese input (unchanged pending the confirmed cause), `src/composables/useWkImeGuard.js` (unchanged — traced, not patched), `docs/plan/done/backlog-jul27.md` WS-D (still blocked on Mac evidence per its own dependency-order note).
 
 ---
 

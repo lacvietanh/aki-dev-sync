@@ -115,8 +115,7 @@ function releaseMonitors(pair) {
   releaseMonitor(pair.claudecode);
 }
 watch(() => target.value.host, () => {
-  // Acquire the new pair BEFORE releasing the old one: another slot may be watching the same host,
-  // and dropping to zero holders in between would stop and restart a poll that never needed to stop.
+  // Acquire the new pair BEFORE releasing the old one: another slot may be watching the same host, and dropping to zero holders in between would stop and restart a poll that never needed to stop.
   const previous = monitors.value;
   monitors.value = monitorsFor(target.value);
   releaseMonitors(previous);
@@ -186,8 +185,7 @@ const popupPosition = computed(() => {
   const vert = row < Math.max(tierCount.value, 1) / 2 ? 't' : 'b';
   return `popup-pos-${vert}${col}`;
 });
-// Per-slot viewing email/key state: lets Slot A and Slot B independently select and display
-// different active or cached accounts from the same monitor's data, persisted per slot.
+// Per-slot viewing email/key state: lets Slot A and Slot B independently select and display different active or cached accounts from the same monitor's data, persisted per slot.
 const slotViewingEmailKey = `aki-usage-slot-${props.slotId}-viewing-account`;
 const slotViewingEmail = ref(localStorage.getItem(slotViewingEmailKey) || null);
 
@@ -338,7 +336,7 @@ const slotAccountInfo = computed(() => {
    .u-narrow-hide utility (applied in the template); this block only tightens the layout that
    utility can't express - icon-only tabs no longer need the old label-sized horizontal padding.
    .host-select-mini's own narrow-width step lives in main.css beside its base definition. */
-@media (max-width: 700px) {
+@container main-view (max-width: 700px) {
   .tab {
     padding: 3px 5px;
     gap: 2px;

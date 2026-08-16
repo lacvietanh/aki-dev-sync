@@ -25,8 +25,7 @@ const STORAGE_KEY = 'aki-usage-slot-targets'
 // upgraded install looking unchanged. Any slot beyond them (row 3+, which is new surface nobody has
 // a habit about yet) gets BASE_DEFAULT - local Claude Code, the one target that always resolves.
 //
-// Deliberately NOT `remote` for new slots: a remote default with no host picked yet resolves to an
-// empty host and opens on an error card.
+// Deliberately NOT `remote` for new slots: a remote default with no host picked yet resolves to an empty host and opens on an error card.
 const BASE_DEFAULT = { scope: 'local', localAgent: 'cc', remoteAgent: 'cc', remoteHost: '' }
 const SEED_DEFAULTS = {
   A: { scope: 'local', localAgent: 'ag', remoteAgent: 'cc', remoteHost: '' },
@@ -63,8 +62,7 @@ function seed() {
     if (raw) {
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed === 'object') {
-        // Stored map wins per field, defaults fill the rest - so a record written when only A..D
-        // existed gains the new slots without losing a single choice already made in the old four.
+        // Stored map wins per field, defaults fill the rest - so a record written when only A..D existed gains the new slots without losing a single choice already made in the old four.
         const out = {}
         for (const id of ids) out[id] = { ...defaultTarget(id), ...parsed[id] }
         return out

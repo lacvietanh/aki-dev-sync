@@ -45,8 +45,7 @@ const UNKNOWN_ENTRY = Object.freeze({
 /** Replace ONE project's entry. */
 export function setProjectNotesEntry(id, entry) {
   if (!id) return
-  // New object identity, not an in-place field write: mirror.js watches this ref and a nested
-  // mutation on the same object would not always produce a delta for the companion.
+  // New object identity, not an in-place field write: mirror.js watches this ref and a nested mutation on the same object would not always produce a delta for the companion.
   projectNotes.value = { ...projectNotes.value, [id]: { ...UNKNOWN_ENTRY, ...entry } }
 }
 
@@ -68,8 +67,7 @@ export function dropProjectNotesEntry(id) {
 
 // ── Per-id generation token: the guard that makes a LATE read harmless ──────────────────────────
 //
-// `read_project_notes` is `spawn_blocking` precisely because it can stall for tens of seconds on an
-// unhealthy network mount. So this sequence is not theoretical:
+// `read_project_notes` is `spawn_blocking` precisely because it can stall for tens of seconds on an unhealthy network mount. So this sequence is not theoretical:
 //
 //   modal opens → refresh starts → user edits → applyTaskEdit writes and re-seeds the entry
 //                                            → THEN the pre-edit read lands

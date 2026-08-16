@@ -17,8 +17,7 @@ let saveTimer = null
 let pendingSave = null
 
 export async function initGlobalNote() {
-  // Silent load on startup - just populates noteContent/globalTasks so AppHeader can show the
-  // amber indicator and the task-count badges without the user needing to open the note.
+  // Silent load on startup - just populates noteContent/globalTasks so AppHeader can show the amber indicator and the task-count badges without the user needing to open the note.
   try {
     const file = await invoke('read_global_note')
     noteContent.value = file.content
@@ -28,8 +27,7 @@ export async function initGlobalNote() {
 
 export async function openGlobalNote() {
   showGlobalNote.value = true
-  // Wait out any save still in flight so we don't clobber the just-saved
-  // content with a stale disk read (see closeGlobalNote/flushSave).
+  // Wait out any save still in flight so we don't clobber the just-saved content with a stale disk read (see closeGlobalNote/flushSave).
   if (pendingSave) await pendingSave
   try {
     const file = await invoke('read_global_note')

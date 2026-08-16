@@ -1,7 +1,7 @@
 # Restore terminal mobile UX — direction options after 1.23.0's SimpleView
 
 **Status:** RESOLVED 2026-08-11 — Direction C chosen and built. See
-`docs/plan/wish-terminal-manual-resize-authority.md` for the actual design (a refined shape, not
+`docs/plan/done/wish-terminal-manual-resize-authority.md` for the actual design (a refined shape, not
 literally the Direction C sketch below — the sketch's "per-screen PTY sizing" framing was replaced
 during design with a simpler, adversarially-reviewed "explicit manual authority handoff" mechanism
 that achieves the same goal without a backend session-model rewrite). Directions A and B below are
@@ -99,7 +99,7 @@ limitation.
 
 Direction C was chosen (2026-08-11) without further owner back-and-forth on the two open questions
 below — the owner asked for the correct fix built out fully rather than a symptom-confirmation
-round-trip. See `docs/plan/wish-terminal-manual-resize-authority.md` for what was actually built,
+round-trip. See `docs/plan/done/wish-terminal-manual-resize-authority.md` for what was actually built,
 including why it diverges from this doc's original Direction C sketch.
 
 Original open questions, recorded for the trail:

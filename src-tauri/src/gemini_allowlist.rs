@@ -40,8 +40,7 @@ fn build_installer_script() -> String {
 
 #[tauri::command]
 pub async fn apply_gemini_allowlist(target_hosts: Vec<String>) -> Result<Vec<HostApplyResult>, String> {
-    // Validated before any thread is spawned - same boundary check as apply_statusline_config,
-    // since this list arrives from the frontend (and, over the relay, from a companion).
+    // Validated before any thread is spawned - same boundary check as apply_statusline_config, since this list arrives from the frontend (and, over the relay, from a companion).
     for host in &target_hosts {
         crate::system::validate_remote_host(host)?;
     }

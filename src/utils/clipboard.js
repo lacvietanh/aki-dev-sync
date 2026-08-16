@@ -29,8 +29,7 @@ export async function copyText(text) {
   try {
     const ta = document.createElement('textarea')
     ta.value = value
-    // Off-screen but focusable: `display:none`/`hidden` makes the selection unreadable, and iOS
-    // needs a non-zero-size, non-readonly element for the selection to take.
+    // Off-screen but focusable: display:none/hidden makes the selection unreadable, and iOS needs a non-zero-size, non-readonly element for the selection to take.
     ta.setAttribute('readonly', '')
     ta.style.cssText = 'position:fixed; top:0; left:-9999px; opacity:0;'
     document.body.appendChild(ta)

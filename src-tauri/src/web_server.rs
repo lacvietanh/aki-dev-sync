@@ -1038,8 +1038,7 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
                 let Some(result) = incoming else { break };
                 match result {
                     Ok(msg @ (Message::Text(_) | Message::Binary(_))) => {
-                        // Stamped with THIS connection's relay-minted key so the host can address its
-                        // reply back to this one socket (services/hostInvoke.js echoes it as `to`).
+                        // Stamped with THIS connection's relay-minted key so the host can address its reply back to this one socket (services/hostInvoke.js echoes it as `to`).
                         //
                         // COST: this direction is human-paced — keystrokes, intents, invokes — so a
                         // full `serde_json::Value` round-trip per frame is affordable here. It is NOT
@@ -1462,8 +1461,7 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
             .collect();
         for k in dead {
             if let Some(handle) = companions.remove(&k) {
-                // A genuine revocation IS the CLOSE_UNPAIRED case — this is the one place the
-                // companion should drop its stored token, and now the only one that says so.
+                // A genuine revocation IS the CLOSE_UNPAIRED case — this is the one place the companion should drop its stored token, and now the only one that says so.
                 enqueue(
                     &handle.outbox,
                     Message::Close(Some(CloseFrame {
@@ -1558,8 +1556,7 @@ mod tests {
                 assert_ne!(a, b, "close codes must stay distinguishable on the wire");
             }
         }
-        // 4001 keeps its shipped meaning (token rejected) so already-installed companions that
-        // only understand 4001 still behave correctly on a real revocation.
+        // 4001 keeps its shipped meaning (token rejected) so already-installed companions that only understand 4001 still behave correctly on a real revocation.
         assert_eq!(CLOSE_UNPAIRED, 4001);
     }
 
@@ -1576,8 +1573,7 @@ mod tests {
 
     // ── Backpressure / coalescing policy ─────────────────────────────────────────────────────
     //
-    // These drive `Outbox` directly rather than through a socket: the policy is a property of the
-    // queue, and a test that needed a live phone to prove it would prove it on nobody's machine.
+    // These drive `Outbox` directly rather than through a socket: the policy is a property of the queue, and a test that needed a live phone to prove it would prove it on nobody's machine.
 
     fn text(t: &str, payload_bytes: usize) -> Message {
         Message::Text(serde_json::json!({ "t": t, "data": "x".repeat(payload_bytes) }).to_string())
@@ -1746,8 +1742,7 @@ mod tests {
         assert_eq!(queued(&tab1), 0, "one outbox must never receive a second connection's replay");
         assert_eq!(queued(&tab2), 2);
 
-        // The device id is still what `revoke_device` groups on — connection addressing did not
-        // remove device grouping, it just stopped using it as the wire address.
+        // The device id is still what `revoke_device` groups on — connection addressing did not remove device grouping, it just stopped using it as the wire address.
         let companions = state.companions.lock().unwrap();
         assert_eq!(companions.values().filter(|h| h.device_id == "device-a").count(), 2);
     }
@@ -1764,8 +1759,7 @@ mod tests {
         assert_eq!(v["t"], "invoke", "no other field may be touched");
         assert_eq!(v["id"], 1);
 
-        // A companion cannot smuggle a `to` past the stamp either — but note the real reason it is
-        // harmless is structural: inbound frames go to `forward_to_host`, never to `dispatch`.
+        // A companion cannot smuggle a `to` past the stamp either — but note the real reason it is harmless is structural: inbound frames go to `forward_to_host`, never to `dispatch`.
         let stamped = stamp_from(Message::Text(r#"{"t":"invoke","id":1,"to":"c2"}"#.into()), "c1");
         let Message::Text(json) = stamped else { panic!("a text frame must stay a text frame") };
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1867,8 +1861,7 @@ mod tests {
         assert_eq!(queued(&tab1), 2, "each outbox holds exactly the replays addressed to it");
         assert_eq!(queued(&tab2), 1);
 
-        // The arithmetic the assertion above protects, stated so a reader does not have to re-derive
-        // what a device-level address would have cost.
+        // The arithmetic the assertion above protects, stated so a reader does not have to re-derive what a device-level address would have cost.
         let one = one_replay_bytes();
         assert!(2 * one > COMPANION_QUEUE_LIMIT_BYTES / 2, "two replays in one outbox would break R1");
         assert!(3 * one > COMPANION_QUEUE_LIMIT_BYTES, "three would blow the budget outright");

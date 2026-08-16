@@ -60,8 +60,7 @@ export function action(key, fn) {
     )
   }
   if (isHost) {
-    // A per-screen action never travels (the companion runs it locally, see above), so it is
-    // deliberately NOT reachable from an inbound intent frame either.
+    // A per-screen action never travels (the companion runs it locally, see above), so it is deliberately NOT reachable from an inbound intent frame either.
     if (!PER_SCREEN_ACTION_KEYS.has(key)) {
       if (HOST_ACTIONS.has(key)) {
         console.error(`[action] duplicate intent key "${key}" — the later definition now owns it`)
@@ -89,8 +88,7 @@ export function action(key, fn) {
 let lastUndeliveredAt = 0
 
 function reportUndelivered(key) {
-  // One toast per burst: a mis-tap on a dead socket can fire several intents in the same second,
-  // and three stacked toasts say nothing the first did not.
+  // One toast per burst: a mis-tap on a dead socket can fire several intents in the same second, and three stacked toasts say nothing the first did not.
   const now = Date.now()
   if (now - lastUndeliveredAt < 3000) return
   lastUndeliveredAt = now

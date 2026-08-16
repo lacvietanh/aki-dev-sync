@@ -1,5 +1,7 @@
 # Git Modal Operations & Unified Executor
 
+> updated 2026-08-16 · v1.24.0
+
 A complete Git interaction suite inside each project panel that lets developers query repository status, stage/commit changes, fetch from remote, push commits, and trace terminal logs.
 
 ```mermaid
@@ -34,6 +36,7 @@ sequenceDiagram
 - **Stage & Commit**: Clicking the `COMMIT` button automatically performs `git add -A` followed by `git commit -m "[message]"`.
 - **Fetch**: Clicking `FETCH` runs `git fetch` to download objects and refs from the remote repository.
 - **Push**: Clicking `PUSH` runs `git push` to upload local commits to the remote branch.
+- **Pull**: Clicking `PULL` runs `git pull` to merge remote changes into the current branch.
 - **Status Update**: Clicking `STATUS` updates the staging lists and refreshes logs.
 - **Git Console Output**: A scrollable terminal-style console displaying stdout/stderr responses directly from local execution (success logs or stderr warnings in red).
 - **Changelog Preview**: A `CHANGELOG` button dynamically appears in the footer if a changelog file (`CHANGELOG.md`, `changelog.md`, `CHANGELOG.txt`, etc.) is found in the local project path. Clicking this opens a styled markdown modal (inheriting from the system `ChangelogModal.vue`) to show a visual preview of the project releases. The preview state is automatically reset when switching projects to guarantee a clean, intuitive UX.
@@ -49,7 +52,7 @@ A strict policy is maintained to avoid bloating the global sync log while retain
 | **App Startup** | **Silent** | None (only system logs or loading error details if Git check fails). |
 | **Background Polling** (Auto-refresh) | **Silent** | None. Runs every refresh interval without adding lines. |
 | **Manual Click** (Status / Refresh in modal) | **Loud** | `[GIT] Checking status for "Aki"...`<br>`[GIT] Status for "Aki": 1 file modified` |
-| **Manual Actions** (Commit, Fetch, Push) | **Loud** | `[GIT] Running git push for "Aki"...`<br>`[GIT] Git Push result: Everything up-to-date.` |
+| **Manual Actions** (Commit, Fetch, Push, Pull) | **Loud** | `[GIT] Running git push for "Aki"...`<br>`[GIT] Git Push result: Everything up-to-date.` |
 | **Command Failures** (Any scenario) | **Loud** | `[ERROR] Git Fetch failed for "Aki": remote hung up` |
 
 ---
@@ -85,6 +88,7 @@ To avoid thin Rust command bloat, Git commands run through a single unified exec
   - **Commit Flow**: Calls `run_git_command` with `["add", "-A"]` first, and then triggers `["commit", "-m", message]`.
   - **Fetch Flow**: Calls `run_git_command` with `["fetch"]`.
   - **Push Flow**: Calls `run_git_command` with `["push"]`.
+  - **Pull Flow**: Calls `run_git_command` with `["pull"]`.
 
 ---
 

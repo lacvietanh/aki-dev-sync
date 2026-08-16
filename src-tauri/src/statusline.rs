@@ -667,8 +667,7 @@ mod tests {
     #[test]
     fn generated_script_is_valid_shell() {
         let mut cfg = test_config();
-        // Not the default config: an all-off config is the shape most likely to emit a dangling
-        // gate or an empty BLOCK_ORDER, so that is what gets syntax-checked.
+        // Not the default config: an all-off config is the shape most likely to emit a dangling gate or an empty BLOCK_ORDER, so that is what gets syntax-checked.
         for f in cfg.fields.iter_mut() {
             f.enabled = false;
         }
@@ -696,12 +695,10 @@ mod tests {
                 key
             );
         }
-        // And the reverse: a gate the body reads but the generator never writes would be an
-        // always-empty variable, i.e. a silently invisible block.
+        // And the reverse: a gate the body reads but the generator never writes would be an always-empty variable, i.e. a silently invisible block.
         for line in TEMPLATE.lines() {
             for token in line.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
-                // A bare `EN_` with nothing after it is prose in the template's comments, not a
-                // variable reference - only a real name is a claim about a generated flag.
+                // A bare `EN_` with nothing after it is prose in the template's comments, not a variable reference - only a real name is a claim about a generated flag.
                 if let Some(key) = token.strip_prefix("EN_").filter(|k| !k.is_empty()) {
                     assert!(
                         EN_KEYS.contains(&key),
@@ -711,8 +708,7 @@ mod tests {
                 }
             }
         }
-        // Same contract for the color variables - a COLOR_ the body reads but nobody writes is a
-        // dead picker in the UI (the exact bug COLOR_cwd shipped with).
+        // Same contract for the color variables - a COLOR_ the body reads but nobody writes is a dead picker in the UI (the exact bug COLOR_cwd shipped with).
         for line in TEMPLATE.lines() {
             for token in line.split(|c: char| !(c.is_alphanumeric() || c == '_')) {
                 if let Some(key) = token.strip_prefix("COLOR_").filter(|k| !k.is_empty()) {
@@ -874,8 +870,7 @@ mod tests {
         let out = std::process::Command::new("bash")
             .arg(&path)
             .env("HOME", &home)
-            // If run from inside a Claude Code session, CLAUDE_CONFIG_DIR is inherited and
-            // overrides this fake HOME, leaking the real account into the script's output.
+            // If run from inside a Claude Code session, CLAUDE_CONFIG_DIR is inherited and overrides this fake HOME, leaking the real account into the script's output.
             .env_remove("CLAUDE_CONFIG_DIR")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -926,8 +921,7 @@ mod tests {
 
     #[test]
     fn cc_rate_limits_merge_instead_of_overwrite() {
-        // Payload has only five_hour; seven_day must survive from the cache, and the rewritten
-        // cache must still hold both.
+        // Payload has only five_hour; seven_day must survive from the cache, and the rewritten cache must still hold both.
         let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"rate_limits":{"five_hour":{"used_percentage":10,"resets_at":0}}}"#;
         let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0},"seven_day":{"used_percentage":92,"resets_at":0}}}"#;
         let (line, home) = run_script(
@@ -953,8 +947,7 @@ mod tests {
 
     #[test]
     fn cc_drops_a_cached_quota_whose_reset_has_passed() {
-        // The 1.10.0-1.17.0 bug: an entry the account no longer has (here: seven_day, already
-        // past its reset) stayed in the cache forever and rendered as a phantom "7d 45%".
+        // The 1.10.0-1.17.0 bug: an entry the account no longer has (here: seven_day, already past its reset) stayed in the cache forever and rendered as a phantom "7d 45%".
         let now = now_epoch();
         let payload = format!(
             r#"{{"cwd":"/tmp/demo","rate_limits":{{"five_hour":{{"used_percentage":50,"resets_at":{}}}}}}}"#,
@@ -1105,8 +1098,7 @@ mod tests {
 
     #[test]
     fn a_field_the_backend_does_not_know_is_ignored_not_fatal() {
-        // `version` is UI-only bookkeeping, and a future UI may add more. Unknown keys must not
-        // break Apply for everyone on an older build.
+        // `version` is UI-only bookkeeping, and a future UI may add more. Unknown keys must not break Apply for everyone on an older build.
         let with_extra = VUE_DEFAULT_JSON.replace(
             r#""version": 3"#,
             r#""version": 4, "somethingTheUiAddedLater": {"x": 1}"#,
@@ -1116,8 +1108,7 @@ mod tests {
 
     #[test]
     fn a_missing_section_is_rejected_rather_than_silently_defaulted() {
-        // The deliberate absence of #[serde(default)] - see the comment on StatuslineConfig. A
-        // half-written payload must fail the Apply, not produce a script from values nobody chose.
+        // The deliberate absence of #[serde(default)] - see the comment on StatuslineConfig. A half-written payload must fail the Apply, not produce a script from values nobody chose.
         let without_trunc = VUE_DEFAULT_JSON
             .replace(r#""trunc": {"account":4,"user":5,"host":6,"cwd":12,"branch":10},"#, "");
         assert!(

@@ -296,8 +296,7 @@ const props = defineProps({
   cachedAt: { type: Number, default: null },
   showEmail: { type: Boolean, default: true },
   sourceOff: { type: Boolean, default: false },
-  // True when sourceOff is forced (not user-toggled) - e.g. Claude Code local monitoring
-  // locked off while Proxy mode is active. Swaps the off-state message to explain why.
+  // True when sourceOff is forced (not user-toggled) - e.g. Claude Code local monitoring locked off while Proxy mode is active. Swaps the off-state message to explain why.
   locked: { type: Boolean, default: false },
   // True when showing a remote host's probe rather than this Mac's; readings render identically either way.
   remote: { type: Boolean, default: false },
@@ -540,8 +539,7 @@ onUnmounted(releaseAgoClock);
 // at all, so that clause is simply never true for AG - no agent branch needed.
 const stale = computed(() => {
   if (!props.data) return false;
-  // No mtime reported: the age is unknown, which is what the pre-derivation code treated as
-  // infinitely old. The badge (not the age label) is the honest rendering of that.
+  // No mtime reported: the age is unknown, which is what the pre-derivation code treated as infinitely old. The badge (not the age label) is the honest rendering of that.
   if (!props.dataAt) return true;
   if (agoNow.value - props.dataAt > 600) return true;
   const fh = props.data?.rate_limits?.five_hour;
@@ -616,8 +614,7 @@ function titleCaseWords(s) {
   return s.split('_').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-// Unknown keys still get a readable label instead of a raw snake_case key: a `seven_day_*` prefix is
-// rewritten to the same "7-Day X" shape the known weeklies use, anything else is Title Cased.
+// Unknown keys still get a readable label instead of a raw snake_case key: a `seven_day_*` prefix is rewritten to the same "7-Day X" shape the known weeklies use, anything else is Title Cased.
 function ccBucketLabel(key) {
   if (CC_BUCKET_LABELS[key]) return CC_BUCKET_LABELS[key];
   if (key.startsWith('seven_day_')) return `7-Day ${titleCaseWords(key.slice('seven_day_'.length))}`;
@@ -635,8 +632,7 @@ const ccBuckets = computed(() => {
   if (!rl || typeof rl !== 'object') return [];
   const keys = Object.keys(rl).filter(k => {
     const v = rl[k];
-    // A null/absent bucket means "not applicable to this plan", not an error - skip it silently
-    // rather than drawing an N/A bar for a limit the account does not have.
+    // A null/absent bucket means "not applicable to this plan", not an error - skip it silently rather than drawing an N/A bar for a limit the account does not have.
     return v && typeof v === 'object' && typeof v.used_percentage === 'number' && Number.isFinite(v.used_percentage);
   });
   keys.sort((a, b) => {
@@ -704,8 +700,7 @@ onMounted(() => {
   }
 });
 
-// Kept as a named computed (not folded into ccBuckets) because it is the input to the dimming rule
-// above, which is about the SHARED weekly pool specifically - not "whatever weekly buckets exist".
+// Kept as a named computed (not folded into ccBuckets) because it is the input to the dimming rule above, which is about the SHARED weekly pool specifically - not "whatever weekly buckets exist".
 const cc7dPct = computed(() => { const v = props.data?.rate_limits?.seven_day?.used_percentage; return v != null ? Math.round(v) : null; });
 
 // Org name: skip Anthropic's auto-generated default "email's Organization"
@@ -1102,7 +1097,7 @@ async function handleIconClick() {
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1459,7 +1454,7 @@ async function handleIconClick() {
 /* Narrow mode (<=700px): the LOCAL/REMOTE columns stay side-by-side (not stacked) - the fix is
    letting each card's content, including the progress bars and reset-line text, actually shrink
    to fit its half instead of the fixed 200px forcing horizontal overflow past the window edge. */
-@media (max-width: 700px) {
+@container main-view (max-width: 700px) {
   .agent-usage-card {
     min-width: 0;
   }

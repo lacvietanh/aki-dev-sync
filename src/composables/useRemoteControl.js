@@ -45,8 +45,7 @@ async function refreshHttps() {
   }
 }
 
-// Toggle serve on/off. On an enable failure (usually HTTPS certs not yet enabled for the tailnet)
-// tailscale's own message — which includes the admin URL to click — comes back as the error string.
+// Toggle serve on/off. On an enable failure (usually HTTPS certs not yet enabled for the tailnet) tailscale's own message — which includes the admin URL to click — comes back as the error string.
 async function toggleHttps() {
   if (httpsBusy.value) return
   httpsBusy.value = true
@@ -90,8 +89,7 @@ async function stop() {
   busy.value = true
   error.value = null
   try {
-    // Turn HTTPS serve off with it — "off means off", nothing left proxying in the background after
-    // the user stops remote control. Best-effort; a failure here shouldn't block stopping the relay.
+    // Turn HTTPS serve off with it — "off means off", nothing left proxying in the background after the user stops remote control. Best-effort; a failure here shouldn't block stopping the relay.
     if (httpsEnabled.value) {
       try {
         await invoke('set_tailscale_https', { enable: false })
@@ -102,8 +100,7 @@ async function stop() {
   } catch (e) {
     error.value = msg(e)
   } finally {
-    // Whatever the RPC did, from the UI's point of view remote control is now off — clear the
-    // code/URLs so a stale code can't be read off the menu after stopping.
+    // Whatever the RPC did, from the UI's point of view remote control is now off — clear the code/URLs so a stale code can't be read off the menu after stopping.
     running.value = false
     pairingCode.value = ''
     urls.value = []
@@ -133,8 +130,7 @@ async function syncFromHost() {
   }
 }
 
-// Re-enumerate reachable addresses without touching the enabled gate or the code — e.g. the user
-// brought Tailscale up after starting. No-op when not running.
+// Re-enumerate reachable addresses without touching the enabled gate or the code — e.g. the user brought Tailscale up after starting. No-op when not running.
 async function refreshUrls() {
   if (!running.value) return
   try {

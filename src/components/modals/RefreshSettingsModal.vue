@@ -75,8 +75,7 @@ watch(() => props.show, (v) => {
 })
 
 function save() {
-  // Route through the action so a companion's edit reaches the Mac (C→H); on the host it is the
-  // plain reactive write. `local` is reactive — spread to a plain object for the intent wire.
+  // Route through the action so a companion's edit reaches the Mac (C→H); on the host it is the plain reactive write. `local` is reactive — spread to a plain object for the intent wire.
   setRefreshSettings({ ...local })
   emit('close')
 }

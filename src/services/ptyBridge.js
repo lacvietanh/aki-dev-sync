@@ -75,8 +75,7 @@ async function pushAllScrollbacks(to) {
         allSent = false
       }
     } catch (e) {
-      // This tab could not be read — the others still can, and each is independently useful, so
-      // keep going rather than abandoning the replay. The failure is recorded in the return value.
+      // This tab could not be read — the others still can, and each is independently useful, so keep going rather than abandoning the replay. The failure is recorded in the return value.
       console.debug('[ptyBridge] scrollback push skipped for tab', tabId, e && e.message ? e.message : e)
       allSent = false
     }
@@ -99,8 +98,7 @@ async function pushAllScrollbacks(to) {
 // tab, because the relay drops frames by tag without reading them and so cannot tell you which tabs
 // it damaged (see pushAllScrollbacks).
 //
-// Note the timer only exists because output can stop while congested: recovery cannot be driven by
-// the next `pty-output` event when the whole problem may be that there is no next event.
+// Note the timer only exists because output can stop while congested: recovery cannot be driven by the next `pty-output` event when the whole problem may be that there is no next event.
 const RESYNC_RETRY_MS = 250
 // The handle IS the "a replay is owed" state — there is no second flag to drift out of step with it.
 // It is deliberately not cleared until the attempt has finished, so a burst of refused frames during
@@ -124,8 +122,7 @@ function scheduleResync() {
   resyncTimer = setTimeout(async () => {
     let owed = true
     try {
-      // Not connected, or still backed up — nothing to gain from replaying the whole ring into a
-      // full buffer, and the check costs nothing until the socket is actually usable again.
+      // Not connected, or still backed up — nothing to gain from replaying the whole ring into a full buffer, and the check costs nothing until the socket is actually usable again.
       owed = connectionState.value !== 'open' || isSocketCongested() || !(await pushAllScrollbacks(null))
     } finally {
       resyncTimer = null
@@ -140,8 +137,7 @@ export function initPtyBridge() {
   if (!isHost || started) return
   started = true
 
-  // Lowest-latency path for the HOST's own TerminalView is a direct `listen('pty-output')` in
-  // usePtyTerminal.js — this listener exists ONLY to relay the same event to companions over WS.
+  // Lowest-latency path for the HOST's own TerminalView is a direct `listen('pty-output')` in usePtyTerminal.js — this listener exists ONLY to relay the same event to companions over WS.
   listen('pty-output', (event) => {
     const payload = (event && event.payload) || {}
     // `reset` rides along so CLEAR / RESTART wipe the phone's screen in the same beat as the
@@ -165,8 +161,7 @@ export function initPtyBridge() {
         reset: !!payload.reset,
       }
       if (hasAlive) frame.alive = payload.alive
-      // A refused frame leaves a hole in the companions' byte stream — heal it with a full replay
-      // rather than pretending the next chunk continues from where the last one left off.
+      // A refused frame leaves a hole in the companions' byte stream — heal it with a full replay rather than pretending the next chunk continues from where the last one left off.
       if (!send(frame)) scheduleResync()
     }
   })
@@ -180,12 +175,10 @@ export function initPtyBridge() {
     send({ t: FRAME_PTY_EXIT, tab_id: payload.tab_id ?? 0 })
   })
 
-  // Companion keystrokes arrive as raw pty_input frames (not a generic `invoke`, to avoid an
-  // invoke_result round-trip per keystroke — see protocol.js's FRAME_PTY_INPUT doc comment).
+  // Companion keystrokes arrive as raw pty_input frames (not a generic `invoke`, to avoid an invoke_result round-trip per keystroke — see protocol.js's FRAME_PTY_INPUT doc comment).
   onFrame((frame) => {
     if (frame && frame.t === FRAME_PTY_INPUT && frame.data) {
-      // `?? 0`: an older companion bundle sends no tab_id and must keep landing on the default tab
-      // it has always driven (src-tauri/src/pty.rs's backward-compatibility note).
+      // `?? 0`: an older companion bundle sends no tab_id and must keep landing on the default tab it has always driven (src-tauri/src/pty.rs's backward-compatibility note).
       invoke('pty_write', { tabId: frame.tab_id ?? 0, data: frame.data }).catch((e) => {
         console.error('[ptyBridge] pty_write failed', e)
       })

@@ -61,7 +61,7 @@ export const CEILING_TAB_LIMIT_MESSAGE = `All ${MAX_TABS} terminal tabs are in u
  *  `resizeOwner`: who drives this tab's shared PTY size. Absent/'host' = the Mac (default). Any
  *  other value is the opaque companion connection id (`frame.from`) that last tapped "Fit to my
  *  screen" — only ever copied from an incoming frame, never constructed. Rides the normal mirror.
- *  docs/plan/wish-terminal-manual-resize-authority.md.
+ *  docs/plan/done/wish-terminal-manual-resize-authority.md.
  *
  *  `pinned`: shows this tab in EVERY group's strip, not just its own — display-only. Ownership
  *  (`projectId`) never changes, so the per-scope/global caps (enforced below by `scopeOf`-style
@@ -203,7 +203,7 @@ export const toggleTabPinned = action('terminalTabsStore.toggleTabPinned', (id) 
 /** Scoped to the ONE tab, immutable replace (Regression Guard - Multi-entity State, CLAUDE.md).
  *  Host-only callers, so not wrapped in `action()`: the FRAME_PTY_RESIZE_REQUEST listener and the
  *  reclaim pill, both host-only — a companion's claim arrives inside the frame itself, nothing to
- *  expose to the remote-intent registry. docs/plan/wish-terminal-manual-resize-authority.md. */
+ *  expose to the remote-intent registry. docs/plan/done/wish-terminal-manual-resize-authority.md. */
 export function setResizeOwner(id, owner) {
   const idx = terminalTabs.value.findIndex((t) => t.id === id)
   if (idx === -1) return

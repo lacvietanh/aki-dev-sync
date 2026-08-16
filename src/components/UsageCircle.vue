@@ -458,7 +458,7 @@ export default {
    label moves off to the side and onto the ring itself instead: absolutely positioned over the
    ring's top interior, tiny but still legible, with the percentage nudged down a touch to make
    room. Outside this breakpoint the wide "label beside ring" layout above is untouched. */
-@media (max-width: 700px) {
+@container main-view (max-width: 700px) {
   .circle-main-row {
     position: relative;
   }

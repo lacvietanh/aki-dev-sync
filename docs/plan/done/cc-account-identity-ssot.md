@@ -133,7 +133,7 @@ Four pieces of enforcement, all of which exist only because the wrong source is 
 - **No "clear the CC identity caches" button, menu item, or convenience command.** See §7 for why this is a hard non-goal.
 - **No new UI element, badge, row or banner** — the card already renders email, org and tier (project rule: UI Principle — Extreme Narrow).
 - **`CHANGELOG.md` is not edited by this plan.** The `[Unreleased]` line is drafted in §10 only.
-- **This plan does not touch `docs/plan/usage-probe-oop.md`.** WS-C §1 Non-goals states verbatim: "**No CC behaviour change.** `get-claudecode-usage.sh` and `provision-claudecode.sh` are untouched." Those are the two files this plan changes; the two must not be merged, or one doc holds two contradictory definitions of "correct".
+- **This plan does not touch `docs/plan/done/usage-probe-oop.md`.** WS-C §1 Non-goals states verbatim: "**No CC behaviour change.** `get-claudecode-usage.sh` and `provision-claudecode.sh` are untouched." Those are the two files this plan changes; the two must not be merged, or one doc holds two contradictory definitions of "correct".
 - **The AGY-side account source is out of scope here** — see §11 for a related finding handed to the lead rather than folded in.
 
 ## 7. MULTI-ENTITY WARNING

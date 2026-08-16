@@ -24,11 +24,7 @@ const renderer = {
 markedInstance.use({ renderer });
 
 export function renderMarkdown(text) {
-  // Add some basic styling classes to the parsed HTML
-  let html = markedInstance.parse(text);
-  // Optional: You could do minor string replacements here if needed
-  // e.g. html = html.replace(/<ul>/g, '<ul style="padding-left: 20px;">');
-  return html;
+  return markedInstance.parse(text);
 }
 
 export async function runMermaid() {

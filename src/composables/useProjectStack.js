@@ -1,8 +1,7 @@
 import { invoke } from '../utils/tauri'
 import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from '../store/projectStore'
 
-// Third per-project status check, alongside fetchGitStatus and checkProjectSyncStatus. It reads
-// the project's package.json/config to derive the DEV and BUILD commands shown in the OPEN popup.
+// Third per-project status check, alongside fetchGitStatus and checkProjectSyncStatus. It reads the project's package.json/config to derive the DEV and BUILD commands shown in the OPEN popup.
 //
 // It lives here, as a peer of the other two, rather than inline in loadData() where it used to be:
 // stack info is derived state that goes stale exactly like git status does (editing

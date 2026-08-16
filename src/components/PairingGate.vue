@@ -60,8 +60,7 @@ const { ready, needsPairing, busy, error, connectionState, submitCode } = useCom
 const code = ref('');
 const codeInput = ref(null);
 
-// Strip anything that isn't a digit as it is typed: iOS autofill and some keyboards paste the code
-// with spaces or a trailing character, which would fail the 6-digit check for no visible reason.
+// Strip anything that isn't a digit as it is typed: iOS autofill and some keyboards paste the code with spaces or a trailing character, which would fail the 6-digit check for no visible reason.
 function onInput() {
   code.value = code.value.replace(/\D/g, '').slice(0, 6);
 }
@@ -82,8 +81,7 @@ const stateLabel = computed(() => {
 });
 
 onMounted(() => {
-  // The code input is present in every not-ready state now (ROBUST-1), so focus it whenever it
-  // exists. On the host the gate renders nothing, so `codeInput` is null and this no-ops.
+  // The code input is present in every not-ready state now (ROBUST-1), so focus it whenever it exists. On the host the gate renders nothing, so `codeInput` is null and this no-ops.
   codeInput.value?.focus();
 });
 </script>

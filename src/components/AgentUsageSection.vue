@@ -98,7 +98,7 @@ const sectionHeight = computed(() => {
 
 /* Horizontal padding/gaps here were sized for the wide layout - tighten them at narrow so the
    LOCAL/REMOTE columns get more of the scarce width instead of losing it to whitespace. */
-@media (max-width: 700px) {
+@container main-view (max-width: 700px) {
   .agent-usage-section {
     padding: 6px 2px;
   }

@@ -1,8 +1,13 @@
 # wish — Terminal Split: TerminalView (Mac) + SimpleView (Phone PWA)
 
-> **Status:** SimpleView — ✅ built, shipping in 1.23.0 (see `CHANGELOG.md`; SV-1..SV-7 below).
+> **Status:** SimpleView — shipped in 1.23.0, then **superseded 2026-08-12 in 1.24.0** by Direction C
+> (`docs/plan/done/wish-terminal-manual-resize-authority.md`): the companion goes back to mounting the
+> real `TerminalView` (xterm.js, full TUI support) with an explicit, revocable resize-authority
+> handoff, instead of SimpleView's plain-text stream. SV-1..SV-7 below stay as the historical record of
+> that shipped-then-superseded design.
 > Right-Dock Mac — still unbuilt, gated behind its own preconditions (see "Right-Dock Mac" section)
-> and not yet started. This doc stays in `docs/plan/` (deliberately not moved to `done/`) while its
+> and not yet started; unaffected by the SimpleView supersession (RD-2 already noted the two were
+> independent). This doc stays in `docs/plan/` (deliberately not moved to `done/`) while its
 > Right-Dock milestone remains live wishlist content. Decisions are settled as of
 > `docs/research/audit-terminal-split-wish.md` (2026-08-01), which corrected one broken SimpleView
 > decision and four factual errors in an earlier draft of this doc — see SV-1..SV-7 and RD-1..RD-4

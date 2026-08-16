@@ -1,5 +1,7 @@
 # Kiến trúc Logger - `logger.rs`
 
+> updated 2026-08-16 · v1.24.0
+
 Module logging dùng chung cho toàn bộ usage-data pipeline. Ghi vào file cố định trên disk; không phụ thuộc thư viện ngoài.
 
 ---
@@ -112,7 +114,7 @@ Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của 
 **GET_USAGE** (mỗi poll tick ~30s):
 - `debug`: start, ssh_result, stdout_preview, parse steps, rate_limits summary, done
 - `info`: no cache file (null), STALE_RESET
-- `error`: shell exit≠0, MTIME delimiter missing, json_parse fail, auth_inject fail
+- `error`: shell exit≠0, MTIME delimiter missing, json_parse fail, auth_parse fail
 
 **PROVISION** (một lần per host session):
 - `debug`: skip (not claudecode)

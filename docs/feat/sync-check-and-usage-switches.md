@@ -1,5 +1,7 @@
 # Sync Check + Claude Code Remote Usage - Two Independent Switches
 
+> updated 2026-08-16 · v1.24.0
+
 ## Why
 
 Originally a single flag, `remoteModeEnabled` (`src/store/remoteModeStore.js` - that file no longer exists, it was removed by this split; path kept here only as the historical record of where the flag lived, `aki-remote-mode-enabled`), gated everything remote-related: project sync (push/pull/select/open), background remote-diff checks, *and* Claude Code remote usage monitoring. That coupling was a bug in disguise - turning off Claude Code's remote usage monitor (which the user might do just to stop an unwanted SSH poll) silently disabled push/pull/sync for every project too, and vice versa. There was no way to turn one off without the other.

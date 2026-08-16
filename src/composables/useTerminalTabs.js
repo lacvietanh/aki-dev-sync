@@ -32,11 +32,10 @@ import { tabLiveness, startTabLivenessTracking, seedTabLiveness } from './usePty
  *  owning a ref of its own — that tracker is written by listeners registered once at module scope
  *  (`startTabLivenessTracking`, called below) that survive every TerminalView mount/unmount and run
  *  on a companion too, unlike the old per-mounted-view aggregation this replaced. Existing consumers
- *  (TerminalTabStrip.vue, TerminalCell.vue) need no changes — they only ever read this by tabId. */
+ *  (TerminalTabStrip.vue, TerminalScopeButton.vue) need no changes — they only ever read this by tabId. */
 export const tabAlive = tabLiveness
 
-// Started once at module scope (same reasoning as the `watch(terminalTabs, ...)` below it): every
-// screen that imports this file — host or companion — gets exactly one set of liveness listeners.
+// Started once at module scope (same reasoning as the `watch(terminalTabs, ...)` below it): every screen that imports this file — host or companion — gets exactly one set of liveness listeners.
 startTabLivenessTracking()
 
 /** Tabs this screen has ever activated — TerminalStack.vue mounts a TerminalView lazily on first
@@ -304,8 +303,7 @@ export function useTerminalTabs() {
     const list = scopedTabs.value
     const idx = list.findIndex((t) => t.id === id)
     if (idx === -1) return // not in this scope (shouldn't happen from the strip, but be safe)
-    // Pick the fallback BEFORE closing: on a companion the list itself only updates once the
-    // mirror echoes the removal back, so this cannot be derived from the post-close array.
+    // Pick the fallback BEFORE closing: on a companion the list itself only updates once the mirror echoes the removal back, so this cannot be derived from the post-close array.
     let fallbackId = null
     let scopeEmptied = false
     if (activeTabId.value === id) {
@@ -340,7 +338,7 @@ export function useTerminalTabs() {
     setActiveTab(list[nextIdx].id)
   }
 
-  /** A project's TERMINAL button (TerminalCell.vue, and ProjectTable's OPEN popup, consume this):
+  /** A project's TERMINAL button (TerminalScopeButton.vue, and ProjectTable's OPEN popup, consume this):
    *  switch the stack to that project's SCOPE and reuse the group's last-active (or most recent)
    *  tab rather than cd-ing into a shell that may be mid-command, otherwise start a fresh one
    *  already in the project's directory. */

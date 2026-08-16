@@ -279,8 +279,7 @@ export function closeConfig() {
 export async function saveConfig() {
   if (!editingProject.value) return
 
-  // Backstop for the disabled Save button (§2.1) - saveConfig is also reachable by Enter/keyboard
-  // and from a companion screen, where the button state is not what decides.
+  // Backstop for the disabled Save button (§2.1) - saveConfig is also reachable by Enter/keyboard and from a companion screen, where the button state is not what decides.
   const pathError = projectPathError(editingProject.value)
   if (pathError) {
     Toast.fire({ icon: 'error', title: pathError })
@@ -365,6 +364,7 @@ export async function createNewProject(sshHosts) {
       dry_run: true,
       delete_on_pull: true,
       delete_on_push: false,
+      disabled: false,
       // No `tasks` / `notes` here since 1.22.0: they live in <local_path>/.akidevsync/notes.json,
       // and an absent key on the project record is exactly what marks it as "already migrated"
       // (migrateLegacyProjectNotes' flagless idempotence — see useProjectNotes.js).
@@ -394,8 +394,7 @@ export async function confirmRemove() {
   const removed = await requestRemoveProject(id, projectName)
   if (removed) {
     if (activeLogProjectId.value === id) activeLogProjectId.value = null
-    // Scoped to THIS id only (Regression Guard - Multi-entity State, CLAUDE.md): the log map and
-    // its append cursor keep a per-project entry that nothing else ever removes.
+    // Scoped to THIS id only (Regression Guard - Multi-entity State, CLAUDE.md): the log map and its append cursor keep a per-project entry that nothing else ever removes.
     dropProjectLogs(id)
     closeConfig()
     appendGlobalLog("REMOVE", `Project "${projectName}" was removed from the local list.`)

@@ -1,6 +1,6 @@
 # Vietnamese typing in the in-app terminal — the double-space blocker and the narrow-veto premise's real cost
 
-Chain: follows `terminal-vietnamese-ime-root-cause-4.md` (§7 decided architecture: keypress veto narrowed to the multi-character carrier signature, backed by an "exclusivity by construction" table whose first row claimed `_keyPress` sends and cancels the physical-printable path). This doc corrects that row against xterm 5.5.0 source and hardware evidence, and records the fix that closes `docs/plan/terminal-input-jul31.md` §2.1. It edits nothing in `-4.md` beyond the single `Status: superseded by` line `docs.B2` allows.
+Chain: follows `terminal-vietnamese-ime-root-cause-4.md` (§7 decided architecture: keypress veto narrowed to the multi-character carrier signature, backed by an "exclusivity by construction" table whose first row claimed `_keyPress` sends and cancels the physical-printable path). This doc corrects that row against xterm 5.5.0 source and hardware evidence, and records the fix that closes `docs/plan/done/terminal-input-jul31.md` §2.1. It edits nothing in `-4.md` beyond the single `Status: superseded by` line `docs.B2` allows.
 
 ## Start time
 
@@ -14,7 +14,7 @@ Constraints inherited from the plan's requirement ledger (§2.1, and the council
 
 - Must explain why only space is affected, not every character.
 - Must explain §5.4 without contradiction.
-- Must not regress anything `docs/plan/terminal-input-jul31.md` §1 already confirmed on hardware (arrows in `vim`/`less`, Ctrl+C, Ctrl+D, Option+word-motion, F-keys, bracketed paste, Shift+Enter in the compose box, the sticky Ctrl/Shift latch, compose-row gating).
+- Must not regress anything `docs/plan/done/terminal-input-jul31.md` §1 already confirmed on hardware (arrows in `vim`/`less`, Ctrl+C, Ctrl+D, Option+word-motion, F-keys, bracketed paste, Shift+Enter in the compose box, the sticky Ctrl/Shift latch, compose-row gating).
 - Must keep exactly one input path — no new flag, no revived escape hatch.
 - The Android/Gboard defect (plan §2.2, research §5.5) stays a separate item unless proven to share the same root cause.
 
@@ -78,14 +78,14 @@ Every item on the confirmed-working list resolves through a mechanism other than
 ### Corroborating links
 
 - `docs/research/terminal-input-jul31.md` §5.2, §5.4 — the original observation and the discriminating constraint this doc resolves.
-- `docs/plan/terminal-input-jul31.md` §2.1 — the blocker entry this doc closes, and §1 — the confirmed-surface list ITEM 3 re-derived.
+- `docs/plan/done/terminal-input-jul31.md` §2.1 — the blocker entry this doc closes, and §1 — the confirmed-surface list ITEM 3 re-derived.
 - `/Users/aki/.aki/agent-council/aki-dev-sync/2026.07.31-0232-double-space/checklist.md` — full requirement ledger, ITEM 1-3 rationale with file:line citations.
 - `src/composables/useTerminalTextDrain.js:21-38` (corrected exclusivity table), `:280-292` (`customKeyEventHandler`) — the fix as it stands in the working tree at the time of this doc.
 - xterm.js 5.5.0 `src/browser/Terminal.ts:1046-1048, 1052-1056, 1133, 1155, 1177, 1308, 384`, `src/common/input/Keyboard.ts:381`, `src/common/services/OptionsService.ts:56` — source citations for the mechanism.
 
 ## Decision
 
-**Action** — `src/composables/useTerminalTextDrain.js` (working tree at the time of this doc, not yet committed), broadening `customKeyEventHandler`'s veto to every keypress; `docs/plan/terminal-input-jul31.md` §2.1 marked closed.
+**Action** — `src/composables/useTerminalTextDrain.js` (working tree at the time of this doc, not yet committed), broadening `customKeyEventHandler`'s veto to every keypress; `docs/plan/done/terminal-input-jul31.md` §2.1 marked closed.
 
 **Rejected/closed** — `-4.md` §7 point 1's "narrow" keypress veto (multi-character carrier signature only) and the first row of its exclusivity table (`physical printable | _keyPress sends it and cancels`) are dropped, superseded by the broadened veto and the corrected table above. Every other part of `-4.md`'s architecture — public-API-only text drain, composition stand-down, the 229 irreducible keydown claim, no vendoring or patching, no bundled xterm 6.x upgrade — stands unchanged and is not reopened by this doc.
 
@@ -93,4 +93,4 @@ Every item on the confirmed-working list resolves through a mechanism other than
 
 **Follow-up research** — none opened by this doc. `bá o`'s non-reproduction and the untested Option+arrow surface are both recorded as open/unmeasured rather than closed; either could seed a future round if either recurs with a reproducible trigger.
 
-**Cross-references** — `docs/research/terminal-vietnamese-ime-root-cause-4.md` (gets the `Status: superseded by` line this round adds), `docs/index.md` (chain head moves to this doc), `docs/arch/terminal-stack.md` and `docs/feat/in-app-terminal.md` (synced separately per `docs/plan/terminal-input-jul31.md` §5).
+**Cross-references** — `docs/research/terminal-vietnamese-ime-root-cause-4.md` (gets the `Status: superseded by` line this round adds), `docs/index.md` (chain head moves to this doc), `docs/arch/terminal-stack.md` and `docs/feat/in-app-terminal.md` (synced separately per `docs/plan/done/terminal-input-jul31.md` §5).

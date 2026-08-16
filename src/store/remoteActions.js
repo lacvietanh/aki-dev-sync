@@ -257,8 +257,7 @@ export const applyTaskEdit = action('remoteActions.applyTaskEdit', async (projec
 const notesWriteChains = new Map()
 function queueNotesWrite(projectId, run) {
   const prev = notesWriteChains.get(projectId) || Promise.resolve()
-  // `.then(run, run)` — a failed write must not poison the chain and silently swallow every
-  // subsequent edit for that project.
+  // `.then(run, run)` — a failed write must not poison the chain and silently swallow every subsequent edit for that project.
   const next = prev.then(run, run)
   notesWriteChains.set(projectId, next.catch(() => {}))
   return next
@@ -388,11 +387,9 @@ export const applyProjectConfig = action('remoteActions.applyProjectConfig', asy
 export const removeProject = action('remoteActions.removeProject', (id) => {
   if (!id) return
   projects.value = projects.value.filter((p) => p.id !== id)
-  // Records THIS id only (§3.3) - a config modal still open for it on any screen must not be able
-  // to save it back into existence. See projectStore.markProjectRemoved.
+  // Records THIS id only (§3.3) - a config modal still open for it on any screen must not be able to save it back into existence. See projectStore.markProjectRemoved.
   markProjectRemoved(id)
-  // Dropping the runtime entry also cancels any in-flight status check for this id (currentEpoch
-  // then reports 0, which never matches the >=1 epoch a check captured) — see projectStore.
+  // Dropping the runtime entry also cancels any in-flight status check for this id (currentEpoch then reports 0, which never matches the >=1 epoch a check captured) — see projectStore.
   delete projectRuntime.value[id]
   // THIS id's notes entry only (multi-entity guard). The FILE on disk is deliberately not deleted:
   // removing a project from the app list has never touched the user's files, and since 1.22.0

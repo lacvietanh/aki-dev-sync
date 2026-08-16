@@ -5,7 +5,7 @@
   or checks `isHost` — every host/companion branch lives in composables/usePtyTerminal.js and
   services/ptyBridge.js. The SAME markup renders on Mac and phone; it asks the composable for
   CAPABILITIES (`ownsPtySize`, `showReclaimPill` host-only, `showKeyRow`), never "am I the host".
-  Resize-authority design: docs/plan/wish-terminal-manual-resize-authority.md.
+  Resize-authority design: docs/plan/done/wish-terminal-manual-resize-authority.md.
 
   WP-C (tab strip): one instance per open tab (`tabId` prop), all mounted at once so switching tabs
   never re-spawns a shell or drops render state — `active` (prop) picks which one is shown
@@ -26,19 +26,23 @@
       ignores a click that follows a touch it already served.
     -->
     <div v-if="ptyApi?.showKeyRow" class="pty-key-row">
-      <button
-        v-for="k in KEY_ROW"
-        :key="k.title"
-        class="pty-key"
-        :title="k.title"
-        :class="{ 'is-armed': !!k.arms && !!ptyApi?.pendingModifiers?.value?.[k.arms] }"
-        @mousedown.prevent
-        @touchstart.prevent="onKeyTouch(k)"
-        @click="onKeyClick(k)"
-      >
-        <span v-if="k.label" class="pty-key-label">{{ k.label }}</span>
-        <i v-else class="fa-solid" :class="k.icon"></i>
-      </button>
+      <!-- Key row and text size are two independently toggleable groups (S3, terminal-chrome-settings.md):
+           each has its own checkbox, so hiding one must never take the other with it. -->
+      <template v-if="chromeVisible.keyRow">
+        <button
+          v-for="k in KEY_ROW"
+          :key="k.title"
+          class="pty-key"
+          :title="k.title"
+          :class="{ 'is-armed': !!k.arms && !!ptyApi?.pendingModifiers?.value?.[k.arms] }"
+          @mousedown.prevent
+          @touchstart.prevent="onKeyTouch(k)"
+          @click="onKeyClick(k)"
+        >
+          <span v-if="k.label" class="pty-key-label">{{ k.label }}</span>
+          <i v-else class="fa-solid" :class="k.icon"></i>
+        </button>
+      </template>
       <!--
         Font zoom, browser-only BY CONSTRUCTION rather than by a second condition: these buttons sit
         inside the key row, which already renders only where there is no physical keyboard. On the
@@ -46,31 +50,35 @@
         the app window spends no pixels on a control its keyboard already has — which is the whole
         Extreme Narrow trade.
       -->
-      <span class="pty-key-sep" aria-hidden="true"></span>
-      <button class="pty-key" title="Smaller text" @mousedown.prevent @click="zoomOutTerminalFont">
-        <i class="fa-solid fa-magnifying-glass-minus"></i>
-      </button>
-      <button
-        class="pty-key"
-        :class="{ 'is-armed': terminalFontScale !== 1 }"
-        :title="`Reset text size (now ${Math.round(terminalFontScale * 100)}%)`"
-        @mousedown.prevent
-        @click="resetTerminalFont"
-      >
-        <span class="pty-key-label">{{ Math.round(terminalFontScale * 100) }}%</span>
-      </button>
-      <button class="pty-key" title="Larger text" @mousedown.prevent @click="zoomInTerminalFont">
-        <i class="fa-solid fa-magnifying-glass-plus"></i>
-      </button>
+      <span v-if="chromeVisible.keyRow && chromeVisible.textSize" class="pty-key-sep" aria-hidden="true"></span>
+      <template v-if="chromeVisible.textSize">
+        <button class="pty-key" title="Smaller text" @mousedown.prevent @click="zoomOutTerminalFont">
+          <i class="fa-solid fa-magnifying-glass-minus"></i>
+        </button>
+        <button
+          class="pty-key"
+          :class="{ 'is-armed': terminalFontScale !== 1 }"
+          :title="`Reset text size (now ${Math.round(terminalFontScale * 100)}%)`"
+          @mousedown.prevent
+          @click="resetTerminalFont"
+        >
+          <span class="pty-key-label">{{ Math.round(terminalFontScale * 100) }}%</span>
+        </button>
+        <button class="pty-key" title="Larger text" @mousedown.prevent @click="zoomInTerminalFont">
+          <i class="fa-solid fa-magnifying-glass-plus"></i>
+        </button>
+      </template>
       <!-- "Fit to my screen": the one explicit tap that claims temporary resize authority over the
-           shared PTY. docs/plan/wish-terminal-manual-resize-authority.md. -->
+           shared PTY. docs/plan/done/wish-terminal-manual-resize-authority.md. Not in the chrome menu's
+           inventory (terminal-chrome-settings.md §3) — it follows the same companion-only capability
+           as this whole row, not either checkbox above. -->
       <span class="pty-key-sep" aria-hidden="true"></span>
       <button class="pty-key" title="Fit terminal to my screen" @mousedown.prevent @click="onRequestFitToMe">
         <i class="fa-solid fa-expand"></i>
       </button>
     </div>
     <!-- Host-only reclaim pill: shown only while a companion holds resize authority. An overlay,
-         not a row (Extreme Narrow). docs/plan/wish-terminal-manual-resize-authority.md. -->
+         not a row (Extreme Narrow). docs/plan/done/wish-terminal-manual-resize-authority.md. -->
     <button
       v-if="ptyApi?.showReclaimPill?.value"
       class="pty-resize-owner-pill"
@@ -83,16 +91,16 @@
     </button>
     <!--
       Compose row: a real text field that composes a whole line before anything reaches the PTY.
-      Gated on the SAME capability as the key row (`showKeyRow`), which is what re-scopes it to a
-      companion. Its Mac justification was Vietnamese IME input; direct typing now works there
-      (useTerminalTextDrain.js), so that justification is spent and Extreme Narrow (CLAUDE.md)
-      removes the control the Mac's own keyboard already provides. What survives is the surface with
-      no physical keyboard, plus true composing IMEs — whose WKWebView support is independently poor
-      and which are scoped out of the direct-typing fix.
+      Gated on `chromeVisible.compose` (useTerminalChrome.js), not `showKeyRow` — unlike the key row
+      and text size, which stay companion-only capabilities, this row is available AND shown by
+      default on the Mac too, because it is the one working path for a true composing IME (macOS's
+      own Vietnamese input); direct typing covers everything else (useTerminalTextDrain.js). See
+      docs/plan/done/terminal-chrome-settings.md §6.2 for why that default is not the Extreme Narrow
+      default it would otherwise be.
       Unlike the key row's buttons, this field MUST keep native focus so an IME can compose into it —
       no `.prevent` on it, ever.
     -->
-    <div v-if="ptyApi?.showKeyRow" class="pty-compose-row">
+    <div v-if="chromeVisible.compose" class="pty-compose-row">
       <!--
         A `<textarea>`, not an `<input>`, and that is the WHOLE of what makes Shift+Enter possible:
         a single-line input has no representation for a newline at all — `\n` cannot exist in its
@@ -126,6 +134,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
 import { useTerminalTextDrain, POST_COMPOSITION_MS } from '../composables/useTerminalTextDrain'
+import { chromeVisible } from '../composables/useTerminalChrome'
 import { renameTerminalTab, reclaimResizeAuthority } from '../store/terminalTabsStore'
 import {
   terminalFontScale,
@@ -165,8 +174,7 @@ let resizeObserver = null
 // `.value`; adding a plain value means none may use it.
 const ptyApi = shallowRef(null)
 
-// Compose row: a real text field under the key row so a full command is composed before anything
-// reaches the PTY, instead of the terminal receiving keystroke-at-a-time edits.
+// Compose row: a real text field under the key row so a full command is composed before anything reaches the PTY, instead of the terminal receiving keystroke-at-a-time edits.
 //
 // COMPANION-ONLY AGAIN (see the template's `v-if`). It rendered on the Mac too from 1.22.0, on the
 // rationale that OpenKey-class engines could not type directly into xterm. That is now fixed at the
@@ -176,8 +184,7 @@ const ptyApi = shallowRef(null)
 // which a no-local-echo terminal cannot give a preedit.
 const composeInputEl = ref(null)
 const composeText = ref('')
-// WebKit fires `compositionend` BEFORE `keydown`, so `isComposing` is already false on the Enter
-// that committed a syllable. Same timestamp window as the drain, for the same reason.
+// WebKit fires `compositionend` BEFORE `keydown`, so `isComposing` is already false on the Enter that committed a syllable. Same timestamp window as the drain, for the same reason.
 let composeEndedAt = -Infinity
 function onComposeCompositionEnd() {
   composeEndedAt = performance.now()
@@ -277,8 +284,7 @@ const KEY_ROW = [
   { title: 'Enter', label: 'Enter', seq: '\r' },
 ]
 
-// When the touch path last served a key. A browser that still synthesises a click after a
-// prevented touchstart would otherwise send the key twice.
+// When the touch path last served a key. A browser that still synthesises a click after a prevented touchstart would otherwise send the key twice.
 let lastKeyTouchAt = 0
 
 /** A key-row button either TOGGLES a latch or emits a key — and it never encodes anything itself.
@@ -305,7 +311,7 @@ function onKeyClick(k) {
 }
 
 /** Companion "Fit to my screen": measure this screen locally (same `fitAddon.fit()` the host uses
- *  in doFit), then ask the host to apply that size. docs/plan/wish-terminal-manual-resize-authority.md. */
+ *  in doFit), then ask the host to apply that size. docs/plan/done/wish-terminal-manual-resize-authority.md. */
 function onRequestFitToMe() {
   if (!fitAddon || !term || !ptyApi.value) return
   try {
@@ -329,8 +335,7 @@ function onMountClick() {
   term?.focus()
 }
 
-// Hardcoded to the app's existing dark palette (src/assets/main.css :root tokens) — no theme
-// config UI, per the task brief.
+// Hardcoded to the app's existing dark palette (src/assets/main.css :root tokens) — no theme config UI, per the task brief.
 const THEME = {
   background: '#05070c',
   foreground: '#F3F4F6',

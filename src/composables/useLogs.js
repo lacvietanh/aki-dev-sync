@@ -27,8 +27,7 @@ export function useLogs() {
     return globalLogs.value;
   });
 
-  // Feeds the collapsed dock stack's one-line peek (dock/LogStack.vue #peek) — updates live as
-  // logs stream in since it derives from the same displayedLogs computed.
+  // Feeds the collapsed dock stack's one-line peek (dock/LogStack.vue #peek) — updates live as logs stream in since it derives from the same displayedLogs computed.
   const latestLogLine = computed(() => {
     const lines = displayedLogs.value;
     return lines.length ? lines[lines.length - 1] : '';
@@ -83,12 +82,17 @@ export function useLogs() {
   // utils/clipboard.js, not `navigator.clipboard` directly: the companion is a non-secure context
   // where that API does not exist, so COPY LOGS was silently dead on the phone. A total failure now
   // says so instead of flashing COPIED over a clipboard that was never written.
+  let copyTimer = null;
   async function copyLogs() {
     const logs = displayedLogs.value;
     if (logs.length === 0) return;
     if (await copyText(logs.join("\n"))) {
       copied.value = true;
-      setTimeout(() => (copied.value = false), 2000);
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        copied.value = false;
+        copyTimer = null;
+      }, 2000);
     } else {
       Toast.fire({ icon: 'error', title: 'Could not copy - select the log text and copy it by hand' });
     }

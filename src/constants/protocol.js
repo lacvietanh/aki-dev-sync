@@ -32,17 +32,10 @@ export const REMOTE_PORT = 1421
 // hold (INVARIANT R, src-tauri/src/web_server.rs). Cross-device isolation falls out of it for free.
 //
 // ONLY TWO SENDERS SET `to`, and widening that list is a protocol decision, not a local convenience:
-//   * the scrollback replay (services/ptyBridge.js) — a `reset: true` pty_output belongs to the ONE
-//     connection that just joined or just drained a congested queue. Broadcasting it cleared and
-//     resized the xterm of every OTHER connected screen, mid-command.
-//   * `invoke_result` (services/hostInvoke.js) — a reply to one id on one PAGE's PRIVATE request
-//     counter, which starts at 1 on every page. Broadcast, two pages with an id-1 call in flight each
-//     resolved the other's answer: silent wrong data, not a timeout.
+//   * the scrollback replay (services/ptyBridge.js) — a `reset: true` pty_output belongs to the ONE connection that just joined or just drained a congested queue. Broadcasting it cleared and resized the xterm of every OTHER connected screen, mid-command.
+//   * `invoke_result` (services/hostInvoke.js) — a reply to one id on one PAGE'S PRIVATE request counter, which starts at 1 on every page. Broadcast, two pages with an id-1 call in flight each resolved the other's answer: silent wrong data, not a timeout.
 //
-// EVERYTHING ELSE STAYS A BROADCAST ON PURPOSE. Live `pty_output` chunks (one shared PTY, every
-// screen shows the same bytes), `pty_exit` / `pty_resize` (shared liveness and size — addressing them
-// would rebuild the 1.20.0 §2.4 desync bug), `delta` (mirror state; a mirrored confirm dialog
-// answerable from any screen is a designed property), `init` (idempotent) and `ping`/`pong`.
+// EVERYTHING ELSE STAYS A BROADCAST ON PURPOSE. Live `pty_output` chunks (one shared PTY, every screen shows the same bytes), `pty_exit` / `pty_resize` (shared liveness and size — addressing them would rebuild the 1.20.0 §2.4 desync bug), `delta` (mirror state; a mirrored confirm dialog answerable from any screen is a designed property), `init` (idempotent) and `ping`/`pong`.
 
 // Frame `t` values — §13.2.
 export const FRAME_INIT = 'init'                   // host -> companion: full snapshot on join
@@ -116,7 +109,7 @@ export const FRAME_PTY_RESIZE = 'pty_resize'
 export const FRAME_PTY_EXIT = 'pty_exit'
 
 // companion -> host: "I am claiming resize authority for this tab, apply this size now"
-// (docs/plan/wish-terminal-manual-resize-authority.md). Carries `{ tab_id, cols, rows }`. Honored
+// (docs/plan/done/wish-terminal-manual-resize-authority.md). Carries `{ tab_id, cols, rows }`. Honored
 // UNCONDITIONALLY on arrival — no negotiation, no permission check beyond "this came from a
 // companion" — because safety here comes entirely from WHEN a companion is allowed to send this
 // (only in direct response to one explicit user tap on a key-row button, never from a
@@ -142,16 +135,12 @@ export const FRAME_PTY_RESIZE_REQUEST = 'pty_resize_request'
 // every Off — breaking the shipped promise that a phone "reconnects silently across app restarts …
 // until revoked". Each code now has exactly one meaning and exactly one client response.
 
-// The token this device presented is unknown / absent / revoked. The ONLY code that may clear the
-// stored token: it would fail identically on every retry, so retrying is pointless.
+// The token this device presented is unknown / absent / revoked. The ONLY code that may clear the stored token: it would fail identically on every retry, so retrying is pointless.
 export const CLOSE_UNPAIRED = 4001
-// Remote control is off (or was just switched off) on the Mac. Says NOTHING about the token — keep
-// it and reconnect with backoff; the phone reconnects by itself the moment the Mac comes back on.
+// Remote control is off (or was just switched off) on the Mac. Says NOTHING about the token — keep it and reconnect with backoff; the phone reconnects by itself the moment the Mac comes back on.
 export const CLOSE_SERVER_DISABLED = 4002
-// A `role=host` connection was refused (not loopback, or a stale/absent process host token). Only
-// the Mac's own webview sees this; it re-reads the token and retries.
+// A `role=host` connection was refused (not loopback, or a stale/absent process host token). Only the Mac's own webview sees this; it re-reads the token and retries.
 export const CLOSE_HOST_ROLE_REJECTED = 4003
 
-// localStorage key the companion persists its paired device token under (§7.1). Read/written
-// only by services/bridge.js.
+// localStorage key the companion persists its paired device token under (§7.1). Read/written only by services/bridge.js.
 export const DEVICE_TOKEN_STORAGE_KEY = 'aki-companion-device-token'

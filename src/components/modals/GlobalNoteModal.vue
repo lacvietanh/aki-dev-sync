@@ -65,9 +65,10 @@ const collection = useGlobalTaskCollection()
 
 .global-notes-field :deep(.project-notes-textarea) {
   /* min-height is derived, not guessed: font-size 13px x line-height 1.6 = 20.8px per line;
-     2 lines (this file's `:rows="2"`) = 41.6px, rounded up to 42px. The textarea itself has zero
-     padding/border (NotesField.vue's base rule), so that's the exact content-box floor for 2 rows -
-     not a round number like the old 320px/190px.
+     2 lines (this file's `:rows="2"`) = 41.6px, rounded up to 42px. The textarea has zero padding and
+     a 1px transparent border-bottom (NotesField.vue's base rule), both outside the content box under
+     the default content-box sizing, so 42px is the exact content floor for 2 rows - not a round number
+     like the old 320px/190px.
      field-sizing is reset to `fixed` (the property's initial value), overriding NotesField's base
      `field-sizing: content`. That base value is inert here anyway - WKWebView (this app's Tauri
      runtime is WebKit/Safari, not Chromium) does not implement `field-sizing` - but resetting it

@@ -52,8 +52,7 @@ export function getMonitor(agentId, host) {
   const id = monitorId(agentId, host);
   const existing = registry.get(id);
   if (existing) {
-    // Back from zero: the instance and its last reading survived, so the card repaints immediately
-    // and only the polling has to be re-armed.
+    // Back from zero: the instance and its last reading survived, so the card repaints immediately and only the polling has to be re-armed.
     if (existing.holders === 0) existing.monitor.startWatching();
     existing.holders++;
     return existing.monitor;
@@ -70,14 +69,12 @@ export function getMonitor(agentId, host) {
   const enabled = computed(() => !!host && !locked.value && isMonitorEnabled(id));
   const toggle = () => {
     if (locked.value) return;
-    // No host chosen yet: `enabled` is pinned false, so a toggle could only persist a flag under
-    // the placeholder identity that nothing will ever read. Do nothing instead.
+    // No host chosen yet: `enabled` is pinned false, so a toggle could only persist a flag under the placeholder identity that nothing will ever read. Do nothing instead.
     if (!host) return;
     setMonitorEnabled(id, !enabled.value);
   };
 
-  // `reactive` so templates read `monitor.data` / `monitor.enabled` directly instead of `.value` on
-  // every field - the shape AgentUsageSlot.vue already consumed before the refactor.
+  // `reactive` so templates read `monitor.data` / `monitor.enabled` directly instead of `.value` on every field - the shape AgentUsageSlot.vue already consumed before the refactor.
   const monitor = reactive(monitorScope.run(() => createUsageMonitor({ id, agentId, host, enabled, locked, toggle })));
   registry.set(id, { monitor, holders: 1 });
   return monitor;

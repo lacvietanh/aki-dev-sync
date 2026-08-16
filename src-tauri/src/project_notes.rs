@@ -142,8 +142,7 @@ fn read_blocking(local_path: &str) -> ProjectNotesRead {
         return ProjectNotesRead::unavailable(e);
     }
     let dir = Path::new(local_path);
-    // Checked BEFORE the file: "the volume is not mounted" and "this project has no notes yet" look
-    // identical at the file level (both are a NotFound), and only the second one may be written to.
+    // Checked BEFORE the file: "the volume is not mounted" and "this project has no notes yet" look identical at the file level (both are a NotFound), and only the second one may be written to.
     if !dir.is_dir() {
         return ProjectNotesRead::unavailable(format!(
             "'{}' is not a readable directory right now",
@@ -158,8 +157,7 @@ fn read_blocking(local_path: &str) -> ProjectNotesRead {
     };
     match serde_json::from_str::<ProjectNotesFile>(&raw) {
         Ok(file) => ProjectNotesRead::ok(file),
-        // NOT `unwrap_or_default()`. See the module doc comment: defaulting here means showing an
-        // empty note over a git-conflicted file and then saving that emptiness on top of it.
+        // NOT `unwrap_or_default()`. See the module doc comment: defaulting here means showing an empty note over a git-conflicted file and then saving that emptiness on top of it.
         Err(e) => ProjectNotesRead::corrupt(e),
     }
 }
@@ -250,8 +248,7 @@ fn write_blocking(
     let mut file = match current.status {
         ProjectNotesStatus::Ok => current.file.unwrap_or_default(),
         ProjectNotesStatus::Missing => ProjectNotesFile::default(),
-        // Writing over a file we could not parse would destroy whatever is in it — which, for the
-        // realistic cause (conflict markers), is BOTH sides of the user's edit.
+        // Writing over a file we could not parse would destroy whatever is in it — which, for the realistic cause (conflict markers), is BOTH sides of the user's edit.
         ProjectNotesStatus::Corrupt => {
             return Err(format!(
                 "'{}' is not valid JSON — resolve it before saving ({})",
@@ -268,8 +265,7 @@ fn write_blocking(
 
     let clobbered = match base_updated_at {
         Some(base) => file.updated_at > base,
-        // No base means the caller never read the file (first write of a session). Nothing was
-        // observed, so nothing can have been clobbered from the caller's point of view.
+        // No base means the caller never read the file (first write of a session). Nothing was observed, so nothing can have been clobbered from the caller's point of view.
         None => false,
     };
 
@@ -284,12 +280,10 @@ fn write_blocking(
     file.schema = SCHEMA_VERSION;
     file.updated_at = now_ms();
 
-    // Pretty-printed: this file is meant to be diffed in git, and a one-line JSON blob makes every
-    // edit a whole-file diff.
+    // Pretty-printed: this file is meant to be diffed in git, and a one-line JSON blob makes every edit a whole-file diff.
     let json = serde_json::to_string_pretty(&file)
         .map_err(|e| format!("Failed to serialize notes: {}", e))?;
-    // Atomic (temp + rename): this is the user's own writing and, until they commit it, its only
-    // copy — a write torn by a crash or a full disk destroys it outright.
+    // Atomic (temp + rename): this is the user's own writing and, until they commit it, its only copy — a write torn by a crash or a full disk destroys it outright.
     crate::system::write_atomic(&path, &json)?;
 
     Ok(ProjectNotesWrite { file, clobbered })
@@ -384,8 +378,7 @@ mod tests {
         let d = Scratch::new("preserve");
         write_sync(&d.path(), Some("hello".into()), Some(vec![serde_json::json!({"id":"a"})]), None)
             .unwrap();
-        // A notes-only edit must leave `tasks` exactly as it was — `None` means "leave it alone",
-        // never "clear it".
+        // A notes-only edit must leave `tasks` exactly as it was — `None` means "leave it alone", never "clear it".
         let w = write_sync(&d.path(), Some("changed".into()), None, None).unwrap();
         assert_eq!(w.file.notes, "changed");
         assert_eq!(w.file.tasks.len(), 1);
@@ -426,15 +419,13 @@ mod tests {
         let body = "<<<<<<< HEAD\n{}\n";
         write_raw(&d, body);
         assert!(write_sync(&d.path(), Some("new".into()), None, None).is_err());
-        // The bytes must be untouched: for the realistic cause (conflict markers) an overwrite
-        // destroys BOTH sides of the user's edit.
+        // The bytes must be untouched: for the realistic cause (conflict markers) an overwrite destroys BOTH sides of the user's edit.
         assert_eq!(fs::read_to_string(notes_path(&d.path())).unwrap(), body);
     }
 
     #[test]
     fn write_refuses_a_directory_that_is_not_there() {
-        // Creating it would materialise the notes inside an empty mount stub, where they vanish the
-        // moment the real volume comes back.
+        // Creating it would materialise the notes inside an empty mount stub, where they vanish the moment the real volume comes back.
         assert!(write_sync("/definitely/not/a/real/mount/point", Some("x".into()), None, None).is_err());
     }
 

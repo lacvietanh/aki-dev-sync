@@ -52,7 +52,7 @@ Most likely failure modes to check first, since this Rust wasn't run through `ca
 ## 4. Once verified
 
 - [ ] `git add share/ docs/plan/share-statusline.md` and commit - this was deliberately **not** committed this session (instruction was "không commit"); `share/share-statusline.md`'s own plan doc calls this out as the last step.
-- [ ] Consider moving `docs/plan/statusline-customizer.md` to `docs/plan/done/` once you've confirmed the feature works - its "việc cần làm" list is now implemented.
+- [ ] Consider moving `docs/plan/done/statusline-customizer.md` to `docs/plan/done/` once you've confirmed the feature works - its "việc cần làm" list is now implemented.
 - [ ] `npm run build:app` (or `build:rmad`/`build:rmud`) for the actual release build + GitHub Release, per your usual flow - nothing in this session touched the release scripts.
 
 ## Known scope cuts (deliberate, not bugs)

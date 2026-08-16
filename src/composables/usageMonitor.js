@@ -177,8 +177,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   const activeEmail = computed(() => reading.value.activeEmail); // email of the primary successful live fetch
   const activeEmails = computed(() => reading.value.activeEmails); // Set of emails of all currently live accounts
   const refreshAccounts = () => { set({ accounts: listAgAccounts(host) }); };
-  // Seeded from THIS host's own cache. `set` is host-only, so on a companion this is a no-op and the
-  // dropdown arrives mirrored instead of being rebuilt from the phone's (empty) localStorage.
+  // Seeded from THIS host's own cache. `set` is host-only, so on a companion this is a no-op and the dropdown arrives mirrored instead of being rebuilt from the phone's (empty) localStorage.
   if (isAg && isHost) {
     set({ accounts: listAgAccounts(host), activeEmail: lastActiveEmailFor(host) });
   }
@@ -309,8 +308,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           const nowSec = Date.now() / 1000;
           const mtimeSec = parseInt(res.file_modified_at, 10);
 
-          // ── Reset-window freshness (log-only, feeds reset_overdue_s/until_reset_s below) ──
-          // file_modified_at (cache mtime), not fetched_at: for AG the two are identical (the script writes fresh data on every live poll), but for Claude Code fetched_at is always ≈0 right after Rust reads the file  - that blinded this badge to a cache frozen mid-window (statusLine/oauth both silent, resets_at still in the future) - the exact freshness blind spot behind Lỗi C. mtime is the data's true age either way.
+          // Reset-window freshness (log-only, feeds reset_overdue_s/until_reset_s below): file_modified_at (cache mtime), not fetched_at: for AG the two are identical (the script writes fresh data on every live poll), but for Claude Code fetched_at is always ≈0 right after Rust reads the file — that blinded this badge to a cache frozen mid-window (statusLine/oauth both silent, resets_at still in the future) — the exact freshness blind spot behind Lỗi C. mtime is the data's true age either way.
           let resetIsPast = false;
           if (!isAg) {
             // five_hour only, on purpose - NOT "any bucket whose reset has passed". The staleness
@@ -353,8 +351,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           }
 
           const fiveHour = parsed?.rate_limits?.five_hour;
-          // Log every bucket the payload carries, not a hardcoded 5h/7d pair - `rate_limits` is an
-          // open map and a bucket that never reaches the log is a bucket nobody can debug.
+          // Log every bucket the payload carries, not a hardcoded 5h/7d pair - `rate_limits` is an open map and a bucket that never reaches the log is a bucket nobody can debug.
           const bucketFields = {};
           for (const [k, b] of Object.entries(parsed?.rate_limits || {})) {
             if (!b || typeof b !== 'object') continue;
@@ -462,8 +459,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   function haltPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
-    // Names the host: a slot can be pointed anywhere, so "unreachable" without a name leaves the
-    // user guessing which machine is down. The slot's power icon shows this same text as its tooltip.
+    // Names the host: a slot can be pointed anywhere, so "unreachable" without a name leaves the user guessing which machine is down. The slot's power icon shows this same text as its tooltip.
     set({
       pollHalted: true,
       error: `Host "${host}" unreachable ${consecutiveFailCount}× in a row - polling stopped. Click the power icon to retry.`,
@@ -541,8 +537,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   function stopWatching() {
     if (!watching) return;
     watching = false;
-    // Any probe still in flight is orphaned deliberately: bumping the epoch makes its result land on
-    // the floor rather than in a reading nobody is displaying.
+    // Any probe still in flight is orphaned deliberately: bumping the epoch makes its result land on the floor rather than in a reading nobody is displaying.
     epoch++;
     inFlightEpoch = 0;
     pendingRecheck = false;
@@ -616,15 +611,13 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     enabled,
     locked,
     toggle,
-    // Breaker state, for the power icon (contract C-3): amber while halted, and clicking it retries
-    // instead of toggling the monitor off.
+    // Breaker state, for the power icon (contract C-3): amber while halted, and clicking it retries instead of toggling the monitor off.
     pollHalted,
     retryAfterHalt,
     // Lifecycle, driven by the registry's refcount - never by a component directly.
     stopWatching,
     startWatching,
-    // Readings (mirrored, keyed by `id`, in store/usageReadingStore.js). No `stale`: the card
-    // derives it from `dataAt` (finding 3) so no path can leave it behind.
+    // Readings (mirrored, keyed by `id`, in store/usageReadingStore.js). No `stale`: the card derives it from `dataAt` (finding 3) so no path can leave it behind.
     data,
     loading,
     error,

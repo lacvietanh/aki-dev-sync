@@ -23,8 +23,7 @@ const { appendGlobalLog } = useLogs()
 export async function fetchGitStatus(projectId, silent = false, updateModalLog = true) {
   const project = projects.value.find(p => p.id === projectId)
   if (!project) return
-  // beginRefresh first: it guarantees the epoch exists, so the captured value is never the 0 that
-  // means "project removed".
+  // beginRefresh first: it guarantees the epoch exists, so the captured value is never the 0 that means "project removed".
   beginRefresh(projectId)
   const epoch = currentEpoch(projectId)
   try {
@@ -37,8 +36,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       git_log: info.log,
       remote_url: info.remote_url || "",
       git_changed_count: info.changed_count || 0,
-      // Distinct from "No Git": the directory itself is gone (unmounted volume). ProjectTable renders
-      // its own badge state for this, because "mount the drive" and "run git init" are different fixes.
+      // Distinct from "No Git": the directory itself is gone (unmounted volume). ProjectTable renders its own badge state for this, because "mount the drive" and "run git init" are different fixes.
       local_path_missing: !!info.local_path_missing,
     }
     if (!silent) appendGlobalLog("GIT", `Status for "${project.name}": ${info.status}`)
@@ -59,8 +57,7 @@ export async function fetchGitStatus(projectId, silent = false, updateModalLog =
       gitStatusText.value = errorLog
     }
   } finally {
-    // Only the generation that started this counts its own completion - a stale run's epoch was
-    // already force-reset to 0 by bumpEpoch, so decrementing here would underflow the new one.
+    // Only the generation that started this counts its own completion - a stale run's epoch was already force-reset to 0 by bumpEpoch, so decrementing here would underflow the new one.
     if (currentEpoch(projectId) === epoch) endRefresh(projectId)
   }
 }

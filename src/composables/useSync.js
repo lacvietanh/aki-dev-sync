@@ -9,8 +9,7 @@ import { fetchGitStatus } from './useGit'
 
 const { appendGlobalLog, appendLog, projectLogs, activeLogProjectId, isLogExpanded } = useLogs()
 
-// Artifacts this app itself produces/manages - routine sync churn on them is expected and must
-// not raise a confirm dialog. See docs/plan/done/narrow-mode-and-ux-1.14.0.md §A1.
+// Artifacts this app itself produces/manages - routine sync churn on them is expected and must not raise a confirm dialog. See docs/plan/done/narrow-mode-and-ux-1.14.0.md §A1.
 const FLOW_APP_ARTIFACTS = ['REPORT.html']
 
 // Handle for the "sync finished, tidy the log panel away" timer — see where it is set below.
@@ -59,8 +58,7 @@ export async function startSync(project, direction, specificPaths = []) {
   }
 
   projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: true }
-  // SELECT push is documented as unaffected by the DRY toggle (§2.11): leaving DRY on here made the
-  // user pick files, confirm an overwrite and read "Sync complete" while nothing moved.
+  // SELECT push is documented as unaffected by the DRY toggle (§2.11): leaving DRY on here made the user pick files, confirm an overwrite and read "Sync complete" while nothing moved.
   const isDryRun = specificPaths.length > 0 ? false : !!project.dry_run
 
   // Save previous log state so cancel can restore it instead of forcing-close. (The dock's LOG and
@@ -130,15 +128,13 @@ export async function startSync(project, direction, specificPaths = []) {
         if (staleArtifacts.length > 0) {
           appendLog(project.id, `>>> Auto-approved ${staleArtifacts.length} deletion(s) of flow-app artifact(s) unchanged since last sync (${FLOW_APP_ARTIFACTS.join(', ')})`)
         }
-        // Fresh artifacts (modified since last sync) are left in deleteList - they fall through
-        // to the normal confirm dialog below like any other at-risk file.
+        // Fresh artifacts (modified since last sync) are left in deleteList - they fall through to the normal confirm dialog below like any other at-risk file.
         deleteList = deleteList.filter(f => !staleArtifacts.includes(f))
       }
     }
 
     if (deleteList.length > 0 && direction === 'push') {
-      // R3: deletions confined to a push-only dir (e.g. `.git/`) auto-approve  - 
-      // the caller already opted out of pulling that dir, so its churn isn't "at risk" data.
+      // R3: deletions confined to a push-only dir (e.g. `.git/`) auto-approve  - the caller already opted out of pulling that dir, so its churn isn't "at risk" data.
       const pushOnly = pushOnlyDirs(project)
       const autoApproved = deleteList.filter(f => matchesDirExclude(f, pushOnly))
       const needsConfirm = deleteList.filter(f => !matchesDirExclude(f, pushOnly))
@@ -281,8 +277,7 @@ export async function startSync(project, direction, specificPaths = []) {
  * A companion reaches it through `remoteActions.requestSelectPush`, never by calling this directly.
  */
 export async function openSelectDialog(project) {
-  // Same §2.1 gate as startSync, and earlier: without it the relative-path conversion below
-  // dereferences an empty local_path and the picker opens at an undefined defaultPath.
+  // Same §2.1 gate as startSync, and earlier: without it the relative-path conversion below dereferences an empty local_path and the picker opens at an undefined defaultPath.
   const pathError = projectPathError(project)
   if (pathError) {
     Toast.fire({ icon: 'error', title: pathError })
@@ -338,8 +333,7 @@ export async function openSelectDialog(project) {
       })
       conflicts = info.filter(f => {
         if (!f.remote_exists) return false
-        // Flow-app artifacts only deserve a prompt when the destination copy is newer than the
-        // source - i.e. pushing would clobber a report regenerated on the remote in the meantime.
+        // Flow-app artifacts only deserve a prompt when the destination copy is newer than the source - i.e. pushing would clobber a report regenerated on the remote in the meantime.
         if (FLOW_APP_ARTIFACTS.includes(basename(f.rel_path)) && f.remote_mtime <= f.local_mtime) {
           return false
         }

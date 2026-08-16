@@ -30,8 +30,7 @@ const props = defineProps({
   project: { type: Object, required: true },
 })
 
-// `projectNotes` is a mirrored ref, so reading it inside a computed is what makes this cell update
-// live on the Mac AND on a paired phone with no extra wiring.
+// `projectNotes` is a mirrored ref, so reading it inside a computed is what makes this cell update live on the Mac AND on a paired phone with no extra wiring.
 const notesEntry = computed(() => getProjectNotesEntry(props.project.id))
 const writable = computed(() => isProjectNotesWritable(props.project.id))
 
@@ -44,7 +43,7 @@ const summary = computed(() => {
 </script>
 
 <style scoped>
-/* Geometry and states come from main.css's .btn-cell-trigger pattern (shared with TerminalCell.vue,
+/* Geometry and states come from main.css's .btn-cell-trigger pattern (shared with TerminalScopeButton.vue,
    which used to hold a byte-identical copy of it). Nothing left to say locally. */
 .task-cell-wrapper {
   display: inline-flex;
