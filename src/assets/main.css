@@ -908,9 +908,7 @@ input:checked+.slider:before {
   background: transparent;
 }
 
-/* State, not `:hover` — a phone can never satisfy a hover selector, so the popup (and everything
-   only reachable through it) was unusable on the companion. `.is-open` is set by hover-enter on a
-   pointer device AND by a tap/click, so the Mac's behaviour is unchanged. */
+/* State-based open (.is-open): handles hover on desktop and tap on companion devices. */
 .open-popup-wrapper.is-open .open-popup {
   visibility: visible;
   opacity: 1;
@@ -1183,9 +1181,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   border-color: var(--accent-red);
 }
 
-/* Shared skeleton for a modal's OWN action-row buttons (flex:1 or auto per caller, colour stays a
-   component-local modifier) — hoisted out of ClaudeProfileModal/GeminiAllowlistModal/
-   ClaudeCleanupModal/ClaudeSettingModal, which each redefined this byte-for-byte. */
+/* Shared modal action button skeleton (hoisted from modal components). */
 .btn-modal-action {
   display: inline-flex;
   align-items: center;
@@ -1399,49 +1395,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   box-shadow: 0 0 10px rgba(0, 210, 255, 0.2), inset 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
-.btn-ui-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--bg-tertiary);
-  color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  padding: 4px;
-  min-width: 24px;
-  min-height: 24px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.btn-ui-action:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: var(--text-light);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.btn-ui-action:active {
-  transform: translateY(0);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.btn-ui-action.error-state {
-  color: var(--accent-red);
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.btn-ui-action.error-state:hover {
-  background-color: rgba(239, 68, 68, 0.1);
-  border-color: var(--accent-red);
-}
-
-/* Compact inline host picker — shared by AgentUsageSlot.vue's REMOTE target and ProjectTable.vue's
-   row host select; `--wide` is the only per-caller difference (a project's host string runs longer
-   than an agent-slot host). */
+/* Compact inline host picker (shared by AgentUsageSlot.vue and ProjectTable.vue; --wide for project hosts). */
 .host-select-mini {
   background-color: var(--bg-tertiary);
   color: var(--text-light);
@@ -1467,8 +1421,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   cursor: not-allowed;
 }
 
-/* ProjectTable's row host: read like plain text (no chrome) until hovered, so it blends into the
-   dense row instead of looking like a boxed control. Hover still restores the shared bg/border. */
+/* ProjectTable row host: read like plain text until hovered to blend into dense rows. */
 .host-select-mini--wide {
   width: auto;
   max-width: 140px;
@@ -1540,32 +1493,22 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   /* Two form columns leave ~180px each at 420px, not enough for a path input; stack them. */
   .form-grid { grid-template-columns: 1fr; }
 
-  .titlebar-button {
-    width: 19px;
-    height: 19px;
-    margin-left: 0;
-    font-size: 11px;
-  }
-
   .host-select-mini {
     max-width: 46px;
   }
 
-  /* ProjectTable's row select carries a full remote_host string, not an agent slot name — keep its
-     own wider floor instead of inheriting the 46px agent-slot shrink above. */
+  /* ProjectTable row select: keeps wider floor for full remote_host strings at narrow width. */
   .host-select-mini--wide {
     max-width: 50px;
   }
 
-  /* Global Note is content-dense; at narrow let it fill the window (minus the overlay's 8px) instead
-     of the 90vw that leaves a wasted gap each side. */
+  /* Global Note: fills available width at narrow viewports for textarea editing. */
   .global-note-modal {
     width: 100%;
   }
 }
 
-/* Container-width breakpoint — applies to content inside .dashboard-left. Fires on container width
-   (420px in right-dock mode), not window width, so right-dock's narrow main view gets correct styles. */
+/* Container-width breakpoint: applies to content inside .dashboard-left (420px in right-dock mode). */
 @container main-view (max-width: 700px) {
   .u-narrow-hide {
     display: none !important;

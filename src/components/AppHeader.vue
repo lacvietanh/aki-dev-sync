@@ -41,9 +41,7 @@
             <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item icon-dropdown-item-ssh-color" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local - row shows the actual tint">
               <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
             </a>
-            <!-- Host-only: both modals WRITE this Mac's config (apply_statusline_config, set_claude_profile),
-                 which services/hostInvoke.js deliberately keeps off the companion allowlist. Showing them on a
-                 phone would open a modal whose Apply button can only ever fail. -->
+            <!-- Host-only: writes local Mac config via native window. -->
             <template v-if="nativeWindow">
             <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item statusline-menu-item" title="Build & deploy statuslines for AG CLI (~/.gemini/antigravity-cli/) visually, apply to local and/or remote hosts">
               <i class="fa-solid fa-terminal"></i>
@@ -85,8 +83,7 @@
               <template v-if="remoteRunning">
                 <div class="remote-code-row" title="Enter this 6-digit code on the phone the first time it connects">
                   <span class="remote-code-label"><i class="fa-solid fa-key"></i> Pair code</span>
-                  <!-- u-select-text (main.css): unlike the IP:PORT rows below, this one is not
-                       click-to-copy, so selecting it by hand has to stay possible. -->
+                  <!-- u-select-text (main.css): manual selectable text for pairing code. -->
                   <span class="remote-code u-select-text">{{ remotePairingCode }}</span>
                 </div>
                 <a
@@ -117,7 +114,7 @@
                   </label>
                 </div>
                 <a
-                  v-if="remoteHttpsAvailable && remoteHttpsEnabled && remoteHttpsUrl"
+                  v-if="remoteHttpsEnabled && remoteHttpsUrl"
                   href="#"
                   @click.prevent="copyRemoteUrl(remoteHttpsUrl)"
                   class="icon-dropdown-item remote-url-item"
@@ -153,8 +150,7 @@
             <div class="icon-dropdown-separator"></div>
             <div class="icon-dropdown-ac-section">
               <span class="ac-title"><i class="fa-solid fa-layer-group"></i> Usage slots:</span>
-              <!-- A select, not a row of buttons: the options grow with MAX_TIER_ROWS and a button
-                   per option would widen this menu without limit (UI Extreme Narrow). -->
+              <!-- Slot count dropdown: single compact select in menu. -->
               <select
                 class="ac-row tier-slot-select"
                 :value="usageSlotCount"
@@ -165,8 +161,7 @@
                 </option>
               </select>
             </div>
-            <!-- Window presets are native-window only — hidden on a phone companion, which has no
-                 window to resize or place. -->
+            <!-- Window presets: native-window only. -->
             <template v-if="nativeWindow">
             <div class="icon-dropdown-separator"></div>
             <div class="icon-dropdown-ac-section">
@@ -179,8 +174,7 @@
                 remember
               </label>
             </div>
-            <!-- 2x2: each column is one ⌘ combo, so its key badge sits on the seam between the
-                 column's two buttons rather than adding a row of its own. -->
+            <!-- Window preset 2x2 grid for Width x Height. -->
             <div class="view-preset-grid">
               <div class="icon-dropdown-preset-row">
                 <button
@@ -287,8 +281,7 @@
         <ClaudeCleanupModal :show="showCleanupModal" @close="showCleanupModal = false" />
         <GeminiAllowlistModal :show="showAllowlistModal" @close="showAllowlistModal = false" />
 
-        <!-- Custom Traffic Lights — native-window only: on a phone companion these would be dead
-             buttons (it cannot pin/minimize/close the Mac's window), so they are not rendered. -->
+        <!-- Custom Traffic Lights: native-window only. -->
         <template v-if="nativeWindow">
         <div
              class="titlebar-button pin-btn"
@@ -352,10 +345,7 @@ const isDev = import.meta.env.DEV;
 const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
 
-// "Statusline Customizer" row: paint each letter with the actual palette the customizer
-// supports (src/utils/statuslineColors.js - the same array ClaudeSettingModal.vue's per-field
-// color picker uses), so the row demonstrates the feature instead of describing it in words.
-// Spaces are kept in the sequence (so word spacing is unchanged) but don't consume a color.
+// Statusline Customizer row: rainbow palette mapping for label characters.
 const STATUSLINE_LABEL = 'Statusline Customizer';
 const statuslineLabelChars = (() => {
   let colorIdx = 0;
@@ -406,12 +396,7 @@ const {
   toggleHttps: toggleRemoteHttps,
 } = useRemoteControl();
 
-// The relay always serves plain HTTP on its port; `tailscale serve` only puts HTTPS in front of the
-// tailnet address, so every LAN address stays unencrypted and the pairing token travels in the clear
-// on it (it is a WebSocket query parameter). Anyone on the same wifi can read it. That is a real risk
-// the user is entitled to know about and to weigh themselves - a home LAN and a cafe are not the same
-// bet - so the state rides the existing On toggle as an amber outline plus a tooltip, never a new row
-// (CLAUDE.md UI Extreme Narrow). Decided in docs/plan/done/1.20.1-flow-audit-fixes.md §4.
+// Plain HTTP warning indicator for unencrypted LAN remote control (docs/plan/done/1.20.1-flow-audit-fixes.md §4).
 const remotePlainHttp = computed(
   () => remoteRunning.value && remoteUrls.value.some((u) => u.kind !== 'tailscale')
 );
@@ -419,24 +404,18 @@ const remotePlainHttp = computed(
 async function toggleRemote(e) {
   if (e.target.checked) await startRemote();
   else await stopRemote();
-  // Re-sync the DOM checkbox with the real state: if start() failed, `remoteRunning` never left
-  // false, so Vue sees no change to patch and the box would stay visibly checked while remote
-  // control is actually off.
+  // Sync DOM checkbox with actual state in case start/stop failed.
   e.target.checked = remoteRunning.value;
 }
 
 async function onToggleRemoteHttps(e) {
   await toggleRemoteHttps();
-  // Re-sync the DOM checkbox with the real state: if the toggle failed (e.g. HTTPS certs not enabled
-  // in the tailnet), remoteHttpsEnabled never changed, so Vue sees no patch and the box would stay
-  // visibly flipped while serve is actually still off. remoteError already carries tailscale's hint.
+  // Sync DOM checkbox with actual state in case HTTPS toggle failed.
   e.target.checked = remoteHttpsEnabled.value;
 }
 
 async function copyRemoteUrl(url) {
-  // Copying an address is the moment it is about to be used on a phone, which is the only moment
-  // saying this is useful - the amber toggle states it, this names the consequence. Warn, never
-  // block: on a home LAN this address is the whole point of the feature.
+  // Warn on unencrypted plain HTTP address copy; success toast on HTTPS/Tailscale.
   const plain = url.startsWith('http://');
   const warn = 'Not encrypted - anyone on this network can read the pairing code.';
   // utils/clipboard.js owns the non-secure-context fallback; this only decides what is shown.
@@ -475,9 +454,7 @@ onMounted(() => {
   restorePin();
   restoreView().catch((e) => console.error('Failed to restore window view:', e));
   window.addEventListener('keydown', onViewShortcut);
-  // Update check is a host-only concern (§5): a companion mirrors nothing from it and cannot act on
-  // it, and asking the phone to RPC the Mac for the Mac's own update state is pointless. onHostBoot
-  // runs this immediately on the host, never on a companion.
+  // Host-only update check on startup via onHostBoot.
   onHostBoot(async () => {
     try {
       const raw = await invoke('check_for_updates');
@@ -568,21 +545,13 @@ async function installAkiClaudeDoc() {
   }
 }
 
-// Refreshes every project's derived status (git, remote diff, stack) plus the usage monitors  - 
-// exactly what the tooltip promises, and exactly the same unit of work a single project's own
-// Refresh button runs. It deliberately does NOT call loadData(): that re-reads projects.json, SSH
-// hosts and IDE availability from disk, which is an app-load concern, not a refresh. Routing this
-// button through loadData was why "everything dims" came from loadData's global isReloading flag
-// instead of from the projects themselves - making the global and per-project buttons two
-// unrelated mechanisms that only looked like one feature.
+// Refresh all project statuses and usage monitors without reloading disk config.
 function handleRefresh() {
-  // R-2: routed through the seam-A action so the header's global refresh works when clicked from a
-  // phone too (the host runs the real refreshAllProjects; on the Mac this is identical to calling
-  // it directly).
+  // Routed via seam-A requestRefreshAll for host and companion compatibility.
   requestRefreshAll();
 }
 
-// The picker is in SLOTS because slots are what the user counts on screen; the store keeps ROWS, the unit it has always persisted. These two are the whole translation - see usageTierStore.
+// Slot picker computed translation between slots and stored rows (see usageTierStore).
 const usageSlotCount = computed(() => rowsToSlots(tierCount.value));
 
 function onPickSlotCount(e) {
@@ -597,8 +566,7 @@ function applyViewComboSafe(slot) {
   applyViewCombo(slot).catch((e) => console.error(`Failed to apply window combo ${slot}:`, e));
 }
 
-// ⌘1 / ⌘2 - global, because the point of the shortcut is not having to open the menu first.
-// Only bare ⌘+digit: ⌘⇧1 and ⌘⌥1 belong to whatever else may claim them.
+// Global shortcuts for window views (⌘1 / ⌘2).
 function onViewShortcut(e) {
   if (!e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.repeat) return;
   if (e.key !== '1' && e.key !== '2') return;
@@ -650,10 +618,7 @@ function onViewShortcut(e) {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  /* Below the modal layer, which starts at 1000 (BaseModal computes 1000 + depth*10). Both sat on
-     exactly 1000 before, so with a modal open over this dropdown the winner was decided by DOM
-     order rather than intent - and the Teleported modal is always later, which happened to be
-     right. Making the gap explicit is what stops the next modal-adjacent change from flipping it. */
+  /* z-index 500: below modal layer (starts at 1000). */
   z-index: 500;
   background: #1a1d23;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -668,9 +633,7 @@ function onViewShortcut(e) {
   letter-spacing: 0;
   font-weight: 400;
   font-size: 13px;
-  /* SSoT echo: exact OSC 11 background src-tauri/src/system.rs patches into the terminal
-     (SSH_COLOR_SNIPPET, `printf '\033]11;#1a0f0f\007'`) - mirrored here once so the "Enable SSH
-     Terminal Color" row can show the real tint instead of describing it. */
+  /* SSoT echo: mirrors OSC 11 terminal background (#1a0f0f) for SSH color preview. */
   --ssh-terminal-bg: #1a0f0f;
 }
 
@@ -745,17 +708,12 @@ function onViewShortcut(e) {
   cursor: not-allowed;
 }
 
-/* Statusline Customizer row: each letter keeps its palette color regardless of hover - the
-   inline per-letter color (set in the template from statuslineLabelChars) intentionally beats
-   the generic .icon-dropdown-item:hover text-color rule above, since the whole point is a
-   persistent, always-visible preview rather than a hover-only reveal. */
+/* Statusline Customizer row: persistent preview with inline per-letter colors. */
 .statusline-label {
   white-space: nowrap;
 }
 
-/* Enable SSH Terminal Color row: background + text mirror the real tint (see --ssh-terminal-bg
-   above) so the row demonstrates its own effect. Foreground is a light warm red, legible against
-   the very dark red-tinted background. */
+/* Enable SSH Terminal Color row: background and text mirror actual terminal tint. */
 .icon-dropdown-item-ssh-color {
   background: var(--ssh-terminal-bg);
   color: #fca5a5;
@@ -827,8 +785,7 @@ function onViewShortcut(e) {
   flex: 1;
 }
 
-/* Matches .icon-dropdown-preset-btn's resting look so the menu still reads as one set of controls,
-   but as a select it stays one line wide no matter how many options MAX_TIER_ROWS allows. */
+/* Single-line select matching preset button styling. */
 .tier-slot-select {
   padding: 6px 8px;
   font-size: 11px;
@@ -849,8 +806,7 @@ function onViewShortcut(e) {
   border-color: rgba(0, 210, 255, 0.3);
 }
 
-/* The native popup list is drawn by the OS, not by this stylesheet - give the options the dark
-   background explicitly or they render as light-on-light on macOS. */
+/* Explicit dark background for native select options on macOS. */
 .tier-slot-select option {
   background: #16161a;
   color: #cbd5e1;
@@ -917,8 +873,7 @@ function onViewShortcut(e) {
   border-color: rgba(0, 210, 255, 0.45);
 }
 
-/* The ⌘ badge overlays the gap between a column's two buttons - an absolute overlay, never a
-   row of its own (the menu has no vertical budget for one). */
+/* Absolute overlay badge positioned between columns. */
 .view-preset-grid {
   position: relative;
 }
@@ -966,8 +921,7 @@ function onViewShortcut(e) {
   color: #a5f3fc;
 }
 
-/* Hollow square that fills on check - the native control renders as a filled white box that
-   reads like a color swatch in this dark menu. */
+/* Custom checkbox box styling for dark theme. */
 .remember-view input {
   appearance: none;
   -webkit-appearance: none;
@@ -1008,8 +962,7 @@ function onViewShortcut(e) {
   border-color: #34d399;
 }
 
-/* On, but reachable over unencrypted HTTP - amber, not red: this is a risk to weigh, not a fault.
-   The tooltip on the label says what is exposed. No extra row (UI Extreme Narrow). */
+/* Amber indicator for unencrypted HTTP connection. */
 .remote-toggle.on.plain-http {
   color: #f59e0b;
 }
@@ -1261,10 +1214,7 @@ function onViewShortcut(e) {
     line-height: 1;
   }
 
-  /* DEV badge now stacks under the title text only (not the whole logo-section, which also
-     contains the menu icon) - .title-block wraps just the h1 + dev-tag, so the icon stays on
-     the same row while the title/DEV pair goes vertical to save horizontal space. A small gap
-     (instead of 0) keeps the badge from visually running into the title text right below it. */
+  /* Vertical stack for title + DEV badge in narrow viewport. */
   .title-block {
     flex-direction: column;
     align-items: center;
@@ -1279,8 +1229,7 @@ function onViewShortcut(e) {
     line-height: 1.3;
   }
 
-  /* Build info shown at the DEV-tag position - same red, same tiny size, no click. DEV renders
-     below it (last in column) so the order reads: build ⟶ DEV if in dev mode. */
+  /* Build info in narrow title block position. */
   .build-narrow {
     font-size: 6px;
     color: #f87171;
@@ -1289,8 +1238,7 @@ function onViewShortcut(e) {
     line-height: 1.3;
   }
 
-  /* Disable changelog click in narrow - accidental opens during window drag are common. The
-     update badge keeps its own pointer-events so it stays tappable. */
+  /* Disable changelog click during drag in narrow mode; update badge remains clickable. */
   .app-version.clickable {
     pointer-events: none;
     cursor: default;
@@ -1305,8 +1253,7 @@ function onViewShortcut(e) {
     margin-left: 5px;
   }
 
-  /* Folded in from the old 850px breakpoint (removed - 700px is the single narrow breakpoint;
-     INTRO's label now hides via u-narrow-hide like everything else). */
+  /* Tighter button padding at 700px narrow breakpoint. */
   .header-actions .btn-tech {
     padding: 0 8px !important;
   }
