@@ -8,7 +8,7 @@ New work plus everything the 2026-08-15 sweep of the active plan docs turned up.
 |---|---|---|---|---|
 | 1 | PIN-DONE | Investigated per the owner's report of "done tasks still pinned" — **already fixed in code, no action** | resolved | `src/composables/useTaskCollection.js:43-52` |
 | 2 | PROJ-TOGGLE | Per-project sync/git-check disable toggle — **landed** | resolved | `src-tauri/src/projects.rs`, `src/composables/useBackgroundRefresh.js`, `src/composables/useSyncStatus.js` |
-| 3 | TERM-STACK-R | Terminal stack right-dock — built, needs on-Mac runtime verification | feat | `docs/research/terminal-stack-right-dock.md`, `src/composables/useRightDockLayout.js` |
+| 3 | TERM-STACK-R | Terminal stack right-dock — built, verified on Mac 2026-08-16 | feat | `docs/research/terminal-stack-right-dock.md`, `src/composables/useRightDockLayout.js` |
 | 4 | PERF-IDLE | High GPU/CPU usage while idle — code fixes built, magnitude saved still unmeasured | improve | `docs/research/perf-idle-gpu-cpu.md` |
 | 5 | RSZ-STEP8 | Manual-resize-authority Step 8 on-device test had no tracking row — added, confirmed passed by owner on Mac 2026-08-15 | resolved | `docs/plan/done/verify-pending.md` (new row), `docs/plan/done/wish-terminal-manual-resize-authority.md` |
 
@@ -44,7 +44,7 @@ From the owner's pinned note `task-1786581837403`: the terminal stack should sto
 
 **Research stage done:** the breakpoint behavior and how `useDockLayout.js`'s current height-sum model maps onto a width-based right-column mode are scoped in [docs/research/terminal-stack-right-dock.md](../research/terminal-stack-right-dock.md). **Still pending:** owner input on the design question (exact breakpoint px, whether `DockStack.vue`'s shared chrome fits a right-column presentation or needs its own variant) before a `docs/plan/wish-*.md` doc and code can follow — same two-step shape as `restore-terminal-mobile-ux.md` → `wish-terminal-manual-resize-authority.md`.
 
-**Result (revised 2026-08-16 after Mac test):** The initial build had MAIN_VIEW_MAX_WIDTH=900 and a draggable width splitter — on the real app at 1920px the main view occupied too much of the screen. Revised spec from owner: main view capped at **420px**, terminal column fills **all remaining space** via `flex:1` (no fixed width, no drag splitter), trigger at **900px** window width. Implemented: `src/composables/useRightDockLayout.js` now exports `MAIN_VIEW_MAX_WIDTH=420` and `RIGHT_DOCK_BREAKPOINT=900`, all width-drag/persistence code removed; `AppConsole.vue` simplified (no `consoleStyle` width branch, no splitter div, no pointer handlers); `main.css`'s `.dashboard-main.is-right-dock > .dashboard-bottom` adds `flex: 1`. **Unverified — needs a runtime re-check on Mac**: resizing across the 900px breakpoint and confirming 420px main / fill-rest terminal.
+**Result (revised 2026-08-16 after Mac test):** The initial build had MAIN_VIEW_MAX_WIDTH=900 and a draggable width splitter — on the real app at 1920px the main view occupied too much of the screen. Revised spec from owner: main view capped at **420px**, terminal column fills **all remaining space** via `flex:1` (no fixed width, no drag splitter), trigger at **900px** window width. Implemented: `src/composables/useRightDockLayout.js` now exports `MAIN_VIEW_MAX_WIDTH=420` and `RIGHT_DOCK_BREAKPOINT=900`, all width-drag/persistence code removed; `AppConsole.vue` simplified (no `consoleStyle` width branch, no splitter div, no pointer handlers); `main.css`'s `.dashboard-main.is-right-dock > .dashboard-bottom` adds `flex: 1`. **Verified on Mac, 2026-08-16** (see M3): resizing across the 900px breakpoint confirms 420px main / fill-rest terminal in both directions.
 
 ### 4. PERF-IDLE — high GPU/CPU usage on idle
 
@@ -100,6 +100,8 @@ The one mechanism the design doc itself flags as unverifiable off-Mac (`docs/pla
 - Open a plain `⌘T` Terminal.app tab by hand in the same folder. It must **not** claim to be launched from the project — it should read as a cwd match only.
 - Open an SSH session from the popup. Its cwd is the local `$HOME`, so before this round it counted on nobody; it must now count on its project.
 
+**Result (2026-08-16, Mac):** ✅ Passed — owner confirmed, no issues.
+
 ### M3 — right-side dock, the whole geometry path
 
 Built and doc-synced. `src/composables/useRightDockLayout.js` is the single source of the trigger (900px breakpoint) and max-width (420px).
@@ -108,12 +110,16 @@ Built and doc-synced. `src/composables/useRightDockLayout.js` is the single sour
 - When right-docked: confirm terminal mode is dedicated and clean — no redundant minimize/collapse buttons, and the LogStack below ProjectTable collapses to 44px (header + peek line) and expands to 20vh without duplicating DOM peek lines.
 - In bottom dock mode (< 900px): confirm both TerminalStack and LogStack retain independent collapse/maximize/splitter controls.
 
+**Result (2026-08-16, Mac):** ✅ Passed — owner confirmed, no issues.
+
 ### M4 — per-project disable toggle, with ≥2 projects present
 
 Mandated by this project's multi-entity regression guard (`CLAUDE.md`), which the 1.9.3 incident wrote: verifying only the entity the change targets is exactly the gap that shipped that bug.
 
 - With at least two projects configured, disable one from its Settings gear. Confirm the **other** project's background sync and git polling keep running untouched.
 - On the disabled project, confirm the manual paths still work: the per-project Refresh button, PUSH/PULL, and opening the Git modal. Only the two background timers are supposed to skip it.
+
+**Result (2026-08-16, Mac):** ✅ Passed — owner confirmed, no issues.
 
 ### M5 — terminal chrome menu across two devices
 
@@ -122,9 +128,13 @@ Preferences are per-device `localStorage` and are deliberately never mirrored, s
 - On the Mac: toggle each piece of chrome from the 3-dot drop-up; confirm the compose input row is now its own toggle and defaults **on** (it is the only working path for macOS's Vietnamese composing IME — worth typing a Vietnamese line through it).
 - On a paired phone: confirm the tab strip is checked and locked (it is the only way to switch tabs there), and that toggling anything on the phone leaves the Mac's own settings alone.
 
+**Result (2026-08-16, Mac + phone):** ✅ Passed — owner confirmed, no issues.
+
 ### M6 — toast position, by eye
 
 Moved from bottom-center to top-end below the titlebar. Trigger any toast while the ProjectTable ACTIONS column is visible and again with a modal open: it must cover neither the ACTIONS column nor the modal's footer buttons.
+
+**Result (2026-08-16, Mac):** ✅ Passed — owner confirmed, no issues.
 
 ### M7 — `scripts/fix-ssh-agent-leak.sh`, never executed anywhere
 
@@ -137,13 +147,15 @@ bash scripts/fix-ssh-agent-leak.sh --apply    # only after reading that diff; wr
 
 Afterwards, confirm new login shells still get a working agent (`ssh-add -l`) and that orphan `ssh-agent` processes stop accumulating.
 
+**Result (2026-08-16, Mac):** ✅ Passed — owner confirmed, no issues.
+
 ### M8 — PERF-IDLE magnitude, still unmeasured (not a gate)
 
 The open half of item 4. Activity Monitor's GPU column, or a Web Inspector Timelines capture, against the built app while idle — to find out whether this round's animation and `transition: all` cleanup actually bought anything.
 
 ### Repo state at handoff
 
-Shipped as `1.25.0` (tag pushed, GitHub Release published, universal dmg built and verified locally — `cargo build --release` succeeded for both architectures). M1 passed on this Mac as part of that build. **M2–M7 above are still outstanding** — they need a human on the built app (and a paired phone for M5) and were not run as part of the build/release itself.
+Shipped as `1.25.0` (tag pushed, GitHub Release published, universal dmg built and verified locally — `cargo build --release` succeeded for both architectures). **M1–M7 all passed on the Mac (and a paired phone for M5), 2026-08-16, owner confirmed — no issues found.** M8 (PERF-IDLE magnitude) remains unmeasured; it was never a pass/fail gate (see "Not in scope" above) and stays open as a future stretch item, not a blocker.
 
 ### Older backlog, not this round
 
