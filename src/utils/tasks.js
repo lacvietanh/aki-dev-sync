@@ -1,13 +1,5 @@
-// Pure task-list functions shared by every task collection (project tasks, global note tasks).
-// No Vue, no persistence, no store import — the data source is always injected by the caller
-// (see src/composables/useTaskCollection.js). Every function here is non-mutating: it returns a
-// NEW array of NEW task objects rather than editing the input in place. This matters because two
-// independent collections (a project's tasks, the global note's tasks) may run through the same
-// helpers in the same session — a mutating helper would risk one collection's edit leaking into
-// an object still referenced by another (the multi-entity regression guard in CLAUDE.md).
-
-/** Migrate legacy shapes (status→done/pin, state→pin/wish) and backfill defaults. Returns a NEW
- *  array of NEW task objects; never mutates `list` or any element of it. */
+// Pure non-mutating task list helpers (CLAUDE.md multi-entity regression guard).
+// Migrates legacy shapes (status/state -> done/pin/wish) and returns a new task array.
 export function normalizeTasks(list) {
   if (!Array.isArray(list)) return []
   return list.map((t) => {
@@ -34,9 +26,7 @@ export function normalizeTasks(list) {
   })
 }
 
-/** The existing 3-tier sort, verbatim: uncompleted before completed; among uncompleted, pinned
- *  first then wish last; stable fallback to insertion order (oldest first). Returns a new array
- *  (does not sort `tasks` in place). */
+// 3-tier task sort: uncompleted (pinned -> wish -> insertion order) before completed tasks.
 export function sortTasks(tasks) {
   return [...tasks].sort((a, b) => {
     // 1. Uncompleted tasks first, completed tasks at the bottom

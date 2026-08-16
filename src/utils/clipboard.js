@@ -1,20 +1,4 @@
-// One clipboard writer for the whole app.
-//
-// WHY THIS EXISTS: `navigator.clipboard` does not exist in a NON-SECURE context, which is exactly
-// what the phone companion is (plain http over the LAN). Every call site that used
-// `navigator.clipboard.writeText` alone was silently dead on the phone — the promise rejected into a
-// console nobody has open. The textarea + `execCommand('copy')` path is deprecated but is the only
-// one that works without https.
-//
-// The contract is a BOOLEAN, not a throw: every caller must have a visible failure path (a Toast, a
-// dialog, anything the user can see), because a copy that silently does nothing is the bug this
-// module was extracted to end.
-
-/**
- * Copies `text` to the clipboard.
- * @param {string} text
- * @returns {Promise<boolean>} true when the text is on the clipboard, false when it is not.
- */
+// Clipboard writer with fallback for non-secure HTTP LAN companion context (returns boolean success status).
 export async function copyText(text) {
   if (text == null) return false
   const value = String(text)
