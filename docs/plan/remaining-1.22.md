@@ -6,28 +6,12 @@ Single entry point for everything still outstanding after the `1.22.0` release (
 
 | # | ID | Description | Kind | Blocks a future release? | Owning file |
 |---|---|---|---|---|---|
-| 1 | GBOARD | Android/Gboard double-insert in the in-app terminal (`"ăn gì" → "aăn giì"`) — diagnosed at code level, not fixed, not confirmed on hardware | defect | No — already shipped 1.22.0 with the caveat stated in CHANGELOG; not a regression from today's release | `docs/research/terminal-gboard-double-insert.md`, `docs/plan/done/terminal-input-jul31.md` §2.2 |
-| 2 | U3 | GlobalNoteModal textarea min-height re-tune | verify | No | this file item 2 (no operational checklist file currently tracks it — pre-existing gap, see item 2 below) |
 
-None of the remaining items blocks a future release in the sense of "cannot ship without it" — 1.22.0 is already out with every one of these either caveated in the CHANGELOG (GBOARD) or simply not yet built/verified. GBOARD is ranked first because it is the only *defect users can hit right now*; everything else is either confirming already-shipped correctness, paying down debt, or work that has not started. PT-DOC and WS-C-RESIDUAL (formerly #14 and #16 of an original 16) closed 2026-08-01 — see "Resolved (2026-08-01)" below; both were answerable from the repo alone, no device or owner input needed. T1–T6, U1, U2, U4, I1, I2 closed 2026-08-15 — see "Resolved (2026-08-15)" below. HARDWRAP, TOAST, WS-B and WS-A-S1-2 closed 2026-08-16 — see "Resolved (2026-08-16)" below.
+Empty — every item ever ranked here is resolved. PT-DOC and WS-C-RESIDUAL (formerly #14 and #16 of an original 16) closed 2026-08-01 — see "Resolved (2026-08-01)" below. T1–T6, U1, U2, U4, I1, I2 closed 2026-08-15 — see "Resolved (2026-08-15)" below. HARDWRAP, TOAST, WS-B, WS-A-S1-2, GBOARD and U3 closed 2026-08-16 — see "Resolved (2026-08-16)" below.
 
 ## Items
 
-### 1. GBOARD — Android/Gboard double-insert
-
-**Status:** root cause traced to code (`src/composables/useTerminalTextDrain.js`'s "read all, then empty" textarea model silently drops a `deleteContentBackward` that lands on a textarea the drain already emptied), not confirmed on hardware, not fixed. Separate mechanism from the already-fixed double-space blocker (`-5.md`) — confirmed different because the double-space fix landed and this defect's shape was untouched.
-
-**Next concrete action:** the one hardware measurement that resolves the open fork (does Gboard wrap its correction in a real DOM composition, or fire plain `deleteContentBackward`/`insertText` outside one) — `__akiTermInput.clear()` then type `báo` on the Android device, then `__akiTermInput.dump()`, read via `chrome://inspect` remote debug. Documented in full at `docs/research/terminal-gboard-double-insert.md` §6.
-
-**Decision the owner owes:** both candidate fixes cost an invariant 1.22.0 just bought. (a) Discriminate `deleteContentBackward` outside composition and translate it to real backspace bytes — reintroduces `inputType`-based classification, which `-5.md`'s fix explicitly removed ("one branch removed, not one added") and the file's own header argues against by design. Only correct if the plain-delete branch is confirmed. (b) Track a shadow buffer of already-sent-but-still-editable characters — reintroduces the app-owned text-state tracking the 1.22.0 architecture deliberately deleted (`useTerminalInput.js`, the overlay textarea). Neither can both preserve the "exactly one input path, no branch-by-classification" invariant and correctly reconcile a delete against text the drain already forwarded and erased. If the hardware measurement instead shows the composition-wrapper branch, the fix is not in this file at all — it is in xterm's own composition-completion path, a different investigation. Wait for the measurement before picking a direction.
-
-### 2. U3 — GlobalNoteModal textarea min-height re-tune
-
-**Status:** code-complete, not yet confirmed. Blocked only on someone at the Mac observing the result. **Pre-existing doc drift, found 2026-08-15:** this row has always pointed at `docs/plan/done/verify-pending.md#u3`, but that file never actually contained a U3 entry (confirmed against every version of the file seen this session — its UI section only ever held U1, U2, U4). No operational checklist currently tracks the exact steps for this item; one needs to be written (or the item re-scoped/dropped) before it can be verified.
-
-The other checks from that same batch (T1–T6, U1, U2, U4, I1, I2) were confirmed passed by the owner on a real Mac 2026-08-15 and are closed — see "Resolved (2026-08-15)" below and `docs/plan/done/verify-pending.md`.
-
-### 3. WS-A §11 open reviewer questions — decided 2026-08-01
+### 1. WS-A §11 open reviewer questions — decided 2026-08-01
 
 WS-A itself (all of S1–S7) is now fully built — see "Resolved (2026-08-16)" below. This item is unrelated to that build status: it records the two open questions `terminal-ownership-model.md` §11 left for the reviewer.
 
@@ -56,6 +40,14 @@ WS-A itself (all of S1–S7) is now fully built — see "Resolved (2026-08-16)" 
 ### TOAST — toast positioning, recovered from a lost cleanup row
 
 **Done.** `src/store/projectStore.js`'s `Toast` mixin position changed from `bottom` (bottom-center) to `top-end`, per the fix proposed in `docs/plan/done/improve-jun24.md` §3 and never landed at the time. A `.swal2-top-end` override was added to `src/assets/main.css`, respecting the 42px titlebar boundary (`top: var(--titlebar-h)`, never `top: 0`). The 5-modal re-walkthrough this item's own next-action called for was not separately re-run as part of this change.
+
+### GBOARD — Android/Gboard double-insert fixed
+
+**Fixed.** `useTerminalTextDrain.js`'s `onInputCapture`: a `deleteContentBackward` landing on an already-emptied textarea (Gboard correcting a committed syllable, e.g. `"bao"` → `"báo"`) is now translated to a real backspace byte (`term.input('\x7f', true)`) instead of being silently dropped, closing the fork left open in `docs/research/terminal-gboard-double-insert.md` §5.5/§6 — hardware-confirmed on Android/Gboard as the plain-delete branch, not composition-wrapped. New `counts.deleteBackwardClaimed` counter and `'drain-backspace'` ring entry for diagnostics.
+
+### U3 — GlobalNoteModal textarea min-height re-tune
+
+**Confirmed.** `GlobalNoteModal.vue`'s `.global-notes-field :deep(.project-notes-textarea)`: `min-height: 42px`, `field-sizing: fixed`, and `NotesField`'s `:rows="2"` — matches the plan's target exactly.
 
 ## Resolved (2026-08-15)
 
