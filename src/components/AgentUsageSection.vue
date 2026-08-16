@@ -1,7 +1,6 @@
 <template>
   <div class="agent-usage-section" :style="{ height: sectionHeight }">
-    <!-- The separators between slots and between rows are borders on the neighbour, not elements:
-         a divider <div> is a DOM node whose only job is to be a line (CLAUDE.md, UI Extreme Narrow). -->
+    <!-- Separators between slots and rows are CSS borders on neighbours (UI Extreme Narrow). -->
     <div v-for="(row, rIdx) in activeTierRows" :key="rIdx" class="tier-row-container">
       <div class="usage-split-layout">
         <AgentUsageSlot v-for="slotId in row" :key="slotId" :slot-id="slotId" />
@@ -11,38 +10,24 @@
 </template>
 
 <script setup>
-// @docs docs/plan/done/usage-monitor-entity-refactor.md
-//
-// Pure tier layout. This component used to construct four shared usage sources and pass them down
-// to every slot - which is precisely what limited the app to one remote host: `agRemote`/`ccRemote`
-// were singletons resolving against the one global `selectedSshHost`. Slots now resolve their own
-// monitor from `usageMonitorRegistry` (keyed `agentId@host`), so two slots can watch two different
-// machines at once, and nothing here has to know which.
+// Tier layout: slots resolve individual monitors from usageMonitorRegistry (docs/plan/done/usage-monitor-entity-refactor.md).
 import { computed } from 'vue';
 import AgentUsageSlot from './AgentUsageSlot.vue';
 import { tierCount, rowSlotIds } from '../store/usageTierStore';
 
-// Rows are generated, not listed: row R is `rowSlotIds(R)` - ['A','B'], ['C','D'], ['E','F'], ...
-// The old literal two-row array was the real ceiling on the whole feature; a tierCount above 2 just
-// sliced past the end and rendered nothing. Now the row count is bounded in one place only
-// (`MAX_TIER_ROWS` in usageTierStore), and each slot's default target is derived there too, in
-// `store/usageSlotStore.js` - so no row is ever rendered whose slots have no target to resolve.
+// Dynamically generate slot IDs per tier row based on tierCount.
 const activeTierRows = computed(() =>
-  Array.from({ length: Math.max(tierCount.value, 1) }, (_, r) => rowSlotIds(r))
+  Array.from({ length: tierCount.value }, (_, r) => rowSlotIds(r))
 );
 
-// One tier row is a fixed-height band (header + card body); rows are separated by ROW_GAP_PX.
-// There is no cap here: an old `Math.min(…, 335)` could never bind back when only two rows existed,
-// so it only hid what the real ceiling was. Beyond the window's height the section scrolls
-// (overflow-y: auto below) rather than being clamped to a height that cuts a row in half.
+// Tier row height and gap constants for sectionHeight calculation.
 const ROW_HEIGHT_PX = 161;
 const ROW_GAP_PX = 10;
 
 const sectionHeight = computed(() => {
-  const rows = Math.max(tierCount.value, 1);
+  const rows = tierCount.value;
   return `${rows * ROW_HEIGHT_PX + (rows - 1) * ROW_GAP_PX}px`;
 });
-
 </script>
 
 <style scoped>
@@ -89,15 +74,13 @@ const sectionHeight = computed(() => {
   align-items: stretch;
 }
 
-/* Column separator: a border on every slot after the first (the scope id lands on the child
-   component's root element), so two slots still read as two columns with no divider node. */
+/* Column separator: border on sibling slots without divider nodes. */
 .usage-split-layout > * + * {
   border-left: 1px solid rgba(255, 255, 255, 0.05);
   padding-left: 8px;
 }
 
-/* Horizontal padding/gaps here were sized for the wide layout - tighten them at narrow so the
-   LOCAL/REMOTE columns get more of the scarce width instead of losing it to whitespace. */
+/* Tighten horizontal spacing in narrow container mode. */
 @container main-view (max-width: 700px) {
   .agent-usage-section {
     padding: 6px 2px;
