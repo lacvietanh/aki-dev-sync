@@ -143,7 +143,7 @@ The open half of item 4. Activity Monitor's GPU column, or a Web Inspector Timel
 
 ### Repo state at handoff
 
-HEAD is tag `1.24.0` (`8ed368e`) with **zero commits on top**; this entire round — 134 changed paths — sits uncommitted in the working tree. Nothing was committed, tagged or pushed by the sessions that wrote it; that is the owner's call. `[Unreleased]` in `CHANGELOG.md` is written and no version has been minted.
+Shipped as `1.25.0` (tag pushed, GitHub Release published, universal dmg built and verified locally — `cargo build --release` succeeded for both architectures). M1 passed on this Mac as part of that build. **M2–M7 above are still outstanding** — they need a human on the built app (and a paired phone for M5) and were not run as part of the build/release itself.
 
 ### Older backlog, not this round
 
