@@ -1,5 +1,5 @@
 <template>
-  <BaseModal :show="show" @close="$emit('close')" container-style="width: 420px; max-width: calc(100vw - 32px);">
+  <BaseModal :show="show" @close="$emit('close')" container-style="width: 440px; max-width: calc(100vw - 32px);">
     <template #title>
       <i class="fa-solid fa-shield-halved"></i> Pre-allow AGY Commands
     </template>

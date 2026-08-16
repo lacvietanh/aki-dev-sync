@@ -6,7 +6,7 @@
       <AppHeader />
 
       <div class="dashboard-main" :class="{ 'is-right-dock': rightDockActive }">
-        <!-- dashboard-left: project list column. Capped at 420px in right-dock, full-width in narrow. -->
+        <!-- dashboard-left: project list column. Capped at 440px in right-dock, full-width in narrow. -->
         <div class="dashboard-left">
           <AgentUsageSection />
           <ProjectTable />

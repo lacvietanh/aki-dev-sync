@@ -7,9 +7,9 @@
 import { ref } from 'vue'
 
 /** Main view cap in right-dock mode. The terminal column takes everything to the right via flex:1 — no fixed width or drag splitter. SSoT: main.css reads --main-view-max-width back from here. */
-export const MAIN_VIEW_MAX_WIDTH = 420
+export const MAIN_VIEW_MAX_WIDTH = 440
 
-/** Right-dock engages at 900px: the main view gets its 420px cap and the terminal fills the rest. Deliberately separate from the 700px narrow-mode breakpoint (different meaning, not the same constant). */
+/** Right-dock engages at 900px: the main view gets its 440px cap and the terminal fills the rest. Deliberately separate from the 700px narrow-mode breakpoint (different meaning, not the same constant). */
 export const RIGHT_DOCK_BREAKPOINT = 900
 
 export const rightDockActive = ref(false)

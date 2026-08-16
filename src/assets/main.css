@@ -134,7 +134,7 @@ a {
   flex-direction: row;
 }
 
-/* Direct children: AgentUsageSection + ProjectTable (fill column) and optional LogStack below in right-dock mode. Declared as a CSS container so child components use @container main-view queries instead of @media — that way the 700px narrow breakpoint fires on the container width (420px in right-dock), not on window.innerWidth (1920px), which would leave them in a permanently-wide layout. */
+/* Direct children: AgentUsageSection + ProjectTable (fill column) and optional LogStack below in right-dock mode. Declared as a CSS container so child components use @container main-view queries instead of @media — that way the 700px narrow breakpoint fires on the container width (440px in right-dock), not on window.innerWidth (1920px), which would leave them in a permanently-wide layout. */
 .dashboard-left {
   flex: 1;
   display: flex;
@@ -147,7 +147,7 @@ a {
 
 /* Right-dock mode: left column gets max-width cap and a right-edge border instead of bottom border. */
 .dashboard-main.is-right-dock > .dashboard-left {
-  max-width: var(--main-view-max-width, 420px);
+  max-width: var(--main-view-max-width, 440px);
   border-bottom: none;
   border-right: 1px solid var(--border-card);
 }
@@ -1517,7 +1517,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   }
 }
 
-/* Container-width breakpoint: applies to content inside .dashboard-left (420px in right-dock mode). */
+/* Container-width breakpoint: applies to content inside .dashboard-left (440px in right-dock mode). */
 @container main-view (max-width: 700px) {
   .u-narrow-hide {
     display: none !important;
