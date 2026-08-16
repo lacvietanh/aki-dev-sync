@@ -88,8 +88,7 @@ import BaseModal from './BaseModal.vue'
 const props = defineProps({ show: { type: Boolean, default: false } })
 defineEmits(['close'])
 
-// Consequence of deleting each group, in the row itself - the alternative is a tooltip nobody opens
-// before clicking a destructive button.
+// Consequence of deleting each group, in the row itself - the alternative is a tooltip nobody opens before clicking a destructive button.
 const HINTS = {
   account: 'signs you out',
   data: 'history & transcripts',
@@ -144,8 +143,7 @@ function toggleOpen(id) {
 
 function toggleEntry(key) {
   selected.has(key) ? selected.delete(key) : selected.add(key)
-  // Changing what would be deleted must cancel a pending confirm, or the second click deletes a
-  // different set than the first click armed.
+  // Changing what would be deleted must cancel a pending confirm, or the second click deletes a different set than the first click armed.
   arming.value = false
 }
 
@@ -287,7 +285,7 @@ watch(
   line-height: 1;
   cursor: pointer;
   padding: 0;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .pick.all,

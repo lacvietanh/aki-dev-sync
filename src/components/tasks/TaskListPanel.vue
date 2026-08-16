@@ -153,8 +153,7 @@ function submitNew() {
   newTitle.value = ''
 }
 
-// utils/clipboard.js, not `navigator.clipboard` directly: the companion is a non-secure context
-// where that API does not exist, so this button was silently dead on the phone.
+// utils/clipboard.js, not `navigator.clipboard` directly: the companion is a non-secure context where that API does not exist, so this button was silently dead on the phone.
 async function copyTaskText(task) {
   const text = task.detail ? `${task.title}\n${task.detail}` : task.title
   if (!(await copyText(text))) {
@@ -310,7 +309,7 @@ watch(
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .task-list-enter-active {
-  transition: all 0.25s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 .task-list-leave-active {
   transition: none !important;
@@ -365,7 +364,7 @@ watch(
   font-size: 10px;
   color: var(--text-darker);
   opacity: 0.35;
-  transition: all 0.12s;
+  transition: background 0.12s, opacity 0.12s, color 0.12s;
   border-radius: 4px;
   padding: 0;
   flex: none;
@@ -521,10 +520,7 @@ watch(
   background: rgba(239, 68, 68, 0.1);
 }
 
-/* Narrow mode (SSoT 700px, main.css). A task row carries seven fixed-width items around one
-   flexible title; at 420px the 10px gaps alone ate 50px and squeezed the title to a few
-   characters. Tightening the gaps and the row padding buys back ~60px without dropping a
-   control - the project rule forbids hiding state, and every icon here is a state. */
+/* Narrow mode (SSoT 700px, main.css). A task row carries seven fixed-width items around one flexible title; at 420px the 10px gaps alone ate 50px and squeezed the title to a few characters. Tightening the gaps and the row padding buys back ~60px without dropping a control - the project rule forbids hiding state, and every icon here is a state. */
 @media (max-width: 700px) {
   .task-item-row {
     gap: 5px;

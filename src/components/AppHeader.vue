@@ -232,7 +232,7 @@
             <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
               <i class="fa-brands fa-github"></i> GitHub Repository
             </a>
-            <a href="#" @click.prevent="openLink(DONATE_URL)" class="icon-dropdown-item" style="color: #f87171;">
+            <a href="#" @click.prevent="openLink(DONATE_URL)" class="icon-dropdown-item donate-link">
               <i class="fa-solid fa-heart"></i> Donate to AkiDevSync
             </a>
           </div>
@@ -257,7 +257,7 @@
           <span class="badge-dot"></span>
         </button>
         <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
-          <i class="fa-solid fa-note-sticky" :style="noteContent ? 'color: #f59e0b;' : ''"></i>
+          <i class="fa-solid fa-note-sticky" :class="{ 'has-note': noteContent }"></i>
           <TaskCountBadges :pinned="globalNoteSummary.doing" :open="globalNoteSummary.todo" />
         </button>
         <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="openLink(DONATE_URL)" title="Donate - support development">
@@ -389,8 +389,7 @@ const { openSshConfig } = useSsh();
 const { anySyncing, anyRefreshing, isReloading, Toast } = useProjects();
 const { openIntroModal } = useIntro();
 
-// Remote Control section (host-only — hidden on a companion via remoteAvailable). See
-// src/composables/useRemoteControl.js and docs/plan/done/remote-control.md §7.1.
+// Remote Control section (host-only — hidden on a companion via remoteAvailable). See src/composables/useRemoteControl.js and docs/plan/done/remote-control.md §7.1.
 const {
   available: remoteAvailable,
   running: remoteRunning,
@@ -583,8 +582,7 @@ function handleRefresh() {
   requestRefreshAll();
 }
 
-// The picker is in SLOTS because slots are what the user counts on screen; the store keeps ROWS,
-// the unit it has always persisted. These two are the whole translation - see usageTierStore.
+// The picker is in SLOTS because slots are what the user counts on screen; the store keeps ROWS, the unit it has always persisted. These two are the whole translation - see usageTierStore.
 const usageSlotCount = computed(() => rowsToSlots(tierCount.value));
 
 function onPickSlotCount(e) {
@@ -1118,7 +1116,7 @@ function onViewShortcut(e) {
   background-color: #ef4444;
   border-radius: 50%;
   border: 2px solid #131317;
-  animation: pulse-red 2s infinite;
+  animation: pulse-red 2s;
 }
 
 @keyframes pulse-red {
@@ -1231,7 +1229,7 @@ function onViewShortcut(e) {
   font-weight: 700;
   cursor: pointer;
   letter-spacing: 0;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .update-badge:hover {
@@ -1240,13 +1238,21 @@ function onViewShortcut(e) {
 }
 
 .pin-btn.active {
-  color: #ef4444;
+  color: var(--accent-red);
   background-color: rgba(239, 68, 68, 0.15);
   box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.4);
 }
 
 .pin-btn.active i {
   transform: rotate(45deg);
+}
+
+.icon-dropdown-item.donate-link {
+  color: var(--accent-red);
+}
+
+.fa-note-sticky.has-note {
+  color: var(--accent-amber);
 }
 
 @media (max-width: 700px) {

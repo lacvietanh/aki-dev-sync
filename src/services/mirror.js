@@ -17,8 +17,7 @@ import {
   appendProjectLogLines,
 } from '../store/logStore'
 
-// Build-time glob (Vite-only — this literal call is what Vite's plugin rewrites; do not make it
-// dynamic). §2.2 / §13.4.
+// Build-time glob (Vite-only — this literal call is what Vite's plugin rewrites; do not make it dynamic). §2.2 / §13.4.
 const mods = import.meta.glob('../store/*.js', { eager: true })
 
 function basename(path) {
@@ -50,6 +49,11 @@ const PER_SCREEN_KEYS = new Set([
   'terminalTabsStore.activeTerminalTabId',
   // Which tab GROUP a screen is in — same per-screen reasoning as activeTerminalTabId.
   'terminalTabsStore.activeTerminalScope',
+  // SSH modal & editor state is per-screen navigation
+  'sshStore.showSshModal',
+  'sshStore.sshConfigText',
+  'sshStore.hasSshUndo',
+  'sshStore.hasSshRedo',
 ])
 
 const STATE = new Map() // "<store>.<ref>" -> Ref
@@ -58,7 +62,7 @@ for (const [path, mod] of Object.entries(mods)) {
   const store = basename(path)
   for (const [name, val] of Object.entries(mod)) {
     const key = `${store}.${name}`
-    if (isRef(val) && !PER_SCREEN_KEYS.has(key)) STATE.set(key, val)
+    if (isRef(val) && !isReadonly(val) && !PER_SCREEN_KEYS.has(key)) STATE.set(key, val)
   }
 }
 
@@ -294,8 +298,7 @@ function applyFrame(frame) {
       if (isReadonly(target)) continue
       target.value = decode(encoded)
     }
-    // Order matters: full log values in `v` land first, appends on top of them, and only then the
-    // cursor — which is the host's state after both, so this screen is in step for the next frame.
+    // Order matters: full log values in `v` land first, appends on top of them, and only then the cursor — which is the host's state after both, so this screen is in step for the next frame.
     if (frame.a) applyLogAppends(frame.a)
     if (frame.s) appliedLogCursor = { global: frame.s.global || 0, projects: { ...(frame.s.projects || {}) } }
   } finally {
@@ -318,8 +321,7 @@ export function initMirror() {
       )
     }
 
-    // Full resync whenever our own socket to the relay (re)opens — covers both "we just
-    // reconnected after a drop" and the app's very first connection.
+    // Full resync whenever our own socket to the relay (re)opens — covers both "we just reconnected after a drop" and the app's very first connection.
     watch(connectionState, (s) => {
       if (s === 'open') broadcastFull()
     })
