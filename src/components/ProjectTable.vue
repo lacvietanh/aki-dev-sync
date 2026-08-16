@@ -96,8 +96,7 @@
                   </a>
                 </div>
                 <div class="project-paths">
-                  <!-- u-select-text (main.css): paths are copied by hand often enough that the
-                       app-wide no-selection default has to be lifted here. -->
+                  <!-- u-select-text: allow manual copying of project paths. -->
                   <span class="path-local u-select-text" :title="p.local_path"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
                   <span v-if="p.remote_host" class="path-remote" :title="`${p.remote_host}:${p.remote_path}`">
                     <i class="fa-solid fa-cloud text-amber mr-1"></i><select
@@ -156,8 +155,7 @@
                   <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
-                <!-- Open Popup — visibility is state (.is-open), not CSS :hover: a phone has no
-                     hover, so the popup was unreachable there. Hover still opens it on the Mac. -->
+                <!-- Open Popup: state-driven visibility (.is-open). -->
                 <div class="open-popup" :style="popupStyles[p.id]">
                   <div class="popup-header popup-header-wrap" :title="p.name">
                      <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
@@ -176,15 +174,11 @@
                            <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
                          </button>
                        </div>
-                       <!-- Everything below consumes the local path, so a missing volume greys the
-                            whole list (COPY above deliberately stays live — copying a path you are
-                            about to go fix is legitimate). `localBlocked` also treats a not-yet-loaded
-                            ideAvailability as UNAVAILABLE rather than available. -->
+                       <!-- Popup items disabled when local path is missing or IDE unavailable. -->
                        <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('finder', p.local_path)">
                          <i class="fa-solid fa-folder-open popup-item-icon popup-icon-amber"></i> Finder
                        </div>
-                       <!-- In-app first: it is the only one of the two that works from a phone,
-                            which is the whole reason the in-app terminal exists. -->
+                       <!-- In-app terminal option first for phone companion support. -->
                        <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openProjectTerminal(p)">
                          <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> In-App Terminal
                        </div>
@@ -200,11 +194,7 @@
                        <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
                          <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
                        </div>
-                       <!-- DEV/BUILD are ALWAYS rendered, disabled when nothing resolves - they used
-                            to be v-if'd out of the DOM, which silently removed the affordance from
-                            every project outside the three stacks system.rs detects a command for,
-                            with no visible route back to Project Settings' RUN COMMANDS field.
-                            docs/plan/done/dev-build-visibility.md -->
+                       <!-- DEV/BUILD buttons always rendered, disabled when command unconfigured. -->
                        <div class="popup-run-row">
                          <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getDevCmd(p) }" @click="!localBlocked(p) && getDevCmd(p) && runProjectDev(p, getDevCmd(p))" :title="runCmdTitle(p, getDevCmd(p), 'dev')">
                            <i class="fa-solid fa-terminal popup-item-icon popup-icon-green"></i> DEV
@@ -216,11 +206,7 @@
                      </div>
 
                      <!-- REMOTE -->
-                     <!-- The column itself is NOT gated on the sync switch: SSH Terminal, the remote
-                          IDE entries and COPY are ways to REACH the server, not rsync traffic, and
-                          hiding them was over-reach. Only Upload actually pushes files, so only it
-                          is gated (disabled + a tooltip that says why - hiding it would leave the
-                          user hunting for a menu item that used to be there). -->
+                     <!-- Remote items always accessible, only upload action is gated by sync switch. -->
                      <div v-if="p.remote_host && p.remote_path" class="popup-col-remote">
                        <div class="popup-section-label">
                          <span>☁️ REMOTE (SSH)</span>
@@ -228,8 +214,7 @@
                            <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
                          </button>
                        </div>
-                       <!-- In-app first, same reasoning as LOCAL's In-App Terminal above: the only one of the two
-                            that works from a phone. -->
+                       <!-- In-app SSH terminal first for companion support. -->
                        <div class="popup-item" @click="openProjectRemoteTerminal(p)">
                          <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> SSH Terminal (In-App)
                        </div>
@@ -269,10 +254,7 @@
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
               <div class="sync-cluster">
-                <!-- Only the sync-check switch disables the whole group now: while a sync is running
-                     one of PUSH/PULL turns into STOP (§3.6) and must stay clickable, and a disabled
-                     <fieldset> disables every control inside it regardless of the button's own
-                     :disabled. Everything that was disabled-while-syncing still is, per control. -->
+                <!-- Sync actions fieldset disabled when sync check is globally off. -->
                 <fieldset :disabled="!syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
                   <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                     <div class="dry-group-left">
@@ -299,9 +281,7 @@
                     <div class="dry-toggle-center" title="Toggle Dry Run">
                       <span class="dry-label">DRY</span>
                       <label class="switch switch-sm">
-                        <!-- :checked + @change (NOT v-model): a companion must not mutate its own
-                             mirrored `p.dry_run` — the host flips it via setDryRun and the new value
-                             mirrors back. On the host this is identical to the old v-model+save. -->
+                        <!-- DRY toggle change dispatches setDryRun to host. -->
                         <input type="checkbox" :checked="p.dry_run" :disabled="projectRuntime[p.id]?.syncing" @change="setDryRun(p.id, $event.target.checked)" />
                         <span class="slider"></span>
                       </label>
@@ -329,10 +309,7 @@
                   </div>
                 </fieldset>
 
-                <!-- LAST ACTION - two 8px in-flow lines, no separator, no "Never" placeholder
-                     (Extreme Narrow: absence of the state IS the "never synced" signal). NEVER
-                     position:absolute here - see the collision comment near the narrow-mode
-                     .dry-group rule below (an overhang there fights the next row's own content). -->
+                <!-- LAST ACTION status display lines. -->
                 <div v-if="p.last_sync_action" class="last-action" :title="`${p.last_sync_action} — ${p.last_sync_host || ''}`">
                   <div class="la-line"><span :class="p.last_sync_action.includes('PULL') ? 'la-pull' : 'la-push'">{{ p.last_sync_action }}</span> {{ formatTimeAgo(p.last_sync_time) }}</div>
                   <div v-if="p.last_sync_host" class="la-line la-host">{{ p.last_sync_host }}</div>
@@ -391,31 +368,21 @@ function handleCreateNew() {
   createNewProject(sshHosts);
 }
 
-// A project's stored host may no longer be in `~/.ssh/config` (config edited outside this app, or
-// `applySshHostsChange`'s migration dialog was declined). Dropping it from the option list would
-// make the select silently show blank while the underlying value is untouched — this keeps the
-// stored value visible and selected instead of discarding it.
+// Retain currently stored host even if missing from SSH config.
 function hostOptionsFor(p) {
   return p.remote_host && !sshHosts.value.includes(p.remote_host)
     ? [p.remote_host, ...sshHosts.value]
     : sshHosts.value;
 }
 
-// §3.6 — while a sync runs, the button for THAT direction is the STOP button: same button, changed
-// label + colour, no new element (UI Extreme Narrow). The direction is recorded by remoteActions
-// at the moment the sync is requested; without it (older runtime state, or a sync started before
-// this shipped) PUSH is assumed, since it is the direction every specific-file upload takes and the
-// one a mistaken `--delete` mirror is most feared on — better a STOP that is present than none.
+// During active sync, the active direction button becomes the STOP button.
 function isStop(p, direction) {
   const rt = projectRuntime.value[p.id];
   if (!rt?.syncing) return false;
   return (rt.syncDirection || 'push') === direction;
 }
 
-// C-4 (§3.22) — an unmounted volume is NOT "not a git repo": the user's next move is to mount the
-// drive, not to run `git init`, so it gets its own colour + tooltip on the SAME badge. The flag is
-// produced by get_git_info (WS-2) and defaults false, so this renders exactly as before until it
-// lands.
+// Check if project local path is missing on disk.
 function isPathMissing(p) {
   return projectRuntime.value[p.id]?.local_path_missing === true;
 }
@@ -425,20 +392,14 @@ watch([projects, iconTimestamp], () => {
   failedIcons.value = {};
 });
 
-// { [projectId]: styleObject } — COMPONENT-LOCAL on purpose. This used to live on
-// `projectRuntime`, which is a mirrored store ref: every hover on the Mac broadcast a style delta
-// that overwrote the phone's own popup position (two screens, two different viewports, one field),
-// and the write also resurrected the runtime entry of a project that had just been removed. Where
-// a popup sits on screen is per-screen presentation, so it never belongs on the wire.
+// Per-screen popup placement styles (local ref to prevent multi-device wire bleed).
 const popupStyles = ref({});
 
-// Which project's popup is open — at most one, app-wide. `openedByTap` distinguishes a pinned
-// popup (tapped/clicked open) from a hover-open one, so leaving with the mouse closes the second
-// but not the first.
+// Active open popup project ID and tap-pinned flag.
 const openPopupId = ref(null);
 const openedByTap = ref(false);
 
-// Popup is `position: fixed`, so viewport coordinates are the right frame of reference. It is centered on the TRIGGER button's own horizontal midpoint (clamped to a small viewport margin so it never crops against an edge), not on the window's midpoint - centering on the window instead of the trigger made the popup drift away from its OPEN button on anything wider than a narrow phone-sized viewport, landing it in the middle of the whole app with no visible link back to the row that opened it. The popup element is already in the DOM at `visibility: hidden` (not `display: none`) when this fires, so its real rendered width can be measured before it becomes visible.
+// Fixed-position popup calculator centered on trigger button midpoint.
 function positionPopup(project, wrapperEl) {
   if (!wrapperEl) return;
   const rect = wrapperEl.getBoundingClientRect();
@@ -466,10 +427,7 @@ function openPopup(project, wrapperEl, byTap) {
   positionPopup(project, wrapperEl);
   openPopupId.value = project.id;
   openedByTap.value = byTap;
-  // Re-probe which IDEs are installed, but TTL-cached (useProjectConfig.js): this fires on HOVER
-  // too, and sweeping the mouse down the OPEN column used to send one invoke per row plus one
-  // mirrored-ref write per row. IDE availability changes on the timescale of an app install, not a
-  // hover, so the cache makes hovering free while still catching an install within a minute.
+  // TTL-cached IDE availability refresh on popup open.
   refreshIdeAvailability();
 }
 
@@ -479,7 +437,7 @@ function closePopup() {
 }
 
 function onOpenHover(project, event) {
-  // A tap on a touch device also fires mouseenter first; the click that follows only promotes the already-open popup to "pinned" (see toggleOpenPopup), it never re-toggles it shut.
+  // Tapping promotes an open popup to pinned without closing it.
   if (openPopupId.value === project.id && openedByTap.value) return;
   openPopup(project, event?.currentTarget, false);
 }
@@ -496,9 +454,7 @@ function toggleOpenPopup(project, event) {
   openPopup(project, event?.currentTarget?.closest('.open-popup-wrapper'), true);
 }
 
-// Dismissal for the tap path (a phone has no "move the mouse away"). Registered only while a popup
-// is open, and `pointerdown` fires before the `click` that opened it has been dispatched, so the
-// opening gesture can never close it again.
+// Document pointerdown dismissal for touch devices.
 function onDocPointerDown(e) {
   if (!e.target.closest?.('.open-popup-wrapper')) closePopup();
 }
@@ -522,17 +478,14 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onDocKeydown);
 });
 
-// A null `ideAvailability` means "not asked yet", which must read as UNAVAILABLE, not available:
-// the old `ideAvailability && !ideAvailability.vscode` form left every IDE entry enabled until the
-// first check landed, so an early click launched nothing and said nothing.
+// Check if IDE availability probe is unready or missing.
 function ideMissing(name) {
   return !ideAvailability.value?.[name];
 }
 
 const PATH_MISSING_TITLE = 'Local folder missing on disk';
 
-/** Every LOCAL popup item consumes the project's directory, so a missing volume blocks all of them
- *  (COPY excepted — it is handled separately in the template and stays enabled). */
+/** Every LOCAL popup item consumes the project's directory, so a missing volume blocks all of them */
 function localBlocked(p, ide) {
   return isPathMissing(p) || (ide ? ideMissing(ide) : false);
 }
@@ -568,9 +521,7 @@ function onRowMouseDown(event) {
 function onRowDragOver(index, event) {
   if (dragFromIndex.value === null || dragFromIndex.value === index) return;
 
-  // Swap only once the pointer has crossed the target row's midpoint. Reacting on the row's edge
-  // instead produces a feedback loop: the swap moves the row back under the pointer, which
-  // immediately re-triggers the swap (visible as constant jitter).
+  // Swap rows only once pointer crosses target row midpoint.
   const rect = event.currentTarget.getBoundingClientRect();
   const threshold = rect.top + rect.height / 2;
   const fromIndex = dragFromIndex.value;
@@ -596,11 +547,7 @@ function onRowDrop(index) {
 function onRowDragEnd() {
   dragFromIndex.value = null;
   isHandleMouseDown.value = false;
-  // The drag itself already reordered the local `projects` ref in place (onRowDragOver) for
-  // instant visual feedback — that's the sanctioned optimistic mutation. The actual persist
-  // (PERSIST-1) goes through the id-based, host-resolved reorderProjects action instead of a bare
-  // saveProjectsList(), so a phone-initiated drag reorders the HOST's own `projects.value`, not
-  // just the phone's local copy.
+  // Persist optimistic drag reorder via host-resolved reorderProjects.
   reorderProjects(projects.value.map((p) => p.id));
 }
 
@@ -613,22 +560,20 @@ const IDE_LOCAL_ARGS = {
 
 async function openIdeLocal(ideName, path, projectId) {
   try {
-    // Terminal goes through a dedicated command (not `open -a Terminal <path>`) so it gets the same cold-start double-window fix as the SSH terminal.
+    // Terminal goes through a dedicated command to avoid cold-start double windows.
     if (ideName === 'terminal') {
-      // `owner` (S3/S4, docs/plan/done/terminal-ownership-model.md) is the spawn-origin tag — passed unconditionally, whether or not the backend actually manages to read a tty back for it.
       await registerExternalTerminalLaunch({ owner: projectId ?? null, path });
       return;
     }
     const args = IDE_LOCAL_ARGS[ideName]?.(path)
     if (args) await invoke('macos_open', { args });
   } catch (e) {
-    // `macos_open` now reports a non-zero `open` (missing app, unhandled URI) instead of always succeeding — surface it the same way openIdeRemote does, or the click stays silent.
     console.error(e);
     Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
   }
 }
 
-// DEV/BUILD launch into the in-app terminal (docs/plan/done/dev-build-in-app-launch.md, #7) — no invoke, no Toast, no in-flight guard: `openRunCommand` is synchronous frontend state plus a `pty_write`, and its own (scope, runKind) dedup is what makes a repeat click safe (focuses the existing DEV/BUILD tab instead of relaunching), which is a stronger guarantee than the old per-project in-flight Set ever gave (that guard reset the instant the invoke settled, so a second click a moment later still opened a second window).
+// Launch project DEV/BUILD commands in-app with tab deduplication.
 function runProjectCommand(project, cmd) {
   openRunCommand(project, cmd, 'build');
 }
@@ -637,9 +582,7 @@ function runProjectDev(project, cmd) {
   openRunCommand(project, cmd, 'dev');
 }
 
-// (host, path) -> absolute path. The remote $HOME never changes within a session, so a
-// resolved path is stable - cache it and pay the SSH round-trip at most once per host+path.
-// Only IDE-open needs this now (copy uses the raw path); the cache keeps repeated opens instant.
+// Cache remote resolved paths across repeated opens.
 const resolvedPathCache = new Map();
 
 async function resolveRemoteFullPath(host, path) {
@@ -651,12 +594,7 @@ async function resolveRemoteFullPath(host, path) {
   const cached = resolvedPathCache.get(key);
   if (cached) return cached;
 
-  // A failure RETHROWS rather than falling back to the raw path. The fallback produced
-  // `/~/project`, which every caller then embedded verbatim: `vscode://…/~/project` opens VSCode
-  // pointing at a directory that does not exist, and the user gets a broken window instead of an
-  // error. Rethrowing lets openIdeRemote's catch Toast the real SSH error. SSH Terminal takes the
-  // same path even though a remote shell would re-expand `~` itself — an unreachable host means
-  // that terminal would fail on connect anyway, so one consistent error beats a special case.
+  // Resolve full remote path via backend invoke or return cached result.
   const resolvedPath = await invoke('resolve_remote_path', { host, path });
   const full = resolvedPath.startsWith('/') ? resolvedPath : `/${resolvedPath}`;
   resolvedPathCache.set(key, full);
@@ -670,8 +608,7 @@ function flashCopied(key) {
   setTimeout(() => { if (copiedPathKey.value === key) copiedPathKey.value = null; }, 1500);
 }
 
-// utils/clipboard.js owns the non-secure-context fallback (the phone companion is plain http, where
-// `navigator.clipboard` does not exist at all); this only decides what the user sees on failure.
+// Copy path string with non-secure-context fallback for mobile companion.
 async function copyPath(text, flashKey) {
   if (await copyText(text)) flashCopied(flashKey);
   else Toast.fire({ icon: 'error', title: 'Could not copy - select the path in the row and copy it by hand' });
@@ -681,17 +618,12 @@ async function copyLocalPath(project) {
   return copyPath(project.local_path, `local-${project.id}`);
 }
 
-// Copies the stored remote path verbatim - mirror copyLocalPath. `~` is a valid, portable path on
-// the remote (shells/scp/rsync expand it there), so copying it needs zero network work. The old
-// code awaited resolveRemoteFullPath here, which fired a blocking SSH `echo $HOME` per click
-// (system.rs) and froze the UI for seconds - for an operation that is just "copy an existing field".
+// Copy remote path string directly to clipboard without SSH lookup.
 async function copyRemotePath(project) {
   return copyPath(project.remote_path, `remote-${project.id}`);
 }
 
-// Pulls REPORT.html from the remote first if it's newer than the local copy (or local has none),
-// then opens the local file in the OS default browser - REPORT.html is a self-contained HTML/JS/CSS
-// page (akihtmlreport skill output) that the app's own strict CSP would otherwise break.
+// Pull latest REPORT.html if needed and open in system browser.
 async function openReportHtml(project) {
   try {
     const path = await invoke('resolve_report_html', {
@@ -700,10 +632,7 @@ async function openReportHtml(project) {
       remotePath: project.remote_path || null,
     });
     await invoke('macos_open', { args: [path] });
-    // The browser window opens on the MAC - which is invisible from a phone, so the tap looked
-    // like it did nothing. `nativeWindow` is useAppWindow's existing "this screen owns the real
-    // window" capability (false on a companion), reused here so no `isHost` token leaks into a
-    // component (ENV-1).
+    // Notify user when report is opened on Mac host.
     if (!nativeWindow) Toast.fire({ icon: 'success', title: 'Report opened on the Mac' });
   } catch (e) {
     console.error('Failed to open REPORT.html', e);
@@ -729,7 +658,6 @@ async function openIdeRemote(ideName, host, path, projectId) {
     } else if (ideName === 'vscode_insiders') {
       await invoke('macos_open', { args: [`vscode-insiders://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else {
-      // owner only matters to the 'terminal' branch (S3/S4) — 'antigravity' ignores it, and passing it unconditionally needs no branch here either, matching `tag_terminal_launch`'s own shape.
       await invoke('open_remote_subprocess', { ideName, host, path: remotePath, owner: projectId ?? null })
       if (ideName === 'terminal') scheduleExternalTermRescan();
     }
@@ -743,10 +671,7 @@ async function openUrl(url) {
   try { await invoke('macos_open', { args: [url] }); } catch (e) { console.error(e); }
 }
 
-// resolved = (override ?? '').trim() || stackDefault || ''. A present-but-blank override is the
-// same as no override: the text field in Project Settings cannot express null once touched, so
-// typing then deleting persists Some(""), and that must keep falling through to the detected stack
-// default. docs/plan/done/dev-build-visibility.md
+// Read DEV command with fallback to detected stack info.
 function getDevCmd(p) {
   return (p.dev_cmd_override ?? '').trim() || projectRuntime.value[p.id]?.stack_info?.dev_cmd || ''
 }
@@ -755,9 +680,7 @@ function getBuildCmd(p) {
   return (p.build_cmd_override ?? '').trim() || projectRuntime.value[p.id]?.stack_info?.build_cmd || ''
 }
 
-// Tooltip is the only thing carrying WHY a run button is dead (UI Extreme Narrow: no extra label).
-// Missing local folder wins over "no command" - it blocks every LOCAL item, and its wording must
-// stay identical to the other blocked items'.
+// Tooltip explaining disabled run button state.
 function runCmdTitle(p, cmd, kind) {
   return localTitle(p) || cmd || `No ${kind} command detected — set one in Project Settings`
 }
@@ -775,21 +698,12 @@ function formatTimeAgo(timestamp) {
 <style scoped>
 .projects-table-container {
   width: 100%;
-  /* project-info | tasks | git | last-sync | action (OPEN + select-push) | sync (PUSH/DRY/PULL + LOG + gear) */
-  /* Extra width goes mostly to the project name/path column (2fr) instead of all of it to sync as
-     before: the name and the two paths are what actually get ellipsis-truncated. Sync keeps a
-     plain 1fr share rather than a fixed px so its real button cluster (PUSH/DRY/PULL + LOG + gear)
-     can never be clipped by a guessed number - a bare `1fr` track is `minmax(auto, 1fr)` under the
-     hood, so its floor is the cluster's own min-content width, not a guessed rem value. An earlier
-     revision spelled this out as `minmax(6rem, 1fr)`, but an explicit length there REPLACES that
-     auto floor instead of adding to it - once the project column above started actually competing
-     for space (2fr), sync was regularly squeezed below 6rem's worth of guessed content, and the
-     buttons/badges inside it visibly crowded and overlapped. */
+  /* Table layout columns */
   --grid-cols: minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr;
   --grid-gap: 0.5rem;
 }
 
-/* .grid-header and every .grid-row used to be independent `display: grid` boxes that each just happened to share the same --grid-cols value; a content-sized track (a bare `1fr` == `minmax(auto, 1fr)`, needed by the SYNC column so its PUSH/DRY/PULL/LOG/gear cluster is never guessed too small - see the f6ebc4a/a3b46709 history above) computes its auto-floor from only the min-content of items inside that ONE grid, so the header's short "SYNC" label and a row's full button cluster picked different real pixel widths for the same column - the header/body misalignment reported. Making `.projects-grid` the one real grid and every `.grid-header`/`.grid-row` a `subgrid` of it (via `display: contents` on the non-visual `.grid-body` wrapper in between) forces a single, shared auto-floor computed once across all of them, so alignment can't drift no matter what any individual row's content needs. */
+/* Shared subgrid for header and rows to align column track widths across the entire table. */
 .projects-grid {
   display: grid;
   grid-template-columns: var(--grid-cols);
@@ -823,19 +737,14 @@ function formatTimeAgo(timestamp) {
   text-align: center;
 }
 
-/* text-align:center only centers inline content - several cells hold block-level children
-   (badges, stacked divs) that ignore it. Flex-centering every non-project column is the only
-   way that's actually reliable for both the label row and the row content below it. The
-   project-info column is deliberately excluded: it's left-aligned by design and already has
-   its own internal flex layout (project-info-row) plus a space-between header
-   (.col-project-info-header) that a blanket rule here would fight with. */
+/* Flex-centering for non-project header and row cells. */
 .grid-header-cell:not(:first-child) {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* `display: contents`: the transition-group's own wrapper div carries no visual styling of its own (no border/background/hover), so removing its box is free - it just needs to stop being an extra layer between `.projects-grid` and each `.grid-row`, so every row becomes a direct subgrid child of the one real grid above instead of a grandchild the column tracks can't reach. */
+/* display: contents on transition-group wrapper to preserve subgrid relationship. */
 .grid-body {
   display: contents;
 }
@@ -877,15 +786,13 @@ function formatTimeAgo(timestamp) {
   justify-content: center;
 }
 
-/* The TERM header label IS the global-terminal button (R1) — same colour/size as the other header labels, no button chrome until hover. Since S5 (docs/plan/done/terminal-ownership-model.md §7) it is the SAME `TerminalScopeButton` component every per-project cell uses (`scope="GLOBAL_SCOPE"`), so the header instance cannot visually drift from the cell instance — no header-only class needed; `.grid-header-cell:not(:first-child)`'s flex-centering below already centers it like every other header cell. */
-
 .grid-header-cell:first-child,
 .grid-row-cell:first-child {
   padding-left: 6px;
   text-align: left;
 }
 
-/* Persistent (not hover-only) glow so New Project still reads as the primary create action at a glance. */
+/* Persistent glow for new project action button. */
 .col-project-info-header {
   display: flex;
   align-items: center;
@@ -918,8 +825,7 @@ function formatTimeAgo(timestamp) {
   gap: 2px;
 }
 
-/* Icon + name/path block row (moved out of an inline style so the narrow media query below can
-   reach the gap - RULE-ui-pattern: no styling logic stranded in inline attributes). */
+/* Project icon and text column container. */
 .project-info-row {
   display: flex;
   align-items: center;
@@ -932,7 +838,7 @@ function formatTimeAgo(timestamp) {
   padding-right: 6px;
 }
 
-/* Drag handle: the project icon area */
+/* Drag handle style */
 .project-drag-handle {
   position: relative;
   width: 28px;
@@ -954,12 +860,11 @@ function formatTimeAgo(timestamp) {
   pointer-events: none;
 }
 
-/* Dotted overlay on hover — the affordance that says this icon can be dragged. */
+/* Drag affordance overlay */
 .project-drag-handle::before {
   content: '';
   position: absolute;
   inset: 0;
-  /* Dim wash over the icon image. */
   background-color: rgba(0, 0, 0, 0.45);
   background-image:
     radial-gradient(circle, rgba(255, 255, 255, 0.8) 1.2px, transparent 1.2px);
@@ -969,7 +874,6 @@ function formatTimeAgo(timestamp) {
   transition: opacity 0.15s;
   pointer-events: none;
   border-radius: 6px;
-  /* Sits above the icon image. */
   z-index: 1;
 }
 
@@ -981,13 +885,11 @@ function formatTimeAgo(timestamp) {
   cursor: grabbing;
 }
 
-
 .row-dragging {
   opacity: 0.4;
 }
 
-/* Children must not take mouse events while a drag is running, or WebKit never registers the drop
-   on .grid-row itself. */
+/* Suppress pointer events on children during active drag. */
 .projects-grid.dragging-active .grid-row * {
   pointer-events: none;
 }
@@ -997,9 +899,7 @@ function formatTimeAgo(timestamp) {
   transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-/* R6: LAST ACTION now lives under the sync fieldset, not its own column. Wrapper stacks the
-   fieldset and the two-line action summary; the summary trims padding on .col-sync (see below)
-   to buy back the extra lines' height. */
+/* LAST ACTION summary stacked under sync fieldset. */
 .sync-cluster {
   display: flex;
   flex-direction: column;
@@ -1018,7 +918,7 @@ function formatTimeAgo(timestamp) {
   max-width: 100%;
 }
 
-/* Colour-only PUSH/PULL distinction - no separate badge element (Extreme Narrow). Must match the PUSH/PULL buttons themselves (main.css .btn-tech-push is orange/#FF8C00 == --accent-amber, .btn-tech-pull is blue/#0088ff, closest existing var is --accent-cyan) - these were swapped (push showed cyan, pull showed amber) so LAST ACTION read as the opposite colour of the button that just fired. */
+/* Action status colors matching PUSH (amber) and PULL (cyan) variants. */
 .la-push {
   color: var(--accent-amber);
 }
@@ -1031,9 +931,7 @@ function formatTimeAgo(timestamp) {
   color: rgba(255, 255, 255, 0.35);
 }
 
-/* Row-height buy-back for the two new LAST ACTION lines: SYNC cell had 6px top/bottom padding
-   (.grid-row-cell's default), trimmed to 3px here; .dry-group's own 2px main.css padding trimmed
-   to 1px too. Net row growth measured against the ~47px project-info cell stays within ~5px. */
+/* Compact cell padding for sync cluster. */
 .grid-row-cell.col-sync {
   padding-top: 3px;
   padding-bottom: 3px;
@@ -1083,10 +981,7 @@ fieldset:disabled .switch {
   margin-left: 0;
 }
 
-/* .open-popup-wrapper / .open-popup / .popup-item / .popup-disabled / .popup-run-row are promoted
-   to main.css (docs/plan/done/terminal-chrome-settings.md §8.2) — TerminalChromeMenu.vue's second
-   call site fired Rule of Three. What stays here is project-specific: the header, the DEV/BUILD run
-   button styling, and the icons. */
+/* Project-specific open popup header and button styles. */
 .popup-header {
   font-size: 11px;
   font-weight: 700;
@@ -1126,11 +1021,7 @@ fieldset:disabled .switch {
   color: var(--accent-cyan, #00d2ff);
 }
 
-/* DEV/BUILD are the one disabled state whose reason is NOT self-evident from the row itself ("no
-   command detected" vs. a missing folder that greys the whole LOCAL list), so their `title` has to
-   survive: `pointer-events: none` above removes the element from hit-testing entirely, which also
-   suppresses the native tooltip. Both click handlers no-op on the same condition, so remaining
-   hit-testable cannot run anything. */
+/* Keep tooltips accessible on disabled run buttons. */
 .popup-item.popup-run-btn.popup-disabled {
   pointer-events: auto;
 }
@@ -1169,9 +1060,7 @@ fieldset:disabled .switch {
   vertical-align: middle;
 }
 
-/* STOP state (§3.6) - the SAME PUSH/PULL button while that project is syncing, just red and
-   relabelled. No new element: the one control the user needs mid-panic is already under their
-   cursor. Two classes + scoped attribute, so it wins over .btn-tech-push/-pull in main.css. */
+/* STOP button state during active sync (red). */
 .btn-tech.btn-sync-stop {
   background-color: #ef4444;
   border-color: #7f1d1d;
@@ -1185,9 +1074,7 @@ fieldset:disabled .switch {
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.75);
 }
 
-/* C-4 (§3.22) - "local path not found" on the EXISTING git badge. Deliberately NOT the greyed-out
-   .git-no-repo look: the two states demand different actions (mount the drive vs. git init), so
-   they must not read the same. Amber = something is wrong and it is not git's fault. */
+/* Missing local path warning state on git badge (amber). */
 .btn-action-git.git-path-missing {
   filter: none;
   background: linear-gradient(135deg, #b45309, #78350f);
@@ -1195,7 +1082,7 @@ fieldset:disabled .switch {
   box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
 }
 
-/* DIVERGED state - orange outline only, zero extra space */
+/* DIVERGED state outline. */
 .dry-group.is-diverged {
   outline: 1px solid rgba(251, 146, 60, 0.5);
   border-radius: 6px;
@@ -1205,27 +1092,9 @@ fieldset:disabled .switch {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
 }
 
-/* Narrow mode (<=700px) - single shared breakpoint for the whole app (see
-   docs/plan/done/narrow-mode-and-ux-1.14.0.md, "Shared contract"). Label hiding uses the global
-   .u-narrow-hide / .u-wide-hide utilities from main.css; this block only covers layout that a
-   utility class can't express - column widths, gaps. */
+/* Narrow container layout adjustments (<=700px). */
 @container main-view (max-width: 700px) {
   .projects-table-container {
-    /* Project name column: 12rem -> 6.5rem (widened back up from an initial 4.8rem/40% guess  - 
-       that was too tight to show any of the remote path, this leaves a few characters visible).
-       GIT column: 2.5rem -> 1.7rem read as too tight against LAST, opened back up to 2.1rem.
-       TASKS column trimmed a touch (2.5rem -> 2.1rem) - it's just an icon+badge, was carrying
-       more blank space than it needed. Action column (OPEN + select-push) also narrows since
-       OPEN's label now hides at the same 700px breakpoint via u-narrow-hide.
-       Project column floor raised 6.5rem -> 7.5rem, and it now carries the flex weight (2fr) so a
-       wider phone/window spends the extra width on the name+paths, not on the sync cluster.
-       Sync track is a bare 1fr, not minmax(4.5rem, 1fr), for the identical reason the wide-mode
-       track above dropped its own fixed minimum: 4.5rem (72px) is smaller than this cluster's own
-       min-content even icon-only (PUSH ~34px + DRY ~21px + PULL ~34px + two 3px gaps + 8px padding
-       + 4px margin = ~107px for the fieldset alone, plus LOG ~29px and the gear button's fixed 28px
-       plus two 6px gaps from actions-wrapper = ~176px total) - a fixed length there overrides the
-       auto/min-content floor a bare 1fr gets for free, so the fixed-length version was shrinking
-       the whole cluster below its own icons and crushing PUSH/DRY/PULL/LOG/gear into each other. */
     --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem 1fr;
     --grid-gap: 0.4rem;
   }
@@ -1234,35 +1103,25 @@ fieldset:disabled .switch {
     gap: 6px;
   }
 
-  /* The project name/path block had unused padding trailing short names - tighten it so
-     ellipsis-truncated paths get a couple more characters of room instead of dead space. */
+  /* Tighter padding for project text column in narrow mode. */
   .project-text-col {
     padding-right: 0;
   }
 
-  /* PUSH/PULL lose their text label at this width - match them to the OPEN button's icon-only
-     footprint (10px) rather than the wider guess that was breaking the layout. The `.actions-wrapper`
-     prefix keeps this selector's specificity at or above the wide-mode rule above, so it wins here
-     without needing !important. */
+  /* Icon-only push/pull buttons in narrow mode. */
   .actions-wrapper .btn-tech-push,
   .actions-wrapper .btn-tech-pull {
     padding: 0 10px;
   }
 
-  /* OPEN/LOG lose their text label at this width too - collapse to the exact same 32px square
-     as the plain .btn-cell-trigger icon buttons (git/terminal/tasks/settings) instead of a
-     bespoke padding guess, so all six row controls read as one family, not five widths. */
+  /* Compact 32px square buttons for OPEN/LOG in narrow mode. */
   .actions-wrapper .btn-action-open,
   .btn-log-trigger {
     width: 32px;
     padding: 0;
   }
 
-  /* Every attempt to hang DRY off the bottom edge (position: absolute, overlapping the row's
-     border) ended up colliding with the row below it - nothing anchored to a row's own box can
-     overlap outside it without fighting that next row's own positioned content for paint order.
-     Kept in normal flow instead: small, but a real flex item between PUSH and PULL, so it can
-     never visually merge with anything else. */
+  /* DRY run toggle in-flow placement. */
   .dry-group {
     margin: 0 2px;
     gap: 3px;
@@ -1275,9 +1134,7 @@ fieldset:disabled .switch {
     padding: 0;
   }
 
-  /* The DRY toggle is squeezed hard here so PUSH/PULL's count badges (CountBadgeWrap, a 6px
-     overhang past each button's top-right corner — main.css .cell-badge) have room to sit without
-     overlapping the "DRY" text. */
+  /* Compact DRY toggle spacing. */
   .dry-toggle-center {
     padding: 0 2px;
   }
@@ -1292,9 +1149,7 @@ fieldset:disabled .switch {
     height: 8px;
   }
 
-  /* Ball must be vertically centered in the 8px track: (8 - 6) / 2 = 1px on each side.
-     The base .switch-sm rule (main.css) uses bottom: 2px, sized for the 12px track - left
-     uncorrected here, the ball sat flush against the top edge instead of centered. */
+  /* Vertically centered slider toggle ball in narrow track. */
   .dry-toggle-center .switch-sm .slider:before {
     height: 6px;
     width: 6px;
@@ -1306,14 +1161,12 @@ fieldset:disabled .switch {
     transform: translateX(8px);
   }
 
-  /* GIT sits noticeably closer to TERM than the gap elsewhere reads as needing - pull TERM left
-     a touch rather than shrinking --grid-gap globally (that would also tighten TERM↔ACTION and
-     ACTION↔SYNC, which need the opposite). */
+  /* Slight margin adjustment between GIT and TERM columns. */
   .col-terminal {
     margin-left: -6px;
   }
 
-  /* LAST ACTION font-size in narrow mode (was 7px - bumped to 9px for legibility) */
+  /* LAST ACTION font-size in narrow mode (9px). */
   .last-action {
     font-size: 9px;
     line-height: 1.2;

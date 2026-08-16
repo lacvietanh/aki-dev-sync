@@ -1,11 +1,7 @@
 <template>
   <div class="task-cell-wrapper">
     <!-- Trigger button: tasks icon + open-count badge -->
-    <!-- Not writable (unmounted volume, corrupt file): the button MUTES and its tooltip carries the
-         reason, and the badges render nothing at all rather than `0` — a zero is a claim ("this
-         project has no tasks") and we do not know that; we know we could not read the file. Reusing
-         the class binding and the title the button already had, per Extreme Narrow: no banner, no
-         extra row, no new element. -->
+    <!-- Muted state with tooltip when project notes are not writable (UI Extreme Narrow). -->
     <button
       class="btn-cell-trigger"
       :class="{ 'is-attention': writable && summary.doing > 0, 'is-muted': !writable }"
@@ -43,8 +39,7 @@ const summary = computed(() => {
 </script>
 
 <style scoped>
-/* Geometry and states come from main.css's .btn-cell-trigger pattern (shared with TerminalScopeButton.vue,
-   which used to hold a byte-identical copy of it). Nothing left to say locally. */
+/* Wrapper for shared .btn-cell-trigger button pattern (main.css). */
 .task-cell-wrapper {
   display: inline-flex;
 }
