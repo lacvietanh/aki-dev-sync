@@ -27,19 +27,11 @@ pub struct IdeAvailability {
 
 /// The single answer in this app to "is this string safe to hand to `ssh`/`rsync` as a host".
 ///
-/// Two separate dangers, which is why an empty allowlist is the wrong shape and a leading `-` is
-/// rejected on its own line:
-///   1. A host reaching a *shell* string (`ssh host 'cmd'` built by hand) could carry `;` or
-///      `$(…)`. The character allowlist closes that.
-///   2. A host reaching `ssh` as a bare **argv element** never touches a shell - but `ssh` parses
-///      its own argv, so a value beginning with `-` is read as an *option*, not a hostname.
-///      `-oProxyCommand=…` makes ssh run that command **locally on this Mac**. Every character in
-///      it is alphanumeric/`.`/`-`/`=`, so the allowlist alone would wave it through; `=` not being
-///      allowed happens to stop today's exact payload, but the class is "argv that looks like a
-///      flag", so it is rejected explicitly rather than by lucky side effect.
+/// Two separate dangers, which is why an empty allowlist is the wrong shape and a leading `-` is rejected on its own line:
+///   1. A host reaching a *shell* string (`ssh host 'cmd'` built by hand) could carry `;` or `$(…)`. The character allowlist closes that.
+///   2. A host reaching `ssh` as a bare **argv element** never touches a shell - but `ssh` parses its own argv, so a value beginning with `-` is read as an *option*, not a hostname. `-oProxyCommand=…` makes ssh run that command **locally on this Mac**. Every character in it is alphanumeric/`.`/`-`/`=`, so the allowlist alone would wave it through; `=` not being allowed happens to stop today's exact payload, but the class is "argv that looks like a flag", so it is rejected explicitly rather than by lucky side effect.
 ///
-/// Must be called at EVERY boundary where a persisted host becomes a process argument - the
-/// frontend is not trusted, and a companion device can send a project record directly.
+/// Must be called at EVERY boundary where a persisted host becomes a process argument - the frontend is not trusted, and a companion device can send a project record directly.
 pub fn validate_remote_host(host: &str) -> Result<(), String> {
     if host.starts_with('-') {
         return Err(format!(
@@ -57,15 +49,9 @@ pub fn validate_remote_host(host: &str) -> Result<(), String> {
     }
 }
 
-/// Writes `contents` to `path` atomically: a temp file **in the same directory** (so the rename
-/// cannot cross a filesystem boundary and silently degrade to copy-then-truncate), then `rename`
-/// over the target.
+/// Writes `contents` to `path` atomically: a temp file **in the same directory** (so the rename cannot cross a filesystem boundary and silently degrade to copy-then-truncate), then `rename` over the target.
 ///
-/// The point is not tidiness. `fs::write` truncates first and writes after, so a crash, a forced
-/// quit, or a full disk between those two steps leaves the user's real file empty or half-written.
-/// Every file this app owns on the user's disk - the project list, the global note, Claude Code's
-/// own `settings.json` - is one where a truncated file loses data that was never the app's to lose.
-/// With `rename`, a reader either sees the whole old file or the whole new one, never a stump.
+/// `fs::write` truncates first and writes after, so a crash, a forced quit, or a full disk between those two steps leaves the user's real file empty or half-written. Every file this app owns on disk (`settings.json`, notes, project list) loses data on truncation. With `rename`, a reader either sees the whole old file or the whole new one, never a stump.
 pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
     let dir = path
         .parent()
@@ -86,25 +72,16 @@ pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String
     })
 }
 
-/// How many timestamped backups of any one file this app keeps. Enough to walk back through a few
-/// bad edits, small enough that the pile cannot grow without bound.
+/// How many timestamped backups of any one file this app keeps (enough to recover from bad edits while bounding disk usage).
 pub const BACKUP_KEEP: usize = 5;
 
 /// Deletes all but the newest [`BACKUP_KEEP`] files in `dir` whose name starts with `prefix`.
 ///
-/// Every `*.aki-bak-<unix_ts>` writer in this app stamps a NEW backup on EVERY write - deliberately,
-/// because a "back up once" scheme destroys the only copy on the second edit. The cost of that
-/// choice is an unbounded pile, and these particular files are not innocuous: `settings.json`
-/// carries a plaintext `ANTHROPIC_AUTH_TOKEN` and `.zshrc` carries whatever the user keeps in it,
-/// so every extra copy is another copy of a secret sitting in a world-readable home directory,
-/// kept forever. Retention closes that without giving up the per-write backup.
+/// Every `*.aki-bak-<unix_ts>` writer stamps a NEW backup on EVERY write (a "back up once" scheme destroys the only copy on second edit). Backed-up files may contain secrets (`settings.json` has `ANTHROPIC_AUTH_TOKEN`, `.zshrc` has user tokens), so retention prunes unbounded accumulation.
 ///
-/// Newest is decided by the numeric suffix after the last `-` (the writers' own timestamp), not by
-/// mtime - a copied file's mtime is not reliably its creation order. A name whose suffix does not
-/// parse sorts oldest, so a stray same-prefix file is pruned before any real backup is.
+/// Newest is decided by the numeric timestamp suffix after the last `-` (copied file mtime is not reliable creation order). Unparseable suffixes sort oldest.
 ///
-/// Best-effort throughout: this runs right after a backup the user's data depends on, and failing
-/// to prune must never be reported as failing to back up.
+/// Best-effort throughout: failing to prune must never be reported as failing to back up.
 pub fn prune_timestamped_backups(dir: &std::path::Path, prefix: &str, keep: usize) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
 
@@ -132,11 +109,7 @@ pub fn prune_timestamped_backups(dir: &std::path::Path, prefix: &str, keep: usiz
     }
 }
 
-/// Escapes a string for embedding inside an **AppleScript double-quoted literal**. This is the
-/// outermost layer only (the one `osascript` itself parses) - it says nothing about what the shell
-/// underneath will do with the result, which is `shell_quote`'s job. Newlines are escaped too: a
-/// raw newline inside an AppleScript string literal is a syntax error, and a directory name may
-/// legally contain one on APFS.
+/// Escapes a string for embedding inside an **AppleScript double-quoted literal** (outermost layer only; shell underneath is handled by `shell_quote`). Escapes newlines as well since raw newlines inside AppleScript string literals are syntax errors.
 fn applescript_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -144,30 +117,18 @@ fn applescript_escape(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
-/// Quotes `s` as ONE literal POSIX shell word. This is the single funnel every path, filename or
-/// other user-controlled string must pass through before being interpolated into a command string
-/// that a shell will parse - locally (Terminal.app / `$SHELL -ilc`) or remotely (the login shell
-/// `ssh` hands the command to).
+/// Quotes `s` as ONE literal POSIX shell word. Single funnel for all user-controlled paths/filenames interpolated into shell commands locally (Terminal.app / `$SHELL -ilc`) or remotely (`ssh`).
 ///
-/// Single quotes, not double: inside `"…"` the shell still honours `$`, `` ` `` and `\`, which is
-/// exactly how a directory named `it's $(id)` used to execute `id` (plan §2.2). Inside `'…'`
-/// **nothing** is special, so the only case to handle is a literal `'`, closed and reopened as
-/// `'\''`. Same semantics as the in-app terminal's `cd` helper (`usePtyTerminal.js`), kept
-/// identical on purpose so both paths behave the same for the same directory name.
+/// Uses single quotes (`'…'`) where nothing is special except `'` (escaped as `'\''`), avoiding command substitution exploits like `$(id)` (plan §2.2). Matches `usePtyTerminal.js` `cd` helper semantics.
 ///
-/// Reusable by any other module that builds a shell string (e.g. `sync.rs`'s remote `mkdir -p`).
+/// Reusable by any module building shell strings (e.g. `sync.rs` remote `mkdir -p`).
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Quotes a **remote** path for a remote shell while keeping a leading `~` / `$HOME` expandable by
-/// that shell - the one case plain `shell_quote` cannot serve, because the home directory is only
-/// known on the other end.
+/// Quotes a **remote** path for a remote shell while keeping a leading `~` / `$HOME` expandable by that shell (plain `shell_quote` cannot do this because the remote home directory is only known remotely).
 ///
-/// Only the leading segment is emitted unquoted (as `"$HOME"`, itself double-quoted so a home path
-/// containing spaces stays one word); everything after the first `/` is quoted literally. So a
-/// `$(…)`, backtick or quote *anywhere in the user's own text* is inert, and the sole expansion the
-/// remote shell performs is the one we deliberately asked for.
+/// Only the leading segment is emitted unquoted (as `"$HOME"`, double-quoted for paths with spaces); everything after the first `/` is quoted literally via `shell_quote`, making substitutions inert.
 pub fn shell_quote_remote_path(path: &str) -> String {
     if path == "~" || path == "$HOME" {
         return "\"$HOME\"".to_string();
@@ -184,9 +145,7 @@ pub fn shell_quote_remote_path(path: &str) -> String {
 ///
 /// Returns the new session's tty (`/dev/ttysNNN`, as AppleScript reports it - normalized by the caller), or `""` when it could not be read back. That empty string is not handled here: reading it is the ONE subprocess boundary where osascript's output enters this app (`docs/plan/done/terminal-ownership-model.md` §3/§8), so this is where a failure or an empty result is logged - a Mac run can then tell "the AppleScript contract broke" apart from "this session genuinely has no tty" from the log alone. What a caller DOES with an empty tty (nothing: the session simply stays untagged and today's cwd-adoption reading applies unchanged) is decided in exactly one place downstream, `tag_terminal_launch` - never re-branched here or at each call site.
 ///
-/// UNVERIFIED on this box (no `osascript` here): that `tty of t` resolves to a populated string in
-/// the same script that opened it, and that switching `.spawn()` to `.output()` only adds the
-/// AppleScript's own ~2s cold-start poll to this call's latency rather than a new failure mode.
+/// UNVERIFIED on this box (no `osascript` here): `tty of t` resolves to a populated string in the same script that opened it, and switching `.spawn()` to `.output()` adds the AppleScript ~2s cold-start poll to latency rather than a new failure mode.
 #[cfg(target_os = "macos")]
 fn open_terminal_with_command(shell_cmd: &str) -> Result<String, String> {
     let safe_cmd = applescript_escape(shell_cmd);
@@ -286,13 +245,9 @@ axWin.size = [w, targetH];
 
 /// Passes args directly to macOS `open`. JS is responsible for building the arg list.
 ///
-/// The exit status is READ, not discarded: `open` is the only thing that can tell us a
-/// `vscode://…` URI has no handler, or that the requested `.app` is not installed. The old
-/// `spawn()`-and-forget form always reported success, so a wrong URI (e.g. an unresolved remote
-/// path) looked identical to a working one at the call site.
+/// The exit status is READ, not discarded: `open` tells us if a `vscode://…` URI has no handler or `.app` is not installed (replacing old spawn-and-forget which masked errors).
 ///
-/// Waiting on a child is exactly the case CLAUDE.md's NEVER-BLOCK-THE-UI rule covers, hence
-/// `async fn` + `spawn_blocking`.
+/// Waiting on a child is wrapped in `async fn` + `spawn_blocking` per CLAUDE.md's NEVER-BLOCK-THE-UI rule.
 #[tauri::command]
 pub async fn macos_open(args: Vec<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -314,17 +269,9 @@ pub async fn macos_open(args: Vec<String>) -> Result<(), String> {
     .map_err(|e| format!("Failed to open: {}", e))?
 }
 
-/// `Err` unless `path` is an existing directory on this Mac.
+/// `Err` unless `path` is an existing directory on this Mac (Terminal.app `do script` cannot report cd failure back to the caller).
 ///
-/// Terminal.app's `do script` cannot report failure back to us: a `cd` into a path that is not
-/// there scrolls past inside a window that opened anyway, while the caller had already shown a
-/// success toast. Checking first is the only place the user can be told.
-///
-/// `is_dir()` is cheap on a healthy local disk, but a project path on an unmounted or wedged
-/// SMB/NFS volume makes it stall in the kernel for tens of seconds - which is why every command
-/// that calls this runs it inside `spawn_blocking` rather than on the IPC dispatch thread
-/// (stack-tauri A1). The rule's "a single Path::exists() is fine" carve-out assumes a local disk;
-/// a user-supplied project path carries no such guarantee.
+/// `is_dir()` on unmounted or wedged SMB/NFS volumes can stall for tens of seconds, so commands calling this must run inside `spawn_blocking` (stack-tauri A1).
 #[cfg(target_os = "macos")]
 fn ensure_local_dir(path: &str) -> Result<(), String> {
     if std::path::Path::new(path).is_dir() {
@@ -413,13 +360,9 @@ pub async fn open_remote_subprocess(
         "terminal" => {
             #[cfg(target_os = "macos")]
             {
-                // Two shell layers, quoted separately - the bug the old single-layer `'…"{}"…'`
-                // had was that a `'` in the path closed the outer quote and a `$(…)` inside the
-                // inner double quotes ran on the remote host.
-                // Inner: what the REMOTE login shell parses. `shell_quote_remote_path` keeps a
-                // leading `~` expandable there and freezes the rest.
-                // Outer: what the LOCAL Terminal shell parses, one `shell_quote`d argv item that
-                // ssh forwards intact. `host` is charset-validated above, so it needs no quoting.
+                // Two shell layers quoted separately to prevent injection where `'` in path closed outer quotes and ran `$(…)` remotely:
+                // - Inner: parsed by REMOTE login shell (`shell_quote_remote_path` keeps leading `~` expandable, quotes rest).
+                // - Outer: parsed by LOCAL Terminal shell (one `shell_quote`d argv item forwarded by ssh). `host` is charset-validated.
                 // AppleScript escaping is applied separately by `open_terminal_with_command`.
                 let qpath = shell_quote_remote_path(&path);
                 let remote_cmd = format!("mkdir -p {q} && cd {q} ; exec bash", q = qpath);
@@ -437,9 +380,7 @@ pub async fn open_remote_subprocess(
             let expanded = expand_remote_tilde(&path);
             // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox, custom profile setup, etc.) - not available in macOS GUI app's stripped PATH. Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-            // Same escaping as before, now routed through the shared helper instead of an inline
-            // copy of it. The path is an argument to the CLI, not something a remote shell
-            // re-parses, so it is quoted whole (no `$HOME` carve-out).
+            // Path is passed as a CLI argument, so it is quoted whole via `shell_quote` (no `$HOME` carve-out needed).
             let shell_cmd = format!(
                 "{}exec \"$AGY_BIN\" --remote 'ssh-remote+{}' {}",
                 AGY_BIN_RESOLVER_PREFIX,
@@ -473,16 +414,9 @@ ssh() {
 
 /// Reads a file that is about to be **rewritten from its own contents**, and refuses to guess.
 ///
-/// The only benign failure is `NotFound` - the file genuinely does not exist yet, so "" is the
-/// truthful prior content and creating it fresh is correct. Every other error (`PermissionDenied`,
-/// a device/IO fault, a path that is a directory, an interrupted read) means the current contents
-/// are *unknown*, and treating unknown as empty is how a read-modify-write turns into a silent
-/// truncation: the caller would append its snippet to nothing and write that over a file that was
-/// never read. `unwrap_or_default()` cannot tell those two cases apart, which is exactly why it
-/// must not be used at a read-then-rewrite site (plan §3.20).
+/// The only benign failure is `NotFound` (`""` truthful prior content). Any other error (`PermissionDenied`, IO fault, is directory) means contents are unknown; treating unknown as empty causes silent truncation on read-modify-write (plan §3.20).
 ///
-/// Returns the error as a user-facing string, because the user's only clue otherwise arrives much
-/// later, when their next terminal opens broken.
+/// Returns error as user-facing string since broken terminal config would only be noticed later.
 fn read_for_rewrite(path: &std::path::Path) -> Result<String, String> {
     match std::fs::read_to_string(path) {
         Ok(s) => Ok(s),
@@ -531,10 +465,7 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
         new_content.push_str(SSH_COLOR_MARKER_END);
         new_content.push('\n');
 
-        // Timestamped on every install, never "once ever". The old `if !backup_path.exists()`
-        // guard meant the first install kept a copy and every install after it destroyed whatever
-        // the user had hand-edited since, with no copy anywhere - the same defect already retired
-        // from the statusline installer.
+        // Timestamped on every install (not "once ever", which overwrote user hand-edits without backups on subsequent installs).
         if zshrc_path.exists() {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -568,9 +499,7 @@ fn find_akiclaudedoc_install_script(home: &str) -> Option<String> {
 
 /// Runs the local AkiClaudeDoc `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
 ///
-/// `async fn` + `spawn_blocking`: `open_terminal_with_command` now reads the AppleScript's stdout
-/// back via `.output()`, which blocks - same reason as `open_local_terminal`/`open_remote_subprocess`
-/// (stack-tauri A1).
+/// `async fn` + `spawn_blocking`: `open_terminal_with_command` reads AppleScript stdout via `.output()` which blocks (stack-tauri A1).
 #[tauri::command]
 pub async fn install_akiclaudedoc() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -768,9 +697,7 @@ pub async fn resolve_report_html(
         return Err("No REPORT.html found locally or on the remote.".to_string());
     }
     if remote_exists && (!local_exists || remote_mtime > local_mtime) {
-        // rsync over SSH: a blocking subprocess wait on the network. It must never run on the
-        // command-dispatch thread (CLAUDE.md, never-block-the-UI) - a slow or dead host would
-        // freeze the window for as long as rsync's own timeout.
+        // rsync over SSH is a blocking network wait; runs in `spawn_blocking` to avoid freezing the UI (CLAUDE.md never-block-the-UI).
         let (h, rp, lp) = (host.clone(), rpath.clone(), local_path.clone());
         tauri::async_runtime::spawn_blocking(move || {
             crate::sync::rsync_pull_file(&h, &rp, "REPORT.html", &lp)
@@ -799,10 +726,7 @@ pub async fn check_for_updates() -> Result<String, String> {
         let out = create_command("curl")
             .args([
                 "-s",
-                // Bounded on both ends. `spawn_blocking` keeps a hung request off the UI thread,
-                // but without a timeout that request still pins one OS thread forever - and this
-                // runs on every app launch, so a captive-portal-style blackhole leaks a thread per
-                // launch for the life of the process.
+                // Bounded timeouts prevent hanging captive-portals from pinning OS worker threads indefinitely on app launches.
                 "--connect-timeout", "5",
                 "--max-time", "15",
                 "-H", "User-Agent: aki-dev-sync",
@@ -840,8 +764,7 @@ fn is_nuxt_project(path: &std::path::Path) -> bool {
     path.join("nuxt.config.js").exists() || path.join("nuxt.config.ts").exists() || path.join(".nuxt").exists()
 }
 
-/// ~8 `exists()` probes on a user-supplied project path - cheap locally, but tens of seconds on a
-/// wedged network mount, so the command below runs it off the dispatch thread (stack-tauri A1).
+/// Probes project stack characteristics (`exists()` checks run off the dispatch thread in `spawn_blocking` per stack-tauri A1).
 #[tauri::command]
 pub async fn check_project_stack(local_path: String) -> ProjectStackInfo {
     tauri::async_runtime::spawn_blocking(move || check_project_stack_blocking(&local_path))
@@ -872,10 +795,7 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
     let (dev_cmd, build_cmd) = if is_tauri {
         (format!("{pm} {run_prefix}tauri dev"), format!("{pm} {run_prefix}build:app"))
     } else if is_nuxt || is_node {
-        // Nuxt and plain Node deliberately share one arm: Nuxt's own scaffold names its scripts
-        // `dev`/`build` exactly like any other Node project, so splitting them produced two
-        // byte-identical branches. `is_nuxt` is still reported separately in the returned struct -
-        // the UI labels the stack with it - it just does not change the commands.
+        // Nuxt and plain Node share dev/build commands; `is_nuxt` is still reported separately for UI stack labelling.
         (format!("{pm} {run_prefix}dev"), format!("{pm} {run_prefix}build"))
     } else {
         ("".to_string(), "".to_string())
@@ -899,31 +819,24 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
     }
 }
 
-// `run_project_command` (BUILD), `run_project_dev` (DEV) and their shared `run_in_project_terminal`
-// helper were removed 2026-07-30: DEV/BUILD now launch into the in-app terminal instead
-// (`docs/plan/done/dev-build-in-app-launch.md`), and these external-`Terminal.app` commands had no
-// remaining call site once `ProjectTable.vue` switched to `openRunCommand`.
+// `run_project_command` (BUILD) and `run_project_dev` (DEV) removed 2026-07-30: replaced by in-app terminal launch (`docs/plan/done/dev-build-in-app-launch.md`).
 
 // Spawn-origin ownership registry - see docs/plan/done/terminal-ownership-model.md §3-4, §9. Per-key removal only; never add a bulk clear (multi-entity regression guard).
 
-/// One tagged session: who launched it, and the pid pinned to it on first reconcile (closes the tty
-/// recycling gap - macOS can hand a closed tab's tty number to an unrelated new one).
+/// One tagged session: who launched it, and the pid pinned to it on first reconcile (closes the tty recycling gap on macOS).
 #[derive(Clone)]
 struct OwnedSession {
     owner: String,
     pid: Option<u32>,
 }
 
-/// `app.manage()`d in `lib.rs`. `Clone` (an `Arc` underneath) so a command can hand its own copy into
-/// `spawn_blocking` without holding the Tauri `State` guard across an `.await`.
+/// `app.manage()`d in `lib.rs`. Clones inner `Arc` to hand to `spawn_blocking` without holding Tauri `State` guard across `.await`.
 #[derive(Clone, Default)]
 pub struct TerminalOwnership {
     by_tty: Arc<Mutex<HashMap<String, OwnedSession>>>,
 }
 
-/// AppleScript's `tty of t` reports `/dev/ttysNNN`; `ps -axo tty=` reports the bare `sNNN` (or `??`
-/// for no controlling terminal). One normal form, used on both sides of every lookup, so a session
-/// tagged at launch is still found by the scan that reads it back.
+/// Normalizes tty name across AppleScript (`/dev/ttysNNN`) and `ps -axo tty=` (`sNNN` / `??`) so launch tags match scan lookups.
 fn normalize_tty(raw: &str) -> String {
     raw.strip_prefix("/dev/tty").map(str::to_string).unwrap_or_else(|| raw.to_string())
 }
@@ -970,16 +883,10 @@ fn reconcile_terminal_owners(state: &TerminalOwnership, row_of: &HashMap<u32, Ps
 }
 
 // ---------------------------------------------------------------------------
-// LIVE external-Terminal count (docs/feat/in-app-terminal.md, the `TERM` cell's bottom badge).
-//
-// Replaces a session-only "how many windows did WE open" counter, which could only ever grow: the
-// app can watch itself call `do script`, but never sees the user close that window. The count is
-// therefore not remembered at all - it is re-derived from the process table every few seconds, so
-// closing a window drops the badge on its own.
+// LIVE external-Terminal count (`docs/feat/in-app-terminal.md`, `TERM` cell bottom badge). Re-derived from process table every few seconds so closing windows drops the badge.
 // ---------------------------------------------------------------------------
 
-/// Trailing-slash-normalised directory string. `/a/b/` and `/a/b` are the same directory, and `lsof`
-/// and a user-typed project path do not agree on which form to use. Root stays `/`.
+/// Trailing-slash-normalized directory string so `lsof` and project paths match. Root stays `/`.
 fn normalize_dir(p: &str) -> &str {
     let t = p.trim_end_matches('/');
     if t.is_empty() {
@@ -991,30 +898,19 @@ fn normalize_dir(p: &str) -> &str {
 
 /// One row of the process table, as far as the external-terminal scan cares about it.
 ///
-/// `list_terminal_sessions` only ever needed pid -> ppid; `describe_terminal_sessions` needs enough
-/// to describe a session to a human (what is running, on which tty, for how long). Both are served
-/// by ONE `ps` invocation and ONE parser rather than two formats drifting apart - the badge and the
-/// detail modal must never be able to disagree about which processes exist.
+/// Shared by `list_terminal_sessions` (pid -> ppid) and `describe_terminal_sessions` (display details) via ONE `ps` invocation and parser so badge and detail modal never disagree.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct PsRow {
     pub pid: u32,
     pub ppid: u32,
-    /// `ps` prints `??` for a process with no controlling terminal. Kept verbatim: inventing
-    /// `"none"` here would just be a second spelling of the same fact.
+    /// `ps` prints `??` for a process with no controlling terminal (kept verbatim).
     pub tty: String,
     /// Elapsed run time exactly as `ps -o etime` formats it (`MM:SS`, `HH:MM:SS`, `D-HH:MM:SS`).
-    /// Not parsed into seconds: it is only ever displayed, and re-formatting it would be one more
-    /// place to get wrong for zero gain.
     pub etime: String,
     pub command: String,
 }
 
-/// Splits a `ps` line into its first `n` whitespace-delimited columns plus the untouched remainder.
-///
-/// Written as an offset walk rather than `split_whitespace().nth(n)` + `line.find(..)`: `find`
-/// returns the FIRST occurrence of that token anywhere in the line, and a command line very often
-/// repeats an earlier column (`ps` prints tty `s000` for a shell whose command contains `s000`,
-/// a pid appears inside `--pid=1234`). That would silently slice the command at the wrong byte.
+/// Splits a `ps` line into its first `n` whitespace-delimited columns plus remainder via offset walk (avoiding naive `find` which mis-slices when commands repeat tty or pid tokens).
 fn split_columns(line: &str, n: usize) -> Option<(Vec<&str>, &str)> {
     let mut cols = Vec::with_capacity(n);
     let mut rest = line.trim_start();
@@ -1026,11 +922,7 @@ fn split_columns(line: &str, n: usize) -> Option<(Vec<&str>, &str)> {
     Some((cols, rest))
 }
 
-/// Parses `ps -axo pid=,ppid=,tty=,etime=,command=` output.
-///
-/// The first four columns never contain whitespace; the remainder is the command line verbatim,
-/// spaces and all, which is precisely what must not be tokenised (a path with a space in it is
-/// ordinary on macOS).
+/// Parses `ps -axo pid=,ppid=,tty=,etime=,command=` output (first 4 columns whitespace-delimited; command remainder preserves spaces).
 fn parse_ps_rows(out: &str) -> Vec<PsRow> {
     let mut rows = Vec::new();
     for line in out.lines() {
@@ -1055,8 +947,7 @@ fn ppids_from_rows(rows: &[PsRow]) -> HashMap<u32, u32> {
     rows.iter().map(|r| (r.pid, r.ppid)).collect()
 }
 
-/// Parses `lsof -F pn` output into pid -> cwd. Field lines are `p<pid>` (starts a process set) then
-/// `n<path>` for the one fd we asked for (`-d cwd`).
+/// Parses `lsof -F pn` output into pid -> cwd (`p<pid>` header, `n<path>` for `-d cwd`).
 fn parse_lsof_cwds(out: &str) -> HashMap<u32, String> {
     let mut map = HashMap::new();
     let mut current: Option<u32> = None;
@@ -1074,8 +965,7 @@ fn parse_lsof_cwds(out: &str) -> HashMap<u32, String> {
     map
 }
 
-/// Every pid reachable downward from `roots` (Terminal -> login -> zsh -> whatever the user ran),
-/// roots excluded: Terminal.app's own cwd is not a shell standing anywhere.
+/// Every pid reachable downward from `roots` (Terminal -> login -> zsh -> user process), roots excluded.
 fn descendants_of(ppid_of: &HashMap<u32, u32>, roots: &[u32]) -> Vec<u32> {
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for (pid, ppid) in ppid_of {
@@ -1097,14 +987,10 @@ fn descendants_of(ppid_of: &HashMap<u32, u32>, roots: &[u32]) -> Vec<u32> {
     out
 }
 
-/// Defensive bound on the `lsof` argument list. A Terminal tree of more than this many processes is
-/// pathological; truncating keeps the command line (and the scan's cost) bounded.
+/// Defensive bound on `lsof` argument list to keep command line and scan cost bounded.
 const MAX_SCANNED_PIDS: usize = 200;
 
-/// Whether `pid` is the ROOT of its cwd subtree (its parent's cwd differs, or is unknown) - one
-/// window/tab, not each process inside it. `describe_terminal_sessions` always applied this test
-/// inline; extracted here so the new `list_terminal_sessions` (S1,
-/// docs/plan/done/terminal-ownership-model.md §10) shares it instead of copying it a second time.
+/// True if `pid` is the ROOT of its cwd subtree (parent cwd differs or is unknown) - represents one window/tab (S1, `docs/plan/done/terminal-ownership-model.md` §10).
 fn is_subtree_root(tree: &TerminalTree, pid: u32) -> bool {
     let Some(cwd) = tree.cwd_of.get(&pid) else { return false };
     let parent_same_cwd = tree
@@ -1116,11 +1002,7 @@ fn is_subtree_root(tree: &TerminalTree, pid: u32) -> bool {
     !parent_same_cwd
 }
 
-/// Compact per-session fact - no command line, no descendants - polled every 5s for the badge
-/// (`describe_terminal_sessions` is the on-demand detail call that adds those). Zero-argument by
-/// design: attributing a session to a project is now a frontend decision
-/// (`src/utils/terminalOwnership.js`, §3's priority rule), so the backend only reports what it knows -
-/// the session's own facts, plus the spawn-origin `owner` tag if one was recorded at launch.
+/// Compact per-session fact polled every 5s for the badge (`describe_terminal_sessions` provides on-demand details). Project attribution is decided in frontend (`src/utils/terminalOwnership.js`, §3 priority rule).
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct TerminalSessionSummary {
     pub pid: u32,
@@ -1130,9 +1012,7 @@ pub struct TerminalSessionSummary {
     pub owner: Option<String>,
 }
 
-/// Replaces `count_external_terminals` (docs/plan/done/terminal-ownership-model.md §10 S1/S2): same
-/// scan, same subtree-root rule, but returns the session inventory itself instead of pre-bucketing by
-/// a `paths` argument - bucketing moved to the frontend's pure attribution module.
+/// Replaces `count_external_terminals` (`docs/plan/done/terminal-ownership-model.md` §10 S1/S2): returns session inventory for frontend attribution.
 #[tauri::command]
 pub async fn list_terminal_sessions(
     state: tauri::State<'_, TerminalOwnership>,
@@ -1167,51 +1047,31 @@ pub async fn list_terminal_sessions(
 
 /// One external `Terminal.app` window/tab, as the detail modal shows it.
 ///
-/// "One session" is the SAME rule the badge counts by (`is_subtree_root`): the ROOT of a
-/// cwd subtree, i.e. the shell, not the four processes it spawned. Keeping one rule for both is what
-/// guarantees that **the sessions listed for a given project always match that project's badge** -
-/// a second, parallel definition of "a session" is exactly how the two would come to disagree.
+/// Uses the same `is_subtree_root` definition as the badge counter to guarantee listed sessions match project badges.
 ///
-/// The TOTALS are not comparable and are not meant to be: this list also includes sessions standing
-/// somewhere that is not a project at all (`project_path: None`), because "what else do I have
-/// open" is half the reason to open the modal. Only the per-project counts are the same fact.
+/// Also includes sessions standing outside known project paths (`project_path: None`) for the modal's global overview.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct ExternalTerminalSession {
     pub pid: u32,
     pub ppid: u32,
     pub tty: String,
     pub etime: String,
-    /// The session's own command - the login shell (`-zsh`), after `promote_past_login` has walked
-    /// down from macOS's `login -pf <user>` wrapper, which shares the shell's cwd and would
-    /// otherwise be what the subtree-root rule picks.
+    /// The session's command (e.g. `-zsh`), promoted past macOS `login -pf <user>` wrapper.
     pub command: String,
     pub cwd: String,
-    /// Which of the requested project paths this session's cwd matched, if any. `None` = a Terminal
-    /// window standing somewhere else entirely; still listed, because "what else is open" is half
-    /// the reason to open this modal.
+    /// Matched project path if any; `None` if terminal cwd is outside known projects.
     pub project_path: Option<String>,
-    /// What is actually RUNNING inside this session: the root's descendants, nearest first. Empty
-    /// means an idle shell sitting at its prompt. This is the MVP stand-in for "see the screen" -
-    /// we cannot read the window's pixels, but we can say truthfully what it is executing.
+    /// Descendant processes currently running in this session (nearest first; empty if idle shell).
     pub running: Vec<PsRow>,
-    /// Spawn-origin tag (S3/S6): the project id or global-scope token this session was launched with, if any. `None` for a session opened by hand, from before the app started, or whose tag never landed - the frontend resolves this against its own `projects` list at read time (§4: "listed" is a frontend question), so this field alone never asserts a project name.
+    /// Spawn-origin tag (S3/S6): project id or global-scope token.
     pub owner: Option<String>,
 }
 
-/// Detail behind the external-terminal badge: every `Terminal.app` session and what runs in it.
-/// Renamed from `list_external_terminals` (docs/plan/done/terminal-ownership-model.md §10 S1) - the
-/// old name differed from `list_terminal_sessions` by one word for two very different cadences,
-/// which was a naming hazard worth retiring while the file was open.
+/// Detail behind external-terminal badge: lists all `Terminal.app` sessions and active child processes (`docs/plan/done/terminal-ownership-model.md` §10 S1).
 ///
-/// `paths` still drives `project_path` here (unlike `list_terminal_sessions`): the modal
-/// (`ExternalTerminalsModal.vue`) reads `project_path` for its "in X's folder" adoption label, so
-/// dropping the argument now - as §4's command table describes as the end state - would silently
-/// break that label without a modal-side rewrite (S6), which is out of this step's scope.
+/// `paths` maps sessions to known projects for modal adoption labels (`ExternalTerminalsModal.vue`).
 ///
-/// Same three subprocesses as `list_terminal_sessions`, on the blocking pool for the same reason
-/// (CLAUDE.md never-block-the-UI). Called on demand from the modal, NOT on the 5s badge cadence -
-/// this returns command lines for every process in the Terminal tree and has no business being
-/// polled.
+/// Runs `pgrep`, `ps`, and `lsof` in `spawn_blocking` (CLAUDE.md never-block-the-UI). Called on-demand from modal, not polled.
 #[tauri::command]
 pub async fn describe_terminal_sessions(
     paths: Vec<String>,
@@ -1222,9 +1082,7 @@ pub async fn describe_terminal_sessions(
         let Some(tree) = scan_terminal_tree(&ownership)? else {
             return Ok(vec![]);
         };
-        // Canonical form -> the ORIGINAL path string the caller knows the project by. The modal
-        // matches sessions back to projects on the string it already holds, so resolving the
-        // symlink here (and reporting the un-resolved name) keeps that lookup honest.
+        // Canonicalizes project paths to match real paths reported by lsof while retaining original input strings.
         let canonical = canonicalize_all(&paths);
         let mut project_of: HashMap<&str, &str> = HashMap::new();
         for (orig, canon) in paths.iter().zip(canonical.iter()) {
@@ -1237,11 +1095,7 @@ pub async fn describe_terminal_sessions(
                 continue;
             }
             let Some(root_row) = tree.row_of.get(pid) else { continue };
-            // `login -pf <user>` is what Terminal.app actually spawns, and it shares its cwd with
-            // the shell underneath it - so for a session sitting in its start directory the subtree
-            // root is `login`, not `-zsh`, and the modal would name the wrapper instead of the
-            // shell while listing the shell as "running". Promote past it: describe the session by
-            // the process a person would call the terminal's shell.
+            // Promotes past macOS `login -pf <user>` wrapper which shares cwd with the child shell.
             let row = promote_past_login(&tree, root_row);
             let running: Vec<PsRow> = descendants_of(&tree.ppid_of, &[row.pid])
                 .into_iter()
@@ -1259,9 +1113,7 @@ pub async fn describe_terminal_sessions(
                 owner: owner_of(&ownership, &row.tty),
             });
         }
-        // Sessions matching a known project first (that is what the user opened the modal for),
-        // then by pid so the list does not reshuffle between refreshes - HashMap iteration order is
-        // arbitrary and a jumping list reads as a bug.
+        // Sorts known-project sessions first, then by pid for stable modal display.
         sessions.sort_by(|a, b| {
             b.project_path
                 .is_some()
@@ -1274,19 +1126,13 @@ pub async fn describe_terminal_sessions(
     .map_err(|e| format!("describe_terminal_sessions task join error: {}", e))?
 }
 
-/// Is this `ps` command line macOS's `login` wrapper rather than the user's shell?
-///
-/// Matched on the executable word alone (`login`, `/usr/bin/login`), never on a substring of the
-/// whole line - a shell running `git log --oneline` or a script called `login-check.sh` must not be
-/// mistaken for it.
+/// True if command line is macOS `login` wrapper (`login`, `/usr/bin/login`), matched on executable word alone.
 fn is_login_wrapper(command: &str) -> bool {
     let exe = command.split_whitespace().next().unwrap_or("");
     exe == "login" || exe.ends_with("/login")
 }
 
-/// Walks down from a `login` wrapper to the shell it launched, staying inside the same cwd. Returns
-/// `row` unchanged when it is not a wrapper, or when the chain does not resolve (a `login` with no
-/// readable child is still a session, and reporting it honestly beats dropping it).
+/// Walks down from a `login` wrapper to the child shell in the same cwd (bounded to 4 iterations).
 fn promote_past_login(tree: &TerminalTree, row: &PsRow) -> PsRow {
     let mut current = row.clone();
     // Bounded: `login` nests at most once in practice, but a cycle in a hand-built ppid map (or a pathological tree) must not spin forever.
@@ -1311,10 +1157,7 @@ fn promote_past_login(tree: &TerminalTree, row: &PsRow) -> PsRow {
     current
 }
 
-/// Canonicalised so a project stored via a symlinked path still matches the real path `lsof`
-/// reports. A path that cannot be canonicalised (removed directory, unmounted volume) falls back to
-/// itself and simply matches nothing - never an error, since "that project has no terminal open" is
-/// the correct answer in that state.
+/// Canonicalizes paths so symlinked project directories match `lsof` output; unresolvable paths fall back to input string.
 fn canonicalize_all(paths: &[String]) -> Vec<String> {
     paths
         .iter()
@@ -1326,29 +1169,19 @@ fn canonicalize_all(paths: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The shared result of ONE scan of `Terminal.app`'s process tree.
+/// Shared result of ONE scan of `Terminal.app` process tree.
 struct TerminalTree {
-    /// Every process on the machine, pid -> ppid. Full table on purpose: `descendants_of` walks
-    /// downward from Terminal and needs parents outside the tree to do it.
+    /// Machine-wide process table (pid -> ppid) for walking descendant trees downward from Terminal.
     ppid_of: HashMap<u32, u32>,
-    /// Terminal descendants only, pid -> cwd.
+    /// Terminal descendants only (pid -> cwd).
     cwd_of: HashMap<u32, String>,
-    /// Terminal descendants only, pid -> its `ps` row.
+    /// Terminal descendants only (pid -> PsRow).
     row_of: HashMap<u32, PsRow>,
 }
 
-/// `pgrep -x Terminal` + one `ps` + one batched `lsof`, shared by the badge and the detail modal.
+/// `pgrep -x Terminal` + `ps` + batched `lsof`, shared by badge poll and detail modal. `Ok(None)` if Terminal is not running or has no children.
 ///
-/// `Ok(None)` means "there is nothing to report" - Terminal is not running, or its tree has no
-/// descendants. That is not an error: it is the ordinary state of a Mac with no terminal open, and
-/// both callers turn it into an empty answer rather than a failure. macOS-only: this app only ever
-/// opens `Terminal.app`, so no other terminal emulator is probed.
-///
-/// Reconciles `ownership` against whatever this scan finds (S3, §4's lifecycle table) before
-/// returning, on every branch - including the empty ones, where an empty row set correctly drops any
-/// registry entry left over from a session that has since closed. This is the single funnel both the
-/// 5s badge poll and the on-demand detail call fall through, so reconcile never needs a second call
-/// site.
+/// Reconciles `ownership` registry against live processes on every scan (S3, §4 lifecycle table), dropping entries for closed sessions.
 fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTree>, String> {
     #[cfg(not(target_os = "macos"))]
     {
@@ -1392,9 +1225,7 @@ fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTr
             .collect();
 
         let pid_list = kids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
-        // `lsof` exits non-zero when any listed pid has already died between the `ps` and this
-        // call - a completely ordinary race, so the status is ignored and stdout is parsed for
-        // whatever did resolve.
+        // `lsof` non-zero exit from dead pids is ignored; stdout is parsed for whatever resolved.
         let lsof = create_command("lsof")
             .args(["-a", "-d", "cwd", "-p", &pid_list, "-F", "pn"])
             .output()
@@ -1406,8 +1237,7 @@ fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTr
     }
 }
 
-/// Six `exists()` probes plus a whole-file read, all on a user-supplied project path that may live
-/// on a network volume - off the dispatch thread (stack-tauri A1).
+/// Reads project changelog file off the dispatch thread (stack-tauri A1).
 #[tauri::command]
 pub async fn read_project_changelog(local_path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1679,8 +1509,7 @@ mod tests {
         assert_eq!(kids, vec![200, 300, 400]);
     }
 
-    /// A scratch path under the OS temp dir, unique per test. The rewrite tests must never touch a
-    /// real `~/.zshrc` - that file is precisely what the code under test can destroy.
+    /// Scratch path under OS temp dir (rewrite tests must never touch real `~/.zshrc`).
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("aki-devsync-test-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&dir);

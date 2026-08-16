@@ -1,25 +1,17 @@
-// Merges the recommended Antigravity CLI (agy) permission allowlist into
-// ~/.gemini/antigravity-cli/settings.json's `permissions.allow`, so a new machine or a new agy
-// account does not have to click through its permission prompt for every common dev command
-// (git, cat, curl, ...). Deliberately NOT folded into statusline.rs's `apply_statusline_config` -
-// that command is ticked from the Statusline Customizer, and a user applying a statusline should
-// never have their agy permissions silently widened as a side effect of an unrelated action.
+// Merges the recommended Antigravity CLI (agy) permission allowlist into ~/.gemini/antigravity-cli/settings.json's `permissions.allow`, so a new machine or a new agy account does not have to click through its permission prompt for every common dev command (git, cat, curl, ...).
+// Deliberately NOT folded into statusline.rs's `apply_statusline_config` - that command is ticked from the Statusline Customizer, and a user applying a statusline should never have their agy permissions silently widened as a side effect of an unrelated action.
 //
-// Shares the AGY target's jq-merge/backup/atomic-write shape from statusline.rs (see that file's
-// `Target` doc comment for why each step is ordered the way it is) and reuses its multi-host
-// fan-out (`HostApplyResult`) so the same UI list can render either apply's result.
+// Shares the AGY target's jq-merge/backup/atomic-write shape from statusline.rs (see that file's `Target` doc comment for why each step is ordered the way it is) and reuses its multi-host fan-out (`HostApplyResult`) so the same UI list can render either apply's result.
 
 use crate::remote_shell::run_remote_script_bounded;
 use crate::statusline::HostApplyResult;
 
-/// The recommended allowlist, exported from a real settings.json and checked in as the SSOT for
-/// what this app seeds. Editing this file changes what a future Apply writes; it never touches a
-/// machine's live settings.json until Apply actually runs.
+/// Recommended allowlist, exported from a real settings.json and checked in as the SSOT for what this app seeds.
+/// Editing this file changes what a future Apply writes; never touches live settings.json until Apply actually runs.
 const ALLOWLIST_JSON: &str = include_str!("../../share/gemini_allowlist_unified.json");
 
-/// Only `permissions.allow` is touched - the union of what's already there and the seed list, not
-/// an overwrite. `settings.json` also carries `agentMode`, `model`, `statusLine` and other keys
-/// this app must not disturb.
+/// Only `permissions.allow` is touched - union of existing permissions and seed list, not an overwrite.
+/// `settings.json` also carries `agentMode`, `model`, `statusLine` and other keys this app must not disturb.
 fn build_installer_script() -> String {
     format!(
         "set -e\n\

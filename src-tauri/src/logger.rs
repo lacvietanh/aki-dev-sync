@@ -7,8 +7,7 @@
 //
 // Enable info/debug with --debug flag or AKI_DEBUG=1 env var.
 // Log file: {app_data_dir}/usage.log  (same directory as projects.json)
-// File is trimmed to the most recent 512 KB whenever it exceeds 1 MB - checked at startup AND as
-// the file grows, because a long `--debug` session never restarts and used to grow without bound.
+// File is trimmed to the most recent 512 KB whenever it exceeds 1 MB - checked at startup AND as the file grows, because a long `--debug` session never restarts and used to grow without bound.
 
 use tauri::Manager;
 use std::fs::OpenOptions;
@@ -21,14 +20,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
-/// Serializes append + rotate. Without it a rotation (read the file, write back its tail) can drop
-/// lines another thread appended in between - and this logger is written to from every worker
-/// thread the app spawns.
+/// Serializes append + rotate.
+/// Without it, rotation (read file, write tail) can drop lines appended concurrently by other worker threads.
 static LOG_LOCK: Mutex<()> = Mutex::new(());
 
-/// Bytes appended since the last size check. The rotation trigger is counter-based on purpose:
-/// stat()-ing the file on literally every line would put a syscall on the hottest path in debug
-/// mode for no extra safety, since 64 KB of drift against a 1 MB ceiling is irrelevant.
+/// Bytes appended since the last size check.
+/// Counter-based trigger avoids stat() syscall on hot path in debug mode; 64 KB drift vs 1 MB ceiling is irrelevant.
 static BYTES_SINCE_CHECK: AtomicU64 = AtomicU64::new(0);
 const CHECK_EVERY_BYTES: u64 = 65_536;
 
@@ -176,16 +173,14 @@ pub fn error(tag: &str, msg: &str) {
     write_line(tag, msg);
 }
 
-/// Written only when --debug / AKI_DEBUG=1. Use for key lifecycle events
-/// (start, done, STALE_RESET, force-sync outcome).
+/// Written only when --debug / AKI_DEBUG=1. Use for key lifecycle events (start, done, STALE_RESET, force-sync outcome).
 pub fn info(tag: &str, msg: &str) {
     if is_debug() {
         write_line(tag, msg);
     }
 }
 
-/// Written only when --debug / AKI_DEBUG=1. Use for per-poll detail, parse internals,
-/// shell output lines - anything too verbose for normal operation.
+/// Written only when --debug / AKI_DEBUG=1. Use for per-poll detail, parse internals, shell output lines (verbose).
 pub fn debug(tag: &str, msg: &str) {
     if is_debug() {
         write_line(tag, msg);
@@ -202,9 +197,8 @@ pub fn get_log_path() -> String {
     log_path().display().to_string()
 }
 
-/// Receives a log entry from the frontend and routes it through the same
-/// backend pipeline (usage.log + stderr). Only info/debug are gated by debug
-/// mode; "error" is always written - matching the three-level contract.
+/// Routes frontend log entry through backend pipeline (usage.log + stderr).
+/// Only info/debug are gated by debug mode; "error" is always written (matching three-level contract).
 #[tauri::command]
 pub fn log_frontend(level: String, tag: String, msg: String) {
     match level.as_str() {
@@ -224,8 +218,7 @@ mod tests {
         p
     }
 
-    /// The rotation trigger. A local counter is used rather than the module static so the two
-    /// assertions cannot be perturbed by tests running in parallel in the same process.
+    /// The rotation trigger. Uses a local counter so parallel tests in the same process do not perturb assertions.
     #[test]
     fn size_check_fires_once_per_threshold_then_resets() {
         let c = AtomicU64::new(0);
@@ -258,8 +251,7 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// The actual §3.21 defect: rotation used to be reachable only from `init`, so a long
-    /// `--debug` session grew the file forever. Every append must be able to trigger it.
+    /// The actual §3.21 defect: rotation was reachable only from `init`, so a long `--debug` session grew forever. Every append must trigger it.
     #[test]
     fn appending_past_the_ceiling_rotates_without_a_restart() {
         let path = scratch("grow");

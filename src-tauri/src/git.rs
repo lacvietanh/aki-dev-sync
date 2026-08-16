@@ -8,10 +8,7 @@ pub struct GitInfo {
     pub remote_url: String,
     pub log: String,
     pub changed_count: usize,
-    /// True when `local_path` itself is absent - typically an external or network volume that is
-    /// not mounted. Reported separately from the `status` string because "the folder is gone" and
-    /// "the folder has no .git" used to look identical, while the user's next move differs
-    /// completely: mount the drive vs run `git init` (contract C-4).
+    /// True when `local_path` is absent (e.g. unmounted volume). Separated from `status` to distinguish "folder gone" (mount drive) from "no .git" (`git init`; contract C-4).
     pub local_path_missing: bool,
 }
 
@@ -148,13 +145,7 @@ pub async fn run_git_command(local_path: String, args: Vec<String>) -> Result<St
     }).await.map_err(|e| format!("Task error: {}", e))?
 }
 
-/// Folds the remote stat script's stdout into `results`.
-///
-/// Fail-closed by construction: every entry must be answered by exactly one `STAT`/`MISS` line,
-/// and a `STAT` line whose mtime cannot be parsed is an error rather than a skipped entry. A
-/// skipped entry would leave `remote_exists: false` / `remote_mtime: 0`, which every caller reads
-/// as "the remote does not have this file" - i.e. "safe to overwrite" and "safe to auto-approve
-/// for deletion". Unknown must never collapse into that answer.
+/// Folds remote stat stdout into `results`. Fail-closed: unparseable mtime or missing reply errors out so unknown never collapses into `remote_exists: false` (safe to overwrite/delete).
 fn apply_remote_stat_output(
     stdout: &str,
     remote_host: &str,
@@ -242,26 +233,12 @@ pub async fn get_file_conflict_info(
                     .to_string(),
             );
         }
-        // The host lands in ssh's argv below. It arrives here straight from a project record,
-        // which a companion device can write directly - so it is checked at this boundary too,
-        // not only where projects are saved.
+        // Validated at ssh argv boundary because companion devices can write project records directly.
         crate::system::validate_remote_host(&remote_host)?;
 
-        // Build SSH command: for each file print "STAT {mtime} {rel_path}" or "MISS {rel_path}"
-        //
-        // The `cd` target goes through the app's ONE remote-path quoter, which keeps a leading
-        // `~`/`$HOME` expandable by the remote shell while quoting everything after it literally.
-        // The hand-rolled escaping this replaced only escaped `"` and then embedded the result in
-        // a double-quoted segment - and `"…"` does not suppress `$(…)` or backticks, so a remote
-        // path of `$(curl …|sh)` ran on the remote host the moment a pre-upload conflict check
-        // fired. That is the same defect fixed everywhere else in 1.20.0; this call site was
-        // simply missed, which is exactly why the quoting lives in one shared function now.
-        //
-        // mtime is read portably: GNU coreutils first (the common Linux case), BSD/macOS as the
-        // fallback. Hardcoding `stat -c` made every file on a BSD remote look non-existent, and
-        // ssh still exited 0 - a silent wrong answer, which is the failure mode this whole
-        // command must never produce.
+        // Remote path uses shell_quote_remote_path to expand ~/Home while preventing $() injection.
         let safe_remote = crate::system::shell_quote_remote_path(&remote_path);
+        // Portable mtime probe: GNU `stat -c %Y` with BSD `stat -f %m` fallback so BSD remotes never falsely report MISS.
         let checks: Vec<String> = rel_paths.iter().map(|f| {
             // shell-escape single quotes in filename
             let safe = f.replace('\'', "'\"'\"'");
@@ -272,10 +249,7 @@ pub async fn get_file_conflict_info(
 
         let script = format!("cd {safe_remote} && {}", checks.join("; "));
 
-        // ConnectTimeout matches every other ssh hop in the sync path (sync.rs) and the usage
-        // poller, so the app has one answer to "how long before we call a host dead". Without it
-        // a blackholed host holds the pre-upload conflict check open for the kernel's TCP
-        // timeout - minutes - with the user waiting on a file picker they already answered.
+        // ConnectTimeout=10 matches sync.rs to prevent blackholed hosts hanging the UI on kernel TCP timeouts.
         let out = create_command("ssh")
             .args(["-o", "ConnectTimeout=10", &remote_host, &script])
             .output()

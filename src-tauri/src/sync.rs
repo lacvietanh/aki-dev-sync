@@ -21,9 +21,7 @@ fn get_rsync_versions() -> &'static Mutex<HashMap<String, String>> {
     RSYNC_VERSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-// Caches Tauri's appDataDir once per process so baseline_dir() (and anything else keyed off
-// it) resolves correctly. Safe to call from any command that has an AppHandle - OnceLock::set
-// is a no-op once the value is already populated.
+// Caches appDataDir once per process so baseline_dir() resolves correctly; safe to call repeatedly from any command with AppHandle.
 fn ensure_app_data_dir(app: &tauri::AppHandle) {
     if APP_DATA_DIR.get().is_none() {
         if let Ok(dir) = app.path().app_data_dir() {
@@ -33,21 +31,15 @@ fn ensure_app_data_dir(app: &tauri::AppHandle) {
 }
 
 // ─── Sync transport bounds ────────────────────────────────────────────────────
-// Before 1.20.0 nothing in the sync path had a timeout of any kind: a host that accepted the
-// TCP connection and then went silent left `syncing: true` for the rest of the session, with no
-// way to stop it (see the process registry below).
+// Transport timeouts bound how long a dead or silent host can hang a sync session.
 
 // One answer in the whole app to "how long before we call a host dead" - the same value the usage poller uses (`agent_usage.rs::polling_ssh`).
 const SSH_CONNECT_TIMEOUT: &str = "ConnectTimeout=10";
 
-// rsync's own mid-transfer stall detector. Deliberately generous: a slow large file must never
-// be killed, and a wrongly-aborted transfer is far more annoying than waiting two minutes on a
-// link that turns out to be genuinely dead.
+// Rsync stall timeout (120s): generous to allow slow large files without risking premature aborts on active transfers.
 const RSYNC_IO_TIMEOUT: &str = "--timeout=120";
 
-/// `ssh` for the sync path, with the shared connect timeout already applied and the host set.
-/// Options must precede the host, which is why this returns the Command mid-build: callers
-/// append only the remote command.
+/// `ssh` with shared ConnectTimeout and host pre-applied; callers append remote arguments (options must precede host).
 fn sync_ssh(host: &str) -> Command {
     let mut c = crate::system::create_command("ssh");
     c.args(["-o", SSH_CONNECT_TIMEOUT]);
@@ -55,27 +47,19 @@ fn sync_ssh(host: &str) -> Command {
     c
 }
 
-/// Appends the flags that bound how long a dead host can hold an rsync open.
-/// `-e` is the load-bearing one: rsync spawns its *own* ssh for the transfer, so a timeout on
-/// the ssh calls this module makes itself does nothing for the transfer.
+/// Appends transport timeout flags (`-e ssh -o ConnectTimeout=10` and `--timeout=120`) so rsync's internal ssh transfer cannot hang indefinitely on a dead host.
 fn push_transport_args(args: &mut Vec<String>) {
     args.push(RSYNC_IO_TIMEOUT.to_string());
     args.push("-e".to_string());
     args.push(format!("ssh -o {}", SSH_CONNECT_TIMEOUT));
 }
 
-/// POSIX single-quote escaping: wrap in `'…'`, and end/re-open the quoting around each embedded
-/// `'` (`'\''`). Local to this module on purpose - `system.rs` owns the escaper for the terminal
-/// call sites; duplicating four lines is cheaper than coupling two independent fixes.
+/// POSIX single-quote escaping: wrap in `'…'` with embedded `'` replaced by `'\''`. Local to sync.rs to avoid coupling with terminal escapers.
 fn shell_single_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Quotes a remote path for re-parsing by the remote shell.
-///
-/// A leading `~` must be substituted *before* quoting - inside quotes it is a literal directory
-/// named `~`, not the home directory - so it becomes `"$HOME"` (double-quoted, because a home
-/// directory may itself contain a space) and only the remainder is single-quoted.
+/// Quotes a remote path for remote shell re-parsing; substitutes leading `~` with `"$HOME"` before single-quoting the rest so tilde expansion works with spaces.
 fn quote_remote_path(path: &str) -> String {
     if path == "~" {
         return "\"$HOME\"".to_string();
@@ -88,28 +72,9 @@ fn quote_remote_path(path: &str) -> String {
 }
 
 // ─── Remote path → rsync argument ─────────────────────────────────────────────
-// rsync's own `host:path` argument is re-parsed by a shell on the REMOTE side, so the same
-// injection / word-splitting class as the `ssh … mkdir` hop lives here too. It must NOT be fixed
-// the same way: since 3.2.4 rsync backslash-escapes the shell-active characters in that argument
-// itself ("Starting in 3.2.4, filenames are passed to a remote shell in such a way as to preserve
-// the characters you give it" - rsync(1), ADVANCED USAGE), so hand-quoting would be escaped a
-// second time and the remote would receive a path containing literal quote characters - i.e. a
-// silent mirror into the wrong directory, the one outcome here that cannot be undone.
-// Verified with a stub remote shell (`-e`) on this project's two real candidates: rsync 3.4.1 sends
-// `/srv/x\;\ id/`, macOS's /usr/bin/rsync (openrsync, "2.6.9 compatible") sends `/srv/x; id/` raw.
-//
-// Therefore the path is passed through **byte-identical to every previous release**, and the guard
-// is on the local rsync instead: when it is too old to protect the argument AND the path contains a
-// character the remote shell would act on, the operation is refused by name instead of run. The
-// REMOTE rsync version is irrelevant - the escaping is consumed by the remote shell, and the remote
-// rsync sees the same plain path either way (unlike `-s/--secluded-args`, which needs remote
-// support and stops the remote shell from expanding a leading `~`).
+// Rsync >=3.2.4 auto-escapes `host:path` chars on remote shells (manual quoting double-escapes). Paths pass unquoted; local rsync <3.2.4 is refused if path has shell-active chars.
 
-/// Shell-active characters that rsync ≥3.2.4 escapes on our behalf.
-///
-/// `~` and the wildcards `*` `?` `[` `]` are deliberately absent: modern rsync leaves those
-/// unescaped as well, so old and new rsync agree on them and this guard must not change what a
-/// path containing them already means.
+/// Shell-active characters escaped by rsync >=3.2.4; `~` and wildcards are omitted so valid expansions and patterns remain untouched across rsync versions.
 const REMOTE_SHELL_ACTIVE: &[char] = &[
     ' ', ';', '&', '|', '<', '>', '(', ')', '$', '`', '\\', '\'', '"', '{', '}', '#', '!',
 ];
@@ -129,11 +94,7 @@ fn version_triple(v: &str) -> (u32, u32, u32) {
     (parts.next().unwrap_or(0), parts.next().unwrap_or(0), parts.next().unwrap_or(0))
 }
 
-/// True when this rsync protects the remote path from the remote shell by itself (≥ 3.2.4).
-///
-/// Reads the first line of `rsync --version`. Anything not recognisable as `rsync version X.Y.Z`
-/// counts as unprotected - macOS's stock `/usr/bin/rsync` is openrsync and leads with
-/// `openrsync: protocol version 29`, and an unknown implementation must fail closed, not open.
+/// True when rsync >= 3.2.4 (auto-protects remote path args). Unrecognized version strings (e.g. macOS stock openrsync) fail closed as unprotected.
 fn rsync_protects_remote_args(version_line: &str) -> bool {
     let line = version_line.trim();
     if !line.starts_with("rsync") {
@@ -160,10 +121,7 @@ fn local_rsync_version_line() -> String {
     v
 }
 
-/// The single funnel for every `host:path` rsync argument in this module.
-///
-/// The version probe only runs for a path that actually contains a shell-active character, so an
-/// ordinary path costs nothing extra.
+/// Single funnel for `host:path` rsync args; validates local rsync version only when `remote_path` contains shell-active characters.
 fn remote_rsync_arg(host: &str, remote_path: &str) -> Result<String, String> {
     if let Some(c) = first_shell_active_char(remote_path) {
         let version = local_rsync_version_line();
@@ -180,18 +138,10 @@ fn remote_rsync_arg(host: &str, remote_path: &str) -> Result<String, String> {
 }
 
 // ─── Running-sync registry (cancel + exit cleanup) ────────────────────────────
-// A sync is a process TREE (rsync spawns its own ssh; a hook spawns a subshell), and nothing
-// used to hold a handle on it: a mis-clicked `--delete` PUSH could not be stopped, and quitting
-// the app did not stop it either - rsync and its ssh survived as init-owned orphans. Both are
-// fixed by the same registry: every child is put in its own process group at spawn
-// (`detach_process_group`), recorded here by project id, and signalled by group so the kill
-// reaches rsync's ssh as well. Same shape as `pty.rs::kill_process_group`, which does this for
-// the in-app terminal.
+// Tracks process groups by project id so cancel and exit kill the entire process tree (rsync, ssh, hooks) via process groups (ref: `pty.rs::kill_process_group`).
 static SYNC_PROCS: OnceLock<Mutex<HashMap<String, Vec<u32>>>> = OnceLock::new();
 
-// Project ids whose sync the user explicitly stopped. Consumed by `run_sync` so a killed rsync
-// reports "cancelled" rather than a bare non-zero exit, which would read as a failure the user
-// did not cause.
+// Project IDs cancelled by user, allowing `run_sync` to distinguish user STOP from unexpected non-zero rsync failures.
 static CANCELLED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn sync_procs() -> &'static Mutex<HashMap<String, Vec<u32>>> {
@@ -199,13 +149,7 @@ fn sync_procs() -> &'static Mutex<HashMap<String, Vec<u32>>> {
 }
 
 // ─── In-flight sync guard (one sync per project) ──────────────────────────────
-// SYNC_PROCS cannot serve as this guard: it is only populated once rsync has actually spawned,
-// which is seconds after `run_sync` is entered (hooks, remote mkdir, version probe all run first),
-// so two calls arriving in that window would both see an empty registry. The frontend has its own
-// button-level guard, but the companion device invokes the same command over the relay seam and
-// never passes through it - two concurrent rsyncs on one project write the same tree, and with
-// `--delete` in the mix that is not a recoverable outcome. Keyed by project id, claimed
-// atomically, and released by `Drop` so every exit path (error, panic, early return) frees it.
+// Prevents concurrent syncs on the same project (GUI and companion relay); claimed on entry to `run_sync` and released via RAII `Drop`.
 static SYNC_INFLIGHT: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn sync_inflight() -> &'static Mutex<HashSet<String>> {
@@ -271,15 +215,7 @@ fn consume_cancelled(project_id: &str) -> bool {
     cancelled_ids().lock().unwrap_or_else(|e| e.into_inner()).remove(project_id)
 }
 
-/// SIGTERM → SIGKILL the child's whole process group.
-///
-/// The group, not the pid: rsync starts its own `ssh` for the transfer, and a signal aimed at
-/// the rsync process alone need not reach it - a surviving ssh keeps the remote rsync (and its
-/// half-written files) going on a host the app is no longer watching. SIGTERM first because
-/// rsync handles it and cleans up its partial temp file; SIGKILL only for whatever ignores it.
-/// The grace loop probes with signal 0 (an existence check that sends nothing), so the common
-/// case returns in ~25ms instead of always stalling for the full budget - app exit runs through
-/// here.
+/// Signals the child process group (SIGTERM then SIGKILL escalation with signal-0 polling) to terminate rsync, spawned ssh, and remote transfers cleanly.
 #[cfg(unix)]
 fn kill_process_group(pid: u32) {
     let pgid = pid as libc::pid_t;
@@ -297,9 +233,7 @@ fn kill_process_group(pid: u32) {
 #[cfg(not(unix))]
 fn kill_process_group(_pid: u32) {}
 
-/// Puts the child in a process group of its own, so `kill_process_group` can signal it and
-/// everything it spawns in one call. Without this the child inherits the app's group and a
-/// `killpg` would signal the app itself.
+/// Places the spawned child in its own process group so `kill_process_group` does not signal the parent application process.
 #[cfg(unix)]
 fn detach_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
@@ -315,11 +249,7 @@ fn detach_process_group(command: &mut Command) {
 #[cfg(not(unix))]
 fn detach_process_group(_command: &mut Command) {}
 
-/// Stops every process belonging to `project_id`'s running sync.
-///
-/// Returns true when something was actually killed, so the frontend can tell "stopped it" from
-/// "there was nothing left to stop" (the transfer finished between the render and the click).
-/// async + spawn_blocking because the kill escalation sleeps (NEVER BLOCK THE UI).
+/// Stops all processes for `project_id`'s sync; returns true if killed. Async + spawn_blocking to avoid UI freezes during kill escalation sleeps (NEVER BLOCK THE UI).
 #[tauri::command]
 pub async fn cancel_sync(project_id: String) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -337,24 +267,14 @@ pub async fn cancel_sync(project_id: String) -> Result<bool, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
 }
 
-/// Kills every running sync on app exit. Wired to `RunEvent::Exit` in `lib.rs` next to
-/// `pty::shutdown`. Unconditional and silent - nobody wants a "really quit?" prompt from a tool
-/// they just closed, and an rsync that outlives its window is still writing to a remote nobody
-/// is watching.
+/// Kills all running sync processes unconditionally on app exit (wired to `RunEvent::Exit` in `lib.rs` alongside `pty::shutdown`).
 pub fn shutdown() {
     for pid in take_all_children() {
         kill_process_group(pid);
     }
 }
 
-/// Refuses to run anything while `local_path` does not exist on disk.
-///
-/// The case this exists for is an external or network volume that is simply not mounted: the
-/// directory is *supposed* to be there, so a PUSH would mirror an empty tree over the remote -
-/// with `--delete`, that is the remote's contents gone - and the app currently says nothing is
-/// wrong. Deliberately NOT folded into `validate_project`: a project on an unmounted volume must
-/// still load and still save; only the operations that touch files are refused, and the error
-/// names the real cause instead of surfacing as a validation rejection that hides it.
+/// Fails if `local_path` is missing (e.g. unmounted volume) before file ops run, preventing destructive `--delete` mirror wipes while allowing project load/save.
 fn ensure_local_path_present(local_path: &str) -> Result<(), String> {
     if std::path::Path::new(local_path).is_dir() {
         Ok(())
@@ -384,11 +304,7 @@ fn stream_reader<R: std::io::Read + Send + 'static>(
 ) -> thread::JoinHandle<()> {
     let prefix = prefix.to_string();
     thread::spawn(move || {
-        // Read raw bytes per line and decode lossily rather than `lines().flatten()`: rsync prints
-        // filenames in the filesystem's own bytes, so a single non-UTF-8 name made `lines()` yield
-        // an `Err` that `flatten()` silently DROPPED - the log then simply omitted that file, which
-        // is the worst possible thing for a log whose job is to say what was transferred. Lossy
-        // decoding shows the name with replacement characters instead of hiding the line.
+        // Reads raw bytes and decodes lossily per line so non-UTF-8 filenames are visible with replacement characters instead of being dropped by `lines().flatten()`.
         let mut reader = BufReader::new(reader);
         let mut buf = Vec::new();
         loop {
@@ -421,9 +337,7 @@ fn spawn_and_stream(
     project_id: &str,
     label: &str,
 ) -> Result<(), String> {
-    // Null stdin so ssh/rsync can never block on an interactive prompt
-    // (hostkey/password) - in a GUI app that would hang the sync silently.
-    // Own process group so STOP / app-exit can kill this child and its descendants.
+    // Null stdin prevents interactive prompt hangs; detached process group allows clean cancellation of child trees.
     detach_process_group(command);
     let mut child = command
         .stdin(Stdio::null())
@@ -505,19 +419,10 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 }
 
 // ─── Tier 2 Baseline Manifest ─────────────────────────────────────────────────
-// Written after every full successful sync as HashMap<filename, mtime_secs>.
-// On the next status check, both PUSH and PULL dry-run files are classified:
-//   PULL side:  in baseline + missing locally  → local deleted it  → push_count
-//               not in baseline                → remote created it → pull_count
-//   PUSH side:  in baseline + local mtime UNCHANGED → remote deleted it → suppress push_count
-//               in baseline + local mtime CHANGED   → user edited it  → keep in push_count
-//               not in baseline                     → local created it → push_count
-// The mtime comparison is key: it distinguishes "remote deleted the file" (mtime
-// unchanged since last sync) from "user modified the file" (mtime changed), without
-// requiring an extra SSH call. This eliminates the ambiguity in both directions.
-// Baselines are stored in Tauri's appDataDir (set via APP_DATA_DIR on first
-// command call). If APP_DATA_DIR is not yet set, the legacy ~/.aki path is used
-// as a fallback so read_baseline can also find baselines written by old builds.
+// Written on full sync as HashMap<filename, mtime_secs> in appDataDir (with legacy ~/.aki fallback).
+// * PULL: in baseline + missing locally -> local deleted (push_count); not in baseline -> remote created (pull_count).
+// * PUSH: in baseline + mtime unchanged -> remote deleted (suppress); mtime changed -> local edit (push_count).
+// * Baseline mtime comparison avoids extra SSH roundtrips to resolve deletion vs edit ambiguity.
 
 // Pre-appDataDir (<1.7.1) baseline location - sole source of truth for that path, used by baseline_dir()'s fallback, legacy_baseline_path(), and cleanup_legacy_baselines().
 fn legacy_baseline_dir() -> PathBuf {
@@ -544,9 +449,7 @@ fn legacy_baseline_path(project_id: &str) -> PathBuf {
     legacy_baseline_dir().join(format!("{}.json", project_id))
 }
 
-/// Returns true if `rel` is, or is nested under, one of `dir_excludes` (entries
-/// ending in `/`, e.g. `.git/`). Matches on path-component boundaries so `.wrangler/`
-/// never matches a sibling like `.wrangler-backup`.
+/// True if `rel` matches or is nested under a `dir_excludes` entry (`/`-suffixed), matching path-component boundaries so sibling dirs (e.g. `.wrangler-backup`) do not match.
 fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
     dir_excludes.iter().any(|e| {
         let trimmed = e.trim();
@@ -559,10 +462,7 @@ fn is_under_dir_exclude(rel: &str, dir_excludes: &[String]) -> bool {
     })
 }
 
-/// Selects the exclude list for a given transfer direction - push reads
-/// `push_excludes`, pull reads `pull_excludes` (R1). Shared by `build_rsync_args`
-/// (real push/pull) and `rsync_change_files` (status check) so both agree on what
-/// "this direction will transfer" means. See CHANGELOG 1.13.1 (R2 revert).
+/// Selects excludes for direction (push -> `push_excludes`, pull -> `pull_excludes`; R1). Shared by `build_rsync_args` and `rsync_change_files` (ref: CHANGELOG 1.13.1 / R2 revert).
 fn direction_excludes(project: &SyncProject, is_push: bool) -> &Vec<String> {
     if is_push {
         &project.push_excludes
@@ -571,10 +471,7 @@ fn direction_excludes(project: &SyncProject, is_push: bool) -> &Vec<String> {
     }
 }
 
-/// Union of push_excludes and pull_excludes, deduped by trimmed value.
-/// Still used by `write_baseline` (baseline must NOT track push-only-dir files  - 
-/// see CHANGELOG 1.13.1 for why the baseline call site keeps the union while the
-/// status-check call site was reverted to per-direction excludes).
+/// Deduped union of push and pull excludes; used by `write_baseline` so baseline does not track push-only-dir files (ref: CHANGELOG 1.13.1 on baseline vs status-check excludes).
 fn union_excludes(project: &SyncProject) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -638,10 +535,7 @@ fn write_baseline(local_path: &str, project_id: &str, dir_excludes: &[String]) -
     Ok(())
 }
 
-/// One-shot migration off the pre-1.7.1 `~/.aki/devsync-baselines` path: copies any
-/// baseline files not already present in appDataDir, then removes the legacy dir.
-/// Frontend gates this behind a localStorage flag so it only runs once per install.
-/// Losing an unmigrated baseline is non-destructive - the next full sync just rewrites it.
+/// One-shot migration copying pre-1.7.1 baselines from `~/.aki/devsync-baselines` into appDataDir, then cleaning legacy dir (non-destructive; rewritable on next full sync).
 #[tauri::command]
 pub fn cleanup_legacy_baselines(app: tauri::AppHandle) -> Result<bool, String> {
     ensure_app_data_dir(&app);
@@ -696,12 +590,7 @@ fn build_rsync_args(
     src: &str,
     dest: &str,
 ) -> Vec<String> {
-    // Mirror mode (--delete ON): sender is fully authoritative → drop -u so the sender
-    // can overwrite receiver-newer files. Keeping -u with --delete is incoherent: -u
-    // protects receiver-newer files (e.g. dotfiles that survived rm -fR ./*) while
-    // --delete intends an exact mirror, leaving a perpetual PULL/PUSH loop.
-    // Merge mode (--delete OFF): -u is safe - keep receiver-newer files, add only what
-    // the sender has that the receiver lacks.
+    // Mirror mode (--delete ON) drops `-u` (-avz) so sender overwrites receiver-newer files; merge mode (--delete OFF) keeps `-u` (-avzu) to preserve receiver-newer files.
     let is_mirror = (is_push && project.delete_on_push) || (!is_push && project.delete_on_pull);
     let base_flags = if is_mirror { "-avz" } else { "-avzu" };
     let mut args = vec![base_flags.to_string()];
@@ -756,10 +645,7 @@ pub async fn run_sync(
     // Drop any flag left by a previous run so this sync's outcome is judged on its own.
     consume_cancelled(&project_id);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        // Existence check moved inside the blocking closure: `is_dir()` on an unmounted SMB/NFS
-        // mount can stall in the kernel for tens of seconds, and on the IPC dispatch thread that
-        // is a frozen window (stack-tauri A1). Same error, same ordering relative to the rest of
-        // the sync - only the thread it runs on changed.
+        // Existence check runs inside spawn_blocking closure to avoid UI thread freezes on unmounted SMB/NFS kernel stalls (stack-tauri A1).
         ensure_local_path_present(&project.local_path)?;
         run_sync_blocking(window, project, direction, dry_run, specific_paths)
     })
@@ -783,8 +669,7 @@ fn run_sync_blocking(
     let is_push = direction == "push";
     let dry_prefix = if dry_run { "[DRY RUN] " } else { "" };
 
-    // First log line arrives before any SSH work - closes the gap between
-    // "START SYNC" (JS) and the first rsync output (which can take 1-3s).
+    // First log line emits before SSH work to close the latency gap between UI click and rsync output.
     emit_log(&window, &project.id, format!(">>> {}Connecting to {}...\n", dry_prefix, project.remote_host));
 
     let pre_cmd = if is_push { &project.hooks.pre_push_cmd } else { &project.hooks.pre_pull_cmd };
@@ -799,10 +684,7 @@ fn run_sync_blocking(
 
     if is_push {
         if !dry_run {
-            // ssh joins its argv with spaces and the REMOTE shell re-parses the result, so
-            // `mkdir -p ~/my app` used to create two directories. Quote the path for that second
-            // parse, with the leading `~` substituted before quoting so it still expands
-            // (`git.rs` quotes the same way for its remote stat script).
+            // Remote path is quoted via quote_remote_path with leading `~` expanded as $HOME so remote shell space parsing cannot split directories.
             let mkdir_out = sync_ssh(&project.remote_host)
                 .arg(format!("mkdir -p {}", quote_remote_path(&project.remote_path)))
                 .output()
@@ -879,10 +761,7 @@ fn run_sync_blocking(
     Ok(())
 }
 
-/// Pulls one named file from `host:remote_dir/filename` into `local_dir/filename` via rsync.
-/// For one-off single-file syncs (e.g. REPORT.html) that don't need the full project
-/// push/pull pipeline in `build_rsync_args`/`run_sync` (which only honors `specific_paths` on
-/// push) - reuse this instead of hand-rolling another `create_command("rsync")` call site.
+/// Pulls a single named file (e.g. REPORT.html) via rsync without invoking full push/pull pipeline; guards remote path against shell injection.
 pub fn rsync_pull_file(host: &str, remote_dir: &str, filename: &str, local_dir: &str) -> Result<(), String> {
     // Directory and filename are one remote-shell word each - guard the joined path, since the filename reaches the same shell the directory does.
     let remote_src = remote_rsync_arg(
@@ -923,13 +802,7 @@ pub struct SyncStatusResult {
     pub pull_count: u32,
 }
 
-/// Returns the list of file paths that would be additively transferred in the given direction.
-/// Status check always uses -avzu (no --delete) regardless of project settings:
-///   • -u: only lists files where the SOURCE is newer - matches the button semantic
-///         ("this side has something new to offer"). Without it, rsync lists receiver-newer
-///         files too, causing both buttons to light when only one side was modified (EC-7).
-///   • no --delete: additive content only. "deleting …" lines are the opposite direction's
-///         signal and would inflate the wrong count (EC-2).
+/// Lists additively transferable files. Always uses -avzu without --delete so `-u` limits counts to source-newer files (EC-7) and avoids deletion count inflation (EC-2).
 fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String>, String> {
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
     let remote = format!(
@@ -942,12 +815,7 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
         (remote.as_str(), local.as_str())
     };
 
-    // Status check: per-direction excludes, same as real push/pull (R1). Badge for a
-    // direction counts exactly what that direction would transfer - a push-only dir
-    // (in pull_excludes, absent from push_excludes - e.g. `.git/`) IS counted on the
-    // push side because push really does carry it. R2 (union excludes for both
-    // directions, so push-only dirs never counted at all) shipped in 1.13.0 and was
-    // reverted in 1.13.1 - see CHANGELOG and docs/plan/done/push-only-paths.md §9.
+    // Per-direction excludes (R1): status badge counts exact files transferred (e.g. push-only dir counted on push; ref: CHANGELOG 1.13.1 & docs/plan/done/push-only-paths.md §9).
     let mut args: Vec<String> = vec!["-avzu".to_string(), "--dry-run".to_string()];
     push_transport_args(&mut args);
     for e in direction_excludes(project, is_push) {
@@ -1000,18 +868,7 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
     Ok(files)
 }
 
-/// Computes (push_count, pull_count) with full Tier-2 baseline reclassification.
-///
-/// PULL side (EC-3): file in pull_files + in baseline + missing locally
-///   → local deleted it → reclassify to push_count (PUSH --delete propagates this)
-///
-/// PUSH side: file in push_files + in baseline + local mtime UNCHANGED since baseline
-///   → remote deleted it (file not modified locally, so remote must have removed it)
-///   → suppress from push_count.
-///   If local mtime CHANGED → user modified the file → keep in push_count.
-///   mtime == 0 means old-format baseline (pre-1.7.1) → don't suppress (conservative).
-///
-/// Falls back to raw counts when no baseline exists (first run or cleared).
+/// Computes (push_count, pull_count) with Tier-2 baseline reclassification (EC-3: local deletion -> push_count; remote deletion without local edit -> suppress push_count).
 fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
     let push_files = rsync_change_files(project, true)?;
     let pull_files = rsync_change_files(project, false)?;
@@ -1075,9 +932,7 @@ pub async fn check_sync_status(app: tauri::AppHandle, project: SyncProject) -> R
     .map_err(|e| format!("check_sync_status task error: {}", e))?
 }
 
-/// Returns the list of paths that would be deleted on the destination side
-/// if the given direction ran with --delete. Used by the JS confirm dialog to
-/// show exactly what is at risk before the user commits to a destructive sync.
+/// Returns paths that would be deleted on destination if run with --delete; used by JS confirm dialog to preview destructive sync risk.
 #[tauri::command]
 pub async fn get_sync_delete_preview(
     project: SyncProject,
@@ -1085,8 +940,7 @@ pub async fn get_sync_delete_preview(
 ) -> Result<Vec<String>, String> {
     validate_project(&project)?;
     tauri::async_runtime::spawn_blocking(move || {
-        // Inside the closure - see run_sync: a stalled network-volume stat must not run on the
-        // IPC dispatch thread.
+        // Inside closure so stalled network-volume stats do not block IPC dispatch thread (see run_sync).
         ensure_local_path_present(&project.local_path)?;
         let is_push = direction == "push";
         let local = format!("{}/", project.local_path.trim_end_matches('/'));
@@ -1118,10 +972,7 @@ pub async fn get_sync_delete_preview(
         let deletes: Vec<String> = stdout
             .lines()
             .filter(|l| l.trim().starts_with("deleting "))
-            // strip_prefix (not trim_start_matches) removes the "deleting " marker at most
-            // once - trim_start_matches strips it repeatedly, so a real file whose own path
-            // begins with "deleting " (rsync line: "deleting deleting me.txt") would have
-            // BOTH occurrences stripped, corrupting the path fed into the delete-preview list.
+            // `strip_prefix` removes "deleting " at most once (avoiding corruption if a path begins with "deleting ").
             .map(|l| {
                 let t = l.trim();
                 t.strip_prefix("deleting ").unwrap_or(t).to_string()
@@ -1139,9 +990,7 @@ mod tests {
     use super::*;
     use crate::projects::SyncHooks;
 
-    // Local fixture builder - `projects.rs`'s test-only `make_project` is behind its own
-    // `#[cfg(test)] mod tests` and does not cross the module boundary into sync.rs's tests,
-    // so we build a minimal SyncProject here instead of making that helper public.
+    // Test fixture builder: constructs a minimal SyncProject without making `projects.rs` test helper public.
     fn make_test_project(push_excludes: Vec<&str>, pull_excludes: Vec<&str>) -> SyncProject {
         SyncProject {
             id: "test".to_string(),
@@ -1234,9 +1083,7 @@ mod tests {
 
     #[test]
     fn direction_excludes_pull_only_dir_absent_from_push_direction() {
-        // R2 revert (1.13.1): a dir present only in pull_excludes (e.g. `.git/`) must
-        // NOT be excluded from the push-direction status check - push really transfers
-        // it, so the badge must count it.
+        // R2 revert (1.13.1): pull-only exclude (e.g. `.git/`) is NOT excluded on push status check since push transfers it.
         let project = make_test_project(vec![], vec![".git/"]);
         let push_excludes = direction_excludes(&project, true);
         assert!(!push_excludes.contains(&".git/".to_string()));
@@ -1437,10 +1284,7 @@ mod tests {
 
     #[test]
     fn remote_rsync_arg_passes_an_ordinary_path_through_unchanged() {
-        // The compatibility claim, asserted: for a path with no shell-active character the
-        // argument is byte-identical to what every previous release built, so no existing project
-        // can start mirroring somewhere else. A leading `~` still reaches the remote shell
-        // unquoted and still expands there.
+        // Paths without shell-active characters remain byte-identical to previous releases; leading `~` expands unquoted on remote shell.
         assert_eq!(remote_rsync_arg("host", "/var/www/app").unwrap(), "host:/var/www/app");
         assert_eq!(remote_rsync_arg("host", "~/app").unwrap(), "host:~/app");
         assert_eq!(remote_rsync_arg("host", "~").unwrap(), "host:~");

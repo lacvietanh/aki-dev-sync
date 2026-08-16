@@ -1,48 +1,9 @@
-// Remote Control relay — see docs/plan/done/remote-control.md §7 (Rust — relay only), §7.0 (ICON-1),
-// §7.1 + §7.1a (pairing + Tailscale), §7.5 (FileView / read_text_file / FILE-1), and §13 (the
-// FROZEN wire-protocol contract). This module implements exactly that contract; every protocol
-// decision (what a `delta`/`intent`/`invoke` frame means) lives in the JS seams — this file is
-// content-blind routing plus the small set of native operations the plan calls out (pairing,
-// icon scan-and-hold, confined file read, LAN/Tailscale address discovery).
+// Remote Control relay — see docs/plan/done/remote-control.md §7 (Rust — relay only), §7.0 (ICON-1), §7.1 + §7.1a (pairing + Tailscale), §7.5 (FileView / read_text_file / FILE-1), and §13 (FROZEN wire-protocol contract). This module implements exactly that contract; protocol decisions live in JS seams — this file provides content-blind routing plus native operations (pairing, icon cache, confined file read, address discovery).
 //
-// INVARIANT (§13.6): the WS relay never holds mirrored app state, and it reads a frame only for
-// ROUTING and DROP-SAFETY decisions — never for what the frame means. Three deliberate, documented
-// departures from strict content-blindness (the third also being the only one that writes):
-//
-//  1. (plan §2.3) The relay itself ORIGINATES a `{"t":"companion-connected","id":<deviceId>}` frame
-//     to the host right after a companion's token check passes, so the host knows to push an `init`
-//     snapshot. That frame is not in §13.2's table (a gap in the frozen doc as written); it is
-//     produced by the relay about a *connection lifecycle event*, not derived from parsing any
-//     client payload.
-//  2. (backpressure, below) The relay READS ONE FIELD — the top-level `t` — of frames already
-//     sitting in a companion's outbound queue, and only when that queue has blown its byte budget.
-//     It never reads `t` on the hot path, never reads any other field, and never rewrites a frame.
-//     This is a real, if narrow, widening of the relay's knowledge: it now knows that `pty_output`
-//     is re-derivable from the host and everything else is not (see `is_coalescible`). The
-//     alternative — a content-blind cap — can only drop arbitrary frames, which is precisely the
-//     "phone renders a corrupted half-stream" outcome the policy exists to avoid.
-//  3. (per-connection addressing, 1.21.1) The relay reads a top-level `to` on frames leaving the host
-//     (`dispatch`) and STAMPS a top-level `from` on frames arriving from a companion
-//     (`handle_companion_socket`). No new frame tag: a frame carrying neither field routes exactly as
-//     it always has, so an older companion bundle is unaffected. This closed two real bugs — a second
-//     phone joining sent a `reset:true` scrollback replay to every phone, wiping the screen of one
-//     mid-command; and `invoke_result` was broadcast against a per-page request counter that starts
-//     at 1 on every companion, so two phones with an id-1 call in flight each resolved the other's
-//     answer. That second one is silent wrong data, not a timeout.
-//     THE ADDRESS IS A CONNECTION, NOT A DEVICE, because the thing that asked is a connection. Two
-//     browser tabs on one paired phone are two sockets, two outboxes and two independent request
-//     counters that BOTH start at 1, so a device-level address leaves both bugs fully alive on that
-//     one device: the reply for tab A resolves tab B's unrelated id-1 call, and the joining tab's
-//     scrollback replay is duplicated into every tab's outbox — which breaks INVARIANT R outright at
-//     two tabs and re-creates the replay livelock the 8 MiB budget was raised to remove. A connection
-//     id costs nothing extra on the wire (it replaces the device id in the same two fields) and is
-//     strictly narrower, so it is the correct unit even before the two-tab case is considered.
-//     Device-level fan-out still exists exactly where it IS the intent: `revoke_device` closes every
-//     live connection belonging to one device, matching on `CompanionHandle::device_id`.
-//     BOUNDED: the relay reads `t` to know what is re-derivable and `to`/`from` to know where a frame
-//     belongs, and nothing else. It still never reads app content, and `from` is minted by the relay
-//     from its own connection counter — a value no companion is ever told and none can guess — so it
-//     can be neither forged nor stolen.
+// INVARIANT (§13.6): the WS relay never holds mirrored app state, reading frames only for ROUTING and DROP-SAFETY. Three documented departures:
+//  1. (plan §2.3) Relay originates `{"t":"companion-connected","id":<conn_key>}` to host on token pass so host pushes `init` snapshot and scrollback replay.
+//  2. (backpressure) Relay reads top-level `t` on queued companion frames only when budget is blown, dropping re-derivable `pty_output` (see `is_coalescible`).
+//  3. (per-connection addressing, 1.21.1) Relay reads `to` on host frames (`dispatch`) and stamps `from` on companion frames (`handle_companion_socket`). Unit is a connection (`c<conn_id>`), not a device, ensuring multiple tabs on one device have isolated request counters and replays (preserving INVARIANT R). Device-level grouping is used strictly for `revoke_device`.
 
 use axum::{
     body::Body,
@@ -73,140 +34,49 @@ use tokio::{
     sync::{mpsc, Notify},
 };
 
-/// Fixed relay port — also baked into `tauri.conf.json`'s CSP `connect-src` and every
-/// `get_companion_url()` result. Not user-configurable (see plan §7.1a "Dev vs prod" table).
+/// Fixed relay port (baked into `tauri.conf.json` CSP `connect-src` and `get_companion_url()`). Not user-configurable (plan §7.1a).
 const PORT: u16 = 1421;
 
 /// How many consecutive bad `/pair` codes are tolerated before the relay shuts itself off.
 const MAX_PAIR_FAILURES: u32 = 10;
 
-// ── WS close codes (mirrored in src/constants/protocol.js — keep the two in step) ─────────────
-//
-// These three used to be one undifferentiated `4001`, and that ambiguity was the whole bug: the
-// companion could not tell "your token is dead" from "the Mac's relay is not accepting right now",
-// so it took the destructive reading and wiped a perfectly good token on every app restart and
-// every Off. Splitting them is what lets the client keep a token it has no reason to distrust.
+// ── WS close codes (mirrored in src/constants/protocol.js — keep both in sync) ─────────────
+// Distinct codes prevent companions from treating temporary server-off state as credential revocation.
 
-/// The token presented is unknown / absent / revoked. The companion MUST drop it and fall back to
-/// code entry — it will fail identically on every retry otherwise.
+/// Token presented is unknown/absent/revoked: companion must drop token and prompt for re-pairing.
 const CLOSE_UNPAIRED: u16 = 4001;
-/// Remote control is switched off (or was just switched off) on the Mac. Says nothing at all about
-/// the token: the companion KEEPS it and reconnects with backoff.
+/// Remote control is disabled on the host: companion keeps token and reconnects with backoff.
 const CLOSE_SERVER_DISABLED: u16 = 4002;
-/// A `role=host` connection was refused (not loopback, or the process-local host secret did not
-/// match). Only the Mac's own webview ever sees this; it re-reads the secret and retries.
+/// `role=host` refused (non-loopback or invalid process-local secret).
 const CLOSE_HOST_ROLE_REJECTED: u16 = 4003;
 
 // ── Backpressure toward companions ────────────────────────────────────────────────────────────
-//
-// THE SHAPE OF THE PROBLEM. A companion used to be fed by an UNBOUNDED mpsc: the host's frames
-// were pushed in at whatever rate the Mac produced them, and drained at whatever rate the phone
-// could accept them. Those two rates are unrelated, and one of them has no ceiling — a runaway
-// shell (`yes`) in the in-app terminal emits a `pty_output` frame every ~20ms forever. A phone on
-// a weak link that cannot keep up therefore grows a queue that nothing bounds, in the Mac's
-// address space, until the app dies. That is the whole bug: not "the queue is too big" but "there
-// is no relationship at all between production and consumption".
-//
-// WHY NOT THE TWO OBVIOUS FIXES.
-//  * Block the producer (a bounded `send().await`). The producer is the relay's host-socket loop,
-//    which serves EVERY companion and also carries the host's own inbound frames. Stalling it to
-//    wait for the slowest phone hands one bad link the power to freeze the terminal for everyone,
-//    and — through the WS backpressure chain — eventually the shell itself.
-//  * Drop arbitrary frames at a cap. A terminal byte stream with a hole in it is not "slightly
-//    stale", it is corrupt: xterm renders whatever escape sequence the surviving half implies. A
-//    phone showing a coherent screen that is 3 seconds old is strictly better than one showing
-//    scrambled output it will never correct.
-//
-// THE POLICY: COALESCE, THEN RE-HYDRATE. Every companion gets a byte-budgeted outbox. When the
-// budget is blown, the backlog is collapsed by dropping exactly the frames the host can regenerate
-// in full — `pty_output`, whose entire content is re-derivable from `pty_get_scrollback` — and the
-// connection is flagged for a re-hydrate. Once the phone has drained what remains (i.e. it is
-// actually able to receive again), the relay re-issues the `companion-connected` frame it already
-// originates on join. The host's existing handlers answer that with a full `init` snapshot plus a
-// `reset:true` scrollback replay — the exact "put this screen back in a known-good state" path that
-// already runs on every join and every reconnect. No new frame type, no new host-side code, and the
-// recovery path is the one that gets exercised constantly rather than a special one that only runs
-// under a fault.
-//
-// Re-hydrating only once the queue has DRAINED is what keeps this self-limiting without a timer or
-// a counter: a phone that is still behind has not drained, so it cannot trigger another resync.
-// Under a sustained firehose the phone therefore settles into "one coherent full snapshot whenever
-// it can absorb one", which is the best a slow link can be given.
+// Policy: Coalesce then re-hydrate. When an outbox blows `COMPANION_QUEUE_LIMIT_BYTES`, drop re-derivable `pty_output` frames and flag for resync. When the queue drains, re-issue `companion-connected` to trigger fresh `init` and `reset:true` scrollback replay.
+// Blocking the producer is unacceptable (would stall host loop and all clients), while dropping arbitrary frames causes visual corruption in xterm.
 
-/// Per-companion outbound budget. DERIVED FROM THE TERMINAL'S CAPS, not chosen independently — see
-/// `invariant_r_holds_for_a_full_scrollback_replay` below, which is the executable form of it.
+/// Per-companion outbound budget derived from terminal caps (asserted in `invariant_r_holds_for_a_full_scrollback_replay`).
 ///
-/// The sizing case is a companion JOINING with every tab full. `pty.rs` stores scrollback as raw
-/// bytes and base64-encodes on read, and the base64 alphabet contains no character JSON escapes, so
-/// one tab's replay frame is `ceil(SCROLLBACK_CAP / 3) * 4` plus a ~90-byte JSON envelope (budgeted
-/// at 128): 174,892 bytes at a 128 KiB ring, times `pty::MAX_TABS` = 16 tabs = 2,798,272 bytes
-/// (2.67 MiB) for ONE full replay.
+/// Sizing: `MAX_TABS` (16) * replay frame size (174,892 B at 128 KiB cap) = 2.67 MiB for one full replay.
 ///
-/// INVARIANT R, in two parts, because two different things can go wrong and one number cannot
-/// express both. Both are asserted below; the derivation lives with them.
-///
-/// **R1 — the recovery replay fits, with half the budget still free for frames that may NOT be
-/// dropped.** `MAX_TABS × replay_frame_bytes(SCROLLBACK_CAP) ≤ COMPANION_QUEUE_LIMIT_BYTES / 2`
-/// → 2,798,272 ≤ 4,194,304 ✅. The factor of 2 is not padding for its own sake: a replay is the
-/// RECOVERY path and shares the queue with a pending `init` and a run of `delta`s, none of which may
-/// be dropped. A recovery that can itself trip the failure it is recovering from is a livelock —
-/// exactly what the old 2 MiB budget produced, since replay frames are `pty_output`, `coalesce()`
-/// therefore ate all of them, `bytes` fell to near zero, the socket was never cut, and the resync
-/// loop re-issued the same oversized replay forever while the early tabs' scrollback never arrived.
-///
-/// R1's left-hand side is `MAX_TABS × frame` — ONE replay — only because `dispatch` addresses on the
-/// CONNECTION id. The frame that triggers a replay (`companion-connected`) is emitted per connection,
-/// and `ptyBridge.js` answers each one with a full replay, so an address matched per DEVICE would
-/// multiply that term by the number of connections the joining device happens to have open. Two
-/// browser tabs on one phone: 5,596,544 > 4,194,304, R1 broken. Three: 8,394,816 > 8,388,608, past
-/// the whole budget. Per-connection addressing is what makes R1 a property of the code rather than of
-/// how many tabs the user left open.
-///
-/// **R2 — the reachable double does not trip a coalesce at all.**
-/// `2 × MAX_TABS × replay_frame_bytes(SCROLLBACK_CAP) ≤ COMPANION_QUEUE_LIMIT_BYTES`
-/// → 5,596,544 ≤ 8,388,608 ✅ (67% of the budget). TWO replays really can sit in one outbox at once,
-/// and R1 alone does not see it: the addressed one this connection asked for, plus a BROADCAST one
-/// from `ptyBridge.js`'s `scheduleResync()`, which heals a hole the HOST's own congested socket left
-/// in every companion's byte stream and therefore has no addressee to narrow it to. Kept under the
-/// full budget, that pair costs bandwidth and nothing else.
-///
-/// WHAT NEITHER PART CLAIMS, stated so the next reader does not over-trust them: the queue's worst
-/// case is not finite. A sustained firehose can congest the host socket repeatedly, and each cycle
-/// queues another broadcast replay ~250ms later into a phone that has not drained. That is not a
-/// livelock and needs no budget to survive — those frames are `pty_output`, `coalesce()` sheds them
-/// by design, the queue returns to empty, and the addressed recovery replay that follows is the R1
-/// case again. INVARIANT R bounds the RECOVERY PATH, not the queue.
-///
-/// 8 MiB still holds several seconds of a firehosing terminal (~21 KB of base64 per flush, ~50
-/// flushes/s), so an ordinary hiccup is absorbed silently and only a genuinely stuck link coalesces.
-/// ACCEPTED COST: four paired phones wedged simultaneously now cost up to 32 MB of the Mac's RAM
-/// between them rather than ~8 MB. This is worst-case-only memory — a queue sits near-empty unless a
-/// link is genuinely stuck — and `force_close` still bounds it absolutely.
+/// INVARIANT R:
+/// - **R1**: `MAX_TABS * replay_frame_bytes(SCROLLBACK_CAP) <= COMPANION_QUEUE_LIMIT_BYTES / 2` (2,798,272 <= 4,194,304). Ensures recovery replay fits with 50% budget reserved for undroppable state frames. Address is per-connection so multiple tabs on one device do not multiply this load.
+/// - **R2**: `2 * MAX_TABS * replay_frame_bytes(SCROLLBACK_CAP) <= COMPANION_QUEUE_LIMIT_BYTES` (5,596,544 <= 8,388,608). Prevents coalesce when an addressed replay overlaps with a broadcast congestion replay.
 const COMPANION_QUEUE_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 
-/// Frame tag of the ONE coalescible kind. Mirrors `FRAME_PTY_OUTPUT` in `src/constants/protocol.js`
-/// — same two-file mirroring convention as the close codes above, for the same reason (the JS
-/// constant file is the protocol SSoT; Rust cannot import it).
+/// Frame tag of the ONE coalescible kind (mirrors `FRAME_PTY_OUTPUT` in `src/constants/protocol.js`).
 const FRAME_PTY_OUTPUT: &str = "pty_output";
 
-/// RFC 6455 1013 "Try Again Later" — a standard code, deliberately NOT one of the 4001/4002/4003
-/// app codes. `services/bridge.js` has no special case for it, so it lands in the generic close
-/// branch: state `closed`, then reconnect with backoff. That reconnect re-runs pairing-free auth
-/// and a full `init` + scrollback replay, which is exactly the recovery this case needs.
+/// RFC 6455 1013 "Try Again Later": sent when undroppable frames exceed budget, triggering clean client reconnect and full re-hydrate.
 const CLOSE_TOO_FAR_BEHIND: u16 = 1013;
 
-/// A companion's pending outbound frames, plus the two flags that make the coalescing policy a
-/// property of the queue rather than of whoever happens to push into it.
+/// A companion's pending outbound frames with coalescing and lifecycle tracking.
 struct Outbox {
     queue: VecDeque<Message>,
-    /// Payload bytes currently queued — the budget is measured in bytes because bytes are what
-    /// actually exhausts the machine; a frame count would let 500 firehose chunks look identical to
-    /// 500 keystroke echoes.
+    /// Payload bytes currently queued.
     bytes: usize,
-    /// Set when a coalesce dropped something. Consumed by the writer once the queue is empty.
+    /// Set when a coalesce dropped frames; consumed when queue drains to request re-hydrate.
     resync_pending: bool,
-    /// The connection is being torn down (a Close frame is queued). Further pushes are ignored so a
-    /// late broadcast cannot append after the Close.
+    /// Set when connection teardown begins (Close frame queued); ignores subsequent pushes.
     closed: bool,
 }
 
@@ -249,10 +119,7 @@ impl Outbox {
         }
     }
 
-    /// Last resort: the budget is blown by frames that may NOT be dropped (a phone so wedged that
-    /// even state deltas have piled up past the cap). Rather than grow — the original bug — or drop
-    /// something undroppable, cut the connection and let the companion's own reconnect+`init` do
-    /// the recovery. Bounded memory is not negotiable; this connection is.
+    /// Last resort: force-closes connection with RFC 6455 1013 when undroppable frames exceed budget, triggering clean client reconnect.
     fn force_close(&mut self) {
         self.queue.clear();
         self.bytes = 0;
@@ -264,9 +131,7 @@ impl Outbox {
         self.closed = true;
     }
 
-    /// Hands the whole backlog to the socket writer in one go, and answers "should a re-hydrate be
-    /// requested now?" — true only when a coalesce happened AND the queue is now empty, i.e. the
-    /// phone has actually caught up and can absorb a snapshot.
+    /// Hands backlog to socket writer; returns `(batch, wants_resync)` where resync is true only if coalesce occurred and queue is now empty.
     fn take(&mut self) -> (Vec<Message>, bool) {
         let batch: Vec<Message> = self.queue.drain(..).collect();
         self.bytes = 0;
@@ -285,31 +150,15 @@ fn frame_bytes(msg: &Message) -> usize {
     }
 }
 
-/// THE DROP-SAFETY HALF OF WHAT THE RELAY READS (see the module header's invariant note — the other
-/// half is `addressed_to` / the `from` stamp, which are about ROUTING, not about what may be dropped).
+/// DROP-SAFETY CHECK (routing is handled by `addressed_to` and `stamp_from`).
 ///
-/// COALESCIBLE — may be collapsed, because the host can regenerate the full truth on demand:
-///   * `pty_output`. Terminal bytes, live chunks and `reset` replays alike. Their entire content is
-///     the host's scrollback ring buffer, and `pty_get_scrollback` returns that buffer verbatim
-///     along with the authoritative size and liveness. Dropping a run of them and replaying the
-///     buffer yields a screen that is *behind*, never a screen that is *wrong*.
+/// COALESCIBLE (re-derivable from host scrollback): `pty_output` chunks and replays.
 ///
-/// NEVER DROPPED — everything else, including every frame kind not listed here:
-///   * `init` / `delta` — mirrored app state. A delta is the only record that a value changed;
-///     collapsing state onto a re-hydrate would work only while the re-hydrate is guaranteed, and
-///     making correctness depend on a second thing succeeding is how a "safe" drop becomes a phone
-///     quietly showing last minute's project list.
-///   * dialogs — these ride inside `delta` (`dialogStore.pendingDialog`), and a confirmation the
-///     user must answer before an irreversible sync is the single worst frame in the protocol to
-///     lose. Called out separately because "it's just a delta" is exactly how it would get dropped.
-///   * `invoke_result` — the reply to one specific companion RPC id. Not re-derivable by anything:
-///     no snapshot contains it, and dropping it turns a working call into a 20s timeout error.
-///   * `pty_exit`, `pty_resize` — liveness and size edges. Tiny, rare, never a cause of backlog, and
-///     a lost liveness edge is the 1.20.0 bug (§2.4) where one screen killed the other's live shell.
-///   * `ping`/`pong` — dropping a pong makes a healthy phone declare its own socket dead.
-///   * anything unrecognized, malformed, or binary — DEFAULT-DENY. A relay that has to guess what a
-///     frame means must guess "important"; a future frame type is then safe by construction rather
-///     than by someone remembering to come back here.
+/// NEVER DROPPED (default-deny for unrecognized/binary):
+/// - `init` / `delta`: mirrored app state (including confirmation dialogs).
+/// - `invoke_result`: RPC reply matching companion request id.
+/// - `pty_exit`, `pty_resize`: terminal liveness and dimension edges.
+/// - `ping` / `pong`: connection health.
 fn is_coalescible(msg: &Message) -> bool {
     let Message::Text(text) = msg else { return false };
     #[derive(Deserialize)]
@@ -322,15 +171,7 @@ fn is_coalescible(msg: &Message) -> bool {
     }
 }
 
-/// The routing half of what the relay reads: an optional top-level `to`, naming the ONE companion
-/// CONNECTION a host frame is meant for (`CompanionHandle::conn_key`, not a device id — see the
-/// module header's note 3). `None` (absent, null, or not a JSON object) means "everyone", which is
-/// what every frame meant before 1.21.1 and what most frames still mean — see `dispatch`.
-///
-/// COST, stated accurately because a previous version of this comment got it wrong: this runs on
-/// EVERY host->companion frame, including the `pty_output` firehose, and `serde_json::from_str` scans
-/// the whole document to find one field. It is one parse per FRAME, not per companion — `dispatch`
-/// hoists the call out of its loop — so the cost does not grow with the number of paired phones.
+/// Reads optional top-level `to` naming recipient connection key (`c<conn_id>`). Absent or invalid returns `None` (broadcast). Parsed once per host frame in `dispatch`.
 fn addressed_to(msg: &Message) -> Option<String> {
     let Message::Text(text) = msg else { return None };
     #[derive(Deserialize)]
@@ -340,16 +181,7 @@ fn addressed_to(msg: &Message) -> Option<String> {
     serde_json::from_str::<FrameAddress>(text).ok().and_then(|f| f.to)
 }
 
-/// Stamp the sending CONNECTION's id onto one inbound companion frame, so the host can address its
-/// reply back to the one socket that asked. Returns the frame unchanged when it is not a JSON object
-/// (binary frames, malformed text) — a frame the relay cannot parse is still a frame it must forward.
-///
-/// THE COMPANION NEVER SUPPLIES THIS, and the overwrite below is UNCONDITIONAL — that is the property
-/// that makes `from` trustworthy, and it must survive every future edit to this function. The value is
-/// `CompanionHandle::conn_key`, minted by the relay from its own connection counter; unlike a device
-/// id (which a paired device knows, because it is its own) a connection key is never told to any
-/// companion at all, so it cannot be guessed either. Inbound frames are forwarded to the host and
-/// never reach `dispatch`, so a companion also cannot route anything by setting `to` itself.
+/// Stamps sending connection key `c<conn_id>` unconditionally onto inbound companion JSON frames for host reply routing.
 fn stamp_from(msg: Message, conn_key: &str) -> Message {
     let Message::Text(text) = msg else { return msg };
     match serde_json::from_str::<serde_json::Value>(&text) {
@@ -361,31 +193,20 @@ fn stamp_from(msg: Message, conn_key: &str) -> Message {
     }
 }
 
-/// Queue one frame for a companion. NEVER blocks and never awaits: the caller is the relay's shared
-/// host loop, and anything that can make it wait on a phone is the bug this whole section exists to
-/// remove.
+/// Queues a frame into companion outbox without blocking the host loop.
 fn enqueue(outbox: &CompanionOutbox, msg: Message) {
     let (lock, notify) = &**outbox;
     lock.lock().unwrap_or_else(|e| e.into_inner()).push_within_budget(msg);
-    // `notify_one` stores a permit when nobody is waiting, so a notification sent while the
-    // companion task is busy awaiting `socket.send` is not lost — its next `notified()` returns
-    // immediately. That is what makes creating a fresh `notified()` future each loop iteration safe.
+    // `notify_one` stores a permit when nobody is waiting so notifications are not lost while awaiting send.
     notify.notify_one();
 }
 
-// ── Shared state (process-global, mirrors the OnceLock<Mutex<..>> pattern already used by
-// `system::PROJECT_ICONS` — copied deliberately for consistency, not reinvented) ─────────────
+// ── Shared state (process-global OnceLock<Mutex<..>>) ─────────────────────────────────────────
 
 struct CompanionHandle {
-    /// The paired device's *persistent* id (from `companion-devices.json`). NOT the wire address —
-    /// that is `conn_key`. This is here for the one operation whose intent genuinely IS device-level:
-    /// `revoke_device` finds and closes every live connection belonging to one device, without
-    /// touching any other entity (CLAUDE.md multi-entity scoped-clear rule).
+    /// Persistent device id (from `companion-devices.json`), used by `revoke_device` to close all sockets for a device.
     device_id: String,
-    /// THE WIRE ADDRESS — this CONNECTION's relay-minted identity, `c<conn_id>` from the same
-    /// monotonic counter that keys the map. Opaque to both ends: the host only ever echoes back what
-    /// the relay stamped, and no companion is ever shown one. See the module header's note 3 for why
-    /// the unit is a connection and not a device.
+    /// Wire address for this connection (`c<conn_id>`), minted from monotonic counter.
     conn_key: String,
     outbox: CompanionOutbox,
 }
@@ -398,27 +219,11 @@ struct RelayState {
     devices: StdMutex<Vec<PairedDevice>>,
     devices_path: StdMutex<Option<PathBuf>>,
     server_state_path: StdMutex<Option<PathBuf>>,
-    /// Process-local secret minted fresh at every start, handed ONLY to the Tauri webview (via
-    /// `get_companion_status`) and required on the `role=host` websocket.
-    ///
-    /// Why a secret and not just the peer address: `set_tailscale_https` runs
-    /// `tailscale serve --bg http://127.0.0.1:PORT`, so with HTTPS-over-Tailscale on, EVERY tailnet
-    /// peer's connection arrives at this process from `127.0.0.1`. A loopback test alone therefore
-    /// let any peer on the tailnet claim `role=host` with no token at all — overwriting `host_tx`,
-    /// cutting the real Mac's mirror off and feeding forged `init`/`delta` frames to every paired
-    /// phone. A proxy can forge the source address; it cannot forge a value it was never given.
-    /// Never persisted: a new process means a new secret, so a leaked one dies with the app.
+    /// Process-local secret minted fresh at startup for `role=host` WebSocket authentication (protects against loopback proxy bypass via Tailscale HTTPS).
     host_token: String,
-    /// Gate on top of per-device tokens (defence in depth, not the only gate — the plan's R-1
-    /// resolution is "bound 0.0.0.0, but useless without a token"). A fresh install starts `false`
-    /// and does not expose anything until the user opens the pairing UI, which calls
-    /// `start_companion_server()`; after that the user's own last choice is restored at startup
-    /// from `companion-server.json` (see `init`).
+    /// Gate controlling whether remote control accepts connections/pairing.
     enabled: AtomicBool,
-    /// Consecutive wrong codes submitted to `/pair` since the last successful pairing or
-    /// `start_companion_server()`. A 6-digit code is only ~1M combinations — without this an
-    /// unattended LAN attacker walks the whole space in minutes. At `MAX_PAIR_FAILURES` the relay
-    /// disables itself, so brute-forcing costs the attacker the server, not the user the Mac.
+    /// Consecutive invalid pairing attempts before automatic server disable (rate-limit guard against brute-force).
     pair_failures: AtomicU32,
 }
 
@@ -438,31 +243,10 @@ impl RelayState {
         }
     }
 
-    // Every lock in this module is taken with `.unwrap_or_else(|e| e.into_inner())`, never
-    // `.unwrap()` - the same convention `sync.rs` already uses for `SYNC_PROCS`. A `.unwrap()`
-    // here turns one panic anywhere under one of these locks into a permanently poisoned mutex:
-    // every later lock attempt panics too, so remote control is dead for the rest of the process's
-    // life. Taking the inner value keeps the relay serving instead, which is the behaviour a
-    // paired phone needs from a process whose whole job is to stay reachable.
-    /// Route ONE host frame to the companions it is for: the one CONNECTION named by a top-level
-    /// `to`, or every connected companion when there is none.
+    /// Routes one host frame to recipient connection named in `to`, or broadcasts to all companions if `to` is None.
     ///
-    /// BROADCAST IS STILL THE DEFAULT AND MUST STAY THAT WAY for most kinds. `pty_output` live chunks
-    /// (one shared PTY — every screen shows the same bytes), `pty_exit` and `pty_resize` (shared
-    /// liveness and shared size; addressing those would rebuild the 1.20.0 §2.4 desync bug), `delta`
-    /// (mirror state, including a confirm dialog that is answerable from any screen by design),
-    /// `init` (idempotent, so a spurious one is waste rather than damage) and `ping`/`pong` all carry
-    /// no `to`. Only two senders set it, both in JS: the scrollback replay for a joining or resyncing
-    /// companion, and an `invoke_result`, which answers one id on one companion's private counter.
-    ///
-    /// `to` NAMES ONE CONNECTION (`CompanionHandle::conn_key`), not a paired device. Two browser tabs
-    /// on the same phone are two connections and each gets only its own frames — which is what makes
-    /// both of the bugs above actually fixed rather than fixed between devices and still live within
-    /// one. It is also what keeps INVARIANT R's left-hand side at ONE replay per outbox; see
-    /// `COMPANION_QUEUE_LIMIT_BYTES`.
-    ///
-    /// The `to` parse is deliberately hoisted OUT of the loop: this runs on every host frame,
-    /// firehose included, so it must cost one parse per frame rather than one per paired phone.
+    /// Broadcast is default for `pty_output` live stream, `delta`, `init`, and lifecycle events.
+    /// `to` is set for companion scrollback replays and `invoke_result` RPC responses.
     fn dispatch(&self, msg: Message) {
         let to = addressed_to(&msg);
         let companions = self.companions.lock().unwrap_or_else(|e| e.into_inner());
@@ -476,12 +260,7 @@ impl RelayState {
         }
     }
 
-    /// The host's own queue stays UNBOUNDED, deliberately. Everything travelling this way is either
-    /// human-paced (a companion's keystrokes and intents) or relay-originated (`companion-connected`),
-    /// and the consumer is the Mac's own webview over loopback — there is no unbounded producer and
-    /// no slow link on this side. More to the point, the coalescing policy has nothing to offer here:
-    /// not one frame going to the host is re-derivable, so a bound could only drop something that
-    /// matters. Bounding it would be a guard for its own sake.
+    /// Forwards inbound frame to host (unbounded queue because traffic is human-paced and recipient is local webview).
     fn forward_to_host(&self, msg: Message) {
         let host_tx = self.host_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = host_tx.as_ref() {
@@ -489,20 +268,13 @@ impl RelayState {
         }
     }
 
-    /// `id` CARRIES THE CONNECTION KEY, not the device id. This frame is emitted per connection (on
-    /// join, and again whenever a coalesced queue has drained), and `services/ptyBridge.js` answers
-    /// each one with a full scrollback replay addressed to that same `id`. Handing it a device id
-    /// therefore fanned one connection's replay into every outbox that device had open — the term
-    /// INVARIANT R cannot absorb. Nothing else consumes the field: `services/mirror.js` reacts to the
-    /// tag alone by broadcasting a full `init`.
+    /// Emits `{"t":"companion-connected","id":<conn_key>}` to host so it generates an `init` snapshot and targeted scrollback replay.
     fn notify_host_companion_connected(&self, conn_key: &str) {
         let payload = serde_json::json!({ "t": "companion-connected", "id": conn_key }).to_string();
         self.forward_to_host(Message::Text(payload));
     }
 
-    /// Synchronous disk write — callers on the async runtime (the `/pair` handler) MUST run this
-    /// through `spawn_blocking`; callers already inside a Tauri-command `spawn_blocking` closure
-    /// (`revoke_device`) may call it directly.
+    /// Synchronous disk write for device list (must be wrapped in `spawn_blocking` when called from async handlers).
     fn persist_devices(&self) -> Result<(), String> {
         let path = self
             .devices_path
@@ -585,9 +357,7 @@ fn now_secs() -> u64 {
 
 /// Fills `buf` with OS-sourced random bytes. `getrandom` failing at all is exceedingly rare
 /// (no OS entropy source); falls back to a time-seeded buffer rather than panicking — a
-/// visibly-weaker-than-normal token in that one-in-a-million case beats crashing pairing
-/// entirely. Not wrapped in `spawn_blocking`: reads a few bytes from the OS's CSPRNG, not a
-/// filesystem or network call.
+/// Generates OS-sourced random bytes with fallback to time-seeded PRNG if OS entropy fails.
 fn random_bytes<const N: usize>() -> [u8; N] {
     let mut buf = [0u8; N];
     if getrandom::getrandom(&mut buf).is_err() {
@@ -621,11 +391,7 @@ fn generate_pairing_code() -> String {
 
 // ── Public init, called once from `lib.rs`'s `setup()` ───────────────────────────────────────
 
-/// Loads any already-paired devices from disk, resolves where to persist future ones, then
-/// spawns the axum server on Tauri's own tokio runtime. Never blocks `setup()`: the disk read
-/// here is a single small JSON file (same class as `logger::init`'s own synchronous read —
-/// CLAUDE.md's "plain, fast, synchronous local file I/O ... does not need spawn_blocking"); the
-/// actual `TcpListener::bind` + accept loop happens inside the spawned task, not on this thread.
+/// Loads paired devices, restores enabled preference from `companion-server.json`, and spawns server task on tokio runtime.
 pub fn init(app_handle: &AppHandle) {
     let state = relay();
     match crate::projects::get_app_data_dir(app_handle) {
@@ -639,20 +405,6 @@ pub fn init(app_handle: &AppHandle) {
             }
             *state.devices_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
 
-            // Restore the user's last explicit on/off choice.
-            //
-            // WHY restore "on" rather than always booting off: the person this feature exists for
-            // is in another room holding the phone. An app restart they did not ask for (an update,
-            // a crash, a reboot) must not turn into "walk back to the Mac and click a toggle" — that
-            // is the single most annoying failure this feature can produce, and it is the same
-            // failure the token fix below is about. "Off means off" is not weakened, because Off is
-            // persisted too: what is restored is always the user's own last decision, never a
-            // default the app chose for them. A fresh install still starts off (the file is absent →
-            // `Default` → false).
-            //
-            // The pairing code is deliberately NOT persisted — a fresh one is minted on restore, so
-            // a code read off the Mac's screen last week is dead, and the 10-strike brute-force
-            // shutdown (MAX_PAIR_FAILURES) still guards the new one while nobody is watching.
             let server_state_path = dir.join("companion-server.json");
             let restored = std::fs::read_to_string(&server_state_path)
                 .ok()
@@ -675,17 +427,7 @@ pub fn init(app_handle: &AppHandle) {
     });
 }
 
-/// Binds once and serves for the lifetime of the process. The listener is intentionally never
-/// rebound by `start_companion_server`/`stop_companion_server` (see those commands' doc
-/// comments) — this avoids a bind-race/"address already in use" class of bug that cannot be
-/// exercised on this dev box before it ships.
-///
-/// Binds on `0.0.0.0` (IPv4 unspecified) — deliberately IPv4-only. A dual-stack `[::]` bind made
-/// every inbound IPv4 connection arrive as an IPv4-mapped address (`::ffff:a.b.c.d`), which broke
-/// the host's loopback guard (`Ipv6Addr::is_loopback()` matches only `::1`) and left companions
-/// with no host to mirror from. IPv4-only removes that whole class of mapped-address bug. The LAN
-/// case is IPv4; Tailscale is still reachable over its `100.x` IPv4 (the `tailscale` menu row) —
-/// only a pure-IPv6 Tailscale peer is not served, which this app does not target.
+/// Binds IPv4 listener on port 1421 and runs axum server for the process lifetime. IPv4-only bind avoids IPv6-mapped dual-stack loopback issues.
 async fn serve_forever(app: AppHandle) {
     let addr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::UNSPECIFIED), PORT);
     let listener = match TcpListener::bind(addr).await {
@@ -703,32 +445,18 @@ async fn serve_forever(app: AppHandle) {
 }
 
 // ── §7.2 PORT-1: axum on :1421 is the ONE LAN entry, dev and release alike ───────────────────
-//
-// Release: `/` and every other GET is answered from the EMBEDDED bundle via Tauri's asset
-// resolver (`resolve_dist_dir()` + `ServeDir` on disk is deleted — Tauri v2 compiles
-// `frontendDist` into the binary and ships no loose `dist/` in the `.app`, so the old approach
-// 404'd every time; that exact 404 is what this rewrite fixes).
-// Dev: everything but /ws and /pair is reverse-proxied to the Vite dev server, which stays
-// localhost-only — the phone only ever reaches Vite *through* this proxy. HMR is NOT proxied
-// (§7.2): the Mac window hot-reloads directly against Vite; the phone uses manual refresh.
+// Release: Serves SPA from binary via Tauri embedded asset resolver.
+// Dev: Reverse-proxies non-relay requests to Vite dev server on localhost (HMR is not proxied).
 fn build_router(app: &AppHandle) -> Router {
     let router = Router::new()
         .route("/ws", get(ws_handler))
         .route("/pair", post(pair_handler))
-        // Permissive CORS: in `tauri dev` the companion loads the SPA from Vite (port
-        // 142x) and calls this server (1421) cross-origin for `POST /pair` (plan §7.1a "Dev vs
-        // prod" table). The endpoint's own auth (the 6-digit code / device token) is the real
-        // security boundary, not CORS — this is an internal LAN tool, not a public API.
         .layer(tower_http::cors::CorsLayer::permissive());
 
     if cfg!(debug_assertions) {
         let vite_origin = resolve_vite_origin(app);
         eprintln!("[web_server] dev mode: proxying non-relay requests to vite on {}", vite_origin);
 
-        // HMR is NOT proxied here (§7.2): the Mac dev window hot-reloads directly against Vite;
-        // the phone loads the SPA through this proxy but has no live HMR in dev (manual refresh).
-        // An axum HMR websocket bridge was tried and removed — it rerouted even the Mac window's
-        // HMR through the proxy and broke it with connection-refused spam. Reliable-first.
         return router.fallback(move |req: Request| {
             let origin = vite_origin.clone();
             async move { dev_proxy_handler(origin, req).await }
@@ -742,15 +470,7 @@ fn build_router(app: &AppHandle) -> Router {
     })
 }
 
-/// The exact origin the Tauri dev window itself loads — `scripts/tauri-runner.js` overrides
-/// `build.devUrl` at runtime with the free port it picked, so this is the one authoritative answer
-/// for both host AND port.
-///
-/// Deliberately keeps the URL's **host** instead of hardcoding `127.0.0.1`: Vite binds the name
-/// `localhost`, which on macOS resolves to **`::1` first**, so a v4-literal dial gets connection-
-/// refused while the very same server answers fine on `http://localhost`. That mismatch is exactly
-/// the "vite dev server unreachable on 127.0.0.1:1420" failure this replaced — the window worked
-/// (it uses the name) while the proxy did not (it used the literal).
+/// Resolves Vite dev server origin from Tauri config (defaults to `http://localhost:1420`).
 fn resolve_vite_origin(app: &AppHandle) -> String {
     if let Some(url) = app.config().build.dev_url.as_ref() {
         let origin = url.as_str().trim_end_matches('/').to_string();
@@ -762,17 +482,10 @@ fn resolve_vite_origin(app: &AppHandle) -> String {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1420);
-    // Fallback uses the NAME too, for the same dual-stack reason.
     format!("http://localhost:{}", port)
 }
 
-/// "Off means off": while the `enabled` gate is down, the HTTP surface serves NOTHING to the LAN —
-/// not the release SPA, not (in dev) a proxied view of the whole Vite dev server including its
-/// `/@fs/` source endpoint. Only `/ws` and `/pair` were gated before this, which left the page
-/// itself readable by anyone on the network even with remote control switched off.
-///
-/// Safe for the Mac window in BOTH modes because the window never loads its assets through axum:
-/// in dev it loads Vite directly on localhost, in release the embedded `tauri://` protocol.
+/// Rejects LAN HTTP requests with 503 Service Unavailable when remote control is disabled.
 fn reject_if_disabled() -> Option<Response> {
     if relay().enabled.load(Ordering::SeqCst) {
         return None;
@@ -786,11 +499,7 @@ fn reject_if_disabled() -> Option<Response> {
     )
 }
 
-/// Headers that must never be blindly forwarded across the proxy boundary: the hop-by-hop set
-/// (RFC 7230 §6.1), plus two connection-scoped ones —
-/// * `host`: reqwest (outbound) and the browser (inbound) set it from the real target;
-/// * `content-length`: both hyper and reqwest derive it from the body we actually hand them, so
-///   copying the original value risks a mismatch that trips a protocol error instead of a page.
+/// Filters hop-by-hop headers (RFC 7230 §6.1) plus host/content-length before proxy forwarding.
 fn is_hop_by_hop_header(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     matches!(
@@ -799,16 +508,11 @@ fn is_hop_by_hop_header(name: &str) -> bool {
     ) || name.starts_with("proxy-")
 }
 
-/// Dev fallback: reverse-proxies method + path + query + headers (minus hop-by-hop) + body to the
-/// Vite dev server at `vite_origin` (see `resolve_vite_origin`) and streams back its
-/// status/headers/body. `502` (never a panic) if Vite is unreachable.
+/// Reverse-proxies HTTP requests to Vite dev server in debug builds.
 async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
     if let Some(resp) = reject_if_disabled() {
         return resp;
     }
-    // HMR (and any other) websocket upgrade is NOT proxied (§7.2). Answering it with Vite's
-    // index.html would leave the browser's handshake hanging on a 200; a plain 501 makes the
-    // Vite client fail fast and fall back instead of retrying against a lying endpoint.
     if req.headers().contains_key(header::UPGRADE) {
         return (StatusCode::NOT_IMPLEMENTED, "websocket upgrades are not proxied in dev (see docs/plan/done/remote-control.md §7.2)")
             .into_response();
@@ -870,16 +574,7 @@ fn dev_proxy_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(reqwest::Client::new)
 }
 
-/// Release fallback: serves the SPA straight out of the binary via Tauri's asset resolver — no
-/// disk `dist/` involved at all. SPA-fallback: an unknown/missing path falls back to
-/// `index.html` so client-side routing still boots.
-///
-/// VERIFY ON MAC (uncertain, the single most load-bearing unknown in this lane — could not
-/// compile here): `app.asset_resolver()` — assumed `tauri::Manager::asset_resolver(&self) ->
-/// tauri::AssetResolver`, with `.get(path: String) -> Option<tauri::async_runtime::Asset>`
-/// (some tauri 2.x point releases have shuffled this between `tauri::` and `tauri::utils::`) and
-/// the returned type exposing `.bytes: Vec<u8>` + `.mime_type: String`. If the method or field
-/// names differ in the pinned `tauri` crate version, this function is the only place to fix.
+/// Serves embedded SPA frontend assets in release builds using Tauri asset resolver.
 async fn release_asset_handler(app: AppHandle, req: Request) -> Response {
     if let Some(resp) = reject_if_disabled() {
         return resp;
@@ -910,10 +605,7 @@ struct WsQuery {
     token: Option<String>,
 }
 
-/// Largest inbound frame a peer may send. Generous next to anything the protocol legitimately
-/// carries (the biggest is a full project-state resync), and far below the library default of
-/// ~64MB - which is what an unpaired-but-connected peer could otherwise push at the Mac's memory
-/// before the pairing check has even run.
+/// Max inbound frame size (2MB) to prevent memory exhaustion from unauthenticated peers.
 const MAX_INBOUND_FRAME: usize = 2 * 1024 * 1024;
 
 async fn ws_handler(
@@ -929,13 +621,7 @@ async fn ws_handler(
 async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
     match q.role.as_deref() {
         Some("host") => {
-            // Authority for `role=host` is PROVEN, not inferred from the peer address.
-            //
-            // The loopback test stays as the outer, cheap check, but it is no longer sufficient on
-            // its own: `tailscale serve` proxies the tailnet into `http://127.0.0.1:PORT`, so every
-            // tailnet peer's connection also arrives from loopback (see `RelayState::host_token`).
-            // The process-local secret is the real gate — the Mac's webview is the only party ever
-            // handed it, and it is minted per process so it cannot be replayed after a restart.
+            // Validates host WebSocket on loopback address and process-local host secret.
             let token = q.token.as_deref().unwrap_or_default();
             if !addr.ip().is_loopback() || token != relay().host_token {
                 close_with_code(
@@ -950,9 +636,7 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
         }
         Some("companion") => {
             let state = relay();
-            // Checked BEFORE the token, and answered with a code that says nothing about the token:
-            // a disabled relay must not double as an oracle for whether a token is still valid, and
-            // the companion must not read "the Mac is off right now" as "you have been revoked".
+            // Validates companion connection against enabled state and paired device tokens.
             if !state.enabled.load(Ordering::SeqCst) {
                 close_with_code(socket, CLOSE_SERVER_DISABLED, "remote control is disabled on the host").await;
                 return;
@@ -1008,21 +692,13 @@ async fn handle_host_socket(mut socket: WebSocket) {
         }
     }
 
-    // Only one host connection exists in practice (single Mac app instance, single_instance
-    // plugin already enforces that) so an unconditional clear is correct for the real case;
-    // a rapid reconnect racing this cleanup is a known, accepted edge case, not silently
-    // "fixed" with false confidence.
+    // Clears host sender on disconnect (host reconnects on webview reload).
     *state.host_tx.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-/// Owns one companion's socket, and is the ONLY consumer of that companion's outbox — which is what
-/// makes the queue's order the wire's order without any locking discipline asked of the producers.
+/// Manages companion WebSocket connection, outbox draining, and resync signaling.
 async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id: String) {
     let state = relay();
-    // This connection's wire identity. `conn_id` comes from the relay's own monotonic counter and is
-    // never reused inside a process, so a reload that races the old socket's `remove(&conn_id)` below
-    // produces two handles with two DISTINCT keys — the new page's replay lands in the new page's
-    // outbox alone, and the doomed one drains into a socket that is about to close.
     let conn_key = format!("c{}", conn_id);
     let outbox: CompanionOutbox = Arc::new((StdMutex::new(Outbox::new()), Notify::new()));
     state.companions.lock().unwrap_or_else(|e| e.into_inner()).insert(
@@ -1038,15 +714,7 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
                 let Some(result) = incoming else { break };
                 match result {
                     Ok(msg @ (Message::Text(_) | Message::Binary(_))) => {
-                        // Stamped with THIS connection's relay-minted key so the host can address its reply back to this one socket (services/hostInvoke.js echoes it as `to`).
-                        //
-                        // COST: this direction is human-paced — keystrokes, intents, invokes — so a
-                        // full `serde_json::Value` round-trip per frame is affordable here. It is NOT
-                        // the only place the relay parses: `dispatch` calls `addressed_to` on every
-                        // host->companion frame including the `pty_output` firehose, and that parse
-                        // scans the whole document too. It is bounded the only way that matters —
-                        // hoisted out of the per-companion loop, so it is one parse per frame however
-                        // many phones are paired.
+                        // Stamped with THIS connection's relay-minted key so host addresses reply back to this socket (services/hostInvoke.js echoes `to`).
                         state.forward_to_host(stamp_from(msg, &conn_key));
                     }
                     Ok(Message::Close(_)) => break,
@@ -1057,9 +725,6 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
             _ = notify.notified() => {}
         }
 
-        // Drained after EITHER branch, so nothing queued during an inbound frame waits for the next
-        // notification. The lock is released before the first `await` — a producer must never find
-        // this mutex held across socket I/O.
         let (batch, wants_resync) = lock.lock().unwrap_or_else(|e| e.into_inner()).take();
         for msg in batch {
             let is_close = matches!(msg, Message::Close(_));
@@ -1071,10 +736,6 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
             }
         }
         if wants_resync {
-            // The queue is empty and the socket accepted everything in it, so this phone can absorb
-            // a snapshot now. The host answers this exactly as it answers a fresh join — and answers
-            // it for THIS connection only, which is what keeps the recovery replay at the one-replay
-            // size INVARIANT R is derived from.
             state.notify_host_companion_connected(&conn_key);
         }
     }
@@ -1108,14 +769,9 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
     if expected.is_empty() || body.code.trim() != expected {
         let failures = state.pair_failures.fetch_add(1, Ordering::SeqCst) + 1;
         if failures >= MAX_PAIR_FAILURES {
-            // Shut the whole relay down rather than let a 6-digit space be walked. The user turns
-            // it back on from the header menu, which mints a fresh code — so the attacker's
-            // progress through the old code space is worthless too.
+            // Disables server after consecutive bad pairing codes to mitigate brute-force attacks.
             state.enabled.store(false, Ordering::SeqCst);
             state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clear();
-            // Persisted, so a brute-force attempt is not undone by the attacker simply waiting for
-            // the app to restart. Blocking write on the async runtime → spawn_blocking, per the
-            // never-block-the-UI rule that governs every other disk write in this file.
             let _ = tauri::async_runtime::spawn_blocking(|| relay().persist_enabled(false)).await;
             eprintln!(
                 "[web_server] {} consecutive bad pairing codes — remote control disabled, turn it back on to get a new code",
@@ -1131,9 +787,7 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
     }
     state.pair_failures.store(0, Ordering::SeqCst);
 
-    // Best-effort friendly label from User-Agent — not itemized in §13.1's request body, so no
-    // rename/label endpoint is implemented in this Wave-1 pass; a future round can let the user
-    // rename a device from the paired-devices modal without changing this file's shape.
+    // Extracts device label from User-Agent header (truncated to 80 chars).
     let label = headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -1145,18 +799,13 @@ async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Resp
     let token = device.token.clone();
     state.devices.lock().unwrap_or_else(|e| e.into_inner()).push(device);
 
-    // The disk write is blocking IO; this handler runs on the same tokio runtime as the rest of
-    // the app (spawned via `tauri::async_runtime::spawn` in `init`), so it goes through
-    // `spawn_blocking` exactly like every Tauri command's blocking work does.
     let write_result = tauri::async_runtime::spawn_blocking(|| relay().persist_devices())
         .await
         .map_err(|e| format!("spawn_blocking panicked: {}", e))
         .and_then(|r| r);
 
     if let Err(e) = write_result {
-        // Roll back: a token that only works this session and silently stops working (and can
-        // never be revoked, since it was never written) after a restart is worse than failing
-        // the pairing attempt outright.
+        // Rolls back in-memory device if disk write fails to prevent orphaned tokens.
         state.devices.lock().unwrap_or_else(|e| e.into_inner()).retain(|d| d.token != token);
         eprintln!("[web_server] failed to persist paired device: {}", e);
         return (
@@ -1176,7 +825,7 @@ fn is_lan_v4(ip: &Ipv4Addr) -> bool {
     (o[0] == 192 && o[1] == 168) || o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1]))
 }
 
-/// Tailscale's CGNAT range, 100.64.0.0/10.
+/// Tailscale CGNAT range check (100.64.0.0/10).
 fn is_tailscale_v4(ip: &Ipv4Addr) -> bool {
     let o = ip.octets();
     o[0] == 100 && (64..=127).contains(&o[1])
@@ -1190,13 +839,7 @@ pub struct CompanionUrl {
 
 // ── Tauri commands (all async + spawn_blocking per CLAUDE.md's never-block-UI rule) ──────────
 
-/// (Re)generates the pairing code and marks the relay accepting-companions. Idempotent to call
-/// again while already running (e.g. reopening the pairing modal after closing it) — always
-/// hands back a *fresh* code so a stale code shown earlier in the session can't be reused.
-///
-/// Does NOT rebind the TCP listener — that is bound once for the process's lifetime in
-/// `init()`/`serve_forever` (see that function's doc comment for why). This command only flips
-/// the `enabled` gate that the WS handler and `/pair` both check, and mints a new code.
+/// Starts companion server: generates fresh pairing code, enables relay, and resets failure count.
 #[tauri::command]
 pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<CompanionServerInfo, String> {
@@ -1211,9 +854,7 @@ pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Flips the `enabled` gate off (new pairing attempts get 401/4001) and immediately closes every
-/// currently-connected companion socket — "stop" cuts live mirrors, not just future joins. The
-/// listener itself keeps running so a later `start_companion_server()` doesn't need to re-bind.
+/// Stops companion server: disables relay and closes all active companion sockets with `CLOSE_SERVER_DISABLED`.
 #[tauri::command]
 pub async fn stop_companion_server() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<(), String> {
@@ -1221,8 +862,6 @@ pub async fn stop_companion_server() -> Result<(), String> {
         state.set_enabled(false);
         let mut companions = state.companions.lock().unwrap_or_else(|e| e.into_inner());
         for (_, handle) in companions.drain() {
-            // CLOSE_SERVER_DISABLED, never CLOSE_UNPAIRED: turning the toggle off revokes nothing.
-            // Sending 4001 here is exactly what made every paired phone forget its token on an Off.
             enqueue(
                 &handle.outbox,
                 Message::Close(Some(CloseFrame {
@@ -1243,25 +882,13 @@ pub struct CompanionServerInfo {
     port: u16,
 }
 
-/// The relay's live truth, for the host UI to re-sync against.
-///
-/// Needed because `enabled`/`pairing_code` live in the Rust process, which OUTLIVES the webview:
-/// an HMR full-reload in dev, or any webview reload, resets the frontend's `running` ref to false
-/// while the relay is still on and paired phones are still connected — the menu would then claim
-/// "Off" while the LAN is actually being served. The frontend calls this once on mount.
+/// Returns current relay status, pairing code, port, and process host token to host webview.
 #[derive(Serialize)]
 pub struct CompanionStatus {
     enabled: bool,
     pairing_code: String,
     port: u16,
     /// The process-local secret the `role=host` websocket requires (`RelayState::host_token`).
-    ///
-    /// Carried on this EXISTING command rather than a new one on purpose: registering a command
-    /// means editing `lib.rs`, which belongs to another workstream in this release, and the
-    /// audience is identical either way — a Tauri command is reachable only from the Tauri webview
-    /// or from an already-paired companion over the `invoke` RPC, and a paired companion is
-    /// already granted arbitrary `invoke` by the declared security posture. What this closes is the
-    /// *unpaired* tailnet peer, which was never covered by that posture.
     #[serde(rename = "hostToken")]
     host_token: String,
 }
@@ -1281,10 +908,7 @@ pub async fn get_companion_status() -> Result<CompanionStatus, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// §7.1a: every reachable address, classified. Pure interface enumeration via `if-addrs` — no
-/// subprocess, no network call — still routed through `spawn_blocking` for consistency with
-/// every other command in this file (and because interface enumeration is, technically, a
-/// blocking syscall, however fast in practice).
+/// Enumerates and classifies network interfaces into LAN and Tailscale URLs (plan §7.1a).
 #[tauri::command]
 pub async fn get_companion_url() -> Result<Vec<CompanionUrl>, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -1302,9 +926,6 @@ pub async fn get_companion_url() -> Result<Vec<CompanionUrl>, String> {
                         out.push(CompanionUrl { kind: "tailscale", url: format!("http://{}:{}", v4.ip, PORT) });
                     }
                 }
-                // The listener is IPv4-only (see serve_forever), so an IPv6 address is never
-                // reachable — do not offer it as a companion URL. Tailscale still appears via its
-                // 100.x IPv4 above.
                 if_addrs::IfAddr::V6(_) => {}
             }
         }
@@ -1315,16 +936,9 @@ pub async fn get_companion_url() -> Result<Vec<CompanionUrl>, String> {
 }
 
 // ── Tailscale HTTPS (`tailscale serve`) ──────────────────────────────────────────────────────
-// Exposes the companion over HTTPS on the tailnet, which is what unlocks installing it as a
-// STANDALONE PWA: Android Chrome only offers a standalone install from a secure context, and plain
-// http on a LAN / 100.x IP is not one. Integrated as an in-app toggle so the user never touches the
-// CLI. The ONE thing the app cannot do is enable HTTPS certs for the tailnet — that is an
-// admin-console account setting; when it's off, tailscale's own error (which carries the admin URL)
-// is passed straight through to the UI. All async + spawn_blocking per the never-block-UI rule.
+// Exposes companion over HTTPS via MagicDNS to enable standalone PWA installation on mobile.
 
-/// Resolve the tailscale CLI. Prefer an explicit install path (no dependency on the GUI app's PATH
-/// or rc-sourcing timing — see CLAUDE.md's cold-start PATH race), fall back to the bare name (found
-/// via create_command's Homebrew/local PATH prepend on macOS, or the system PATH on the Linux dev box).
+/// Resolves path to `tailscale` binary (probes well-known paths before system PATH).
 fn tailscale_bin() -> String {
     for p in [
         "/opt/homebrew/bin/tailscale",
@@ -1345,7 +959,7 @@ fn run_tailscale(args: &[&str]) -> Result<std::process::Output, String> {
         .map_err(|e| format!("could not run tailscale ({}). Is Tailscale installed?", e))
 }
 
-/// This node's MagicDNS name → its https URL (trailing dot stripped), or None if unreadable.
+/// Gets node MagicDNS HTTPS URL from `tailscale status --json`.
 fn tailscale_https_url() -> Option<String> {
     let out = run_tailscale(&["status", "--json"]).ok()?;
     if !out.status.success() {
@@ -1360,7 +974,7 @@ fn tailscale_https_url() -> Option<String> {
     }
 }
 
-/// True when `tailscale serve` is currently proxying our loopback port.
+/// Returns true if `tailscale serve` is active for local port 1421.
 fn tailscale_serve_on() -> bool {
     let target = format!("127.0.0.1:{}", PORT);
     run_tailscale(&["serve", "status"])
@@ -1378,9 +992,7 @@ pub struct TailscaleHttps {
     url: Option<String>,
 }
 
-/// Read whether HTTPS-over-Tailscale is available/enabled plus this node's https URL. The host UI
-/// calls this on mount/start to render the toggle and the URL row. A tailscale that is missing or
-/// erroring is reported as a clean `available:false` (an off state), never a hard error.
+/// Checks Tailscale HTTPS status and MagicDNS URL.
 #[tauri::command]
 pub async fn get_tailscale_https() -> Result<TailscaleHttps, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<TailscaleHttps, String> {
@@ -1394,10 +1006,7 @@ pub async fn get_tailscale_https() -> Result<TailscaleHttps, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Turn the HTTPS proxy on (`tailscale serve --bg http://127.0.0.1:PORT`) or off
-/// (`tailscale serve --https=443 off`). On an enable that fails because the tailnet has no HTTPS
-/// certs yet, tailscale's stderr (which carries the admin URL to enable them) is returned verbatim
-/// so the UI can show the user exactly what to click.
+/// Configures `tailscale serve` for HTTPS relay (`--bg http://127.0.0.1:1421` or `--https=443 off`).
 #[tauri::command]
 pub async fn set_tailscale_https(enable: bool) -> Result<TailscaleHttps, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<TailscaleHttps, String> {
@@ -1434,10 +1043,7 @@ pub async fn list_paired_devices() -> Result<Vec<PairedDeviceView>, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Scoped-clear (CLAUDE.md multi-entity rule): removes exactly the one device matching `id`
-/// from `companion-devices.json`, rewriting the rest unchanged, and closes only that device's
-/// live socket(s) — every other paired device and every other companion's connection survives
-/// untouched.
+/// Revokes paired device by id: removes from `companion-devices.json` and closes all associated sockets with `CLOSE_UNPAIRED`.
 #[tauri::command]
 pub async fn revoke_device(id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1448,7 +1054,6 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
             idx.map(|i| devices.remove(i))
         };
         if removed.is_none() {
-            // Unknown/already-revoked id — idempotent no-op, not an error.
             return Ok(());
         }
         state.persist_devices()?;
@@ -1461,7 +1066,6 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
             .collect();
         for k in dead {
             if let Some(handle) = companions.remove(&k) {
-                // A genuine revocation IS the CLOSE_UNPAIRED case — this is the one place the companion should drop its stored token, and now the only one that says so.
                 enqueue(
                     &handle.outbox,
                     Message::Close(Some(CloseFrame {
@@ -1477,11 +1081,7 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// ICON-1: scans once, holds a COMPLETE map (every project id → data URI or explicit `null`),
-/// so the frontend can never 404 or retry-loop on an icon. Reuses `projects::load_projects_blocking`
-/// (which already repopulates `system::PROJECT_ICONS` as a side effect) and
-/// `system::get_project_icons()` — the existing scan/cache primitives — rather than duplicating
-/// project-type detection here.
+/// Returns map of project id to base64 icon data URI or null (ICON-1).
 #[tauri::command]
 pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Option<String>>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1500,12 +1100,7 @@ pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Opt
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// FILE-1: reads are confined to an allow-list of roots — every known project's `local_path`
-/// (which already contains any project's `REPORT.html`, so no separate report-path root is
-/// needed). Confinement uses `canonicalize()` + `Path::starts_with` (component-wise, not a raw
-/// string prefix — `/home/user/projectX` does not spuriously match a `/home/user/project` root)
-/// so `..` traversal and symlink escapes are both closed. A path outside every root, or one that
-/// doesn't exist, returns an error — never bytes.
+/// Confined file reader (FILE-1): validates requested path resides within known project roots and enforces 2MB size limit.
 #[tauri::command]
 pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1521,10 +1116,6 @@ pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, Stri
             return Err("path is outside every project root — refusing to read".to_string());
         }
 
-        // Size-capped before reading a byte: this result crosses the relay to a phone as one
-        // in-memory String, so an accidentally-huge file inside a project root (a build artifact,
-        // a log) would be read whole into RAM and then framed whole onto the socket. 2MB is far
-        // above any REPORT.html/CHANGELOG this is used for.
         const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
         let size = std::fs::metadata(&requested)
             .map_err(|e| format!("failed to stat file: {}", e))?
@@ -1680,9 +1271,7 @@ mod tests {
         outbox.0.lock().unwrap().queue.len()
     }
 
-    /// THE BACKWARD-COMPATIBILITY GUARANTEE the whole "no new frame type, frozen protocol" claim
-    /// rests on: a frame with no `to` still reaches every companion, exactly as before 1.21.1. An
-    /// older companion bundle sends and receives frames that never carry the field at all.
+    /// Backward-compatibility guarantee: unaddressed frames reach all companions (pre-1.21.1 behavior).
     #[test]
     fn a_frame_with_no_address_still_reaches_every_companion() {
         let state = RelayState::new();
@@ -1699,8 +1288,7 @@ mod tests {
         assert_eq!(queued(&b), 4);
     }
 
-    /// Bug 2 in executable form: an `invoke_result` for one connection must not land on any other,
-    /// whose per-page request counter starts at 1 as well and would resolve the wrong call with it.
+    /// Bug 2 test: `invoke_result` is delivered strictly to the requesting connection.
     #[test]
     fn an_addressed_frame_reaches_only_that_connection() {
         let state = RelayState::new();
@@ -1722,10 +1310,7 @@ mod tests {
         assert_eq!(queued(&b), 1);
     }
 
-    /// THE TWO-TABS-ON-ONE-PHONE CASE, which a device-level address could not fix and which is the
-    /// whole reason the wire address is a connection. Two connections share `device-a`; each must see
-    /// only its own reply (bug 2 within one device — silent wrong data) and only its own scrollback
-    /// replay (bug 1 within one device — and the N-times-a-replay term INVARIANT R cannot absorb).
+    /// Two tabs on one phone have isolated request counters and outboxes (connection-level routing).
     #[test]
     fn two_connections_of_one_device_do_not_receive_each_others_frames() {
         let state = RelayState::new();
@@ -1747,9 +1332,7 @@ mod tests {
         assert_eq!(companions.values().filter(|h| h.device_id == "device-a").count(), 2);
     }
 
-    /// `from` is the relay's word, not the client's — otherwise a phone could name another connection
-    /// and have the host's reply addressed away from itself. The overwrite is unconditional, and that
-    /// is the property under test.
+    /// `from` sender stamp is minted by relay and cannot be forged by companion.
     #[test]
     fn the_sender_stamp_cannot_be_forged_by_the_companion() {
         let stamped = stamp_from(Message::Text(r#"{"t":"invoke","id":1,"from":"c99"}"#.into()), "c1");
@@ -1772,29 +1355,19 @@ mod tests {
     }
 
     // ── INVARIANT R ──────────────────────────────────────────────────────────────────────────
-    //
-    // The only thing in this repo that can catch someone raising `pty::MAX_TABS` without noticing
-    // they just re-broke a joining phone. The three constants live in two files and two languages
-    // and are deliberately different numbers bound by arithmetic; a comment cannot check arithmetic.
+    // Asserts sizing relationship between `pty::MAX_TABS`, `pty::SCROLLBACK_CAP`, and `COMPANION_QUEUE_LIMIT_BYTES`.
 
-    /// Bytes one tab's scrollback occupies in a `pty_output` replay frame's JSON text. base64 is
-    /// `ceil(n/3) * 4`, and STANDARD base64's alphabet (`A-Z a-z 0-9 + / =`) contains no character
-    /// JSON escapes, so `JSON.stringify` expands it by nothing — this is the fact the whole estimate
-    /// turns on. 128 covers the `{"t":"pty_output","tab_id":..,"reset":true,"cols":..,...}` envelope
-    /// with room to spare (measured at ~90).
+    /// Bytes one tab's scrollback occupies in a `pty_output` replay frame's JSON text. base64 is `ceil(n/3) * 4` (128 covers the JSON envelope).
     fn replay_frame_bytes(scrollback_cap: usize) -> usize {
         scrollback_cap.div_ceil(3) * 4 + 128
     }
 
-    /// One full scrollback replay, which is what ONE `companion-connected` costs one outbox. It is
-    /// one and not N only because `dispatch` addresses on the connection key — see
-    /// `an_addressed_replay_is_one_replay_per_outbox_not_one_per_connection_on_the_device`.
+    /// Bytes for one full scrollback replay across all tabs.
     fn one_replay_bytes() -> usize {
         crate::pty::MAX_TABS * replay_frame_bytes(crate::pty::SCROLLBACK_CAP)
     }
 
-    /// **R1** — the recovery replay fits, with half the budget still free for frames that may not be
-    /// dropped (a pending `init`, a run of `delta`s).
+    /// **R1**: recovery replay fits with 50% budget reserved for undroppable state frames.
     #[test]
     fn invariant_r1_a_recovery_replay_fits_with_room_for_undroppable_frames() {
         let one = one_replay_bytes();
@@ -1811,22 +1384,7 @@ mod tests {
         );
     }
 
-    /// **R2** — the worst case the code can actually put in ONE outbox at ONE time is TWO replays,
-    /// not one, and that pair must not trip a coalesce at all.
-    ///
-    /// The two are different frames arriving by different routes, which is why R1 cannot see the
-    /// second: (a) the replay this connection asked for, addressed to its `conn_key` by
-    /// `ptyBridge.js`'s `FRAME_COMPANION_CONNECTED` handler, and (b) an UNADDRESSED replay from
-    /// `ptyBridge.js`'s `scheduleResync()`, which heals a hole the HOST's own congested socket left in
-    /// every companion's byte stream and so has no single addressee to narrow it to. A phone that has
-    /// not drained (a) when (b) is queued holds both.
-    ///
-    /// Bounded against the WHOLE budget rather than half of it, deliberately: unlike R1's case, both
-    /// of these frames are `pty_output` and losing them is recoverable, so the property worth buying
-    /// here is only "this common pair costs bandwidth and nothing else". Further broadcast replays
-    /// beyond the pair are possible under a sustained firehose and are NOT modelled by any constant —
-    /// they are what `coalesce()` exists to shed, after which the queue is empty and the next
-    /// addressed replay is the R1 case again.
+    /// **R2**: concurrent addressed replay and broadcast congestion replay do not exceed full budget.
     #[test]
     fn invariant_r2_the_reachable_double_replay_does_not_trip_a_coalesce() {
         let double = 2 * one_replay_bytes();
@@ -1840,12 +1398,7 @@ mod tests {
         );
     }
 
-    /// R1's left-hand side is ONE replay per outbox, and this is the code property that makes that
-    /// true. `notify_host_companion_connected` fires per CONNECTION; `ptyBridge.js` answers each with
-    /// a full replay; `dispatch` delivers each to exactly one outbox. Match on the DEVICE instead and
-    /// the term becomes `N x` for N connections that device has open — at 16 tabs, 5,596,544 bytes at
-    /// two browser tabs (past R1's 4,194,304 half-budget) and 8,394,816 at three (past the whole
-    /// 8,388,608 budget), which is the replay livelock the budget raise was supposed to remove.
+    /// Verifies addressed replay delivers one replay per outbox (not N per device).
     #[test]
     fn an_addressed_replay_is_one_replay_per_outbox_not_one_per_connection_on_the_device() {
         let state = RelayState::new();
@@ -1867,8 +1420,7 @@ mod tests {
         assert!(3 * one > COMPANION_QUEUE_LIMIT_BYTES, "three would blow the budget outright");
     }
 
-    /// The arithmetic above, pinned to the numbers §2.2 of the plan was written against, so a
-    /// half-edit (budget moved, ring not) is a failure here rather than a silent loss of headroom.
+    /// Verifies budget headroom constants against plan §2.2 arithmetic.
     #[test]
     fn the_budget_keeps_the_headroom_it_was_sized_for() {
         assert_eq!(replay_frame_bytes(128 * 1024), 174_892, "base64 expansion is 4/3, not something else");
@@ -1882,8 +1434,7 @@ mod tests {
         );
     }
 
-    /// CLAUDE.md's serde rule: an older or truncated `companion-server.json` must degrade to "off",
-    /// never fail the read and never fall through to "on".
+    /// CLAUDE.md serde rule: missing/corrupt `companion-server.json` defaults to disabled.
     #[test]
     fn persisted_server_state_defaults_to_off() {
         assert!(!serde_json::from_str::<PersistedServerState>("{}").unwrap().enabled);
