@@ -182,7 +182,7 @@
                   class="icon-dropdown-preset-btn"
                   :class="{ 'is-active': savedView.width === 'narrow' }"
                   @click="applyViewSafe('width', 'narrow')"
-                  title="Resize window width to 420px (narrow mode), keeping height and position">
+                  title="Resize window width to 440px (narrow mode), keeping height and position">
                   <i class="fa-solid fa-compress"></i> Narrow
                 </button>
                 <button
@@ -192,6 +192,14 @@
                   @click="applyViewSafe('width', 'wide')"
                   title="Resize window width to 768px (wide mode), keeping height and position">
                   <i class="fa-solid fa-expand"></i> Wide
+                </button>
+                <button
+                  type="button"
+                  class="icon-dropdown-preset-btn"
+                  :class="{ 'is-active': savedView.width === 'ultrawide' }"
+                  @click="applyViewSafe('width', 'ultrawide')"
+                  title="Resize window width to 1400px, keeping height and position">
+                  <i class="fa-solid fa-up-right-and-down-left-from-center"></i> Ultra
                 </button>
               </div>
               <div class="icon-dropdown-preset-row">
@@ -215,11 +223,15 @@
               <span
                 class="view-combo-key col-1"
                 @click="applyViewComboSafe(1)"
-                title="⌘1 - Narrow + Stick Top-Left">⌘1</span>
+                title="F1 - Narrow + Stick Top-Left">F1</span>
               <span
                 class="view-combo-key col-2"
-                @click="applyViewComboSafe(2)"
-                title="⌘2 - Wide + Center Primary">⌘2</span>
+                @click="applyViewSafe('width', 'ultrawide')"
+                title="F2 - Width 1400px">F2</span>
+              <span
+                class="view-combo-key col-3"
+                @click="applyViewSafe('place', 'center')"
+                title="F3 - Center Primary">F3</span>
             </div>
             </template>
             <div class="icon-dropdown-separator"></div>
@@ -566,12 +578,12 @@ function applyViewComboSafe(slot) {
   applyViewCombo(slot).catch((e) => console.error(`Failed to apply window combo ${slot}:`, e));
 }
 
-// Global shortcuts for window views (⌘1 / ⌘2).
+// Global shortcuts for window views (F1 / F2 / F3) — bare function keys, so any modifier disqualifies.
 function onViewShortcut(e) {
-  if (!e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.repeat) return;
-  if (e.key !== '1' && e.key !== '2') return;
-  e.preventDefault();
-  applyViewComboSafe(Number(e.key));
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.repeat) return;
+  if (e.key === 'F1') { e.preventDefault(); applyViewComboSafe(1); return; }
+  if (e.key === 'F2') { e.preventDefault(); applyViewSafe('width', 'ultrawide'); return; }
+  if (e.key === 'F3') { e.preventDefault(); applyViewSafe('place', 'center'); }
 }
 </script>
 
@@ -904,6 +916,10 @@ function onViewShortcut(e) {
 }
 
 .view-combo-key.col-2 {
+  left: 50%;
+}
+
+.view-combo-key.col-3 {
   left: 75%;
 }
 
