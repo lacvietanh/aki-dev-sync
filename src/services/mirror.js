@@ -1,10 +1,5 @@
 // Seam S — state mirror (docs/plan/done/remote-control.md §2, §13.3, §13.4).
-//
-// Zero per-key wiring: every `isRef` export of every `src/store/*.js` module is discovered by
-// `import.meta.glob` and registered under `"<storeFile>.<exportName>"`. Both host and companion
-// run this exact code and get identical keys pointing at their OWN local refs — a delta from the
-// host lands directly in the companion's real ref and Vue re-renders, no adapter, no parallel
-// data model. Adding a feature never touches this file (SSOT-1).
+// Zero per-key wiring: import.meta.glob discovers store refs into "<store>.<ref>" (SSOT-1).
 import { isRef, isReadonly, watch } from 'vue'
 import { isHost, onFrame, send, connectionState } from './bridge'
 import { FRAME_INIT, FRAME_DELTA, FRAME_COMPANION_CONNECTED } from '../constants/protocol'
@@ -24,32 +19,15 @@ function basename(path) {
   return path.split('/').pop().replace(/\.js$/, '')
 }
 
-// ── PER-SCREEN state: the ONE exclusion list (docs/plan/done/1.20.1-flow-audit-fixes.md §3.12) ────
-//
-// Everything else in `src/store/*.js` is shared by construction. These three are not: they record
-// what THIS screen is looking at, not what the session is doing. Mirroring them meant a phone
-// joining (which triggers a `broadcastFull()` to *every* companion) shut the Mac's log panel and
-// re-pointed its usage slots — the app fighting the user. Two people looking at one session are
-// looking for different things; the genuinely shared parts (project data, logs, dialogs, the PTY)
-// stay mirrored.
-//
-// Excluded at REGISTRATION, so these refs are never watched, never broadcast and never applied —
-// the one place the decision lives (SSOT-1), instead of a filter at each of the three send sites.
-// The gesture side of the same decision is `PER_SCREEN_ACTION_KEYS` in services/action.js: a
-// per-screen ref whose setter is an `action()` must also run locally, or the phone would ship its
-// choice to the Mac and change nothing of its own.
+// Per-screen UI state excluded at registration (docs/plan/done/1.20.1-flow-audit-fixes.md §3.12, SSOT-1).
 const PER_SCREEN_KEYS = new Set([
   'logStore.activeLogProjectId',
   'logStore.isLogExpanded',
   'usageSlotStore.slotTargets',
-  // WP-C: which terminal TAB a screen is looking at is that screen's own navigation, exactly like
-  // activeLogProjectId — a phone switching tabs must not yank the Mac's terminal focus and vice
-  // versa. `terminalTabsStore.terminalTabs` (the tab LIST itself) is deliberately NOT here: which
-  // tabs exist is genuinely shared session state and stays mirrored.
+  // WP-C: tab navigation is per-screen; tab list itself (terminalTabs) remains mirrored.
   'terminalTabsStore.activeTerminalTabId',
-  // Which tab GROUP a screen is in — same per-screen reasoning as activeTerminalTabId.
   'terminalTabsStore.activeTerminalScope',
-  // SSH modal & editor state is per-screen navigation
+  // SSH modal & editor state is per-screen navigation.
   'sshStore.showSshModal',
   'sshStore.sshConfigText',
   'sshStore.hasSshUndo',
@@ -66,16 +44,11 @@ for (const [path, mod] of Object.entries(mods)) {
   }
 }
 
-// The two log arrays are mirrored, but NOT by re-encoding the whole value on every change: a
-// 5,000-line rsync dirties `projectLogs` 5,000 times, and the generic path made the nth delta carry
-// n lines (quadratic, §3.14). They travel as APPENDS instead — see buildLogPayload().
+// Log arrays travel as append deltas to avoid quadratic re-serialization during rsync bursts (§3.14).
 const LOG_GLOBAL_KEY = 'logStore.globalLogs'
 const LOG_PROJECT_KEY = 'logStore.projectLogs'
 
-// ── SER-1: JSON-safe encode/decode ──────────────────────────────────────────────────────────
-// Set -> {__t:'Set', v:[...]}; Map -> {__t:'Map', v:[[k,v],...]}. A value that cannot encode
-// (DOM node, function, symbol, bigint, circular ref) throws; the caller drops that ONE key from
-// the outgoing payload, once, with a console.warn — no hand-maintained exclusion list.
+// SER-1: JSON-safe encode/decode for Set/Map tagged payloads; un-encodable values drop with warning.
 function encode(value, seen) {
   if (value instanceof Set) return { __t: 'Set', v: Array.from(value, (x) => encode(x, seen)) }
   if (value instanceof Map) {
@@ -133,9 +106,7 @@ function scheduleFlush() {
   queueMicrotask(flushDirty)
 }
 
-// What every companion has already been told about the logs: `n` = the host's append cursor at that
-// moment, `len` = how many lines were retained then. Both are needed — the cursor alone cannot tell
-// "20 new lines" from "cleared, then 20 new lines", and the cap makes length alone meaningless.
+// Tracks host log baseline: n = append cursor, len = retained count (distinguishes appends vs capped resets).
 let sentGlobalLog = { n: 0, len: 0 }
 let sentProjectLogs = new Map() // projectId -> { n, len }
 
@@ -147,16 +118,7 @@ function currentProjectBaselines(counts) {
   return next
 }
 
-/**
- * Turn "the logs changed" into the smallest correct payload.
- *
- * Appends whenever the change is explainable as appends (the common case: rsync lines arriving one
- * at a time); falls back to the full value for that key when it is not — a `clearLog()`, a project
- * whose array was replaced wholesale, a project key that disappeared. Never guesses: an unexplained
- * shape is always resolved by sending the truth, so the companion cannot silently diverge.
- *
- * Writes any full values into `v` and returns the append payload (or null).
- */
+/** Builds append delta payload when possible, falling back to full state on log resets/drops. */
 function buildLogPayload(v, counts, wantGlobal, wantProjects) {
   const a = {}
 
@@ -234,9 +196,7 @@ function flushDirty() {
 
   const frame = { t: FRAME_DELTA, v }
   if (a) frame.a = a
-  // `s` travels with every log-bearing frame: it is the host's cursor AFTER this frame, so a
-  // companion that applied it is exactly in step for the next append — and a companion that had to
-  // skip one re-syncs its cursor here instead of rejecting every append from then on.
+  // s carries host cursor post-frame so companion re-syncs baseline even after a skipped frame.
   if (logsDirty) frame.s = counts
 
   if (send(frame) && logsDirty) commitLogBaselines(counts)
@@ -255,21 +215,10 @@ function broadcastFull() {
 // ── COMPANION: apply into the SAME local refs ───────────────────────────────────────────────
 let applying = false
 
-// The HOST's append cursor as of the last frame this screen applied. Deliberately not read back out
-// of `logStore.logAppendCounts()`: a companion appends log lines of its own too (its own
-// `appendGlobalLog` calls), and mixing the two counters would make every host frame after a local
-// line look out of order.
+// Host append cursor tracked separately from local logAppendCounts to avoid local log interleaving.
 let appliedLogCursor = { global: 0, projects: {} }
 
-/**
- * Apply an append payload into the SAME capped store helpers the host uses, so the companion's
- * 2,000-line ceiling is enforced by the same code (contract C-2) instead of a second copy of it.
- *
- * The `from` cursor is a continuity check, not a guess: if it does not match what this screen has
- * applied, a frame was lost and blindly appending would splice unrelated lines into the tail. Skip
- * it, say so once, and let the host's next full snapshot (every reconnect, and every time another
- * companion joins) repair the gap.
- */
+/** Applies append payload via store helpers (contract C-2); drops and awaits snapshot on cursor mismatch. */
 function applyLogAppends(a) {
   if (a.global) {
     if (a.global.from === appliedLogCursor.global) appendGlobalLogLines(a.global.lines)
@@ -291,14 +240,11 @@ function applyFrame(frame) {
     for (const [key, encoded] of Object.entries(frame.v)) {
       const target = STATE.get(key)
       if (!target) continue
-      // A computed ref without a setter is a pure function of OTHER mirrored refs (its own
-      // dependencies are separately mirrored keys) — it recomputes correctly on its own once
-      // those land, so writing to it would both fail silently (Vue readonly warning) and fight
-      // the companion's own live recomputation. Generic check, no per-key list.
+      // Skip readonly/computed refs; they recompute automatically from their mirrored dependencies.
       if (isReadonly(target)) continue
       target.value = decode(encoded)
     }
-    // Order matters: full log values in `v` land first, appends on top of them, and only then the cursor — which is the host's state after both, so this screen is in step for the next frame.
+    // Order: full log state in v lands first, then appends (a), then host cursor (s).
     if (frame.a) applyLogAppends(frame.a)
     if (frame.s) appliedLogCursor = { global: frame.s.global || 0, projects: { ...(frame.s.projects || {}) } }
   } finally {
@@ -321,26 +267,19 @@ export function initMirror() {
       )
     }
 
-    // Full resync whenever our own socket to the relay (re)opens — covers both "we just reconnected after a drop" and the app's very first connection.
+    // Full resync whenever host socket to relay (re)opens (reconnection or fresh connection).
     watch(connectionState, (s) => {
       if (s === 'open') broadcastFull()
     })
 
-    // A companion that joins while the host's socket is already open needs the SAME full
-    // resync, but the host's own connectionState never changes for that. The relay is
-    // content-blind (§13.6) and cannot construct an `init` payload itself (it holds no state),
-    // so on each companion WS connect it emits a `companion-connected` frame to the host — a
-    // connection event, not app state, so content-blindness holds. We ignore its `id` here (we
-    // re-broadcast to everyone); Terminal View next round will use it for per-companion routing.
+    // Re-broadcast full state when a companion connects via content-blind relay (§13.6).
     onFrame((frame) => {
       if (frame.t === FRAME_COMPANION_CONNECTED) broadcastFull()
     })
   } else {
     onFrame((frame) => {
       if (frame.t === FRAME_INIT || frame.t === FRAME_DELTA) {
-        // Diagnostic: proves the mirror is (or is not) delivering host state to the phone. If you
-        // see "init N keys" the dashboard's data arrived and any remaining problem is in an
-        // invoke/action, not the mirror. If you never see it, the host never broadcast a snapshot.
+        // Diagnostic log: confirms host state delivery before dispatching to store refs.
         const n = frame.v ? Object.keys(frame.v).length : 0
         console.info(`[mirror] applied ${frame.t} — ${n} key(s)`)
         applyFrame(frame)

@@ -1,111 +1,55 @@
-// Terminal tab LIST — shared session state (docs/arch/terminal-stack.md, WP-C). Unlike `tabAlive` (composables/useTerminalTabs.js), which each screen derives locally off
-// its own PTY event stream, WHICH TABS EXIST is genuinely shared: opening a tab on the phone must
-// show up on the Mac's strip and vice versa. So this is a `src/store/*.js` ref — `services/mirror.js`
-// auto-discovers and mirrors it like every other shared ref (SSOT-1).
-//
-// NO `alive` FIELD HERE ON PURPOSE. Liveness is host PTY state that travels on the pty_output /
-// pty_exit channel (usePtyTerminal.js's tri-state `alive`, aggregated per-screen into
-// `useTerminalTabs.js`'s `tabAlive`), not session data — mirroring it here would be a second,
-// competing source of truth for the same fact the PTY events already carry with lower latency.
+// Terminal tab list: shared session state auto-mirrored host↔companion via services/mirror.js (docs/arch/terminal-stack.md, WP-C).
+// NO alive FIELD ON PURPOSE: PTY liveness travels on pty_output/pty_exit channel (useTerminalTabs.js tabAlive); mirroring here would create competing SSOT.
 import { ref } from 'vue'
 import { action } from '../services/action'
 import { invoke } from '../utils/tauri'
 import { Toast } from './projectStore'
 
-// TWO CAPS, not one. The user-facing rule is the per-SCOPE one; the global one is a machine guard.
-//
-// EXPORTED because both are enforced by the CALLERS (useTerminalTabs.js), not (only) here: on a
-// companion `addTerminalTab`'s body never runs — action() replaces it with an RPC stub — so the
-// checks below could not produce the Toast they promise, and the phone's ⌘T/+ silently did nothing.
-// The checks stay here as defence in depth for the host and for any future direct caller.
+// Two caps: per-scope user budget vs global machine guard. Exported so callers (useTerminalTabs.js) pre-validate before RPC stub on companion; checks here provide host defence-in-depth.
 
-/** How many tabs one GROUP may hold. This is the number a user is meant to have in their head: five
- *  shells is a working set, and wanting a sixth genuinely means closing one. Frontend-only — the PTY
- *  backend is scope-blind and has no idea what a project is. */
+/** Maximum tabs per scope/group (frontend working-set budget; PTY backend is scope-blind). */
 export const MAX_TABS_PER_SCOPE = 5
 
-/** The global ceiling, mirroring src-tauri/src/pty.rs's MAX_TABS — kept in sync by comment on this
- *  side and by a unit test on the Rust side (pty.rs's `constant_guards`), because the Rust and JS
- *  build graphs don't share a constant.
- *
- *  A GENEROUS SHARED CEILING, not a per-scope multiple with a binding derivation. It happens to
- *  equal `1 + 3 × MAX_TABS_PER_SCOPE`, a story that used to rest on the global group's old permanent
- *  one-tab minimum (removed 2026-07-28 — see `closeTerminalTab`'s doc comment) and is no longer
- *  load-bearing: nothing now enforces "at most 3 project groups plus global" as a real limit, so a
- *  4th or 5th full group can in principle hit this ceiling before its own per-scope cap. Accepted:
- *  it is a resource guard, never a budget the user manages — which is why no tooltip in this app
- *  ever states it ahead of time, and why a rare edge here is fine where a silent falsehood in the
- *  comment would not be. */
+/** Global ceiling mirroring src-tauri/src/pty.rs MAX_TABS (resource guard verified by Rust constant_guards unit test). */
 export const MAX_TABS = 16
 
-/** THREE refusals, three problems — deliberately not one parameterised string. Used by BOTH checkers
- *  (this store's own, and useTerminalTabs.js's pre-invoke one) so the phone and the Mac cannot drift
- *  apart. All interpolate their constant; none hardcodes a digit.
- *
- *  The first two are the SAME cause (a group is full) but cannot share wording: the per-scope cap
- *  applies to the global group too, and that group is not a project, so naming one there would
- *  describe something the user is not looking at. Choose with `scopeTabLimitMessage(scope)`. */
+/** Refusal messages for scope limits. Differentiated between project and global groups (select via scopeTabLimitMessage). */
 export const PROJECT_TAB_LIMIT_MESSAGE = `This project already has ${MAX_TABS_PER_SCOPE} terminal tabs. Close one to open another.`
 export const GLOBAL_GROUP_TAB_LIMIT_MESSAGE = `The global group already has ${MAX_TABS_PER_SCOPE} terminal tabs. Close one to open another.`
 
-/** `"in any group"` is load-bearing here and ONLY here: the ceiling is the one refusal whose cause
- *  genuinely lives somewhere the user cannot see, and the TERM column's count badges are where they
- *  can go find it. Saying it on a per-scope refusal would send them hunting in the wrong place.
- *  Named for the CEILING, not for the global group — the two limits are different numbers with
- *  different causes, and a name that blurs them is how a future edit picks the wrong one. */
+/** Global ceiling refusal message ("in any group" guides user to look across scopes). */
 export const CEILING_TAB_LIMIT_MESSAGE = `All ${MAX_TABS} terminal tabs are in use. Close one in any group first.`
 
-/** [{ id: number, title: string, projectId: string|null, cwd: string|null, titleLocked?: boolean,
- *     resizeOwner?: 'host' | string, pinned?: boolean }]
- *
- *  `resizeOwner`: who drives this tab's shared PTY size. Absent/'host' = the Mac (default). Any
- *  other value is the opaque companion connection id (`frame.from`) that last tapped "Fit to my
- *  screen" — only ever copied from an incoming frame, never constructed. Rides the normal mirror.
- *  docs/plan/done/wish-terminal-manual-resize-authority.md.
- *
- *  `pinned`: shows this tab in EVERY group's strip, not just its own — display-only. Ownership
- *  (`projectId`) never changes, so the per-scope/global caps (enforced below by `scopeOf`-style
- *  filters keyed on `projectId`) cannot be bypassed by pinning into a foreign group. */
+/**
+ * Tab list ref: [{ id, title, projectId, cwd, titleLocked?, resizeOwner?, pinned? }]
+ * resizeOwner: PTY size driver — 'host' (Mac) or companion frame.from connection id (docs/plan/done/wish-terminal-manual-resize-authority.md).
+ * pinned: display-only flag across groups; projectId ownership unchanged so cap enforcement cannot be bypassed.
+ */
 export const terminalTabs = ref([])
 
-/** PER-SCREEN — which tab THIS screen is looking at, exactly like logStore.activeLogProjectId.
- *  Listed in services/mirror.js's PER_SCREEN_KEYS so it is never mirrored: which tab a screen has
- *  focused is that screen's own navigation, not session state (same reasoning as isLogExpanded). */
+/** Per-screen active tab id (navigation state listed in services/mirror.js PER_SCREEN_KEYS, never mirrored). */
 export const activeTerminalTabId = ref(0)
 
 export const GLOBAL_SCOPE = 'global'
 
-/** Which "group is full" wording a scope gets. Not a builder — it picks between two fixed strings,
- *  because the difference is what the group IS, not a number to substitute. */
+/** Returns the appropriate tab limit error message for the given scope. */
 export function scopeTabLimitMessage(scope) {
   return scope === GLOBAL_SCOPE ? GLOBAL_GROUP_TAB_LIMIT_MESSAGE : PROJECT_TAB_LIMIT_MESSAGE
 }
 
-/** PER-SCREEN — which tab GROUP this screen is looking at ('global' | projectId). Same class of
- *  state as activeTerminalTabId: navigation, not session data. Listed in services/mirror.js's
- *  PER_SCREEN_KEYS so a phone switching to a project's terminal group never yanks the Mac's. */
+/** Per-screen active tab scope ('global' | projectId; in PER_SCREEN_KEYS so screen navigation is isolated). */
 export const activeTerminalScope = ref(GLOBAL_SCOPE)
 
 function nextTabId() {
   return terminalTabs.value.length === 0 ? 0 : 1 + Math.max(...terminalTabs.value.map((t) => t.id))
 }
 
-/** Allocates a new tab id HOST-SIDE (action() always runs the real fn on the host, so two screens
- *  adding a tab "at the same time" can never collide — the host's array is the only place an id is
- *  ever picked). Returns the new tab object on the host; a companion's action stub returns
- *  `undefined`, which is why the caller (useTerminalTabs.js's openScopeTerminal) routes the
- *  companion case through its scope-keyed pending claim instead of this return value.
- *
- *  Route every new "open/duplicate a terminal" entry point through `openScopeTerminal` (useTerminalTabs.js), not this export directly — see "Companion add is fire-and-forget" in docs/arch/terminal-stack.md for why. */
-/** `runKind` and `pendingCmd` (docs/plan/done/dev-build-in-app-launch.md, #7): a DEV/BUILD press tags its
- *  new tab with which command it is and stashes the literal command text to be typed once, so a
- *  second click in the same scope can find "the dev tab" specifically instead of any tab in scope,
- *  and a fresh tab knows what to run without a second round-trip. `null` for every ordinary tab —
- *  this is purely additive to the existing shape. */
+/**
+ * Host-side tab allocator via action() (docs/arch/terminal-stack.md, callers use openScopeTerminal).
+ * Optional runKind/pendingCmd tag DEV/BUILD tabs for command dispatch without extra round-trip (docs/plan/done/dev-build-in-app-launch.md).
+ */
 export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ title, projectId = null, cwd = null, runKind = null, pendingCmd = null } = {}) => {
-  // SCOPE FIRST, THEN GLOBAL — the same order useTerminalTabs.js's capReached() applies, so the two
-  // checkers can never name different reasons for the same refusal. A user sitting in a 1-tab group
-  // who hits the GLOBAL ceiling must be told about the other groups, not told their group is full.
+  // Scope cap checked before global ceiling to match useTerminalTabs.js capReached order.
   const scope = projectId || GLOBAL_SCOPE
   if (terminalTabs.value.filter((t) => (t.projectId || GLOBAL_SCOPE) === scope).length >= MAX_TABS_PER_SCOPE) {
     Toast.fire({ icon: 'error', title: scopeTabLimitMessage(scope) })
@@ -120,9 +64,7 @@ export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ titl
   return tab
 })
 
-/** Re-arms an EXISTING tab's pending command — the dead-tab branch of DEV/BUILD's second-press
- *  rule (a matching tab exists but exited, so it gets respawned and re-sent, never a new tab).
- *  Scoped to the one id (Regression Guard - Multi-entity State, CLAUDE.md). */
+/** Re-arms an existing tab's pending command on dead-tab respawn (id-scoped per CLAUDE.md multi-entity guard). */
 export const setTabPendingCmd = action('terminalTabsStore.setTabPendingCmd', (id, cmd) => {
   const idx = terminalTabs.value.findIndex((t) => t.id === id)
   if (idx === -1) return
@@ -130,10 +72,7 @@ export const setTabPendingCmd = action('terminalTabsStore.setTabPendingCmd', (id
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
 })
 
-/** Reads and clears ONE tab's pending command in a single step — "consumed once" means the read
- *  and the clear can never be two operations with a gap between them where a second reader (a
- *  second screen mounting the same tab) could see the still-set field and type it twice. Returns
- *  `null` when there is nothing to consume (the ordinary-tab, ordinary-open case). */
+/** Atomically reads and clears ONE tab's pending command to prevent double execution across screens. */
 export const consumeTabPendingCmd = action('terminalTabsStore.consumeTabPendingCmd', (id) => {
   const idx = terminalTabs.value.findIndex((t) => t.id === id)
   if (idx === -1) return null
@@ -144,38 +83,23 @@ export const consumeTabPendingCmd = action('terminalTabsStore.consumeTabPendingC
   return cmd
 })
 
-/** Closes ONE tab — named by its scope (Regression Guard - Multi-entity State, CLAUDE.md). Splices
- *  EXACTLY one entry. No floor, on any scope, global included: every group may go to zero — it
- *  simply stops existing until its terminal button is clicked again (`openScopeTerminal`).
- *  Global used to be pinned to a permanent one-tab minimum, enforced here and re-seeded at boot by
- *  `initTerminalTabs`; that special case is gone (2026-07-28) — it was the source of phantom
- *  "Shell" tabs piling up in the global group across dev-server HMR reloads (each reload re-ran the
- *  boot seed against a `pty_list_tabs()` call that could race the backend, adding one more tab it
- *  had no way to tell was already accounted for) and made global behave differently from every
- *  project group for no benefit anyone asked for. Also tells the host PTY to forget that tab's
- *  session+scrollback (`pty_close_tab` REQUIRES its tab_id argument on purpose — see
- *  usePtyTerminal.js's `close()` doc comment). */
+/** Closes ONE tab by id (CLAUDE.md multi-entity guard) and notifies host PTY via pty_close_tab. */
 export const closeTerminalTab = action('terminalTabsStore.closeTerminalTab', (id) => {
   const list = terminalTabs.value
   const idx = list.findIndex((t) => t.id === id)
   if (idx === -1) return
   terminalTabs.value = [...list.slice(0, idx), ...list.slice(idx + 1)]
-  // The list removal stays OPTIMISTIC (the chip disappears on the click, which is what a close
-  // should feel like), but a failed invoke leaves a live shell with no chip to reach it — an orphan
-  // the user can now neither see nor kill. That has to be said out loud rather than logged.
+  // Optimistic UI close: toast warning if backend pty_close_tab fails to avoid silent orphaned shells.
   invoke('pty_close_tab', { tabId: id }).catch((e) => {
     console.error('[terminalTabsStore] pty_close_tab failed', e)
     Toast.fire({ icon: 'error', title: 'Tab closed, but its shell may still be running on the Mac' })
   })
 })
 
-/** Renames ONE tab (Regression Guard - Multi-entity State, CLAUDE.md: scoped to the one id, never a
- *  wholesale rewrite of the list). Two callers, one function:
- *  - `auto: true` — the shell itself retitled (xterm's OSC title, TerminalView.vue's
- *    `onTitleChange`). Skipped once the user has manually renamed the tab (`titleLocked`), so a
- *    chosen name does not get clobbered by the next `cd` or prompt redraw.
- *  - `auto: false` (default) — the user renamed it via the tab strip's context menu. Always wins,
- *    and locks the tab against further auto-titling. */
+/**
+ * Renames ONE tab by id (CLAUDE.md multi-entity guard).
+ * auto=true: shell OSC title change (ignored if titleLocked); auto=false: user manual rename (sets titleLocked).
+ */
 export const renameTerminalTab = action('terminalTabsStore.renameTerminalTab', (id, title, { auto = false } = {}) => {
   const trimmed = (title || '').trim()
   if (!trimmed) return
@@ -188,10 +112,7 @@ export const renameTerminalTab = action('terminalTabsStore.renameTerminalTab', (
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
 })
 
-/** Flips ONE tab's pinned flag (Regression Guard - Multi-entity State, CLAUDE.md: scoped to the one
- *  id, never a wholesale rewrite of the list). Pinning is display-only — `projectId` is untouched,
- *  so `useTerminalTabs.js`'s cap checks (keyed on real ownership, not on what a strip currently
- *  shows) cannot be bypassed by pinning a tab into a foreign group. */
+/** Flips ONE tab's pinned flag (display-only across group strips, id-scoped per CLAUDE.md multi-entity guard). */
 export const toggleTabPinned = action('terminalTabsStore.toggleTabPinned', (id) => {
   const idx = terminalTabs.value.findIndex((t) => t.id === id)
   if (idx === -1) return
@@ -200,10 +121,7 @@ export const toggleTabPinned = action('terminalTabsStore.toggleTabPinned', (id) 
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
 })
 
-/** Scoped to the ONE tab, immutable replace (Regression Guard - Multi-entity State, CLAUDE.md).
- *  Host-only callers, so not wrapped in `action()`: the FRAME_PTY_RESIZE_REQUEST listener and the
- *  reclaim pill, both host-only — a companion's claim arrives inside the frame itself, nothing to
- *  expose to the remote-intent registry. docs/plan/done/wish-terminal-manual-resize-authority.md. */
+/** Sets PTY resize authority for ONE tab ('host' or companion connection id; docs/plan/done/wish-terminal-manual-resize-authority.md). */
 export function setResizeOwner(id, owner) {
   const idx = terminalTabs.value.findIndex((t) => t.id === id)
   if (idx === -1) return
@@ -213,16 +131,12 @@ export function setResizeOwner(id, owner) {
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
 }
 
-/** The Mac's one-tap "take resize authority back" — always resolves to 'host'. */
+/** Host one-tap reclaim of PTY resize authority (resets resizeOwner to 'host'). */
 export function reclaimResizeAuthority(id) {
   setResizeOwner(id, 'host')
 }
 
-/** HOST BOOT ONLY: seed the tab list from `pty_list_tabs()` so a frontend reload re-adopts shells
- *  the backend kept alive, titled `Shell {id}`. Never called from a companion gesture — there is
- *  nothing for a companion to "adopt", it always gets the tab list through the mirror instead.
- *  Adopted tabs get `projectId: null`, so they land in the GLOBAL scope — exactly right, since the
- *  backend cannot tell us which project a re-adopted shell belonged to. */
+/** Host boot only: adopts surviving backend PTY shells into global scope (projectId: null) on frontend reload. */
 export const adoptTabs = action('terminalTabsStore.adoptTabs', (list) => {
   if (!Array.isArray(list) || list.length === 0) return
   terminalTabs.value = list.map((t) => ({ id: t.id, title: `Shell ${t.id}`, projectId: null, cwd: null }))

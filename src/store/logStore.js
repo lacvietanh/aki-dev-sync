@@ -1,38 +1,19 @@
 import { ref } from 'vue'
 
-// Hard cap on retained log lines — 2,000 per project and 2,000 global, dropped from the HEAD
-// (docs/plan/done/1.20.1-flow-audit-fixes.md §3.14, contract C-2).
-//
-// C-2, one cap one owner: this store is the ONLY place log lines are trimmed. `AppConsole.vue`
-// must not add its own trimming — it only decides how much of the (already capped) array it
-// renders. Nothing tells the user the log was truncated: what a person wants after a 5,000-line
-// rsync is the tail — the error and what came just before it — which the cap preserves by
-// construction, and a "log truncated" row would cost a row (CLAUDE.md *UI Extreme Narrow*).
+// Retained log cap (2,000/entity, head-dropped). Single trimming owner (C-2, docs/plan/done/1.20.1-flow-audit-fixes.md §3.14).
 export const LOG_CAP = 2000
 
-// Shared: the same lines are meant to be readable on the Mac and on a paired phone.
 export const globalLogs = ref([])
 export const projectLogs = ref({})
 
-// PER-SCREEN, deliberately NOT mirrored (§3.12). Which panel a screen has open is that screen's
-// own choice: `services/mirror.js` PER_SCREEN_KEYS excludes both from the wire, so a phone
-// connecting can no longer yank the Mac's panel shut (and vice versa). Nothing here needs an
-// `action()` wrapper for the same reason — wrapping would send the toggle to the Mac, which is
-// exactly the cross-screen bleed §3.12 removes.
+// Per-screen dock state: unmirrored (excluded via PER_SCREEN_KEYS, §3.12) so device panels toggle independently.
 export const activeLogProjectId = ref(null)
 export const isLogExpanded = ref(false)
-// NOTE: the console's DOM element and the 2s COPIED flash used to live here too. They must NOT be
-// in a store at all: mirror.js discovers every `isRef` export under src/store/, so the DOM node
-// threw 'DOM node cannot be mirrored' on every frame, and the COPIED flash mirrored SUCCESSFULLY —
-// tapping COPY on the phone flipped the Mac's button. Both now live at module scope in
-// src/composables/useLogs.js (per-screen, exactly like useTerminalPanel.js's terminalStackCollapsed).
+// Invariant: console DOM and transient flash live in useLogs.js; store refs are auto-mirrored by mirror.js.
 export let globalListener = null
 export function setGlobalListener(fn) { globalListener = fn }
 
-// Monotonic count of lines ever appended through the helpers below — it does NOT decrease when the
-// cap drops lines from the head, which is what makes it usable as a delta cursor. `services/mirror.js`
-// diffs against it to send only the lines added since the last frame instead of re-encoding the whole
-// log map per line (the quadratic transport in §3.14).
+// Monotonic append cursor: unaffected by head-drop, used by mirror.js delta diffing (§3.14).
 const _appended = { global: 0, projects: {} }
 
 /** Snapshot of the append cursors. Plain data, safe to put on the wire. */
@@ -60,11 +41,7 @@ export function appendProjectLogLines(projectId, lines) {
   _appended.projects[projectId] = (_appended.projects[projectId] || 0) + lines.length
 }
 
-/** Forgets ONE removed project's log lines and its append cursor. Scoped to that single id by
- *  construction — it never touches any other project's entry, and never the global log (Regression
- *  Guard - Multi-entity State, CLAUDE.md). Called from the project-removal path
- *  (composables/useProjectConfig.js's confirmRemove); without it both maps keep an entry per project
- *  ever removed for the life of the session. */
+/** Drop removed project log lines & append cursor (scoped to id, CLAUDE.md Multi-entity State). */
 export function dropProjectLogs(projectId) {
   if (!projectId) return
   if (projectLogs.value[projectId]) {

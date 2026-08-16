@@ -24,36 +24,14 @@ export const projects = ref([])
 // Shape: { [id]: { git_status, git_log, remote_url, syncing } }
 export const projectRuntime = ref({})
 
-// LIVE count of external Terminal.app windows/tabs standing in each project's directory:
-// `{ [projectId]: n }`. Not a tally the app accumulates — a SNAPSHOT the host re-derives from the
-// process table every few seconds (`list_terminal_sessions` + `utils/terminalOwnership.js`'s
-// attribution pass, composables/useExternalTerminals.js), which is why opening a window raises it and
-// closing one lowers it again.
-//
-// Multi-entity guard (CLAUDE.md): the whole map being replaced on each poll is not a "clear" — every
-// key is rewritten from the SAME single scan, so no project's value is ever dropped on another
-// project's behalf. There is deliberately no reset/clear function; nothing owns a part of this map.
-//
-// A ref export of a `src/store/*.js` module, so services/mirror.js carries it to every companion:
-// the phone shows the Mac's live count without polling anything itself (it cannot — `Terminal.app`
-// and its process table exist only on the Mac).
+// Live Terminal.app count per project (docs/plan/done/terminal-ownership-model.md §5): atomic snapshot mirrored to companion.
 export const externalTermCounts = ref({})
 
-/** Sibling of `externalTermCounts`: how many external `Terminal.app` sessions belong to NONE of the
- *  listed projects — the global-terminal header button's bottom badge
- *  (`docs/plan/done/terminal-ownership-model.md` §5). Same mirroring, same re-derived-never-remembered
- *  discipline; see `useExternalTerminals.js`. */
+// Count of external Terminal.app sessions belonging to no listed project (global badge).
 export const externalTermGlobalCount = ref(0)
 
-/** Single funnel for launching an external `Terminal.app` window (S4,
- *  docs/plan/done/terminal-ownership-model.md): sends `owner` through to `open_local_terminal`, then
- *  asks the host to re-scan shortly after, so the badge moves at once instead of on the next 5s
- *  tick — no call site invokes `open_local_terminal` directly any more. `action()`-wrapped because a
- *  companion's OPEN → Terminal (or the in-app tab's "open externally") must run both the launch and
- *  the scan on the HOST (the companion has neither a shell nor a process table of its own); the new
- *  count returns via the mirror. The re-scan import is dynamic for the same reason `Toast` is
- *  imported dynamically in services/action.js — the composable imports this store, and a static
- *  import back would close that cycle at bootstrap. */
+// Funnel for external Terminal.app launch: runs on host via action(), schedules immediate rescan.
+// Dynamic import of useExternalTerminals avoids circular dependency at store bootstrap.
 export const registerExternalTerminalLaunch = action(
   'projectStore.registerExternalTerminalLaunch',
   async ({ owner = null, path = null } = {}) => {
@@ -69,21 +47,10 @@ export const registerExternalTerminalLaunch = action(
 
 export const isReloading = ref(false)
 
-// Ids of projects removed during this session (docs/plan/done/1.20.1-flow-audit-fixes.md §3.3). A
-// config modal that was already open when its project was removed — typically on the OTHER screen —
-// still holds a full copy of it, and Save would re-enter `applyProjectConfig`'s "new project"
-// branch and silently resurrect it. This is the record that lets that write be REJECTED instead:
-// "id I have never seen" and "id the user just deleted" are otherwise indistinguishable.
-//
-// A ref export of a `src/store/*.js` module, so the mirror carries it to every companion for free
-// (services/mirror.js encodes Set natively) — the phone can therefore make the same judgement its
-// own modal needs without an extra round-trip. Ids are `project-<epoch-ms>`, never reused, and
-// removals are hand gestures, so the set stays tiny; it is deliberately session-only (not
-// persisted) — after a restart no modal is open, so nothing can resurrect anything.
+// Session-only removed project IDs preventing zombie resurrection (docs/plan/done/1.20.1-flow-audit-fixes.md §3.3).
 export const removedProjectIds = ref(new Set())
 
-/** Record that ONE project id was removed. Scoped to that id — never clears the set (multi-entity
- *  regression guard, CLAUDE.md): another project's removal record is not this removal's business. */
+// Records project removal for this id only; never clears existing set entries.
 export function markProjectRemoved(id) {
   if (!id) return
   removedProjectIds.value.add(id)
@@ -97,14 +64,10 @@ export function isProjectRemoved(id) {
 export const ideAvailability = ref(null)
 export const iconTimestamp = ref(Date.now())
 
-// ICON-1 (docs/plan/done/remote-control.md §7.0): { [projectId]: dataUri | null }, a COMPLETE map —
-// every project id is present, with an explicit null when it has no icon, so a companion never
-// retries or 404s on a missing key. Lives in the store precisely so the mirror carries it to the
-// phone for free: the `aki-devsync-icon://` custom protocol the host `<img>`s use exists only
-// inside the Tauri webview and resolves to nothing in a phone browser.
+// ICON-1 (docs/plan/done/remote-control.md §7.0): complete map `{ [projectId]: dataUri | null }` mirrored to companions.
 export const projectIcons = ref({})
 
-/** Host-side fill. Companion never calls this — its copy arrives through the state mirror. */
+// Host-side icon map loader; companions receive updates via state mirror.
 export async function refreshProjectIcons() {
   try {
     projectIcons.value = await invoke('get_project_icons_map')
@@ -118,19 +81,7 @@ export const anySyncing = computed(() =>
   Object.values(projectRuntime.value).some(r => r.syncing)
 )
 
-// ---------------------------------------------------------------------------
-// Per-project refresh state - ONE source of truth for "is this project's status
-// being refreshed right now", shared by every trigger (background git/diff
-// timers, the per-project Refresh button, the global Refresh button).
-//
-// It is a counter, not a boolean, because several independent checks (git
-// status, remote diff, stack info) can be in flight for the same project at
-// once and each must be able to say "I'm done" without cancelling the others.
-// ---------------------------------------------------------------------------
-
-// Also materializes `epoch` at 1 if this project has never had one, so that a captured epoch is
-// always >= 1 and can never collide with the 0 that `currentEpoch` reports for a project whose
-// runtime entry is gone (deleted mid-flight) - see currentEpoch below.
+// Per-project refresh counter tracking concurrent in-flight status checks (git, remote diff, stack info).
 export function beginRefresh(id) {
   const current = projectRuntime.value[id]
   projectRuntime.value[id] = {
@@ -140,9 +91,7 @@ export function beginRefresh(id) {
   }
 }
 
-// A decrement must never CREATE a runtime entry: no entry means the project was removed while this
-// check was in flight, and writing one back resurrects a project that no longer exists (§3.2 - the
-// same shape as the result-write guard in useSyncStatus, fixed here so every caller inherits it).
+// Decrements refreshCount only if runtime entry exists (avoids resurrecting removed projects).
 export function endRefresh(id) {
   const current = projectRuntime.value[id]
   if (!current) return
@@ -153,25 +102,13 @@ export function isRefreshing(id) {
   return (projectRuntime.value[id]?.refreshCount || 0) > 0
 }
 
-// Drives the header's global Refresh button, so it reports the exact same work
-// the per-project buttons report - including work no human triggered (a
-// background timer tick), which is the whole point of deriving it.
+// Drives global Refresh button; true if any background or manual status check is in flight.
 export const anyRefreshing = computed(() =>
   Object.values(projectRuntime.value).some(r => (r.refreshCount || 0) > 0)
 )
 
-// Generation token per project - the cancellation primitive for work that Tauri's `invoke()`
-// itself cannot abort (git status, remote-diff checks: real network/subprocess round-trips with
-// no cancel handle). Every check captures `currentEpoch(id)` before awaiting and re-checks it
-// after; a stale result (epoch changed while it was in flight) is discarded silently - never
-// written to `projectRuntime`, never counted as "finished" against the new generation.
-//
-// `bumpEpoch` ALSO force-resets `refreshCount` to 0 immediately - an instant UI cut (any spinning
-// refresh icon stops right now) independent of whether the superseded call is still physically
-// pending, because every event that calls this (a project's host/path edited, sync check turned
-// off, projects reloaded from disk) means "whatever was in flight no longer applies," and the user
-// should see that immediately rather than wait for the stale call to eventually resolve.
-// This must never be used to cancel a real rsync push/pull - only read-only status checks.
+// Generation token cancelling async status checks; bumpEpoch invalidates in-flight runs and clears refreshCount.
+// For read-only status checks only — never used for rsync push/pull cancellations.
 export function bumpEpoch(id) {
   const current = projectRuntime.value[id]
   const epoch = (current?.epoch ?? 0) + 1
@@ -179,9 +116,7 @@ export function bumpEpoch(id) {
   return epoch
 }
 
-// 0 means "this project has no runtime state" - it was removed. Since beginRefresh guarantees a
-// live project's epoch is >= 1, a check that captured its epoch can detect removal with the same
-// comparison it already uses for supersession, without a separate existence test.
+// Returns project epoch (>= 1) or 0 if runtime state is gone (project removed).
 export function currentEpoch(id) {
   return projectRuntime.value[id]?.epoch ?? 0
 }

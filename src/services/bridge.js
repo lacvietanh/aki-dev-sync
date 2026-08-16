@@ -1,20 +1,7 @@
 // Seam T — transport + role (docs/plan/done/remote-control.md §1, §7.1, §9, §13.1).
-//
-// The ONLY place `window.__AKI_ROLE__` is read (ENV-1, §9). Every other module that needs to
-// know host-vs-companion imports `isHost` from here — never re-derives it.
-//
-// This module owns exactly one WebSocket to the Rust relay (`src-tauri/src/web_server.rs`,
-// a separate lane — not touched here) and exposes four primitives everything else is built on:
-//   - `send(frame)`   fire-and-forget frame out
-//   - `request(frame)` frame out + Promise resolved by a matching `invoke_result` (§13.2)
-//   - `onFrame(cb)`   subscribe to every inbound app frame (mirror.js / intents.js consume this)
-//   - `connectionState` a ref other UI can read (Wave 2 pairing modal, connection dot, etc.)
+// Owns single WebSocket to Rust relay (src-tauri/src/web_server.rs) and exposes transport primitives.
 import { ref } from 'vue'
-// Deliberate exception to "utils/tauri.js is the only module that imports @tauri-apps/api/core":
-// that wrapper imports THIS module, so using it here would be a cycle at bootstrap — the exact
-// hazard REGISTRY-1 exists to prevent. The transport seam has to be able to ask the host process
-// one question (its relay host token) before the transport exists, so it takes the raw import and
-// never uses it on a companion (`isHost` guards the only call site).
+// Direct @tauri-apps/api/core import avoids bootstrap cycle with utils/tauri.js (guarded by isHost).
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 import {
   REMOTE_PORT,
@@ -28,21 +15,13 @@ import {
   DEVICE_TOKEN_STORAGE_KEY,
 } from '../constants/protocol'
 
-// §9 / S-1: our own role marker, set by `src/boot/roleStamp.js` (first import in main.js) when the
-// page is running inside the Tauri webview. Any other case — a phone browser served the same bundle
-// by axum, or no marker at all — defaults to companion, the safe direction (mis-detecting a phone as
-// host is the dangerous one). Nothing stamps the companion: absence of the marker IS the signal.
+// §9/S-1: Role marker set by roleStamp.js in Tauri webview; absence defaults safely to companion.
 export const isHost = typeof window !== 'undefined' && window.__AKI_ROLE__ === 'host'
 
-// 'idle' | 'connecting' | 'open' | 'closed' | 'unpaired' | 'host-off' | 'error'
-//
-// 'unpaired'  — close 4001: this device's token was rejected. Drop it, ask for a code.
-// 'host-off'  — close 4002: remote control is off on the Mac. The token is fine; keep it and wait.
+// Connection state: 'idle' | 'connecting' | 'open' | 'closed' | 'unpaired' (4001) | 'host-off' (4002) | 'error'
 export const connectionState = ref('idle')
 
-// Native asset scheme vs browser. Per ICON-1 (§7.0) icons now ride mirrored state
-// (`projectStore.projectIcons`), so this is deliberately minimal — kept only for any
-// native-window-only asset that still wants a base to prefix.
+// Base prefix for native-window assets (icons ride mirrored projectStore.projectIcons per ICON-1).
 export const assetBase = isHost ? 'aki-devsync-icon://' : ''
 
 let ws = null
@@ -57,35 +36,15 @@ const PING_TIMEOUT_MS = 5000
 
 const frameListeners = new Set()
 
-// PER-PAGE, starting at 1 on every page — so these ids are unique only within ONE socket, and the
-// correlation in handleMessage() is `pending.get(frame.id)` with no other check. That is sound for
-// exactly one reason: the relay addresses every `invoke_result` to the CONNECTION that sent the
-// `invoke` (src-tauri/src/web_server.rs's `dispatch`, on the `to` field services/hostInvoke.js echoes
-// from the relay-stamped `from`), and one connection is one page. A reply for someone else's id 1
-// therefore never arrives here, so there is nothing for the correlation to get wrong.
-//
-// IF THAT ADDRESSING IS EVER WIDENED — to a device, to a broadcast, to anything coarser than one
-// socket — THIS COUNTER BECOMES A SILENT-WRONG-DATA BUG, not a timeout: two pages each waiting on
-// id 1 would each resolve whichever answer arrived first, and nothing anywhere would report it.
-// Widening it means giving the id a page-scoped identity first (a per-page nonce on the frame,
-// checked here), not "it is only a duplicate".
+// Per-connection request ID counter; sound because relay addresses invoke_result to the originating socket.
 let nextRequestId = 1
 const pending = new Map() // id -> { resolve, reject }
 
-// Companion-side invoke RPC watchdog. request() is used ONLY by the companion's invoke() (seam N):
-// the genuinely unbounded operations (run_sync, delete-preview) run on the host via an `intent`,
-// not as a companion invoke, so for most commands an unanswered call in this window is not "slow" —
-// it means no `invoke_result` is coming back at all. Without this the promise hangs forever
-// (silently), which is exactly why a broken invoke produces no console error to capture.
+// Default timeout watchdog for companion invoke RPC promises to prevent silent hangs.
 const INVOKE_RPC_TIMEOUT_MS = 20000
 
-// …but the default is wrong for the commands that legitimately take longer than 20s, and firing on
-// those invented a failure the host never had: `get_agent_usage` alone budgets 30s for its SSH
-// round-trip, so the phone showed "the host is not answering" while the Mac was still working and
-// about to reply. Per-command budget, consulted by request(): a value of 0 means NO client-side
-// timeout at all (the socket drop is then the only failure signal — see rejectAllPending).
+// Per-command timeouts: 120s for network/SSH round-trips; 0 disables timeout for unbounded streaming/git operations.
 const INVOKE_TIMEOUT_MS_BY_CMD = {
-  // SSH / network round-trips on the host, each well past the 20s default under a slow link.
   get_agent_usage: 120000,
   provision_agent_usage: 120000,
   resolve_remote_path: 120000,
@@ -96,7 +55,6 @@ const INVOKE_TIMEOUT_MS_BY_CMD = {
   open_remote_subprocess: 120000,
   install_akiclaudedoc: 120000,
   install_ssh_terminal_color: 120000,
-  // No upper bound worth guessing: a git push/pull and a REPORT.html transfer are both "as long as the repo/file and the network need".
   run_git_command: 0,
   resolve_report_html: 0,
 }
@@ -122,16 +80,12 @@ function setDeviceToken(token) {
   }
 }
 
-// Companion pairing flow (§7.1): true once this device has a stored token, whether or not it
-// has actually been accepted by the host yet — used by Wave 2's pairing modal to decide
-// whether to show "enter code" vs "connecting…" on first paint.
+// True if this device has a stored token (used by pairing modal for first paint state).
 export function hasDeviceToken() {
   return !!getDeviceToken()
 }
 
-/** Drop the stored device token. Called when the host rejects it (close 4001): a rejected token
- *  only fails again on every reconnect, so clearing it lets the companion fall back to fresh code
- *  entry instead of looping on a dead credential. */
+/** Drop stored device token on rejection (close 4001) so companion can fall back to code entry. */
 export function clearDeviceToken() {
   try {
     localStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY)
@@ -140,12 +94,7 @@ export function clearDeviceToken() {
   }
 }
 
-// The relay's process-local host secret (src-tauri/src/web_server.rs `RelayState::host_token`),
-// read once per page load from `get_companion_status`. `role=host` is refused without it, because
-// the peer address alone proves nothing: `tailscale serve` proxies the whole tailnet in through
-// 127.0.0.1, so a loopback test used to hand any tailnet peer the host role — letting it overwrite
-// the relay's `host_tx`, cut the real Mac's mirror and forge init/delta frames to every phone.
-// Minted per process, so it is never persisted and never valid after a restart.
+// Process-local host secret required for role=host (prevents proxied loopback peers from hijacking host role).
 let hostRelayToken = ''
 let hostTokenPromise = null
 
@@ -171,52 +120,23 @@ function wsUrl() {
     return `ws://127.0.0.1:${REMOTE_PORT}/ws?role=host&token=${encodeURIComponent(hostRelayToken)}`
   }
   const token = getDeviceToken()
-  // Origin-relative on purpose: the page, `/ws` and `/pair` are ALWAYS served by the SAME axum
-  // origin, so derive the socket from `location` rather than hardcoding a port. This is what makes
-  // an HTTPS entry point work — e.g. `tailscale serve` terminating TLS for `<host>.ts.net` on 443
-  // and proxying to local :1421. There the page is https, so the socket MUST be
-  // `wss://<host>.ts.net/ws` (same origin, no `:1421`): a plain `ws://…:1421` from an https page is
-  // blocked as mixed content and would also miss the TLS terminator. Over plain http on a LAN IP,
-  // `location.host` already carries `:1421`, so the normal path is byte-identical to before; a
-  // port-forward/tunnel is handled too (it carries the whole server, `/ws` included). Secure-context
-  // (https) is also what unlocks the installable/standalone PWA — see docs/feat/remote-control.md.
+  // Origin-relative WS URL to support HTTPS/WSS (e.g. Tailscale serve TLS termination on 443) without mixed-content errors.
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${wsProto}//${window.location.host}/ws?role=companion&token=${encodeURIComponent(token)}`
 }
 
-/** Subscribe to every inbound *app* frame (init/delta/intent — ping/pong/invoke_result are
- *  consumed internally by this module and never forwarded here). Returns an unsubscribe fn. */
+/** Subscribe to inbound app frames (init/delta/intent). Returns unsubscribe function. */
 export function onFrame(cb) {
   frameListeners.add(cb)
   return () => frameListeners.delete(cb)
 }
 
-// ── Outbound congestion (the JS half of the backpressure policy) ──────────────────────────────
-//
-// `ws.send()` never blocks and never fails: the browser accepts the frame and grows
-// `bufferedAmount` until the socket drains. That is the same unbounded-queue shape the Rust relay
-// had toward companions (src-tauri/src/web_server.rs, "Backpressure toward companions"), one hop
-// earlier — so it gets the SAME policy rather than a second, differently-shaped one:
-//
-//   * only `pty_output` may be dropped, because only terminal bytes are re-derivable in full (the
-//     host can replay its whole scrollback ring buffer on demand). Every other frame — deltas,
-//     dialogs, intents, invoke results, liveness, pings — is queued to the browser as before,
-//     however congested the socket is. Losing any of them is unrecoverable; losing a run of
-//     terminal bytes is recoverable by one `reset` replay, which is what services/ptyBridge.js does
-//     when this function turns it down.
-//   * high/low water rather than one threshold, so a socket hovering at the limit does not
-//     alternate between relaying and dropping every other frame — it drops until it has genuinely caught up, then resumes with one clean re-hydrate.
-//
-// The frame-kind rule is mirrored in `is_coalescible()` in web_server.rs — same two-file mirroring
-// (and same reason) as the close codes: `constants/protocol.js` is the protocol SSoT, and Rust
-// cannot import it.
+// Backpressure high/low water marks: drops only recoverable pty_output when send buffer backs up.
 const SEND_BUFFER_HIGH_WATER = 1024 * 1024
 const SEND_BUFFER_LOW_WATER = 128 * 1024
 let congested = false
 
-/** True while the socket's own outbound buffer is backed up. Latches at the high-water mark and
- *  only clears once the buffer has drained past the low-water mark. services/ptyBridge.js reads
- *  this to decide when it is worth re-hydrating the companions. */
+/** True while socket outbound buffer is backed up (latches at high-water, clears at low-water). */
 export function isSocketCongested() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     congested = false
@@ -230,28 +150,19 @@ export function isSocketCongested() {
   return congested
 }
 
-/** Fire-and-forget. Returns false (and drops the frame) if the socket isn't open right now, or if
- *  the frame is terminal output and the socket is congested — callers that need a durable resync
- *  rely on mirror.js's full rebroadcast on (re)connect, or on ptyBridge's scrollback replay, rather
- *  than on this module buffering frames.
- *
- *  The return value is NOT advisory: a dropped `intent` is a tap that did nothing, so
- *  services/action.js turns `false` into a Toast (§3.13), and a dropped `pty_output` is a hole in a
- *  terminal stream, so services/ptyBridge.js turns `false` into a scrollback replay. */
+/** Fire-and-forget frame send. Returns false if closed or congested pty_output (triggers replay/resync). */
 export function send(frame) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     console.warn('[bridge] send dropped, socket not open', frame && frame.t)
     return false
   }
-  // Deliberately silent — a congested socket drops many frames in a row, and a warn per frame would bury the console at exactly the moment someone is trying to read it. The caller reports it once.
+  // Silently drop congested pty_output; caller handles replay without flooding logs.
   if (frame && frame.t === FRAME_PTY_OUTPUT && isSocketCongested()) return false
   ws.send(JSON.stringify(frame))
   return true
 }
 
-/** RPC-with-reply (§4, §13.2 `invoke`/`invoke_result`). Adds a fresh `id`, resolves/rejects the
- *  returned Promise when the matching `invoke_result` frame arrives. Rejects immediately if the
- *  socket isn't open; rejects every in-flight request on socket drop (see `close` handler). */
+/** RPC-with-reply: attaches request ID and returns Promise settled by matching invoke_result frame. */
 export function request(frame) {
   return new Promise((resolve, reject) => {
     const id = nextRequestId++
@@ -261,10 +172,7 @@ export function request(frame) {
       reject(new Error('bridge: not connected'))
       return
     }
-    // Watchdog: if the host never replies with a matching invoke_result, surface a concrete,
-    // named error instead of hanging silently. clearTimeout on either settle path (and on a socket
-    // drop, which calls reject via rejectAllPending) so a normal reply never trips it. A budget of
-    // 0 opts out entirely — those commands rely on the socket drop instead.
+    // RPC watchdog timeout: rejects with error if host doesn't reply within budget (budget 0 opts out).
     const budget = invokeTimeoutMs(frame && frame.cmd)
     const timer = budget
       ? setTimeout(() => {
@@ -358,19 +266,14 @@ function scheduleReconnect() {
   reconnectDelayMs = Math.min(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS)
 }
 
-/** Open (or re-open) the one WS connection. Safe to call repeatedly — no-ops while already
- *  open/connecting. Auto-reconnects with backoff on an ordinary drop AND on a 4002 (the Mac's
- *  remote control is off — the token is still good, so waiting is the right move). The one close
- *  it does NOT retry is 4001 (unpaired): that token is dead and needs `pairDevice()` first. */
+/** Open/re-open WS connection with exponential backoff. Does not retry close 4001 (unpaired). */
 export function connect() {
   if (typeof window === 'undefined') return
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
 
   connectionState.value = 'connecting'
 
-  // The host needs its relay token before it can dial. One extra IPC round-trip on the very first
-  // connect only; every later reconnect reuses the cached value and takes the synchronous path, so
-  // a relay drop still self-heals at backoff speed.
+  // Host fetches relay token via IPC on first connect; subsequent reconnects reuse cached token.
   if (isHost && !hostRelayToken) {
     fetchHostRelayToken().then(() => {
       if (hostRelayToken) openSocket()
@@ -401,36 +304,27 @@ function openSocket() {
   })
   socket.addEventListener('message', handleMessage)
   socket.addEventListener('close', (evt) => {
-    // Identity check (same idea as pty.rs's generation token): a superseded socket can still fire
-    // its close AFTER connect() has replaced it — a late close from the old one would then clear
-    // the LIVE socket's ping timers and schedule a reconnect against a connection that is fine.
+    // Ignore close events from superseded socket instances to prevent clobbering active connection.
     if (ws !== socket) return
     clearPingTimers()
     rejectAllPending(new Error('bridge: connection closed'))
     if (!isHost) {
       if (evt.code === CLOSE_UNPAIRED) {
-        // §13.1: this device's token was actually rejected (never paired, or revoked on the Mac).
-        // Surface "needs pairing" and do NOT auto-reconnect with the same dead credential.
+        // Token rejected (close 4001): surface unpaired state without auto-reconnecting.
         connectionState.value = 'unpaired'
         return
       }
       if (evt.code === CLOSE_SERVER_DISABLED) {
-        // Remote control is off on the Mac — an app restart, or the user flipping the toggle. The
-        // token is untouched and will work again the moment the Mac is back, so keep it and keep
-        // retrying. Treating this as "unpaired" is what used to strand every phone on every restart.
+        // Server disabled (close 4002): preserve token and retry until remote control is enabled.
         connectionState.value = 'host-off'
         scheduleReconnect()
         return
       }
     } else if (evt.code === CLOSE_HOST_ROLE_REJECTED) {
-      // Our host token was stale or missing (a relay that restarted under a reloaded webview mints
-      // a new one). Drop the cached copy so the next connect() re-reads it instead of retrying the
-      // same doomed URL forever — otherwise host_tx stays null and every companion sits empty.
+      // Stale host token (close 4003): clear cache so next connect re-fetches fresh token.
       hostRelayToken = ''
     }
-    // Anything else — including a 4001 on the HOST, which has no token/pairing concept at all —
-    // must self-heal rather than give up, or host_tx stays null on the relay and every companion
-    // connects to an empty, un-broadcast session.
+    // Auto-reconnect on socket drop or host close to maintain relay host_tx broadcast session.
     connectionState.value = 'closed'
     scheduleReconnect()
   })
@@ -440,13 +334,9 @@ function openSocket() {
   })
 }
 
-/** Companion-only pairing (§7.1): exchange the 6-digit code shown on the Mac for a persistent
- *  device token, store it, then (re)connect. Throws on a bad code (401) — Wave 2's pairing
- *  modal is the caller and owns the error UI. */
+/** Companion pairing (§7.1): exchange 6-digit code for persistent token, store, and connect. */
 export async function pairDevice(code) {
-  // Same origin-relative reasoning as wsUrl(): `/pair` is served by the same axum origin as the
-  // page, so use `location.origin` — this pairs correctly whether reached over http on `:1421` or
-  // over https via `tailscale serve` on 443 (where an explicit `:1421` would be wrong/insecure).
+  // Origin-relative endpoint works over both HTTP and TLS-terminated reverse proxy.
   const res = await fetch(`${window.location.origin}/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

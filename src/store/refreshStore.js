@@ -22,13 +22,7 @@ watch(refreshSettings, (v) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(v))
 }, { deep: true })
 
-// `refreshSettings` already mirrors host→companion. This closes C→H: a companion saving the
-// Background Refresh modal runs the write ON THE HOST, whose reactive `refreshSettings` change then
-// re-drives the Mac's own refresh timers, persists to the Mac's localStorage (via the watch above),
-// and mirrors the new intervals back to every screen. Before this the modal set `refreshSettings`
-// on the phone's copy only (ACT-1 class), so the Mac kept its old cadence. On the host
-// action(fn)===fn. Takes a plain object (intent args are JSON) — the caller spreads its reactive
-// `local` before passing it in.
+// C→H action: persists refresh settings on host to drive local timers and mirror back to companions.
 export const setRefreshSettings = action('refreshStore.setRefreshSettings', (settings) => {
   refreshSettings.value = { ...settings }
 })
