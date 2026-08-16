@@ -18,8 +18,7 @@ pub struct SyncHooks {
     pub ignore_hook_errors: bool,
 }
 
-/// A single per-project task. Created and mutated entirely on the frontend
-/// (timestamps come from JS `Date.now()`); Rust only persists it via save_projects.
+/// A single per-project task: created/mutated on frontend (JS `Date.now()` timestamps), Rust only persists via save_projects.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProjectTask {
     pub id: String,
@@ -56,16 +55,7 @@ pub struct SyncProject {
     pub last_sync_host: Option<String>,
     #[serde(default = "default_true")]
     pub dry_run: bool,
-    // DEPRECATED (push-only-paths plan, 1.13.0): superseded by exclude-list semantics  - 
-    // no longer read by any sync/build_rsync_args logic. Kept ONLY so `load_projects`
-    // still round-trips a legacy value (if present) to the JS one-time migration
-    // (useProjectConfig.js migratePushOnlyPaths), which converts it into
-    // push_excludes/pull_excludes entries and deletes it client-side. `None`/absent-on-disk
-    // means "already migrated" (or created after the migration shipped) - the migration is
-    // idempotent by construction (absence alone makes it a no-op), so this field is never
-    // re-materialized once deleted, regardless of any client-side migration bookkeeping.
-    // `skip_serializing_if` ensures a migrated project never gets this key written back.
-    // Remove this field entirely once the migration has shipped for a full release cycle.
+    // DEPRECATED (1.13.0, push-only-paths plan): superseded by exclude-list semantics. Kept for migration (useProjectConfig.js migratePushOnlyPaths); skip_serializing_if prevents re-materialization.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_git: Option<bool>,
     // When true, PULL includes --delete (mirror remote). Opt-out to preserve local-only files.
@@ -75,16 +65,7 @@ pub struct SyncProject {
     pub delete_on_push: bool,
     #[serde(default)]
     pub last_sync_status: Option<String>,
-    // DEPRECATED (1.22.0, docs/plan/done/1.22.0-notes-json-ssot.md): per-project tasks and notes now
-    // live in the project's own repo at `<local_path>/.akidevsync/notes.json` (src/project_notes.rs).
-    // Kept for ONE release cycle purely so `load_projects` can still round-trip a legacy value to
-    // the JS one-time migration (useProjectNotes.js `migrateLegacyProjectNotes`), which writes it
-    // into the repo file and then deletes the key client-side.
-    //
-    // `Option` + `skip_serializing_if` is what makes the migration ONE-WAY and flagless, exactly as
-    // for `sync_git` above: once the key is gone from a record it is never re-materialized on disk —
-    // not even by a stale companion array — so "no key" IS the already-migrated marker and no
-    // volatile flag is needed to remember it. Remove both fields (and `ProjectTask`) in 1.23.0.
+    // DEPRECATED (1.22.0, docs/plan/done/1.22.0-notes-json-ssot.md): notes moved to <local_path>/.akidevsync/notes.json. Kept for 1 release for JS migration (useProjectNotes.js); removed in 1.23.0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tasks: Option<Vec<ProjectTask>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -109,14 +90,7 @@ pub fn validate_path_segment(label: &str, s: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validates the two fields that decide what rsync actually operates on.
-///
-/// Split out from `validate_project` on purpose: these are the only fields whose emptiness
-/// silently turns a sync into a filesystem-root mirror (`format!("{}/", "")` → `"/"`, and
-/// `remote_path: ""` → `host:/`), so they are the ones `save_projects` must reject at write
-/// time. `remote_host` is deliberately NOT checked here - a project saved before its host is
-/// filled in is merely incomplete, not destructive, and refusing that save would be friction
-/// with no safety payoff.
+/// Validates local_path/remote_path: prevents sync from mirroring root on empty paths (format!("{}/", "") -> "/" and remote_path: "" -> host:/). Host is checked separately in validate_project.
 pub fn validate_project_paths(project: &SyncProject) -> Result<(), String> {
     validate_path_segment("local_path", &project.local_path)?;
     validate_path_segment("remote_path", &project.remote_path)?;
@@ -142,10 +116,7 @@ pub fn validate_project(project: &SyncProject) -> Result<(), String> {
     if project.remote_host.is_empty() {
         return Err("remote_host cannot be empty".to_string());
     }
-    // The host becomes an argv element for `ssh`/`rsync` further down every one of these paths.
-    // `ssh` parses its own argv, so a host beginning with `-` is read as an option: a stored
-    // `-oProxyCommand=…` would execute that command on THIS Mac the next time a sync ran. The
-    // rule lives in one function so no call site can be the one that forgot it.
+    // Host becomes argv for ssh/rsync: leading '-' parsed as ssh option (e.g. -oProxyCommand=... executes commands on host). Shared validator prevents bypass.
     crate::system::validate_remote_host(&project.remote_host)?;
     Ok(())
 }
@@ -171,14 +142,8 @@ pub fn get_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     })
 }
 
-/// The synchronous body of `load_projects`. Blocking by nature: `load_and_cache_project_icons`
-/// stats up to seven candidate icon paths per project and may read up to 250KB from each hit, and
-/// those paths live wherever the user's projects live - including an external or network volume
-/// whose `metadata()` can stall in the kernel for tens of seconds when the mount is unhealthy.
-///
-/// Callers that are ALREADY inside a `spawn_blocking` closure (web_server's
-/// `get_project_icons_map` and `read_text_file`) call this directly; the Tauri command below is
-/// the one that wraps it, so the work never lands on the IPC dispatch thread.
+/// Synchronous load_projects body: stats up to 7 icon paths per project (reading ≤250KB each); external mounts can stall in kernel metadata().
+/// Callers in spawn_blocking call this directly; Tauri command load_projects wraps it to keep IPC thread non-blocking.
 pub fn load_projects_blocking(app: AppHandle) -> Result<Vec<SyncProject>, String> {
     let path = get_projects_path(&app)?;
     let mut projects = vec![];
@@ -201,17 +166,11 @@ pub async fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
 
 #[tauri::command]
 pub fn save_projects(app: AppHandle, projects: Vec<SyncProject>) -> Result<(), String> {
-    // Last line of defence: the frontend is not trusted. A project persisted with an empty
-    // local_path becomes `rsync -avz --delete / host:remote/` on the next PUSH, and mirrors the
-    // remote into `/` on the next PULL (delete_on_pull defaults to true). Rejecting the write is
-    // recoverable - re-typing a path costs seconds; neither of those syncs is recoverable at all.
+    // Last line of defense (untrusted frontend): empty local_path becomes rsync --delete / (root mirror). Write rejection is recoverable; destructive sync is not.
     for p in &projects {
         validate_project_paths(p)
             .map_err(|e| format!("Cannot save project '{}': {}", p.name, e))?;
-        // A host is allowed to be empty at rest (a project can be half-configured), but if one is
-        // present it must already be safe here - persisting a hostile value and only catching it
-        // at sync time means the dangerous string is sitting in the file that every later path
-        // trusts.
+        // Host can be empty at rest (half-configured project), but if present must be safe immediately to prevent persisting malicious options.
         if !p.remote_host.is_empty() {
             crate::system::validate_remote_host(&p.remote_host)
                 .map_err(|e| format!("Cannot save project '{}': {}", p.name, e))?;
@@ -366,11 +325,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_a_path_on_an_unmounted_volume() {
-        // Regression guard for the stricter empty/absolute rule: validation must judge the SHAPE
-        // of the path, never whether it exists right now. A project on an external volume that
-        // happens to be unmounted must still load and still save - refusing it here would replace
-        // the real cause ("mount the drive") with a validation error that hides it. Existence is
-        // checked at the point of use instead (sync.rs::ensure_local_path_present).
+        // Regression guard: validates path SHAPE, not existence. Unmounted external volumes must still load/save (checked at sync time in sync.rs::ensure_local_path_present).
         let p = make_project("/Volumes/NotMountedRightNow/app", "~/app", "vps01");
         assert!(validate_project_paths(&p).is_ok());
         assert!(validate_project(&p).is_ok());

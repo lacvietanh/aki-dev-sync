@@ -3,10 +3,7 @@
 //! Design, invariants and the group table: `docs/plan/done/claudecode-cleanup.md`.
 //! Path-by-path impact reference: `docs/ref/claudecode-cleanup-paths.md`.
 //!
-//! The one rule this module is built around: **the frontend never sends a path.** It sends catalogue
-//! keys, and `resolve` is the only way a key becomes a `PathBuf`. Anything absent from `CATALOG` is
-//! not deletable, which is what keeps `~/.claude/skills/` and the Aki rule corpus structurally out
-//! of reach rather than merely unchecked.
+//! Security model: frontend never sends a path, only catalogue keys resolved via CATALOG. Anything absent from CATALOG is undeletable, keeping ~/.claude/skills/ and Aki rules structurally unreachable.
 
 use serde::Serialize;
 use std::fs;
@@ -16,21 +13,16 @@ use std::path::Path;
 enum Kind {
     File,
     Dir,
-    /// `~/.claude/projects/` - a directory emptied *around* the `memory/` sub-directory each project
-    /// slug carries. Memory holds authored agent content rather than transcript, so it is deletable
-    /// only through its own entry (`Kind::MemoryDirs`, its own group) and never as a side effect of
-    /// clearing chat history. See `docs/plan/done/claudecode-cleanup.md` §2.
+    /// ~/.claude/projects/ emptied around project memory/ subdirs (authored memory is preserved and only deleted via Kind::MemoryDirs; see docs/plan/done/claudecode-cleanup.md §2).
     ProjectsDir,
-    /// Every `~/.claude/projects/<slug>/memory/`, as one entry. Separate from `ProjectsDir` so that
-    /// deleting it is always a deliberate, individually-ticked act.
+    /// Every ~/.claude/projects/<slug>/memory/ as one entry, separated from ProjectsDir so memory deletion requires deliberate selection.
     MemoryDirs,
 }
 
 struct CatalogEntry {
     group: &'static str,
     key: &'static str,
-    /// Always relative to the user's home directory - never absolute, never containing `..`. Asserted
-    /// by `catalog_paths_stay_under_home` below.
+    /// Always relative to home directory (never absolute, no '..'; asserted by catalog_paths_stay_under_home).
     rel: &'static str,
     kind: Kind,
     label: &'static str,
@@ -74,8 +66,7 @@ const CATALOG: &[CatalogEntry] = &[
     CatalogEntry { group: GROUP_CACHE,   key: "os-cache",            rel: "Library/Caches/claude-code",       kind: Kind::Dir,  label: "macOS cache" },
 ];
 
-/// Shown in the modal's read-only "Kept" group, so the guarantee is visible rather than promised in
-/// a tooltip. Never consulted when deleting - deletion is gated by `CATALOG` membership alone.
+/// Shown in modal's read-only "Kept" group for visibility. Deletion is gated strictly by CATALOG membership alone.
 const KEPT: &[(&str, &str)] = &[
     (".claude/settings.json",         "Settings & permissions"),
     (".claude/settings.local.json",   "Local settings"),
@@ -87,8 +78,7 @@ const KEPT: &[(&str, &str)] = &[
     (".claude/statusline-command.sh", "Statusline script"),
 ];
 
-/// Top-level names under `~/.claude` that the "Unlisted" aggregate must not double-count: either the
-/// catalogue already reports them, or `KEPT` does.
+/// Top-level names under ~/.claude that Unlisted aggregate must not double-count (reported by CATALOG or KEPT).
 fn is_accounted_for(name: &str) -> bool {
     CATALOG
         .iter()
@@ -107,8 +97,7 @@ pub struct CleanupEntry {
     key: String,
     label: String,
     path: String,
-    /// Always bytes. Formatting (and the 1000-vs-1024 unit base) belongs to the frontend -
-    /// `src/utils/bytes.js`.
+    /// Always bytes. Unit base and formatting are handled by frontend in src/utils/bytes.js.
     bytes: u64,
     exists: bool,
 }
@@ -134,9 +123,7 @@ pub struct CleanupReport {
 // Sizing
 // ---------------------------------------------------------------------------------------------
 
-/// Apparent size of a path, following no symlinks. A symlink counts as its own (tiny) link size and
-/// is never traversed, so a link pointing outside `~/.claude` can neither inflate the number nor
-/// drag the walk into an unrelated tree.
+/// Apparent size of path without following symlinks (prevents traversing outside ~/.claude or inflating size).
 fn path_size(path: &Path) -> u64 {
     let Ok(meta) = fs::symlink_metadata(path) else { return 0 };
     if meta.is_symlink() {
@@ -172,9 +159,7 @@ fn projects_size_excluding_memory(root: &Path) -> u64 {
         .sum()
 }
 
-/// Every existing `projects/<slug>/memory/`, and how many there are. The count is what decides
-/// whether the row reads as present: a memory directory that exists but is still empty must show
-/// "0 B", not "-" (absent) - inferring existence from the byte total would hide it.
+/// Discovers projects/<slug>/memory/ paths and count (count ensures empty memory dirs display as "0 B" rather than "-").
 fn memory_dirs(root: &Path) -> (u64, usize) {
     fs::read_dir(root)
         .map(|slugs| {
@@ -203,8 +188,7 @@ fn entry_exists(home: &Path, e: &CatalogEntry) -> bool {
     }
 }
 
-/// What the row shows. Only `MemoryDirs` differs from its `rel`, because one entry stands for many
-/// real directories.
+/// Row display path (MemoryDirs formats as wildcard ~/rel/*/memory since it represents multiple directories).
 fn entry_display_path(e: &CatalogEntry) -> String {
     match e.kind {
         Kind::MemoryDirs => format!("~/{}/*/memory", e.rel),
@@ -237,9 +221,7 @@ fn build_group(home: &Path, id: &str, label: &str) -> CleanupGroup {
     }
 }
 
-/// The read-only group: the named protected paths plus an "Unlisted" aggregate for whatever else the
-/// CLI has since started writing. That last line is the honest half of deny-by-default - the space is
-/// real, it is simply not ours to delete.
+/// Read-only group: protected paths plus Unlisted aggregate for non-catalog items (deny-by-default undeletable space).
 fn build_kept_group(home: &Path) -> CleanupGroup {
     let mut entries: Vec<CleanupEntry> = KEPT
         .iter()
@@ -289,9 +271,7 @@ fn scan(home: &Path) -> Vec<CleanupGroup> {
     ]
 }
 
-/// Sizes every catalogue entry. `spawn_blocking` because `projects/` and `file-history/` routinely
-/// hold tens of thousands of files - a walk that long on the IPC dispatch thread freezes the window
-/// (`RULE-stack-tauri` A1; its "a small config read is fine" exemption does not cover a tree walk).
+/// Sizes all catalogue entries via spawn_blocking to avoid blocking IPC dispatch thread during large tree walks (RULE-stack-tauri A1).
 #[tauri::command]
 pub async fn scan_claude_cleanup() -> Result<Vec<CleanupGroup>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -310,9 +290,7 @@ fn resolve(key: &str) -> Option<&'static CatalogEntry> {
     CATALOG.iter().find(|e| e.key == key)
 }
 
-/// Empties `projects/<slug>/` of everything except `memory/`, then removes the slug directory itself
-/// only if nothing survived. A slug that still holds memory keeps its folder - an empty folder is a
-/// far cheaper outcome than a deleted one.
+/// Empties projects/<slug>/ except memory/; removes slug dir only if empty (slugs with surviving memory are kept).
 fn remove_projects_except_memory(root: &Path) -> Result<(), String> {
     let slugs = match fs::read_dir(root) {
         Ok(it) => it,
@@ -356,9 +334,7 @@ fn remove_projects_except_memory(root: &Path) -> Result<(), String> {
     }
 }
 
-/// Removes every `projects/<slug>/memory/`, then drops each slug directory that has nothing left in
-/// it - so ticking both this and the transcripts entry leaves `projects/` genuinely empty rather
-/// than full of hollow folders.
+/// Removes projects/<slug>/memory/ and cleans up parent slug dirs if left completely empty.
 fn remove_memory_dirs(root: &Path) -> Result<(), String> {
     let slugs = match fs::read_dir(root) {
         Ok(it) => it,
@@ -398,11 +374,8 @@ fn remove_entry(home: &Path, e: &CatalogEntry) -> Result<(), String> {
     }
 }
 
-/// Deletes the given catalogue keys. Takes **keys, never paths** - an unknown key is refused rather
-/// than interpreted, which is the whole safety story (`docs/plan/done/claudecode-cleanup.md` §2).
-///
-/// A per-entry failure is collected and reported, not raised: one unreadable directory must not
-/// abort the rest of a cleanup the user already confirmed.
+/// Deletes given catalogue keys (keys only, never paths; unknown keys refused per docs/plan/done/claudecode-cleanup.md §2).
+/// Per-entry failures are collected into report instead of aborting overall cleanup run.
 #[tauri::command]
 pub async fn run_claude_cleanup(keys: Vec<String>) -> Result<CleanupReport, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -447,9 +420,7 @@ pub async fn run_claude_cleanup(keys: Vec<String>) -> Result<CleanupReport, Stri
 mod tests {
     use super::*;
 
-    /// The catalogue is the entire security boundary, so its shape is asserted rather than trusted:
-    /// a relative path that escapes home (absolute, or containing `..`) would let one careless entry
-    /// point anywhere on disk.
+    /// Asserts catalogue relative paths never escape home dir (no absolute paths or '..').
     #[test]
     fn catalog_paths_stay_under_home() {
         for e in CATALOG {
@@ -468,11 +439,7 @@ mod tests {
         }
     }
 
-    /// The Aki rule corpus and Claude Code's own settings must not be reachable through any key.
-    /// This is the regression this feature most needs a guard for: a future "just add one more path"
-    /// edit is exactly how a cleanup feature grows into deleting someone's skills. Agent memory is
-    /// deliberately NOT on this list - it is deletable, just never as a side effect (see
-    /// `memory_is_deletable_but_only_through_its_own_group`).
+    /// Verifies critical paths (Aki rules, settings, skills) are strictly undeletable; agent memory is tested separately in memory_is_deletable_but_only_through_its_own_group.
     #[test]
     fn protected_paths_are_not_deletable() {
         const NEVER: &[&str] = &[
@@ -491,8 +458,7 @@ mod tests {
         }
     }
 
-    /// The whole point of memory having its own group: a user who selects everything in Data - by
-    /// any means the UI offers - still has not selected memory. Ticking it is a separate act.
+    /// Verifies memory deletion is isolated to its own group so selecting all Data entries never touches memory.
     #[test]
     fn memory_is_deletable_but_only_through_its_own_group() {
         let memory = resolve("agent-memory").expect("memory must be deletable");
@@ -516,8 +482,7 @@ mod tests {
         assert!(resolve("projects").is_some());
     }
 
-    /// The `memory/` carve-out, exercised end to end on a temp tree: transcripts go, authored memory
-    /// stays, and a slug that still holds memory keeps its directory.
+    /// End-to-end temp tree test: transcript cleanup removes chat history while preserving authored memory and slug dir.
     #[test]
     fn projects_cleanup_preserves_memory() {
         let root = std::env::temp_dir().join(format!(
@@ -554,8 +519,7 @@ mod tests {
         fs::remove_dir_all(&root).ok();
     }
 
-    /// Deleting memory alone must not touch transcripts - the two entries are independent, in both
-    /// directions.
+    /// Verifies memory deletion leaves transcripts intact (bidirectional independence).
     #[test]
     fn memory_delete_leaves_transcripts_alone() {
         let root = std::env::temp_dir().join(format!(

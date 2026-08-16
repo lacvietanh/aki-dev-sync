@@ -16,8 +16,7 @@ fn ssh_config_path() -> Result<PathBuf, String> {
     Ok(home.join(".ssh").join("config"))
 }
 
-/// Swap SSH config between `from` (source to restore) and `to` (destination for current).
-/// Pattern: current → to, from → current, delete from.
+/// Swap SSH config between `from` (source to restore) and `to` (destination for current). Pattern: current → to, from → current, delete from.
 fn swap_ssh_state(from: &Path, to: &Path) -> Result<String, String> {
     if !from.exists() {
         return Err("No state available".to_string());

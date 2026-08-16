@@ -12,23 +12,14 @@ fn read_settings() -> Value {
         .unwrap_or_else(|| json!({}))
 }
 
-/// Rewrites `~/.claude/settings.json` **atomically**, and keeps a timestamped copy of what was
-/// there before.
-///
-/// This file is not ours. It is Claude Code's own settings - statusline config, permissions,
-/// everything - and this function rewrites the whole document to change one key under `env`.
-/// A plain `fs::write` truncates first: a crash or a full disk between truncate and write left the
-/// user with an empty or half-written `settings.json` and no copy anywhere, which Claude Code
-/// then reads as "no settings at all". Temp-then-rename means a reader sees either the whole old
-/// file or the whole new one, and the backup means even a bad *value* is recoverable.
+/// Atomically rewrites Claude Code's `~/.claude/settings.json` with timestamped backup of prior content.
+/// Temp-then-rename prevents truncated/empty writes on crash, while timestamped backups ensure recoverable state.
 fn write_settings(value: &Value) -> Result<(), String> {
     let path = settings_path().ok_or("Cannot resolve home dir")?;
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
 
     if path.exists() {
-        // Timestamped on every write, not once ever: the "back up once" shape means every edit
-        // after the first silently destroys the only copy - the exact bug already retired from
-        // the statusline installer.
+        // Timestamped on every write, not once: "back up once" causes subsequent edits to overwrite the only backup (retired statusline bug).
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -41,9 +32,7 @@ fn write_settings(value: &Value) -> Result<(), String> {
                 &format!("could not back up settings.json before rewriting it: {}", e),
             );
         }
-        // Bounded AFTER the new copy exists, so the newest backup is never the one pruned. These
-        // files hold a plaintext ANTHROPIC_AUTH_TOKEN, so an unbounded pile is a growing pile of
-        // credential copies, not just clutter.
+        // Pruned AFTER new copy exists so newest is kept; bounded retention avoids accumulating plaintext ANTHROPIC_AUTH_TOKEN credential copies.
         if let Some(dir) = path.parent() {
             crate::system::prune_timestamped_backups(
                 dir,
@@ -57,10 +46,8 @@ fn write_settings(value: &Value) -> Result<(), String> {
     crate::system::write_atomic(&path, &content)
 }
 
-/// Returns "proxy" if ANTHROPIC_BASE_URL is set under settings.json's `env` block, otherwise
-/// "native". Claude Code only picks up API routing overrides via `env` (real environment
-/// variables it reads at startup) - a top-level JSON key like the old `customApiUrl` is not
-/// read by the CLI at all, so proxy mode silently no-op'd until this was fixed.
+/// Returns "proxy" if ANTHROPIC_BASE_URL is set under settings.json `env`, otherwise "native".
+/// Claude Code only reads overrides via `env` at startup (top-level JSON keys like `customApiUrl` are ignored).
 #[tauri::command]
 pub fn get_claude_mode() -> &'static str {
     if read_settings()

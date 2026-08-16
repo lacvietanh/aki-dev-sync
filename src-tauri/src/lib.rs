@@ -20,8 +20,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             logger::init(app.handle());
-            // Remote Control relay (docs/plan/done/remote-control.md §7) — binds the axum server on
-            // Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
+            // Remote Control relay (docs/plan/done/remote-control.md §7) — binds the axum server on Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
             web_server::init(app.handle());
             Ok(())
         })
@@ -149,12 +148,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, event| {
-            // Kill the in-app terminal's whole process tree on quit. Without this, anything the
-            // user left running in that shell — most damagingly a live `ssh <host>` — outlives the
-            // app as an init-owned orphan and keeps its remote session (and that session's `agy`/
-            // `claude`) alive indefinitely. See pty::kill_process_group.
-            // Same for a running sync: rsync and the ssh it spawned used to survive the app as
-            // init-owned orphans, still writing to a remote nobody is watching any more.
+            // Kill in-app terminal process tree on quit: prevents orphaned shells (e.g. live ssh running agy/claude) from outliving the app indefinitely (see pty::kill_process_group).
+            // Kill running sync on quit: prevents orphaned rsync/ssh processes from continuing to write to remote after exit.
             if let tauri::RunEvent::Exit = event {
                 pty::shutdown();
                 sync::shutdown();

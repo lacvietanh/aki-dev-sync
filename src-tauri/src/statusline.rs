@@ -12,8 +12,7 @@
 use crate::remote_shell::run_remote_script_bounded;
 use serde::{Deserialize, Serialize};
 
-/// The script itself, compiled in verbatim. It is a runnable, checked-in reference as well as the
-/// template: the region between the two markers below is the only part Apply rewrites.
+/// The script itself, compiled in verbatim. It is a runnable, checked-in reference as well as the template: the region between the two markers below is the only part Apply rewrites.
 const TEMPLATE: &str = include_str!("statusline-unified.sh");
 const MARK_BEGIN: &str = "# >>> AKI-GENERATED-CONFIG >>>";
 const MARK_END: &str = "# <<< AKI-GENERATED-CONFIG <<<";
@@ -22,8 +21,7 @@ const MARK_END: &str = "# <<< AKI-GENERATED-CONFIG <<<";
 pub struct StatuslineField {
     pub key: String,
     pub enabled: bool,
-    /// Only honored for the keys in COLOR_KEYS; every other field's color is computed from its
-    /// value (the UI shows "Dynamic color" and offers no picker).
+    /// Only honored for the keys in COLOR_KEYS; every other field's color is computed from its value (the UI shows "Dynamic color" and offers no picker).
     pub color: String,
 }
 
@@ -50,14 +48,7 @@ pub struct StatuslineZebra {
     pub b: u8,
 }
 
-/// Deliberately WITHOUT `#[serde(default)]` on any field, against the usual "new serde fields on
-/// persisted JSON need a default" rule (RULE-stack-tauri B3). That rule guards against a field
-/// silently dropping to nothing; here the opposite is wanted. A default here would be a Rust-side
-/// default, i.e. the second source of truth this whole module exists to remove - and it cannot
-/// happen by accident anyway: `loadCfg()` in the Vue component always builds the complete shape,
-/// and a stored config from an older `CONFIG_VERSION` is discarded rather than sent. So a missing
-/// field means a genuinely malformed payload, and failing the Apply loudly beats writing a script
-/// from values the user never chose.
+/// Deliberately WITHOUT `#[serde(default)]` on any field, against the usual "new serde fields on persisted JSON need a default" rule (RULE-stack-tauri B3). That rule guards against a field silently dropping to nothing; here the opposite is wanted. A default here would be a Rust-side default, i.e. the second source of truth this whole module exists to remove - and it cannot happen by accident anyway: `loadCfg()` in the Vue component always builds the complete shape, and a stored config from an older `CONFIG_VERSION` is discarded rather than sent. So a missing field means a genuinely malformed payload, and failing the Apply loudly beats writing a script from values the user never chose.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StatuslineConfig {
     pub fields: Vec<StatuslineField>,
@@ -74,8 +65,7 @@ pub struct HostApplyResult {
     pub message: String,
 }
 
-/// Every EN_ flag the template declares, in template order. A key here that the UI never sends
-/// still gets a flag (0), so a stale saved config can never leave a gate undefined.
+/// Every EN_ flag the template declares, in template order. A key here that the UI never sends still gets a flag (0), so a stale saved config can never leave a gate undefined.
 const EN_KEYS: &[&str] = &[
     "cli_tag",
     "account",
@@ -97,9 +87,7 @@ const EN_KEYS: &[&str] = &[
     "ram",
 ];
 
-/// The keys whose color the user picks. Mirrors COLOR_EDITABLE in ClaudeSettingModal.vue and the
-/// COLOR_* block in the template - all three lists must name the same six keys, or the UI grows a
-/// picker that changes nothing.
+/// The keys whose color the user picks. Mirrors COLOR_EDITABLE in ClaudeSettingModal.vue and the COLOR_* block in the template - all three lists must name the same six keys, or the UI grows a picker that changes nothing.
 const COLOR_KEYS: &[&str] = &[
     "identity_user",
     "identity_host",
@@ -109,9 +97,7 @@ const COLOR_KEYS: &[&str] = &[
     "account",
 ];
 
-/// (child, parent). Mirrors DEPENDS in ClaudeSettingModal.vue: a child is only reachable while its
-/// parent is on. Resolved here so the generated flags are already final and no shell gate has to
-/// re-check a parent.
+/// (child, parent). Mirrors DEPENDS in ClaudeSettingModal.vue: a child is only reachable while its parent is on. Resolved here so the generated flags are already final and no shell gate has to re-check a parent.
 const DEPENDS: &[(&str, &str)] = &[
     ("effort", "model"),
     ("rate_reset_5h", "rate_limits_5h"),
@@ -120,8 +106,7 @@ const DEPENDS: &[(&str, &str)] = &[
     ("cache_tokens", "cache"),
 ];
 
-/// Which printed block a field belongs to. `None` = printed outside the block loop (the tag
-/// cluster) or unknown to this version of the template.
+/// Which printed block a field belongs to. `None` = printed outside the block loop (the tag cluster) or unknown to this version of the template.
 fn block_of(key: &str) -> Option<&'static str> {
     Some(match key {
         "identity_user" | "identity_host" => "identity",
@@ -137,10 +122,7 @@ fn block_of(key: &str) -> Option<&'static str> {
     })
 }
 
-/// MIRROR of STATUSLINE_COLORS in src/utils/statuslineColors.js, which is the source of truth for
-/// the key -> ANSI mapping AND for the hex the app draws each code with. Rust cannot import that
-/// file, so this table is a copy: change it there first. The ladder's five tier codes are mirrored
-/// in the template's BOLD_* block (src-tauri/src/statusline-unified.sh) from the same file.
+/// MIRROR of STATUSLINE_COLORS in src/utils/statuslineColors.js, which is the source of truth for the key -> ANSI mapping AND for the hex the app draws each code with. Rust cannot import that file, so this table is a copy: change it there first. The ladder's five tier codes are mirrored in the template's BOLD_* block (src-tauri/src/statusline-unified.sh) from the same file.
 fn ansi_for(name: &str) -> &'static str {
     match name {
         "white" => r"\033[97m",
@@ -155,14 +137,12 @@ fn ansi_for(name: &str) -> &'static str {
     }
 }
 
-// The returned reference borrows from `config`, not from `key` - tying both inputs to one lifetime
-// (as the compiler's suggestion does) would force callers to keep the key alive as long as the config.
+// The returned reference borrows from `config`, not from `key` - tying both inputs to one lifetime (as the compiler's suggestion does) would force callers to keep the key alive as long as the config.
 fn field<'a>(config: &'a StatuslineConfig, key: &str) -> Option<&'a StatuslineField> {
     config.fields.iter().find(|f| f.key == key)
 }
 
-/// Enabled AND reachable - the same rule as fieldActive() in the Vue component. A field the config
-/// does not mention at all counts as off.
+/// Enabled AND reachable - the same rule as fieldActive() in the Vue component. A field the config does not mention at all counts as off.
 fn is_active(config: &StatuslineConfig, key: &str) -> bool {
     if !field(config, key).map(|f| f.enabled).unwrap_or(false) {
         return false;
@@ -185,8 +165,7 @@ fn sanitized_thresholds(t: &StatuslineThresholds) -> (u8, u8, u8, u8) {
     (v[0], v[1], v[2], v[3])
 }
 
-/// Into the neutral greyscale ramp the UI's picker is restricted to (16, or 232..=255). A clamp,
-/// not a fallback to some "default" shade - this module owns no defaults.
+/// Into the neutral greyscale ramp the UI's picker is restricted to (16, or 232..=255). A clamp, not a fallback to some "default" shade - this module owns no defaults.
 fn sanitized_shade(n: u8) -> u8 {
     if n == 16 {
         16
@@ -195,9 +174,7 @@ fn sanitized_shade(n: u8) -> u8 {
     }
 }
 
-/// Print order, one entry per block, in the order the user dragged the rows into. A block appears
-/// at its first member's position; whether it prints at all is the EN_ flags' business, not this
-/// list's, so a block with everything switched off still appears here and simply renders empty.
+/// Print order, one entry per block, in the order the user dragged the rows into. A block appears at its first member's position; whether it prints at all is the EN_ flags' business, not this list's, so a block with everything switched off still appears here and simply renders empty.
 fn block_order(config: &StatuslineConfig) -> Vec<&'static str> {
     let mut order: Vec<&'static str> = Vec::new();
     for f in &config.fields {
@@ -272,8 +249,7 @@ fn config_block(config: &StatuslineConfig) -> String {
     s
 }
 
-/// Splices the generated region into the template. Everything outside the two markers - the whole
-/// body of the script - is shipped byte-for-byte.
+/// Splices the generated region into the template. Everything outside the two markers - the whole body of the script - is shipped byte-for-byte.
 pub fn generate_statusline_script(config: &StatuslineConfig) -> Result<String, String> {
     let begin = TEMPLATE
         .find(MARK_BEGIN)
@@ -296,24 +272,12 @@ pub fn generate_statusline_script(config: &StatuslineConfig) -> Result<String, S
     ))
 }
 
-/// Where one generated body gets written, and what else has to be patched there. Both targets take
-/// the SAME body - the script decides at run time which CLI it is speaking for.
+/// Where one generated body gets written, and what else has to be patched there. Both targets take the SAME body - the script decides at run time which CLI it is speaking for.
 ///
-/// Each installer is a COMPLETE, self-contained script with its own `set -e`. Two rules the shape
-/// of these strings enforces, both of them fixes for real half-applied states:
-///   1. The settings patch runs BEFORE the script file is written. `jq` is the one dependency that
-///      can be missing on a remote; patching first means a host without it fails having changed
-///      nothing, instead of leaving a statusline script no settings file points at.
-///   2. The backup is timestamped and taken on EVERY apply. The old `[ ! -f "$FILE.aki-bak" ]`
-///      guard backed up once ever, so every hand-edit made after the first Apply was destroyed
-///      with no copy anywhere.
-///   3. The script file is written to a `mktemp` **in its own directory** and then `mv`'d over the
-///      target, the same shape the `jq` settings patch above it already used. `cat > "$FILE"`
-///      truncates the live, executable statusline in place: killed mid-write (the local path runs
-///      under a 4s `BoundedSh` timeout, and a remote one under an ssh that can drop), it leaves a
-///      truncated script that `settings.json` already points at, so every subsequent CLI turn
-///      renders nothing. Same directory matters - a `/tmp` temp file would make `mv` a
-///      cross-filesystem copy, which is not atomic and reintroduces the torn write.
+/// Each installer is a COMPLETE, self-contained script with its own `set -e`. Two rules the shape of these strings enforces, both of them fixes for real half-applied states:
+///   1. The settings patch runs BEFORE the script file is written. `jq` is the one dependency that can be missing on a remote; patching first means a host without it fails having changed nothing, instead of leaving a statusline script no settings file points at.
+///   2. The backup is timestamped and taken on EVERY apply. The old `[ ! -f "$FILE.aki-bak" ]` guard backed up once ever, so every hand-edit made after the first Apply was destroyed with no copy anywhere.
+///   3. The script file is written to a `mktemp` **in its own directory** and then `mv`'d over the target, the same shape the `jq` settings patch above it already used. `cat > "$FILE"` truncates the live, executable statusline in place: killed mid-write (the local path runs under a 4s `BoundedSh` timeout, and a remote one under an ssh that can drop), it leaves a truncated script that `settings.json` already points at, so every subsequent CLI turn renders nothing. Same directory matters - a `/tmp` temp file would make `mv` a cross-filesystem copy, which is not atomic and reintroduces the torn write.
 struct Target {
     /// Short human label, used to say WHICH target failed in the per-host message.
     label: &'static str,
@@ -367,13 +331,9 @@ const TARGETS: &[Target] = &[
     },
 ];
 
-/// One script per target the caller actually asked for - never one concatenated script. Under a
-/// single shared `set -e` a Claude Code failure aborted the run before the AGY half was even
-/// attempted, and the user was told about neither: the host simply reported one error. Independent
-/// scripts mean one target's failure cannot swallow the other's outcome.
+/// One script per target the caller actually asked for - never one concatenated script. Under a single shared `set -e` a Claude Code failure aborted the run before the AGY half was even attempted, and the user was told about neither: the host simply reported one error. Independent scripts mean one target's failure cannot swallow the other's outcome.
 ///
-/// An empty selection is an error, never an implicit "AGY anyway" - a silent fallback here is
-/// exactly how Apply ended up writing a file the user never ticked.
+/// An empty selection is an error, never an implicit "AGY anyway" - a silent fallback here is exactly how Apply ended up writing a file the user never ticked.
 fn build_installer_scripts(
     config: &StatuslineConfig,
     selected_targets: &[String],
@@ -396,10 +356,7 @@ fn build_installer_scripts(
         .collect())
 }
 
-/// Per CLI, because a host can have one, both or neither. Reporting a single "configured" flag made
-/// the indicator lie the moment AGY was the target: applying for AGY left the flag false forever.
-/// `present` = that CLI exists on the host at all; `configured` = its statusline is installed AND
-/// its settings point at it, which is the only state that actually renders a line.
+/// Per CLI, because a host can have one, both or neither. Reporting a single "configured" flag made the indicator lie the moment AGY was the target: applying for AGY left the flag false forever. `present` = that CLI exists on the host at all; `configured` = its statusline is installed AND its settings point at it, which is the only state that actually renders a line.
 #[derive(Serialize, Clone)]
 pub struct StatuslineHostStatus {
     pub host: String,
@@ -415,8 +372,7 @@ impl StatuslineHostStatus {
     }
 }
 
-/// Both halves of an install are checked: the script file, and the settings key naming it. A host
-/// with the file but an empty `statusLine.command` renders nothing, so it is not "configured".
+/// Both halves of an install are checked: the script file, and the settings key naming it. A host with the file but an empty `statusLine.command` renders nothing, so it is not "configured".
 const PROBE: &str = r#"
 if command -v "$CLAUDE_BIN" >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then echo "CC_PRESENT=1"; else echo "CC_PRESENT=0"; fi
 if [ -f "$HOME/.claude/statusline-command.sh" ] && grep -q "statusline-command.sh" "$HOME/.claude/settings.json" 2>/dev/null; then echo "CC_SL=1"; else echo "CC_SL=0"; fi
@@ -427,20 +383,13 @@ if [ -f "$HOME/.gemini/antigravity-cli/statusline.sh" ] && grep -q "statusline.s
 #[tauri::command]
 pub async fn check_statusline_status(hosts: Vec<String>) -> Vec<StatuslineHostStatus> {
     tauri::async_runtime::spawn_blocking(move || {
-        // One OS thread per host - hosts are independent, so none should wait on another (the
-        // per-host lock inside run_remote_script_bounded only serializes a host against ITSELF,
-        // i.e. against other features touching that same host; it never blocks one host on a
-        // different one). Mirrors the fan-out in apply_statusline_config below.
+        // One OS thread per host - hosts are independent, so none should wait on another (the per-host lock inside run_remote_script_bounded only serializes a host against ITSELF, i.e. against other features touching that same host; it never blocks one host on a different one). Mirrors the fan-out in apply_statusline_config below.
         let handles: Vec<(String, std::thread::JoinHandle<StatuslineHostStatus>)> = hosts
             .into_iter()
             .map(|host| {
                 let host_for_thread = host.clone();
                 let handle = std::thread::spawn(move || {
-                    // A host that `ssh` would read as an option (`-oProxyCommand=…`) runs that
-                    // command on THIS Mac. This list arrives from the frontend (and, over the
-                    // relay, from a companion), so it is validated here like every other
-                    // host→argv boundary. This command has no error channel per host, and a host
-                    // we refuse to contact is, to the UI, exactly a host we could not reach.
+                    // A host that `ssh` would read as an option (`-oProxyCommand=…`) runs that command on THIS Mac. This list arrives from the frontend (and, over the relay, from a companion), so it is validated here like every other host→argv boundary. This command has no error channel per host, and a host we refuse to contact is, to the UI, exactly a host we could not reach.
                     if let Err(e) = crate::system::validate_remote_host(&host_for_thread) {
                         crate::logger::error("STATUSLINE", &format!("rejected host: {}", e));
                         return StatuslineHostStatus::unreachable(host_for_thread);
@@ -478,30 +427,21 @@ pub async fn apply_statusline_config(
     selected_targets: Option<Vec<String>>,
 ) -> Result<Vec<HostApplyResult>, String> {
     let targets = selected_targets.unwrap_or_default();
-    // Validated before any script is built or any thread spawned: a host that `ssh` would read as
-    // an option (`-oProxyCommand=…`) executes locally, and this list is frontend/companion-supplied.
-    // Unlike check_statusline_status, this command HAS an error channel, so it says so outright
-    // rather than disguising a refusal as an unreachable host.
+    // Validated before any script is built or any thread spawned: a host that `ssh` would read as an option (`-oProxyCommand=…`) executes locally, and this list is frontend/companion-supplied. Unlike check_statusline_status, this command HAS an error channel, so it says so outright rather than disguising a refusal as an unreachable host.
     for host in &target_hosts {
         crate::system::validate_remote_host(host)?;
     }
     let installers = std::sync::Arc::new(build_installer_scripts(&config, &targets)?);
 
     tauri::async_runtime::spawn_blocking(move || {
-        // One OS thread per host, run concurrently - see the matching comment in
-        // check_statusline_status. Applying to host A must never wait on host B; the per-host
-        // lock in run_remote_script_bounded still keeps this app's OWN calls to any one host
-        // (this apply, the auto-install probe, usage polling, ...) from overlapping each other.
+        // One OS thread per host, run concurrently - see the matching comment in check_statusline_status. Applying to host A must never wait on host B; the per-host lock in run_remote_script_bounded still keeps this app's OWN calls to any one host (this apply, the auto-install probe, usage polling, ...) from overlapping each other.
         let handles: Vec<(String, std::thread::JoinHandle<HostApplyResult>)> = target_hosts
             .into_iter()
             .map(|host| {
                 let installers = installers.clone();
                 let host_for_thread = host.clone();
                 let handle = std::thread::spawn(move || {
-                    // Each target is its own script and its own verdict: a target that fails is
-                    // named, and every OTHER target still runs. The host-level `ok` is the AND of
-                    // them, so the existing single-flag UI keeps working unchanged, while the
-                    // message says which half actually landed.
+                    // Each target is its own script and its own verdict: a target that fails is named, and every OTHER target still runs. The host-level `ok` is the AND of them, so the existing single-flag UI keeps working unchanged, while the message says which half actually landed.
                     let mut applied: Vec<&str> = Vec::new();
                     let mut failed: Vec<String> = Vec::new();
                     for (label, script) in installers.iter() {
@@ -548,9 +488,7 @@ pub async fn apply_statusline_config(
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
 }
 
-/// What one host reports back. A partial apply must read as a partial apply - naming only the
-/// failure would hide that the other CLI was in fact rewritten, which is the state the user has to
-/// know about before deciding whether to retry.
+/// What one host reports back. A partial apply must read as a partial apply - naming only the failure would hide that the other CLI was in fact rewritten, which is the state the user has to know about before deciding whether to retry.
 fn apply_message(applied: &[&str], failed: &[String]) -> String {
     if failed.is_empty() {
         return format!("Applied: {}", applied.join(", "));
@@ -619,9 +557,7 @@ mod tests {
         generate_statusline_script(config).expect("generate")
     }
 
-    /// True if the line prints a negative percentage - the old AGY bug rendered a remaining
-    /// fraction as `-2400%`. Checked by shape, not by looking for a bare '-': hostnames and model
-    /// ids legitimately contain dashes.
+    /// True if the line prints a negative percentage - the old AGY bug rendered a remaining fraction as `-2400%`. Checked by shape, not by looking for a bare '-': hostnames and model ids legitimately contain dashes.
     fn has_negative_percent(s: &str) -> bool {
         let c: Vec<char> = s.chars().collect();
         (0..c.len()).any(|i| {
@@ -636,9 +572,7 @@ mod tests {
         })
     }
 
-    /// A rendered line with its ANSI escapes removed. Assertions are about the text the user reads;
-    /// against the raw line even `"Sonnet5med"` fails, because a color change sits between the two
-    /// halves. Anything asserting on the escapes themselves uses the raw line instead.
+    /// A rendered line with its ANSI escapes removed. Assertions are about the text the user reads; against the raw line even `"Sonnet5med"` fails, because a color change sits between the two halves. Anything asserting on the escapes themselves uses the raw line instead.
     fn plain(line: &str) -> String {
         let mut out = String::with_capacity(line.len());
         let mut chars = line.chars();
@@ -656,9 +590,7 @@ mod tests {
         out
     }
 
-    /// The anti-drift test. Generating from the UI's defaults must reproduce the checked-in
-    /// template byte for byte - if it does not, the file people read and the file Apply writes
-    /// have diverged, which is the whole class of bug Phase 2 existed to end.
+    /// The anti-drift test. Generating from the UI's defaults must reproduce the checked-in template byte for byte - if it does not, the file people read and the file Apply writes have diverged, which is the whole class of bug Phase 2 existed to end.
     #[test]
     fn generated_defaults_match_template() {
         assert_eq!(gen(&test_config()), TEMPLATE);
@@ -792,9 +724,7 @@ mod tests {
         assert!(p.contains("50%"), "7d used% wrong (want 50%): {}", p);
     }
 
-    /// Dropping the vendor word out of a raw model id leaves its separators behind. Whatever a CLI
-    /// reports - display name, raw id, snake_case, a trailing "(...)" note - what reaches the line
-    /// must be one token with no stray punctuation at either edge.
+    /// Dropping the vendor word out of a raw model id leaves its separators behind. Whatever a CLI reports - display name, raw id, snake_case, a trailing "(...)" note - what reaches the line must be one token with no stray punctuation at either edge.
     #[test]
     fn the_vendor_word_leaves_no_stray_punctuation_behind() {
         let cases = [
@@ -822,12 +752,7 @@ mod tests {
     fn agy_never_touches_the_claude_rate_limit_cache() {
         let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.25}}}"#;
         let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0}}}"#;
-        // The assertion below is a bare "did any 42% reach the line" check, kept deliberately
-        // broad so it catches a leak no matter which field renders it. That only works if no
-        // OTHER field can put a percentage on the line by coincidence - and `ram` does exactly
-        // that, from the real machine's memory use, so this test failed on any host that happened
-        // to be sitting at 42% RAM. The value under test is planted, the RAM figure is not, so
-        // the RAM field is what gives way here.
+        // The assertion below is a bare "did any 42% reach the line" check, kept deliberately broad so it catches a leak no matter which field renders it. That only works if no OTHER field can put a percentage on the line by coincidence - and `ram` does exactly that, from the real machine's memory use, so this test failed on any host that happened to be sitting at 42% RAM. The value under test is planted, the RAM figure is not, so the RAM field is what gives way here.
         let mut cfg = test_config();
         for field in &mut cfg.fields {
             if field.key == "ram" {
@@ -847,8 +772,7 @@ mod tests {
 
     // ---- helpers -------------------------------------------------------------------------
 
-    /// Runs a generated script against a payload inside a private $HOME, so tests that exercise the
-    /// on-disk fallbacks (~/.claude.json, the rlcache) never read or write the real home dir.
+    /// Runs a generated script against a payload inside a private $HOME, so tests that exercise the on-disk fallbacks (~/.claude.json, the rlcache) never read or write the real home dir.
     /// `name` doubles as the path the script is invoked by, which is what decides CC vs AG.
     /// `files` are (path-relative-to-HOME, contents) written before the run.
     fn run_script(name: &str, script: &str, payload: &str, files: &[(&str, &str)]) -> (String, std::path::PathBuf) {
@@ -1050,12 +974,9 @@ mod tests {
 
     // ---- the Vue payload, deserialized exactly as the IPC call delivers it ------------------
     //
-    // Everything above builds a StatuslineConfig in Rust. These build it from the JSON the
-    // customizer actually posts, which is the only way to catch a shape mismatch between the two
-    // sides - the tests above would keep passing even if serde could no longer read the real thing.
+    // Everything above builds a StatuslineConfig in Rust. These build it from the JSON the customizer actually posts, which is the only way to catch a shape mismatch between the two sides - the tests above would keep passing even if serde could no longer read the real thing.
 
-    /// Verbatim `JSON.stringify(defaultLocalConfig())` from ClaudeSettingModal.vue, `version` and
-    /// all. If the UI's defaults change, this string changes with them - that is the point.
+    /// Verbatim `JSON.stringify(defaultLocalConfig())` from ClaudeSettingModal.vue, `version` and all. If the UI's defaults change, this string changes with them - that is the point.
     const VUE_DEFAULT_JSON: &str = r#"{
       "fields": [
         {"key":"cli_tag","enabled":true,"color":""},
@@ -1088,9 +1009,7 @@ mod tests {
         serde_json::from_str(json).expect("the UI payload must deserialize")
     }
 
-    /// The end-to-end anti-drift check: what the UI posts, unmodified, must rebuild the checked-in
-    /// script byte-for-byte. Together with `generated_defaults_match_template` this pins both ends -
-    /// the Rust fixture and the real JSON - to the same file.
+    /// The end-to-end anti-drift check: what the UI posts, unmodified, must rebuild the checked-in script byte-for-byte. Together with `generated_defaults_match_template` this pins both ends - the Rust fixture and the real JSON - to the same file.
     #[test]
     fn the_ui_payload_reproduces_the_template() {
         assert_eq!(gen(&from_json(VUE_DEFAULT_JSON)), TEMPLATE);
@@ -1117,11 +1036,7 @@ mod tests {
         );
     }
 
-    /// Every toggle in the UI, flipped one at a time against one realistic payload: the marker it
-    /// owns must appear exactly while the switch is on, and flipping it must change the line. A
-    /// toggle that quietly does nothing is the bug class this table exists to catch (it is how the
-    /// CWD color picker shipped dead), and it is exactly what a human clicking through the modal
-    /// would check by eye - all 18 gates, which is the part doing it by hand never gets right.
+    /// Every toggle in the UI, flipped one at a time against one realistic payload: the marker it owns must appear exactly while the switch is on, and flipping it must change the line. A toggle that quietly does nothing is the bug class this table exists to catch (it is how the CWD color picker shipped dead), and it is exactly what a human clicking through the modal would check by eye - all 18 gates, which is the part doing it by hand never gets right.
     #[test]
     fn every_toggle_flips_its_own_output_and_nothing_else() {
         // Carries a branch, both rate limits, cache traffic and an account on disk, so no case is a no-op. The two resets are stamped relative to now, which is the scale the ETA is cut from.
@@ -1160,9 +1075,7 @@ mod tests {
         let (base, _) = run_script("toggles_base.sh", &gen(&cfg), payload, &files);
         let base = plain(&base);
 
-        // (field key, the text it owns, whether the UI ships it on). Off-by-default rows are driven
-        // the other way round - on must ADD the marker - so a dead switch cannot hide behind a
-        // default that never renders it in the first place.
+        // (field key, the text it owns, whether the UI ships it on). Off-by-default rows are driven the other way round - on must ADD the marker - so a dead switch cannot hide behind a default that never renders it in the first place.
         let cases: &[(&str, &str, bool)] = &[
             ("cli_tag", "CC", true),
             ("account", "ntu-", true),
@@ -1218,8 +1131,7 @@ mod tests {
         }
     }
 
-    /// The same sweep for the settings that are not on/off. Each one is checked against the escape
-    /// codes, since that is where a width, a shade or a color actually lands.
+    /// The same sweep for the settings that are not on/off. Each one is checked against the escape codes, since that is where a width, a shade or a color actually lands.
     #[test]
     fn the_numeric_and_color_settings_reach_the_rendered_line() {
         let payload = r#"{"cwd":"/tmp/Aki-Dev-Sync","model":{"display_name":"Opus 4.8"},"workspace":{"git_branch":"master"}}"#;
@@ -1260,10 +1172,7 @@ mod tests {
             line
         );
 
-        // A tighter ladder must repaint the same reading - here 19% goes from the calm tier to red.
-        // The calm tier's code is xterm 86 (aquamarine), not the old bold blue 01;34 - the ladder's
-        // five codes live in STATUSLINE_TIERS (src/utils/statuslineColors.js) and are mirrored into
-        // the template's BOLD_* block.
+        // A tighter ladder must repaint the same reading - here 19% goes from the calm tier to red. The calm tier's code is xterm 86 (aquamarine), not the old bold blue 01;34 - the ladder's five codes live in STATUSLINE_TIERS (src/utils/statuslineColors.js) and are mirrored into the template's BOLD_* block.
         let quota = r#"{"cwd":"/tmp/demo","rate_limits":{"five_hour":{"used_percentage":19,"resets_at":0}}}"#;
         let (calm, _) = run_script("ladder_calm.sh", &gen(&from_json(VUE_DEFAULT_JSON)), quota, &[]);
         assert!(calm.contains("\u{1b}[01;38;5;86m19%"), "19% should be the calm tier: {:?}", calm);
@@ -1296,8 +1205,7 @@ mod tests {
         build_installer_scripts(&test_config(), &sel).expect("build installer scripts")
     }
 
-    /// Every ticked target's script as one blob - for assertions about what an Apply touches
-    /// overall, as opposed to how it is split.
+    /// Every ticked target's script as one blob - for assertions about what an Apply touches overall, as opposed to how it is split.
     fn joined(aliases: &[&str]) -> String {
         scripts(aliases).into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n")
     }
@@ -1313,9 +1221,7 @@ mod tests {
         assert!(both.contains("AKI_STATUSLINE_CLAUDE_EOF") && both.contains("AKI_STATUSLINE_AGY_EOF"));
     }
 
-    /// §3.19(a). The two targets must be two scripts, each independently runnable: concatenated
-    /// under one `set -e`, a Claude Code failure aborted before the AGY half was attempted and the
-    /// user was never told AGY had not been written at all.
+    /// §3.19(a). The two targets must be two scripts, each independently runnable: concatenated under one `set -e`, a Claude Code failure aborted before the AGY half was attempted and the user was never told AGY had not been written at all.
     #[test]
     fn each_target_is_its_own_independent_script() {
         let both = scripts(&["cc", "ag"]);
@@ -1323,10 +1229,7 @@ mod tests {
         for (label, s) in &both {
             assert!(s.starts_with("set -e\n"), "{} script does not fail fast on its own", label);
         }
-        // Compared with the shared body removed - the body legitimately names both CLIs (it is one
-        // script that self-identifies from `$0`); what must not cross over is the INSTALLER's own
-        // commands, since that is what makes one target's failure unable to decide anything about
-        // the other.
+        // Compared with the shared body removed - the body legitimately names both CLIs (it is one script that self-identifies from `$0`); what must not cross over is the INSTALLER's own commands, since that is what makes one target's failure unable to decide anything about the other.
         let body = gen(&test_config());
         let steps = |label: &str| -> String {
             both.iter().find(|(l, _)| *l == label).unwrap().1.replace(body.as_str(), "")
@@ -1335,9 +1238,7 @@ mod tests {
         assert!(!steps("AGY").contains(".claude/"), "the AGY installer touches Claude Code's files");
     }
 
-    /// §3.19(b). The settings patch is the step that can fail on a host without `jq`; running it
-    /// first means such a host ends up unchanged rather than holding a statusline script that
-    /// nothing points at.
+    /// §3.19(b). The settings patch is the step that can fail on a host without `jq`; running it first means such a host ends up unchanged rather than holding a statusline script that nothing points at.
     #[test]
     fn settings_are_patched_before_the_script_is_written() {
         for alias in ["cc", "ag"] {
@@ -1353,8 +1254,7 @@ mod tests {
         }
     }
 
-    /// §3.19(c). Every Apply keeps its own backup. The old `[ ! -f "$FILE.aki-bak" ]` guard backed
-    /// up once ever, so a statusline hand-tuned after the first Apply was destroyed with no copy.
+    /// §3.19(c). Every Apply keeps its own backup. The old `[ ! -f "$FILE.aki-bak" ]` guard backed up once ever, so a statusline hand-tuned after the first Apply was destroyed with no copy.
     #[test]
     fn every_apply_backs_up_to_a_timestamped_file() {
         for alias in ["cc", "ag"] {
@@ -1375,9 +1275,7 @@ mod tests {
         }
     }
 
-    /// The installers travel through `ssh host sh`, i.e. dash on most remotes - the same contract
-    /// `npm run lint:scripts` enforces for the checked-in scripts. Only the OUTER script is checked
-    /// here; the quoted heredoc body is not parsed by this shell (it has its own bash -n test).
+    /// The installers travel through `ssh host sh`, i.e. dash on most remotes - the same contract `npm run lint:scripts` enforces for the checked-in scripts. Only the OUTER script is checked here; the quoted heredoc body is not parsed by this shell (it has its own bash -n test).
     #[test]
     fn installer_scripts_are_posix_sh_safe() {
         for (label, script) in scripts(&["cc", "ag"]) {
@@ -1399,8 +1297,7 @@ mod tests {
         }
     }
 
-    /// A partial apply must read as partial: naming only the failure would hide that the other CLI
-    /// really was rewritten, which is what the user needs to know before retrying.
+    /// A partial apply must read as partial: naming only the failure would hide that the other CLI really was rewritten, which is what the user needs to know before retrying.
     #[test]
     fn apply_message_names_what_landed_and_what_did_not() {
         assert_eq!(apply_message(&["Claude Code", "AGY"], &[]), "Applied: Claude Code, AGY");
@@ -1409,9 +1306,7 @@ mod tests {
         assert_eq!(apply_message(&[], &["AGY: boom".to_string()]), "AGY: boom");
     }
 
-    /// Writing the script is only half an install: a CLI runs nothing until its settings point at
-    /// the file. Skipping this half for AGY is why an Apply ticked for AGY produced a statusline
-    /// that never appeared - the file was there, `statusLine.command` was still "".
+    /// Writing the script is only half an install: a CLI runs nothing until its settings point at the file. Skipping this half for AGY is why an Apply ticked for AGY produced a statusline that never appeared - the file was there, `statusLine.command` was still "".
     #[test]
     fn each_target_registers_its_script_in_the_cli_settings() {
         for (alias, settings, script) in [
@@ -1438,9 +1333,7 @@ mod tests {
         }
     }
 
-    /// The per-host indicator reads this probe, so it must answer per CLI and must treat "script on
-    /// disk but nothing pointing at it" as NOT configured - the exact state an AGY Apply used to
-    /// leave behind, which the old single-flag probe reported as fine.
+    /// The per-host indicator reads this probe, so it must answer per CLI and must treat "script on disk but nothing pointing at it" as NOT configured - the exact state an AGY Apply used to leave behind, which the old single-flag probe reported as fine.
     #[test]
     fn the_probe_reports_each_cli_separately_and_needs_both_halves() {
         let cc_sh = ".claude/statusline-command.sh";
@@ -1479,8 +1372,7 @@ mod tests {
 
     #[test]
     fn both_targets_receive_the_same_body() {
-        // One physical script, installed at two paths - if these ever differ, the "$0 decides the
-        // CLI" contract is broken and each CLI is back to having its own dialect.
+        // One physical script, installed at two paths - if these ever differ, the "$0 decides the CLI" contract is broken and each CLI is back to having its own dialect.
         let both = joined(&["cc", "ag"]);
         let body = gen(&test_config());
         assert_eq!(both.matches(body.as_str()).count(), 2, "the two targets got different bodies");

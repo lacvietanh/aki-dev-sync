@@ -14,8 +14,7 @@
 //   `sessions` → `inputs`        (`spawn_if_absent`, `kill_session`)
 //   `scrollbacks` → `min_accepted` (`append_scrollback`, `retire_generation`)
 //   `OutBuf` → `min_accepted`    (`flush_locked` → `generation_accepted`)
-// `min_accepted` is a LEAF — nothing is ever locked while holding it. And the standing invariant
-// holds unchanged: NO path holds both the `OutBuf` lock and a `scrollbacks` lock.
+// `min_accepted` is a LEAF — nothing is ever locked while holding it. And the standing invariant holds unchanged: NO path holds both the `OutBuf` lock and a `scrollbacks` lock.
 
 // COMPILED AND TESTED ON MAC. This file once carried a "VERIFY ON MAC" caveat because `portable-pty = "0.9"`'s API was used here from knowledge of the crate rather than a resolved docs build; `cargo check` and `cargo test --lib` have since both passed on this machine, so every shape it listed as assumed is confirmed real: `SlavePty::spawn_command` returning `Box<dyn Child + Send + Sync>`, `MasterPty::get_size`, `CommandBuilder::cwd`/`arg`/`env`, and `Child::kill`/`wait`/`process_id`.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -28,36 +27,22 @@ use std::sync::{Arc, Condvar, Mutex as StdMutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-/// Which terminal tab a session, a byte, a keystroke or an event belongs to. `u32` rather than a
-/// newtype because it crosses three wire formats (Tauri command args, Tauri event payloads, and the
-/// WS relay frames) where it is a plain JSON number in all three.
+/// Which terminal tab a session, a byte, a keystroke or an event belongs to. `u32` rather than a newtype because it crosses three wire formats (Tauri command args, Tauri event payloads, and the WS relay frames) where it is a plain JSON number in all three.
 pub type TabId = u32;
 
 /// The tab every id-less caller lands on — see the module doc comment's backward-compatibility note.
 const DEFAULT_TAB: TabId = 0;
 
-/// How many tabs may exist at once, GLOBALLY. Each LIVE tab costs a shell process plus three raw
-/// threads (reader, flusher, writer) and up to `SCROLLBACK_CAP` of buffer, so this is a real
-/// resource bound and not a UI preference.
+/// How many tabs may exist at once, GLOBALLY. Each LIVE tab costs a shell process plus three raw threads (reader, flusher, writer) and up to `SCROLLBACK_CAP` of buffer, so this is a real resource bound and not a UI preference.
 ///
-/// THIS IS THE MACHINE GUARD, NOT THE USER-FACING RULE. The frontend layers a per-project cap of 5
-/// on top of it (`MAX_TABS_PER_SCOPE` in `src/store/terminalTabsStore.js`); this backend is
-/// scope-blind and only ever sees flat `TabId`s, so the ceiling is derived from that cap instead:
-/// `16 = 1 + 3 × 5` — the one global tab the frontend guarantees can never be closed, plus three
-/// project groups each at their full per-project cap. `src/store/terminalTabsStore.js` mirrors this
-/// same number and must be updated in the same commit (see `constant_guards` below).
+/// THIS IS THE MACHINE GUARD, NOT THE USER-FACING RULE. The frontend layers a per-project cap of 5 on top of it (`MAX_TABS_PER_SCOPE` in `src/store/terminalTabsStore.js`); this backend is scope-blind and only ever sees flat `TabId`s, so the ceiling is derived from that cap instead: `16 = 1 + 3 × 5` — the one global tab the frontend guarantees can never be closed, plus three project groups each at their full per-project cap. `src/store/terminalTabsStore.js` mirrors this same number and must be updated in the same commit (see `constant_guards` below).
 ///
-/// It is also bound to `web_server::COMPANION_QUEUE_LIMIT_BYTES` by INVARIANT R — raising it alone
-/// re-breaks a joining phone's scrollback replay. That relation is asserted in `web_server.rs`.
+/// It is also bound to `web_server::COMPANION_QUEUE_LIMIT_BYTES` by INVARIANT R — raising it alone re-breaks a joining phone's scrollback replay. That relation is asserted in `web_server.rs`.
 pub(crate) const MAX_TABS: usize = 16;
 
 /// Scrollback ring-buffer cap, PER TAB (plan §4.3 / file table row 2): bounds memory for a long-running shared session (e.g. a `npm run build` left running for hours) without needing a UI-facing "clear scrollback" affordance in this MVP.
 ///
-/// 128 KiB, halved from 256 KiB, because this buffer is also what a joining companion must receive
-/// and parse: base64 turns it into ~175 KB on the wire per tab, so a full 16-tab replay is 2.67 MiB
-/// instead of 5.34 MiB. Nothing on the Mac shrinks — each mounted xterm keeps its own
-/// `scrollback: 5000` (`src/components/TerminalView.vue`); this ring only feeds a fresh mount, a
-/// companion join, and a congestion rehydrate. 128 KiB is roughly 1,000 lines at 128 columns.
+/// 128 KiB, halved from 256 KiB, because this buffer is also what a joining companion must receive and parse: base64 turns it into ~175 KB on the wire per tab, so a full 16-tab replay is 2.67 MiB instead of 5.34 MiB. Nothing on the Mac shrinks — each mounted xterm keeps its own `scrollback: 5000` (`src/components/TerminalView.vue`); this ring only feeds a fresh mount, a companion join, and a congestion rehydrate. 128 KiB is roughly 1,000 lines at 128 columns.
 pub(crate) const SCROLLBACK_CAP: usize = 128 * 1024;
 
 /// Read-loop coalescing thresholds (plan §4.4): flush on ~20ms elapsed OR ~16KB accumulated, whichever comes first, so a build's stdout firehose does not become one WS message per `read()` syscall.
@@ -79,31 +64,19 @@ struct OutBuf {
 
 /// The input side of one session: a queue and the thread that owns the PTY writer.
 ///
-/// WHY A QUEUE AND NOT A MUTEX AROUND THE WRITER (the ordering bug this replaces): `pty_write` used
-/// to lock the session, write, and unlock. Two keystrokes are two independent Tauri commands, so
-/// which one reached the mutex first was a race — the mutex guaranteed that the two writes did not
-/// interleave, and guaranteed nothing whatsoever about their ORDER. Typing `ls` could put `sl` into
-/// the shell. Unobservable at human speed, certain under a paste or a companion replaying input.
+/// WHY A QUEUE AND NOT A MUTEX AROUND THE WRITER (the ordering bug this replaces): `pty_write` used to lock the session, write, and unlock. Two keystrokes are two independent Tauri commands, so which one reached the mutex first was a race — the mutex guaranteed that the two writes did not interleave, and guaranteed nothing whatsoever about their ORDER. Typing `ls` could put `sl` into the shell. Unobservable at human speed, certain under a paste or a companion replaying input.
 ///
-/// Ordering cannot be fixed by locking harder; it has to stop being a contest. So there is one
-/// consumer — this thread — fed by an mpsc, and the wire order is decided once, at enqueue time, by
-/// a channel that is FIFO by construction. Nothing downstream can reorder because nothing
-/// downstream is concurrent. See `pty_write` for the other half (why the command is synchronous).
+/// Ordering cannot be fixed by locking harder; it has to stop being a contest. So there is one consumer — this thread — fed by an mpsc, and the wire order is decided once, at enqueue time, by a channel that is FIFO by construction. Nothing downstream can reorder because nothing downstream is concurrent. See `pty_write` for the other half (why the command is synchronous).
 ///
-/// Per tab, so the guarantee is per tab: keystrokes typed into tab 1 cannot be reordered against
-/// each other, and cannot reach tab 2's shell at all.
+/// Per tab, so the guarantee is per tab: keystrokes typed into tab 1 cannot be reordered against each other, and cannot reach tab 2's shell at all.
 struct InputChannel {
-    /// The session this queue belongs to, so a writer thread that fails can only retire ITS OWN
-    /// channel and never the replacement a `pty_restart` has already installed — the same identity
-    /// discipline `read_loop` uses on the session slot.
+    /// The session this queue belongs to, so a writer thread that fails can only retire ITS OWN channel and never the replacement a `pty_restart` has already installed — the same identity discipline `read_loop` uses on the session slot.
     generation: u64,
     tx: std::sync::mpsc::Sender<Vec<u8>>,
 }
 
 struct PtySession {
-    /// Which tab this session belongs to. Redundant with the map key by construction, and kept
-    /// anyway so a session handed around by value (a teardown, a future "move tab") still knows
-    /// where it came from rather than relying on the caller to carry the key alongside it.
+    /// Which tab this session belongs to. Redundant with the map key by construction, and kept anyway so a session handed around by value (a teardown, a future "move tab") still knows where it came from rather than relying on the caller to carry the key alongside it.
     #[allow(dead_code)]
     tab_id: TabId,
     master: Box<dyn MasterPty + Send>,
@@ -114,38 +87,21 @@ struct PtySession {
 }
 
 struct PtyState {
-    /// Live sessions, keyed by tab. Absent key = "that tab has no shell right now" — the exact
-    /// meaning `Option<PtySession>` carried before tabs existed.
+    /// Live sessions, keyed by tab. Absent key = "that tab has no shell right now" — the exact meaning `Option<PtySession>` carried before tabs existed.
     sessions: StdMutex<HashMap<TabId, PtySession>>,
-    /// Each tab's input queue — see `InputChannel`. Its own mutex rather than a field on
-    /// `PtySession` on purpose: keystrokes must not queue behind whatever else holds the sessions
-    /// lock (a resize, a `pty_cwd`, a spawn), and this one is only ever taken for the microseconds
-    /// it costs to clone a channel handle.
+    /// Each tab's input queue — see `InputChannel`. Its own mutex rather than a field on `PtySession` on purpose: keystrokes must not queue behind whatever else holds the sessions lock (a resize, a `pty_cwd`, a spawn), and this one is only ever taken for the microseconds it costs to clone a channel handle.
     inputs: StdMutex<HashMap<TabId, InputChannel>>,
-    /// One ring buffer per tab. A tab with no live session keeps its buffer (that is how the
-    /// `[process exited]` notice is still readable on a tab whose shell is gone); `drop_tab_state`
-    /// is the only thing that removes one.
+    /// One ring buffer per tab. A tab with no live session keeps its buffer (that is how the `[process exited]` notice is still readable on a tab whose shell is gone); `drop_tab_state` is the only thing that removes one.
     scrollbacks: StdMutex<HashMap<TabId, Vec<u8>>>,
-    /// Incremented on every real spawn, and GLOBALLY MONOTONIC ACROSS ALL TABS — a generation
-    /// identifies a session uniquely in the whole process, never merely within its tab. A reader
-    /// thread only tears down its slot if the session currently there is still the one IT was
-    /// reading — otherwise a slow EOF from the shell killed by `pty_restart` would race in and
-    /// remove the brand-new session that replaced it, leaving that tab permanently dead with no
-    /// error anywhere. This counter is the whole reason restart is safe to spam.
+    /// Incremented on every real spawn, and GLOBALLY MONOTONIC ACROSS ALL TABS — a generation identifies a session uniquely in the whole process, never merely within its tab. A reader thread only tears down its slot if the session currently there is still the one IT was reading — otherwise a slow EOF from the shell killed by `pty_restart` would race in and remove the brand-new session that replaced it, leaving that tab permanently dead with no error anywhere. This counter is the whole reason restart is safe to spam.
     generation: AtomicU64,
-    /// PER TAB: the oldest session generation whose bytes may still reach THAT TAB's scrollback and
-    /// the screens. Bumped past a session the moment that session is killed (`kill_session`), which
-    /// is what makes the *output* side of a RESTART as safe as the session slot already was.
+    /// PER TAB: the oldest session generation whose bytes may still reach THAT TAB's scrollback and the screens. Bumped past a session the moment that session is killed (`kill_session`), which is what makes the *output* side of a RESTART as safe as the session slot already was.
     ///
-    /// WHY A MAP AND NOT THE OLD SINGLE ATOMIC: generations are global, so one global floor would
-    /// fence tabs against each other — retiring tab 2's generation 5 would silently declare tab 1's
-    /// still-live generation 3 stale, and tab 1 would go mute with nothing logged anywhere. The
-    /// floor has to be scoped to the same thing the kill was scoped to.
+    /// WHY A MAP AND NOT THE OLD SINGLE ATOMIC: generations are global, so one global floor would fence tabs against each other — retiring tab 2's generation 5 would silently declare tab 1's still-live generation 3 stale, and tab 1 would go mute with nothing logged anywhere. The floor has to be scoped to the same thing the kill was scoped to.
     ///
     /// THE BUG THE FLOOR ITSELF FIXES: killing a shell does not stop its reader thread instantly. Up to one `FLUSH_INTERVAL` of already-read bytes can still be sitting in that reader's accumulator, and its final `read()` can return more. Those bytes used to be appended and emitted unconditionally, so on a RESTART they landed AFTER `pty_restart` had cleared the ring buffer and emitted its `reset` — i.e. above the fresh prompt, inside a scrollback that was supposed to be empty. The generation counter already protected the session slot from exactly this class of race; this extends the same identity check to the byte path instead of adding a second, different mechanism.
     ///
-    /// LEAF LOCK: nothing is ever locked while this one is held. See the module doc comment's lock
-    /// order block.
+    /// LEAF LOCK: nothing is ever locked while this one is held. See the module doc comment's lock order block.
     min_accepted: StdMutex<HashMap<TabId, u64>>,
 }
 
@@ -205,20 +161,11 @@ fn generation_accepted(tab_id: TabId, generation: u64) -> bool {
     generation >= floor
 }
 
-/// Forgets EXACTLY ONE tab: its session slot, its input queue, its scrollback and its generation
-/// floor. Named for its blast radius (CLAUDE.md multi-entity guard) — there is deliberately no
-/// "clear all tab state" sibling, because the only whole-map operation this module has any use for
-/// is `kill_all_sessions` at app exit.
+/// Forgets EXACTLY ONE tab: its session slot, its input queue, its scrollback and its generation floor. Named for its blast radius (CLAUDE.md multi-entity guard) — there is deliberately no "clear all tab state" sibling, because the only whole-map operation this module has any use for is `kill_all_sessions` at app exit.
 ///
-/// Does NOT kill anything: `pty_close_tab` kills first and then calls this, so the ordering
-/// (fence, then forget) is visible at the call site rather than hidden in here.
+/// Does NOT kill anything: `pty_close_tab` kills first and then calls this, so the ordering (fence, then forget) is visible at the call site rather than hidden in here.
 ///
-/// RESIDUAL, stated rather than hidden: dropping the floor means a late byte from the closed tab's
-/// dying reader would compare against a fresh default floor of 0 and pass. It still cannot reach a
-/// screen anyone is looking at — the tab is gone from the frontend and its `read_loop` teardown
-/// finds no session for the id and returns without emitting the exit notice — so the worst case is
-/// a few bytes buffered under a key nothing reads. Keeping the floor forever instead would leak one
-/// `u64` per tab ever opened, which is the worse trade in a process that runs for days.
+/// RESIDUAL, stated rather than hidden: dropping the floor means a late byte from the closed tab's dying reader would compare against a fresh default floor of 0 and pass. It still cannot reach a screen anyone is looking at — the tab is gone from the frontend and its `read_loop` teardown finds no session for the id and returns without emitting the exit notice — so the worst case is a few bytes buffered under a key nothing reads. Keeping the floor forever instead would leak one `u64` per tab ever opened, which is the worse trade in a process that runs for days.
 fn drop_tab_state(tab_id: TabId) {
     let state = pty_state();
     state.sessions.lock().unwrap().remove(&tab_id);
@@ -229,10 +176,7 @@ fn drop_tab_state(tab_id: TabId) {
 
 #[derive(Serialize, Clone)]
 struct PtyOutputPayload {
-    /// WHICH TAB THESE BYTES BELONG TO. Not optional and never omitted: `services/ptyBridge.js`
-    /// copies it onto the outgoing `pty_output` frame and every mounted TerminalView filters on it,
-    /// so a missing value would let one tab's output be written into another tab's xterm — a
-    /// corruption that looks exactly like a shell going haywire.
+    /// WHICH TAB THESE BYTES BELONG TO. Not optional and never omitted: `services/ptyBridge.js` copies it onto the outgoing `pty_output` frame and every mounted TerminalView filters on it, so a missing value would let one tab's output be written into another tab's xterm — a corruption that looks exactly like a shell going haywire.
     tab_id: TabId,
     /// base64 — see module doc comment "BINARY-SAFE TRANSPORT".
     data: String,
@@ -247,8 +191,7 @@ struct PtyOutputPayload {
     alive: Option<bool>,
 }
 
-/// The `pty-exit` payload. It used to be `()`; with tabs it MUST say which tab ended, or a screen
-/// would mark whichever tab it happens to be showing as dead on any other tab's exit.
+/// The `pty-exit` payload. It used to be `()`; with tabs it MUST say which tab ended, or a screen would mark whichever tab it happens to be showing as dead on any other tab's exit.
 #[derive(Serialize, Clone)]
 struct PtyExitPayload {
     tab_id: TabId,
@@ -380,9 +323,7 @@ fn read_loop(app: AppHandle, tab_id: TabId, mut reader: Box<dyn Read + Send>, ge
     }
     cv.notify_one();
 
-    // Only retire the entry if this tab STILL holds OUR session — see `PtyState::generation`. The
-    // identity test is now "the session currently at `tab_id` is generation `g`", which also
-    // covers the tab having been closed entirely (no entry → not ours → nothing to tear down).
+    // Only retire the entry if this tab STILL holds OUR session — see `PtyState::generation`. The identity test is now "the session currently at `tab_id` is generation `g`", which also covers the tab having been closed entirely (no entry → not ours → nothing to tear down).
     let state = pty_state();
     let mut guard = state.sessions.lock().unwrap();
     let is_ours = guard.get(&tab_id).map(|s| s.generation == generation).unwrap_or(false);
@@ -401,38 +342,26 @@ fn read_loop(app: AppHandle, tab_id: TabId, mut reader: Box<dyn Read + Send>, ge
     let _ = app.emit("pty-exit", PtyExitPayload { tab_id });
 }
 
-/// The pure half of the writer thread: pull chunks off the queue and write them, in order, until
-/// the queue's last sender is dropped (a normal session teardown) or the PTY refuses a write.
+/// The pure half of the writer thread: pull chunks off the queue and write them, in order, until the queue's last sender is dropped (a normal session teardown) or the PTY refuses a write.
 ///
-/// Separated from `writer_loop` so the ordering guarantee can be tested against an ordinary sink
-/// without touching the process-global `PtyState` — the module's tests run in parallel and anything
-/// that drives the globals races whatever else is driving them.
+/// Separated from `writer_loop` so the ordering guarantee can be tested against an ordinary sink without touching the process-global `PtyState` — the module's tests run in parallel and anything that drives the globals races whatever else is driving them.
 fn drain_input_queue(rx: std::sync::mpsc::Receiver<Vec<u8>>, writer: &mut (impl Write + ?Sized)) -> std::io::Result<()> {
     // `recv()` blocks, which is exactly right: this thread exists to be parked.
     while let Ok(chunk) = rx.recv() {
         writer.write_all(&chunk)?;
-        // Flushed per chunk, not per batch: a chunk is a keystroke or a paste, and the shell must
-        // see it now — coalescing input would trade the responsiveness this terminal is judged on
-        // for a throughput nobody is asking for on a human-typed stream.
+        // Flushed per chunk, not per batch: a chunk is a keystroke or a paste, and the shell must see it now — coalescing input would trade the responsiveness this terminal is judged on for a throughput nobody is asking for on a human-typed stream.
         writer.flush()?;
     }
     Ok(())
 }
 
-/// The dedicated writer thread — a raw `std::thread` for the same reason `read_loop` and
-/// `flusher_loop` are (module doc comment): it is parked in a blocking `recv()` for the session's
-/// whole life, and parking a `spawn_blocking` slot forever starves every other blocking command.
+/// The dedicated writer thread — a raw `std::thread` for the same reason `read_loop` and `flusher_loop` are (module doc comment): it is parked in a blocking `recv()` for the session's whole life, and parking a `spawn_blocking` slot forever starves every other blocking command.
 ///
-/// One per session. Exits when `kill_session`/`spawn_if_absent` drops the sender, so the thread
-/// count stays 1:1 with live sessions however hard RESTART is spammed.
+/// One per session. Exits when `kill_session`/`spawn_if_absent` drops the sender, so the thread count stays 1:1 with live sessions however hard RESTART is spammed.
 fn writer_loop(rx: std::sync::mpsc::Receiver<Vec<u8>>, mut writer: Box<dyn Write + Send>, tab_id: TabId, generation: u64) {
     if let Err(e) = drain_input_queue(rx, writer.as_mut()) {
         eprintln!("[pty] writing to the shell failed (tab {}, session {}): {}", tab_id, generation, e);
-        // Retire OUR channel only — our tab's, and only if it is still our generation. Without this
-        // a dead writer would keep accepting keystrokes into a queue nobody drains — every key
-        // silently swallowed, which is worse than an error the frontend can show. The generation
-        // test is what keeps this from stealing the channel a `pty_restart` may already have
-        // installed in the meantime; the tab key is what keeps it from touching any other tab.
+        // Retire OUR channel only — our tab's, and only if it is still our generation. Without this a dead writer would keep accepting keystrokes into a queue nobody drains — every key silently swallowed, which is worse than an error the frontend can show. The generation test is what keeps this from stealing the channel a `pty_restart` may already have installed in the meantime; the tab key is what keeps it from touching any other tab.
         let state = pty_state();
         let mut guard = state.inputs.lock().unwrap();
         if guard.get(&tab_id).map(|c| c.generation) == Some(generation) {
@@ -480,16 +409,7 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
     cmd.arg("-l");
     // Marks this shell for anything that cares (prompt customisation, statusline scripts) and matches what Terminal.app-launched shells see.
     cmd.env("TERM", "xterm-256color");
-    // R-1 (docs/plan/done/dev-build-in-app-launch.md, RULE-stack-tauri A2 / CLAUDE.md's cold-start PATH
-    // race): a DEV/BUILD press writes its command into this shell right after this call returns,
-    // which can race `-l`'s own .zprofile/.zshrc sourcing (nvm, path_helper, zinit) — the same
-    // failure this project has hit before, an intermittent `exit=127 command not found` that
-    // self-heals within minutes. Prepending the well-known macOS install dirs to the CHILD's PATH
-    // here means they are present before rc-sourcing even starts, not contingent on it finishing
-    // first. Applied to every spawned tab, not just DEV/BUILD ones, so this is one shared preamble
-    // at the one dispatch funnel rather than something patched in per call site. Does NOT cover an
-    // nvm-managed node/npm (version-numbered path nvm resolves dynamically) — a known, stated gap,
-    // not a claim of full coverage.
+    // R-1 (docs/plan/done/dev-build-in-app-launch.md, RULE-stack-tauri A2 / CLAUDE.md's cold-start PATH race): a DEV/BUILD press writes its command into this shell right after this call returns, which can race `-l`'s own .zprofile/.zshrc sourcing (nvm, path_helper, zinit) — the same failure this project has hit before, an intermittent `exit=127 command not found` that self-heals within minutes. Prepending the well-known macOS install dirs to the CHILD's PATH here means they are present before rc-sourcing even starts, not contingent on it finishing first. Applied to every spawned tab, not just DEV/BUILD ones, so this is one shared preamble at the one dispatch funnel rather than something patched in per call site. Does NOT cover an nvm-managed node/npm (version-numbered path nvm resolves dynamically) — a known, stated gap, not a claim of full coverage.
     if let Ok(home) = std::env::var("HOME") {
         let seeded = format!(
             "{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{home}/.claude/local:{}",
@@ -517,9 +437,7 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
         .map_err(|e| format!("failed to take pty writer: {}", e))?;
 
     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
-    // Installed while the sessions lock is held (lock order `sessions` → `inputs`, see the module
-    // doc comment), so no window exists in which a session is live but its tab's input queue is
-    // still the dead one's.
+    // Installed while the sessions lock is held (lock order `sessions` → `inputs`, see the module doc comment), so no window exists in which a session is live but its tab's input queue is still the dead one's.
     let (input_tx, input_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     state.inputs.lock().unwrap().insert(tab_id, InputChannel { generation, tx: input_tx });
     guard.insert(tab_id, PtySession { tab_id, master: pair.master, child, generation });
@@ -553,13 +471,9 @@ fn kill_process_group(pid: u32) {
     unsafe { libc::killpg(pgid, libc::SIGKILL) };
 }
 
-/// Kills ONE TAB's shell (if any) and drops that tab's session + input queue so the slot is free.
-/// The reader thread for that session will hit EOF shortly after and find the slot already empty /
-/// a newer generation in place — both handled, see `read_loop`'s tail.
+/// Kills ONE TAB's shell (if any) and drops that tab's session + input queue so the slot is free. The reader thread for that session will hit EOF shortly after and find the slot already empty / a newer generation in place — both handled, see `read_loop`'s tail.
 ///
-/// SCOPED BY NAME AND BY BODY (CLAUDE.md multi-entity guard): it touches the one `tab_id` it was
-/// given and nothing else. The scrollback is deliberately LEFT ALONE — `pty_kill` wants the
-/// `[process exited]` notice to remain readable, and `pty_restart` clears it explicitly right after.
+/// SCOPED BY NAME AND BY BODY (CLAUDE.md multi-entity guard): it touches the one `tab_id` it was given and nothing else. The scrollback is deliberately LEFT ALONE — `pty_kill` wants the `[process exited]` notice to remain readable, and `pty_restart` clears it explicitly right after.
 fn kill_session(tab_id: TabId) {
     let state = pty_state();
     let mut guard = state.sessions.lock().unwrap();
@@ -573,9 +487,7 @@ fn kill_session(tab_id: TabId) {
         let _ = session.child.kill();
         let _ = session.child.wait();
     }
-    // Dropping the sender is what ends this session's writer thread (its `recv()` returns Err), and
-    // it is also what makes a `pty_write` to this tab arriving after the kill fail loudly with
-    // "no PTY session" instead of queueing keystrokes for a shell that no longer exists.
+    // Dropping the sender is what ends this session's writer thread (its `recv()` returns Err), and it is also what makes a `pty_write` to this tab arriving after the kill fail loudly with "no PTY session" instead of queueing keystrokes for a shell that no longer exists.
     state.inputs.lock().unwrap().remove(&tab_id);
     guard.remove(&tab_id);
     drop(guard);
@@ -585,14 +497,9 @@ fn kill_session(tab_id: TabId) {
     }
 }
 
-/// Kills EVERY tab's shell. The module's ONLY whole-map operation, and reachable from exactly one
-/// place: `shutdown()`, i.e. app exit — the single legitimate "everything" case (CLAUDE.md
-/// multi-entity guard: a whole-store wipe is only correct when the user explicitly asked to close
-/// everything, and quitting the app is that ask). Nothing user-facing may call it; closing one tab
-/// goes through `kill_session` + `drop_tab_state`.
+/// Kills EVERY tab's shell. The module's ONLY whole-map operation, and reachable from exactly one place: `shutdown()`, i.e. app exit — the single legitimate "everything" case (CLAUDE.md multi-entity guard: a whole-store wipe is only correct when the user explicitly asked to close everything, and quitting the app is that ask). Nothing user-facing may call it; closing one tab goes through `kill_session` + `drop_tab_state`.
 fn kill_all_sessions() {
-    // Snapshot the ids and release the lock before killing: `kill_session` takes the same lock, and
-    // `kill_process_group` can spend up to 300ms per tab inside it.
+    // Snapshot the ids and release the lock before killing: `kill_session` takes the same lock, and `kill_process_group` can spend up to 300ms per tab inside it.
     let ids: Vec<TabId> = pty_state().sessions.lock().unwrap().keys().copied().collect();
     for id in ids {
         kill_session(id);
@@ -626,12 +533,7 @@ pub async fn pty_kill(app: AppHandle, tab_id: Option<u32>) -> Result<(), String>
 
 /// Closes ONE TAB for good: kill its shell, then forget everything keyed under it.
 ///
-/// `tab_id` IS REQUIRED, unlike every other command in this module. That asymmetry is the point
-/// (CLAUDE.md multi-entity guard): a destructive operation must not have a default target. If this
-/// took `Option<u32>` then any caller that forgot the argument — an older companion bundle, a
-/// mis-spelled `tabId` key in JS, a future refactor — would silently close tab 0, which is the tab
-/// most likely to be the one the user actually cares about. A missing argument now fails the
-/// command instead, loudly, before anything is killed.
+/// `tab_id` IS REQUIRED, unlike every other command in this module. That asymmetry is the point (CLAUDE.md multi-entity guard): a destructive operation must not have a default target. If this took `Option<u32>` then any caller that forgot the argument — an older companion bundle, a mis-spelled `tabId` key in JS, a future refactor — would silently close tab 0, which is the tab most likely to be the one the user actually cares about. A missing argument now fails the command instead, loudly, before anything is killed.
 #[tauri::command]
 pub async fn pty_close_tab(app: AppHandle, tab_id: u32) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -653,10 +555,8 @@ pub struct PtyTabInfo {
     alive: bool,
 }
 
-/// Every tab the BACKEND knows about, sorted by id. Two callers, both of which need the exited ones
-/// as well as the live ones:
-///  - `services/ptyBridge.js`'s scrollback replay, which must cover every tab a companion could be
-///    looking at — a tab whose shell has exited still has a scrollback the phone must be able to read;
+/// Every tab the BACKEND knows about, sorted by id. Two callers, both of which need the exited ones as well as the live ones:
+///  - `services/ptyBridge.js`'s scrollback replay, which must cover every tab a companion could be looking at — a tab whose shell has exited still has a scrollback the phone must be able to read;
 ///  - host boot after a frontend reload, which re-adopts orphan shells instead of stranding them.
 ///
 /// Hence the union of "has a session" and "has a scrollback" rather than just the session map.
@@ -697,8 +597,7 @@ pub async fn pty_restart(app: AppHandle, tab_id: Option<u32>, cwd: Option<String
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Empties ONE tab's ring buffer without removing the tab from the map — the entry stays so
-/// `pty_list_tabs` keeps reporting a tab whose scrollback the user just cleared.
+/// Empties ONE tab's ring buffer without removing the tab from the map — the entry stays so `pty_list_tabs` keeps reporting a tab whose scrollback the user just cleared.
 fn clear_scrollback(tab_id: TabId) {
     pty_state().scrollbacks.lock().unwrap().entry(tab_id).or_default().clear();
 }
@@ -751,26 +650,11 @@ pub async fn pty_cwd(tab_id: Option<u32>) -> Result<Option<String>, String> {
 
 /// Queues companion/host keystrokes for ONE TAB's PTY. `data` is base64 (see module doc comment).
 ///
-/// SYNCHRONOUS ON PURPOSE — and this is the load-bearing half of the ordering fix, not an oversight
-/// against CLAUDE.md's never-block-the-UI rule. That rule governs commands that WAIT: a subprocess,
-/// an SSH round trip, a network call. This one does a base64 decode and an unbounded channel send;
-/// it cannot block on anything, because the thing that used to block — the actual `write_all` into
-/// the PTY — now happens on the writer thread (`writer_loop`).
+/// SYNCHRONOUS ON PURPOSE — and this is the load-bearing half of the ordering fix, not an oversight against CLAUDE.md's never-block-the-UI rule. That rule governs commands that WAIT: a subprocess, an SSH round trip, a network call. This one does a base64 decode and an unbounded channel send; it cannot block on anything, because the thing that used to block — the actual `write_all` into the PTY — now happens on the writer thread (`writer_loop`).
 ///
-/// Making it `async` would REINTRODUCE the bug it exists to fix. Tauri hands an async command to the
-/// runtime, so two commands dispatched back to back can be polled concurrently on two workers, and
-/// which of them reaches the enqueue first is a coin toss — the identical race the old session mutex
-/// had, merely relocated. A synchronous command runs inline on the IPC dispatch thread, in the order
-/// the webview posted the calls, so `l` then `s` enqueues as `l` then `s`, and the single-consumer
-/// queue carries that order all the way to the shell. Ordering is a property of the structure here,
-/// not of who wins a lock. Adding `tab_id` changes nothing about that argument: the map lookup is
-/// the same non-blocking work the `Option` deref was.
+/// Making it `async` would REINTRODUCE the bug it exists to fix. Tauri hands an async command to the runtime, so two commands dispatched back to back can be polled concurrently on two workers, and which of them reaches the enqueue first is a coin toss — the identical race the old session mutex had, merely relocated. A synchronous command runs inline on the IPC dispatch thread, in the order the webview posted the calls, so `l` then `s` enqueues as `l` then `s`, and the single-consumer queue carries that order all the way to the shell. Ordering is a property of the structure here, not of who wins a lock. Adding `tab_id` changes nothing about that argument: the map lookup is the same non-blocking work the `Option` deref was.
 ///
-/// WHAT THIS GIVES UP, stated plainly: a write error can no longer be returned to the caller — the
-/// write happens after this call has returned. It surfaces instead as the writer thread retiring the
-/// channel (so the NEXT keystroke returns "no PTY session") plus the reader hitting EOF and emitting
-/// `pty-exit`. That is the right trade: a per-keystroke error return nobody rendered, exchanged for
-/// input that arrives in the order it was typed.
+/// WHAT THIS GIVES UP, stated plainly: a write error can no longer be returned to the caller — the write happens after this call has returned. It surfaces instead as the writer thread retiring the channel (so the NEXT keystroke returns "no PTY session") plus the reader hitting EOF and emitting `pty-exit`. That is the right trade: a per-keystroke error return nobody rendered, exchanged for input that arrives in the order it was typed.
 #[tauri::command]
 pub fn pty_write(tab_id: Option<u32>, data: String) -> Result<(), String> {
     let tab_id = tab_id.unwrap_or(DEFAULT_TAB);
@@ -846,38 +730,20 @@ pub async fn pty_get_scrollback(tab_id: Option<u32>) -> Result<PtyScrollback, St
 
 /// The two constants this file shares with the frontend, guarded by a literal restated here.
 ///
-/// WHY A TEST AND NOT A COMMENT. Until 1.21.1 the Rust and JS caps were the SAME number, so a drift
-/// was visible to anyone reading either file. They are deliberately different now (5 per project in
-/// JS, 16 globally in both, a ring cap only Rust states), and one of them is bound by arithmetic to
-/// a third constant in `web_server.rs`. A comment cannot check arithmetic. The frontend literals are
-/// READ FROM THE FRONTEND FILE (`include_str!`), not restated here — a restated fixture, which is what
-/// `statusline.rs`'s `VUE_DEFAULT_JSON` does, only fires when the Rust side moves and is therefore
-/// half a link: it cannot see the edit that is actually likely.
+/// WHY A TEST AND NOT A COMMENT. Until 1.21.1 the Rust and JS caps were the SAME number, so a drift was visible to anyone reading either file. They are deliberately different now (5 per project in JS, 16 globally in both, a ring cap only Rust states), and one of them is bound by arithmetic to a third constant in `web_server.rs`. A comment cannot check arithmetic. The frontend literals are READ FROM THE FRONTEND FILE (`include_str!`), not restated here — a restated fixture, which is what `statusline.rs`'s `VUE_DEFAULT_JSON` does, only fires when the Rust side moves and is therefore half a link: it cannot see the edit that is actually likely.
 ///
 /// Not gated on `unix` like the module's other tests: these assert numbers, not PTY behaviour.
 #[cfg(test)]
 mod constant_guards {
     use super::*;
 
-    /// The frontend file this module's cap is bound to, read AT COMPILE TIME by `include_str!` rather
-    /// than hand-copied. That is the whole point: a fixture restated in Rust only fires when the Rust
-    /// side moves, which is the direction that was never the risk — nobody edits `MAX_TABS` here
-    /// without reading the comment two lines above it. The drift that actually happens is someone
-    /// changing the JS cap alone, and only reading the real file can catch that. (`statusline.rs`'s
-    /// `VUE_DEFAULT_JSON` is this repo's precedent and is the half-link version of it; if it is ever
-    /// revisited, this is the shape to move it to.)
+    /// The frontend file this module's cap is bound to, read AT COMPILE TIME by `include_str!` rather than hand-copied. That is the whole point: a fixture restated in Rust only fires when the Rust side moves, which is the direction that was never the risk — nobody edits `MAX_TABS` here without reading the comment two lines above it. The drift that actually happens is someone changing the JS cap alone, and only reading the real file can catch that. (`statusline.rs`'s `VUE_DEFAULT_JSON` is this repo's precedent and is the half-link version of it; if it is ever revisited, this is the shape to move it to.)
     ///
-    /// `include_str!` resolves relative to THIS file, so the path walks out of `src-tauri/src/`.
-    /// A missing or moved file is a compile error here, which is the correct failure: the guard
-    /// cannot silently stop guarding.
+    /// `include_str!` resolves relative to THIS file, so the path walks out of `src-tauri/src/`. A missing or moved file is a compile error here, which is the correct failure: the guard cannot silently stop guarding.
     const TERMINAL_TABS_STORE_JS: &str = include_str!("../../src/store/terminalTabsStore.js");
     const TERMINAL_TABS_STORE_PATH: &str = "src/store/terminalTabsStore.js";
 
-    /// Reads `export const <name> = <integer>` out of the JS source. Deliberately dumb — the point is
-    /// to observe the literal a human would read, not to interpret JavaScript. Panics with the name it
-    /// could not find, because a renamed export is a broken link and must not pass as "nothing to
-    /// check". Anchoring on `"export const {name} = "` (with the spaces and `=`) is what keeps
-    /// `MAX_TABS` from matching the `MAX_TABS_PER_SCOPE` declaration.
+    /// Reads `export const <name> = <integer>` out of the JS source. Deliberately dumb — the point is to observe the literal a human would read, not to interpret JavaScript. Panics with the name it could not find, because a renamed export is a broken link and must not pass as "nothing to check". Anchoring on `"export const {name} = "` (with the spaces and `=`) is what keeps `MAX_TABS` from matching the `MAX_TABS_PER_SCOPE` declaration.
     fn js_int_const(name: &str) -> usize {
         js_int_const_in(TERMINAL_TABS_STORE_JS, name)
     }
@@ -903,8 +769,7 @@ mod constant_guards {
         })
     }
 
-    /// `MAX_TABS` is written twice — once here, once in `src/store/terminalTabsStore.js`. Nothing in
-    /// either build graph links them, so THIS TEST IS THE LINK, in both directions.
+    /// `MAX_TABS` is written twice — once here, once in `src/store/terminalTabsStore.js`. Nothing in either build graph links them, so THIS TEST IS THE LINK, in both directions.
     #[test]
     fn max_tabs_matches_the_frontend_constant() {
         let js_max_tabs = js_int_const("MAX_TABS");
@@ -919,9 +784,7 @@ mod constant_guards {
             TERMINAL_TABS_STORE_PATH
         );
 
-        // The ceiling is DERIVED from the frontend's per-project cap: 1 mandatory global tab + 3 full
-        // project groups. Both inputs are read from the JS, so moving the per-project cap alone fails
-        // here instead of silently leaving the ceiling meaning something else.
+        // The ceiling is DERIVED from the frontend's per-project cap: 1 mandatory global tab + 3 full project groups. Both inputs are read from the JS, so moving the per-project cap alone fails here instead of silently leaving the ceiling meaning something else.
         let js_per_scope = js_int_const("MAX_TABS_PER_SCOPE");
         assert_eq!(
             MAX_TABS,
@@ -938,11 +801,7 @@ mod constant_guards {
         );
     }
 
-    /// The reader is the load-bearing part of the guard, so it gets its own check against a fixture
-    /// rather than against the live file: a parser that silently matched the wrong declaration, or
-    /// that stopped at the first digit of a two-digit number, would make the assertions above vacuous
-    /// while still passing. The prefix case is the real hazard — `MAX_TABS` is a prefix of
-    /// `MAX_TABS_PER_SCOPE`, and the fixture puts the longer one FIRST so a sloppy match would take it.
+    /// The reader is the load-bearing part of the guard, so it gets its own check against a fixture rather than against the live file: a parser that silently matched the wrong declaration, or that stopped at the first digit of a two-digit number, would make the assertions above vacuous while still passing. The prefix case is the real hazard — `MAX_TABS` is a prefix of `MAX_TABS_PER_SCOPE`, and the fixture puts the longer one FIRST so a sloppy match would take it.
     #[test]
     fn the_js_reader_picks_the_right_declaration() {
         let fixture = "export const MAX_TABS_PER_SCOPE = 5\nexport const MAX_TABS = 16\n";
@@ -952,8 +811,7 @@ mod constant_guards {
         assert!(js_int_const("MAX_TABS") > 0 && js_int_const("MAX_TABS_PER_SCOPE") > 0);
     }
 
-    /// `SCROLLBACK_CAP` is Rust-only state, but its size is what a joining phone must receive — so a
-    /// change here is a change to `web_server.rs`'s budget, not a local tuning knob.
+    /// `SCROLLBACK_CAP` is Rust-only state, but its size is what a joining phone must receive — so a change here is a change to `web_server.rs`'s budget, not a local tuning knob.
     #[test]
     fn scrollback_cap_is_the_size_the_companion_budget_was_derived_from() {
         assert_eq!(
@@ -1047,14 +905,9 @@ mod tests {
 
     /// THE REASON THE FLOOR IS A MAP AND NOT AN ATOMIC (ground truth §0.4), as an executable claim.
     ///
-    /// Generations are globally monotonic, so tab 11's live session can easily hold a LOWER generation
-    /// than a session tab 10 has just retired. Under the old single global floor, retiring tab 10's
-    /// generation would raise the floor above tab 11's — and tab 11 would go silent: its bytes dropped
-    /// on the way to the scrollback and refused on the way to the screen, with nothing logged anywhere.
-    /// That is the cross-tab fencing this test exists to make impossible to reintroduce.
+    /// Generations are globally monotonic, so tab 11's live session can easily hold a LOWER generation than a session tab 10 has just retired. Under the old single global floor, retiring tab 10's generation would raise the floor above tab 11's — and tab 11 would go silent: its bytes dropped on the way to the scrollback and refused on the way to the screen, with nothing logged anywhere. That is the cross-tab fencing this test exists to make impossible to reintroduce.
     ///
-    /// Uses tab ids nothing else touches, which is exactly what per-tab state buys: this test and
-    /// `bytes_from_a_retired_session_never_reach_the_scrollback` can run concurrently without racing.
+    /// Uses tab ids nothing else touches, which is exactly what per-tab state buys: this test and `bytes_from_a_retired_session_never_reach_the_scrollback` can run concurrently without racing.
     #[test]
     fn retiring_one_tab_does_not_fence_another() {
         const A: TabId = 10; // the tab being retired
@@ -1094,10 +947,7 @@ mod tests {
         drop_tab_state(B);
     }
 
-    /// The ≥2-entity test the CLAUDE.md multi-entity guard requires for the Rust half: closing ONE
-    /// tab must leave every OTHER tab's state byte-identical. Three tabs, close the middle one, so a
-    /// blast radius that leaked in either direction (dropping the whole map, or clearing a
-    /// neighbouring key) shows up rather than being masked by only ever testing the last entry.
+    /// The ≥2-entity test the CLAUDE.md multi-entity guard requires for the Rust half: closing ONE tab must leave every OTHER tab's state byte-identical. Three tabs, close the middle one, so a blast radius that leaked in either direction (dropping the whole map, or clearing a neighbouring key) shows up rather than being masked by only ever testing the last entry.
     #[test]
     fn closing_one_tab_leaves_other_tabs_scrollback_intact() {
         const KEEP_LOW: TabId = 12;
@@ -1131,8 +981,7 @@ mod tests {
         drop_tab_state(KEEP_HIGH);
     }
 
-    /// A sink that records exactly what it was handed, in the order it was handed it — the observable
-    /// the ordering guarantee is about.
+    /// A sink that records exactly what it was handed, in the order it was handed it — the observable the ordering guarantee is about.
     struct RecordingSink(Arc<StdMutex<Vec<u8>>>);
     impl Write for RecordingSink {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -1144,13 +993,9 @@ mod tests {
         }
     }
 
-    /// The ordering claim, executable: whatever `pty_write` enqueues reaches the shell in enqueue
-    /// order, no matter how the producer and the writer are scheduled against each other.
+    /// The ordering claim, executable: whatever `pty_write` enqueues reaches the shell in enqueue order, no matter how the producer and the writer are scheduled against each other.
     ///
-    /// The old shape could not make this claim — each keystroke was an independent command racing
-    /// for the session mutex, so the mutex serialised the writes without ordering them. The fixture
-    /// deliberately keeps producing while the writer is already draining (no handshake between the
-    /// two), which is exactly the interleaving that used to be a coin toss.
+    /// The old shape could not make this claim — each keystroke was an independent command racing for the session mutex, so the mutex serialised the writes without ordering them. The fixture deliberately keeps producing while the writer is already draining (no handshake between the two), which is exactly the interleaving that used to be a coin toss.
     #[test]
     fn queued_input_reaches_the_shell_in_the_order_it_was_enqueued() {
         let sink = Arc::new(StdMutex::new(Vec::new()));
@@ -1176,8 +1021,7 @@ mod tests {
         assert_eq!(written, expected, "the byte stream handed to the PTY must be the enqueue order, unaltered");
     }
 
-    /// A teardown must end the writer thread rather than leave it parked forever — one thread per
-    /// live session, no matter how often RESTART is pressed.
+    /// A teardown must end the writer thread rather than leave it parked forever — one thread per live session, no matter how often RESTART is pressed.
     #[test]
     fn dropping_the_queues_last_sender_ends_the_writer() {
         let sink = Arc::new(StdMutex::new(Vec::new()));
@@ -1194,8 +1038,7 @@ mod tests {
         );
     }
 
-    /// A PTY that refuses writes (the shell died between the enqueue and the write) must surface as
-    /// an error the writer thread can act on, not as silently swallowed keystrokes.
+    /// A PTY that refuses writes (the shell died between the enqueue and the write) must surface as an error the writer thread can act on, not as silently swallowed keystrokes.
     #[test]
     fn a_failing_pty_stops_the_writer_instead_of_swallowing_input() {
         struct DeadPty;

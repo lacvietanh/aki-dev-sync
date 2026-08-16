@@ -1,13 +1,7 @@
 use tauri::Manager;
 
-/// The global note file's on-disk shape. `#[serde(default)]` on both fields (the project's
-/// serde-default rule) means an OLD file that only ever had `{"content": "..."}` still
-/// deserializes cleanly, with `tasks` backfilled to an empty Vec — no migration step needed and no
-/// silent field drop.
-///
-/// `tasks` is opaque to Rust on purpose (`serde_json::Value`, not a typed struct): the task shape
-/// and its migrations have exactly one owner, src/utils/tasks.js, exactly as a project's `tasks`
-/// field is opaque inside projects.json. Rust never inspects or validates the task objects.
+/// On-disk shape: `#[serde(default)]` backfills empty tasks for legacy single-content files without migrations.
+/// Tasks is opaque (`serde_json::Value`), owned solely by src/utils/tasks.js and never validated by Rust.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 pub struct GlobalNoteFile {
     #[serde(default)]
@@ -37,19 +31,8 @@ pub async fn read_global_note(app: tauri::AppHandle) -> Result<GlobalNoteFile, S
     Ok(serde_json::from_str(&raw).unwrap_or_default())
 }
 
-/// Read-modify-write: `None` for either field means "leave what is on disk alone", never "clear
-/// it". This is the multi-entity regression guard (CLAUDE.md) applied to the note file itself —
-/// a content-only save (typing in the textarea) or an older companion that only ever sends
-/// `content` must never wipe the task list as a side effect, and a task-only edit must never
-/// touch the note text.
-///
-/// The whole read-modify-write is serialized by [`WRITE_LOCK`]: two writers interleaving between
-/// the read and the write is a lost update, and `write_atomic` cannot help with it - it guarantees
-/// a whole file, not the right one. This is reachable in ordinary use, because the host window and
-/// a paired companion both call this command against the same file: the phone saving a task and
-/// the Mac saving note text at the same moment each read the pre-change file, and whichever
-/// renames last silently discards the other's edit. An async mutex (not `std::sync::Mutex`) because
-/// the guard is held across `.await`-able async command body.
+/// Read-modify-write: `None` preserves on-disk data (CLAUDE.md multi-entity guard) so field-specific saves never wipe other fields.
+/// Serialized by `WRITE_LOCK` (async mutex) to prevent concurrent host/companion lost updates across `.await` points.
 #[tauri::command]
 pub async fn write_global_note(
     app: tauri::AppHandle,

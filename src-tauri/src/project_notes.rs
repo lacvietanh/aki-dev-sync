@@ -1,43 +1,23 @@
 //! Per-project tasks & notes, stored **inside the project's own working directory**.
 //!
-//! THE DECISION THIS FILE IMPLEMENTS (docs/plan/done/1.22.0-notes-json-ssot.md §1): the local repo is the
-//! single source of truth for a project. Tasks and notes used to live in the app's central
-//! `projects.json`, which is state on one Mac — it does not travel with the repo, is invisible to
-//! anyone who opens the project, and is not recoverable from the project's own history. They now
-//! live at `<local_path>/.akidevsync/notes.json`, a file meant to be committed.
+//! THE DECISION THIS FILE IMPLEMENTS (docs/plan/done/1.22.0-notes-json-ssot.md §1): the local repo is the single source of truth for a project. Tasks/notes used to live in central projects.json (local to one Mac, unversioned with repo); they now live at <local_path>/.akidevsync/notes.json meant to be committed.
 //!
-//! Everything about that file — its path, its shape, its atomic write, its lock — is owned here and
-//! nowhere else. `sync.rs` spells the `.akidevsync/` literal once more, in the rsync protect filter that keeps a mirroring transfer from deleting it.
+//! Everything about that file — path, shape, atomic write, lock — is owned here. sync.rs spells .akidevsync/ once more in the rsync protect filter to prevent mirroring deletion.
 //!
-//! WHY THE READ RETURNS A TAGGED STATUS AND NOT A DEFAULTED STRUCT. `global_note.rs`, the closest
-//! precedent, does `unwrap_or_default()` on a corrupt file. That is defensible there: the file is
-//! in app data, nothing else writes it, and a broken one is genuinely empty. It would be a data-loss
-//! bug HERE. This file lives in a git repo the user also edits by hand and pulls over, on a path
-//! that may be an unmounted external volume — so "could not read it" is an ordinary, recoverable
-//! state, and collapsing it into "it is empty" means the UI shows an empty note and then saves that
-//! emptiness over the user's real one. A missing file and an unreadable file are different facts,
-//! and only the first one is writable.
+//! WHY READ RETURNS TAGGED STATUS (NOT DEFAULTED STRUCT): unlike app-data files where unwrap_or_default() is safe, this file lives in git repos on potentially unmounted volumes. Collapsing unreadable files into empty causes UI to overwrite real user notes. Missing vs unreadable are distinct states, and only missing is writable.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Written into every file so anyone who finds `.akidevsync/notes.json` in a checkout can find out
-/// what wrote it. A bare URL, no prose: the identification job is done by the URL resolving.
+/// Written into every file for provenance: bare URL identifying aki-dev-sync without prose.
 const ABOUT_URL: &str = "https://github.com/lacvietanh/aki-dev-sync";
 
-/// Reserved for a future shape change. Written and read; **nothing branches on it** — a file with a
-/// higher `schema` is still read normally. Version dispatch appears when a second shape does.
+/// Reserved for future schema changes (read/written, no branching yet: files with higher schema still load normally).
 const SCHEMA_VERSION: u32 = 1;
 
-/// The on-disk shape.
-///
-/// `#[serde(default)]` on EVERY field, no exceptions (project rule: a missing default silently
-/// drops the field on the next write). This is what lets a file written by a future version, or one
-/// hand-trimmed to `{"notes":"x"}`, still load without a migration step.
-///
-/// `tasks` is opaque to Rust (`serde_json::Value`), exactly as in `global_note.rs`: the task shape
-/// and its migrations have one owner, `src/utils/tasks.js`. Rust never inspects an element.
+/// On-disk shape: serde(default) on every field lets forward-compatible or hand-trimmed files load without migration.
+/// tasks is opaque JSON Value (schema/migrations owned by frontend src/utils/tasks.js, Rust never inspects elements).
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct ProjectNotesFile {
     #[serde(default)]
@@ -48,8 +28,7 @@ pub struct ProjectNotesFile {
     pub notes: String,
     #[serde(default)]
     pub tasks: Vec<serde_json::Value>,
-    /// Milliseconds since epoch, stamped by Rust at write time. Not a UI value — it is the
-    /// staleness fence that lets a write report that it replaced someone else's newer edit.
+    /// Timestamp (epoch ms) stamped by Rust at write time: staleness fence to detect clobbered edits.
     #[serde(default)]
     pub updated_at: u64,
 }
@@ -59,26 +38,20 @@ pub struct ProjectNotesFile {
 pub enum ProjectNotesStatus {
     /// File read and parsed. Writable.
     Ok,
-    /// `local_path` is a readable directory, but the file is not there. The normal state for a
-    /// project that has never taken a note, and for a fresh clone. **Writable** — the write creates
-    /// the directory and the file.
+    /// local_path is readable directory but notes file is missing (fresh clone/new project). Writable (creates dir + file).
     Missing,
-    /// `local_path` is not a directory right now (unmounted volume, deleted folder, permission
-    /// denied), or the file exists but cannot be read. **Not writable.**
+    /// local_path is not a directory (unmounted volume/perms) or unreadable file. Not writable.
     Unavailable,
-    /// The file exists and was read but is not valid JSON — a git merge-conflict marker is the
-    /// realistic case. **Not writable**, and deliberately not defaulted to empty.
+    /// File exists but contains invalid JSON (e.g. git merge conflict markers). Not writable and never defaulted to empty.
     Corrupt,
 }
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ProjectNotesRead {
     pub status: ProjectNotesStatus,
-    /// `Some` only when `status == Ok`. The UI must not be able to read content off a status it is
-    /// not allowed to write back.
+    /// Some only when status == Ok: UI cannot read content from unwritable states.
     pub file: Option<ProjectNotesFile>,
-    /// The real io/serde message for `Unavailable`/`Corrupt`, surfaced in the modal's tooltip. A
-    /// parse error naming a line is what turns "corrupt" into "you have conflict markers at line 4".
+    /// Error message for Unavailable/Corrupt surfaced in UI tooltip (e.g. line numbers of conflict markers).
     pub error: Option<String>,
 }
 
@@ -99,12 +72,9 @@ impl ProjectNotesRead {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ProjectNotesWrite {
-    /// The file as it now stands on disk — the JS side re-seeds its store from this rather than
-    /// from what it hoped it wrote.
+    /// Final on-disk file content used by JS to re-seed its store.
     pub file: ProjectNotesFile,
-    /// The write replaced content newer than what the caller had read. Last-write-wins is the
-    /// chosen policy, but never SILENTLY: this is what raises the Toast telling the user to check
-    /// git. See the module's concurrency note on `write_project_notes`.
+    /// True if write replaced newer content (last-write-wins with explicit user notification).
     pub clobbered: bool,
 }
 
@@ -120,9 +90,7 @@ fn notes_path(local_path: &str) -> PathBuf {
     Path::new(local_path).join(".akidevsync").join("notes.json")
 }
 
-/// Same boundary check every other consumer of a stored `local_path` goes through
-/// (`projects.rs::validate_path_segment`): the value reaches this module from `projects.json`, which
-/// a paired companion can write into, so it is not trusted here either.
+/// Validates local_path segment against traversal/control chars (untrusted input from projects.json / paired companion).
 fn check_path(local_path: &str) -> Result<(), String> {
     crate::projects::validate_path_segment("local_path", local_path)
 }
@@ -134,9 +102,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// The synchronous read. Never returns `Err` for a missing/corrupt/unreachable file — those are
-/// *statuses*, and turning them into command failures is what would make every caller re-derive the
-/// distinction from an error string.
+/// Synchronous read: returns structured statuses rather than Err for missing/corrupt/unreachable states.
 fn read_blocking(local_path: &str) -> ProjectNotesRead {
     if let Err(e) = check_path(local_path) {
         return ProjectNotesRead::unavailable(e);
@@ -163,12 +129,7 @@ fn read_blocking(local_path: &str) -> ProjectNotesRead {
 }
 
 /// Reads one project's notes file.
-///
-/// `async fn` + `spawn_blocking`, and this is NOT the "plain fast local file I/O" exemption in the
-/// Tauri stack rule: `local_path` is exactly the path class `projects.rs::load_projects_blocking`
-/// documents as able to stall in the kernel for tens of seconds on an unhealthy network mount.
-/// `system.rs::read_project_changelog` — which also reads a file inside `local_path` — is
-/// `spawn_blocking` for the same reason.
+/// Uses spawn_blocking because local_path can live on network/external mounts that stall in kernel metadata/read calls.
 #[tauri::command]
 pub async fn read_project_notes(local_path: String) -> Result<ProjectNotesRead, String> {
     tauri::async_runtime::spawn_blocking(move || read_blocking(&local_path))
@@ -176,10 +137,7 @@ pub async fn read_project_notes(local_path: String) -> Result<ProjectNotesRead, 
         .map_err(|e| format!("read_project_notes task join error: {}", e))
 }
 
-/// Batch read for app boot: one IPC round-trip for the whole project list instead of N.
-///
-/// One target failing never fails the batch — each project gets its own status, because a single
-/// unmounted volume must not blank every other project's task badges.
+/// Batch read for app boot: one IPC round-trip for all projects; failures on unmounted volumes are isolated per target.
 #[tauri::command]
 pub async fn read_project_notes_map(
     targets: Vec<ProjectNotesTarget>,
@@ -191,23 +149,8 @@ pub async fn read_project_notes_map(
     .map_err(|e| format!("read_project_notes_map task join error: {}", e))
 }
 
-/// Read-modify-write of one project's notes file.
-///
-/// **`None` for a field means "leave what is on disk alone", never "clear it"** — the multi-entity
-/// regression guard (CLAUDE.md) applied to the file's own fields, and the same contract as
-/// `write_global_note`. This is what lets a `git pull` that changed `notes` survive a task-only
-/// write issued from the app a second later.
-///
-/// The whole read-modify-write is serialized by `WRITE_LOCK`. `write_atomic` guarantees a *whole*
-/// file, not the *right* one: two writers interleaving between the read and the rename is a lost
-/// update, and that is reachable in ordinary use — the host window and a paired companion both drive
-/// this command. One global mutex rather than a per-path map: writes are small, rare and user-paced,
-/// so a keyed map would be speculative structure for contention that does not exist.
-///
-/// `base_updated_at` is the `updated_at` the caller last read. If the disk is newer, the write still
-/// lands (last-write-wins) but reports `clobbered: true`, and the JS side raises a Toast pointing at
-/// git. Refusing the write instead would strand the user's typing with no way to save it; silently
-/// overwriting would hide that someone else's edit is now only in git history.
+/// Read-modify-write of notes file: None preserves disk fields (CLAUDE.md multi-entity guard); serialized via WRITE_LOCK.
+/// base_updated_at detects concurrent edits (last-write-wins with clobbered: true Toast alert).
 #[tauri::command]
 pub async fn write_project_notes(
     local_path: String,
@@ -225,10 +168,7 @@ pub async fn write_project_notes(
     .map_err(|e| format!("write_project_notes task join error: {}", e))?
 }
 
-/// The write's synchronous core. Split out from the command so the unit tests below drive the real
-/// thing directly instead of standing up a tokio runtime — the shipped path and the tested path are
-/// then the same code, and the test module does not depend on which tokio features happen to be
-/// enabled in this crate.
+/// Synchronous core of write: allows unit tests to execute shipped logic directly without tokio runtime dependency.
 fn write_blocking(
     local_path: &str,
     notes: Option<String>,
@@ -236,9 +176,7 @@ fn write_blocking(
     base_updated_at: Option<u64>,
 ) -> Result<ProjectNotesWrite, String> {
     check_path(local_path)?;
-    // Refuse rather than create: `create_dir_all` on an unmounted volume's mount point would
-    // materialise a directory in the EMPTY mount stub and write the user's notes somewhere they
-    // will disappear the moment the real volume comes back.
+    // Refuse if not dir: prevents creating folders in empty mount stubs where notes would vanish on volume remount.
     if !Path::new(local_path).is_dir() {
         return Err(format!("'{}' is not a readable directory right now", local_path));
     }
@@ -294,8 +232,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// A scratch directory that removes itself. No `tempfile` dependency is in this crate and one
-    /// test module is not the reason to add one.
+    /// Self-cleaning scratch directory helper (avoids external tempfile crate dependency).
     struct Scratch(PathBuf);
     impl Scratch {
         fn new(tag: &str) -> Self {
@@ -320,8 +257,7 @@ mod tests {
         fs::write(p, body).unwrap();
     }
 
-    /// Alias for the real write core (`write_blocking`) — the command adds only the lock and the
-    /// `spawn_blocking` hop, neither of which changes the file semantics under test.
+    /// Synchronous test wrapper for write_blocking.
     fn write_sync(
         local_path: &str,
         notes: Option<String>,
@@ -333,8 +269,7 @@ mod tests {
 
     #[test]
     fn missing_dir_reads_unavailable_not_missing() {
-        // The distinction the whole module exists for: an unmounted volume must never look like
-        // "this project simply has no notes yet", because that state is writable.
+        // Unmounted volume must never report Missing (which is writable), only Unavailable.
         let r = read_blocking("/definitely/not/a/real/mount/point");
         assert_eq!(r.status, ProjectNotesStatus::Unavailable);
         assert!(r.file.is_none());
@@ -355,9 +290,7 @@ mod tests {
         write_raw(&d, "<<<<<<< HEAD\n{\"notes\":\"mine\"}\n=======\n");
         let r = read_blocking(&d.path());
         assert_eq!(r.status, ProjectNotesStatus::Corrupt);
-        // The trap this asserts against: `unwrap_or_default()` would hand back an empty file here,
-        // the UI would show an empty note, and the next save would write that emptiness over the
-        // user's conflicted text.
+        // Asserts corrupt JSON is never defaulted to empty (which would cause destructive overwrite of conflict markers).
         assert!(r.file.is_none());
     }
 
