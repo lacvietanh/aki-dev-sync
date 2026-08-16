@@ -147,7 +147,7 @@ a {
 
 /* Right-dock mode: left column gets max-width cap and a right-edge border instead of bottom border. */
 .dashboard-main.is-right-dock > .dashboard-left {
-  max-width: var(--main-view-max-width, 420px);
+  max-width: var(--main-view-max-width, 440px);
   border-bottom: none;
   border-right: 1px solid var(--border-card);
 }
