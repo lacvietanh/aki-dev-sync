@@ -12,27 +12,12 @@ const registry = new Map();
 // Detached scope: keeps monitor watchers alive across individual caller component unmounts.
 const monitorScope = effectScope(true);
 
-/**
- * Claude Code's LOCAL monitor reads Anthropic's own account API and pricing table, which describe
- * nothing real once Proxy mode reroutes traffic elsewhere - so it is locked off while proxy is
- * active. Purely a function of identity + mode; no other monitor is ever locked.
- */
+// Claude Code LOCAL monitor locked while proxy active: Anthropic account API/pricing inactive when traffic rerouted.
 function lockedFor(agentId, host) {
   return computed(() => agentId === 'claudecode' && host === LOCAL_HOST && claudeMode.value === 'proxy');
 }
 
-/**
- * The monitor for one agent on one machine. Same arguments → same instance, always.
- *
- * ACQUIRES a hold: every call must be paired with `releaseMonitor()` when the caller stops
- * displaying it (its `onUnmounted`, or the moment it re-targets at another host). An unpaired call
- * leaves the monitor polling forever.
- *
- * An empty `host` (no SSH host configured yet) yields a real but permanently-disabled monitor rather
- * than null, so callers never branch on it - the card renders its ordinary "monitoring off" state.
- * It gets its own identity (`monitorId`'s `NO_HOST`), never the local monitor's: sharing one was
- * what made an un-targeted REMOTE tab display local numbers and switch the LOCAL monitor off.
- */
+// Multiton monitor (same args -> same instance): acquires hold (must pair with releaseMonitor); empty host gets disabled NO_HOST monitor.
 export function getMonitor(agentId, host) {
   const id = monitorId(agentId, host);
   const existing = registry.get(id);
@@ -59,15 +44,7 @@ export function getMonitor(agentId, host) {
   return monitor;
 }
 
-/**
- * Give up one hold taken by `getMonitor`. At zero holders the monitor STOPS WATCHING - its poll
- * timer is cleared and its wake subscription dropped.
- *
- * Named for exactly that blast radius (CLAUDE.md, Regression Guard for multi-entity state): it
- * releases ONE monitor. It does not evict the instance, does not clear the registry, and does not
- * touch that monitor's stored reading - which is why re-targeting a slot back at this host paints
- * the last-known numbers at once instead of an empty card.
- */
+// Releases one hold (CLAUDE.md Regression Guard: stops watching at 0 holders, preserves cached instance and reading).
 export function releaseMonitor(monitor) {
   const entry = monitor && registry.get(monitor.id);
   if (!entry || entry.holders === 0) return;

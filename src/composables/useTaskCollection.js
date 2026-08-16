@@ -2,17 +2,10 @@ import { ref, computed } from 'vue'
 import { normalizeTasks, sortTasks, summarize, makeTask } from '../utils/tasks'
 
 /**
- * One task list + one notes field, over ANY data source (a project entity, the global note
- * store). The source is injected as two functions — this composable NEVER imports a store: the
- * project version persists through applyTaskEdit (id-scoped, host-resolved, PERSIST-1) and the
- * global version through applyGlobalNoteEdit (WP-F), and neither can reach the other's data. That
- * separation is what keeps the multi-entity regression guard (CLAUDE.md) satisfied when two
- * unrelated collections share this one factory.
- *
- * @param {() => ({tasks: any[], notes: string})} read   live read of the owning entity. Callers
- *   are expected to have already run the raw list through normalizeTasks() before returning it.
- * @param {(patch: {tasks?: any[], notes?: string}) => any} apply  the ONE persist funnel — must
- *   be an action(). Every mutator below sends only the field(s) it actually changed.
+ * Task collection factory over injected { read, apply } without direct store imports.
+ * Isolates project persistence (applyTaskEdit, id-scoped, PERSIST-1) from global note persistence (applyGlobalNoteEdit, WP-F) to satisfy multi-entity regression guard (CLAUDE.md).
+ * @param {() => ({tasks: any[], notes: string})} read - Live read of owning entity (must supply normalizeTasks output).
+ * @param {(patch: {tasks?: any[], notes?: string}) => any} apply - Persist funnel sending only changed fields.
  */
 export function useTaskCollection({ read, apply }) {
   const hideCompleted = ref(false)
@@ -38,7 +31,7 @@ export function useTaskCollection({ read, apply }) {
     return task
   }
 
-  // toggleProp(task,'done') auto-unpins (done tasks never stay pinned); every prop toggle stamps updated_at. Builds a brand new array via map — never mutates `task` or `tasks.value` in place.
+  // toggleProp auto-unpins on done; every toggle stamps updated_at.
   function toggleProp(task, prop) {
     const now = Date.now()
     const next = tasks.value.map((t) => {

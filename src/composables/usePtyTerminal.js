@@ -1,20 +1,7 @@
 // In-app terminal — role wiring (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4).
-//
-// TerminalView.vue owns the xterm.js instance (creation, DOM mount, the mobile key row) and hands
-// it to this composable; this file owns everything role-specific: which event feeds the terminal,
-// where keystrokes go, and who is allowed to resize the shared PTY (T-4).
-//
-// BINARY-SAFE TRANSPORT: PTY bytes ride the wire as base64 (see src-tauri/src/pty.rs module doc
-// comment). `atob`/`btoa` here are used ONLY as a raw-byte codec (each char code 0-255 = one raw
-// byte, fed straight into a Uint8Array) — NOT to decode/encode text, which is the documented
-// mojibake trap (RULE-coding C5). Actual UTF-8 interpretation of that byte stream happens inside
-// xterm.js's own `Terminal.write(Uint8Array)`, which keeps a stateful UTF-8 decoder across calls
-// and so correctly reassembles a multi-byte sequence split across two PTY read()s — nothing here
-// needs its own split-sequence buffering.
-//
-// ENV-1 (docs/plan/done/remote-control.md §9): this file's `isHost` branch is one of the two places in
-// the terminal feature allowed to read it directly (the other is services/ptyBridge.js) —
-// TerminalView.vue's template must stay neutral.
+// TerminalView.vue owns xterm.js instance/DOM/key row; this composable owns role wiring, I/O routing, and resize authority (T-4).
+// BINARY-SAFE TRANSPORT: PTY bytes ride base64 wire as raw byte codec (src-tauri/src/pty.rs, RULE-coding C5); stateful UTF-8 decoding handled by xterm.js Terminal.write(Uint8Array).
+// ENV-1 (docs/plan/done/remote-control.md §9): isHost read directly only here and services/ptyBridge.js; TerminalView.vue template stays neutral.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { isHost, onFrame, send } from '../services/bridge'
@@ -79,12 +66,8 @@ export function seedTabLiveness(list) {
 
 /**
  * Wires an already-created xterm.js Terminal instance to one tab's PTY.
- *
  * @param {import('@xterm/xterm').Terminal} term
  * @param {number} [tabId=0] which terminal tab this surface drives.
- * @returns {{ start, ownsPtySize, showReclaimPill, showKeyRow, hostResize, requestResize, sendRaw,
- *             emitKey, pendingModifiers, toggleModifier, ctrlByteFor, alive, restart, clear, kill,
- *             close, openExternal, cd }}
  */
 export function usePtyTerminal(term, tabId = 0) {
   let unlistenHostOutput = null
@@ -122,7 +105,7 @@ export function usePtyTerminal(term, tabId = 0) {
     if (typeof value === 'boolean') alive.value = value
   }
 
-  /** Gated by readyForPendingCmd to prevent double-execution race between spawn and scrollback hydrate (#7). */
+  /** Gated by readyForPendingCmd to prevent double-execution race between spawn and scrollback hydrate (docs/plan/done/dev-build-in-app-launch.md #7). */
   let readyForPendingCmd = false
 
   /** Host only: consumes and sends pending launch command for this tab if present. */
@@ -318,10 +301,7 @@ export function usePtyTerminal(term, tabId = 0) {
     return code >= 64 && code <= 95 ? String.fromCharCode(code - 64) : null
   }
 
-  /**
-   * Single funnel converting keypresses to bytes and consuming active modifier latches.
-   * Shapes: csi (parameterized escape), seq/shiftSeq (literal strings), char (typed characters/IME).
-   */
+  /** Single funnel converting keypresses to bytes and consuming modifier latches (shapes: csi, seq/shiftSeq, char). */
   function emitKey({ seq, shiftSeq, csi, char } = {}) {
     const { ctrl, shift } = pendingModifiers.value
     let out = null
@@ -365,7 +345,7 @@ export function usePtyTerminal(term, tabId = 0) {
         respawn()
         return
       }
-      // Emits through emitKey funnel; multi-char IME chunks preserve armed Ctrl for next single key.
+      // Emits through emitKey funnel; multi-char IME chunks (e.g. Gboard text drain) preserve armed Ctrl for next single key.
       emitKey({ char: chunk })
     })
   }

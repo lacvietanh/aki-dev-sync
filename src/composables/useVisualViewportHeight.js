@@ -1,15 +1,6 @@
-// Publishes the live visible viewport height as `--vvh` on the root element, so `vh`-based layout
-// math (main.css's `.dashboard-layout`/`.dashboard-bottom`, useDockLayout.js's height expressions)
-// can be rewritten to track the ACTUAL visible area instead of the layout viewport.
-//
-// Why this exists: on iOS Safari the CSS `vh` unit is computed against the layout viewport, which
-// does NOT shrink when the on-screen keyboard opens - only `window.visualViewport.height` does.
-// Without this, a 100vh app shell never adjusts and the keyboard simply covers whatever sits at its
-// bottom edge (docs/plan/done/terminal-mobile-keyboard-viewport.md §1, F1-F3).
-//
-// No host/companion branch (ENV-1's capability-pattern spirit): on the Mac, `visualViewport.height`
-// already always equals the real window height (no on-screen keyboard ever changes it), so this is
-// inert there without needing to be told so.
+// Publishes live visible viewport height as `--vvh` on root element for layout math (.dashboard-layout, .dashboard-bottom, useDockLayout.js) to track actual visible area instead of layout viewport.
+// Why: on iOS Safari CSS `vh` is computed against layout viewport (which does not shrink on keyboard open; only `window.visualViewport.height` shrinks), covering app bottom (docs/plan/done/terminal-mobile-keyboard-viewport.md §1, F1-F3).
+// Capability pattern (ENV-1): on desktop/Mac `visualViewport.height` always equals window height so this is inert without host/companion branching.
 import { onMounted, onUnmounted } from 'vue'
 
 function publish(px) {
@@ -25,11 +16,11 @@ export function useVisualViewportHeight() {
 
   onMounted(() => {
     if (!vv) {
-      // No visualViewport support (old WebKit / desktop without it): main.css's dvh/vh fallback chain covers this case, nothing to publish.
+      // No visualViewport support (old WebKit/desktop fallback): main.css dvh/vh chain covers this case.
       return
     }
     publish(vv.height)
-    // `scroll` too, not just `resize`: iOS has a documented bug where `visualViewport.offsetTop` does not reset to 0 when the keyboard closes, which only a scroll listener catches.
+    // iOS bug workaround: visualViewport.offsetTop does not reset to 0 when keyboard closes without a scroll listener.
     vv.addEventListener('resize', onResize)
     vv.addEventListener('scroll', onResize)
   })
