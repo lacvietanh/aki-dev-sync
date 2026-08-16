@@ -1,6 +1,6 @@
 [package]
 name = "aki-dev-sync"
-version = "1.24.0"
+version = "1.25.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -35,8 +35,7 @@ getrandom = "0.2"
 # §7.2 (PORT-1) dev-mode reverse proxy to Vite. TLS stripped — every request it makes is to
 # 127.0.0.1, never a remote/https host. (No HMR websocket bridge: HMR stays direct to Vite.)
 reqwest = { version = "0.12", default-features = false }
-# In-app terminal (docs/plan/1.20.0-terminal-and-remote-sync.md §4, T-1) — the only battle-tested
-# cross-platform PTY crate; ships on Apple Silicon in wezterm itself. tauri-plugin-shell has no PTY.
+# In-app terminal (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4, T-1) — the only battle-tested cross-platform PTY crate; ships on Apple Silicon in wezterm itself. tauri-plugin-shell has no PTY.
 portable-pty = "0.9"
 
 # `killpg` for the in-app terminal's teardown (see pty.rs::kill_process_group). Already in the
