@@ -1,28 +1,36 @@
 <!--
-  The bottom dock: two independent, always-visible stacks (TerminalStack above LogStack) instead of a single panel tabbed between LOG and TERMINAL. Each stack owns its own collapse state (logStore.isLogExpanded / useTerminalPanel.js's terminalStackCollapsed) and, under the sum height model, its own length and its own resize handle (DockStack.vue). What is left here is the flex container, the dock's summed height, and the one cross-stack concern (Esc) neither stack should own alone.
+  The bottom dock: two independent stacks (TerminalStack above LogStack) in narrow mode. Each stack owns its own collapse state and resize handle (DockStack.vue).
+
+  RIGHT-DOCK (TERM-STACK-R): above useRightDockLayout.js's breakpoint (900px) this box becomes a right-side column (flex:1). In this mode LogStack is rendered in App.vue's dashboard-left (so the terminal column is terminal-only), and the splitter is hidden via CSS. AppHeader sits above dashboard-main so both columns start below the titlebar — preventing the dock header from occupying the titlebar zone and blocking ⋮/COLLAPSE clicks.
 -->
 <template>
   <div
     class="dashboard-bottom"
     :class="{ 'is-dragging': dockDragging }"
-    :style="{ height: dockHeightCss }"
+    :style="consoleStyle"
     @transitionrun="onDockTransition"
     @transitionend="onDockTransition"
     @transitioncancel="onDockTransition"
   >
     <TerminalStack />
-    <LogStack />
+    <LogStack v-if="!rightDockActive" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue';
+import { computed, onUnmounted } from 'vue';
 import { isLogExpanded, activeLogProjectId } from '../store/logStore';
 import { dockAnimating, dockDragging, dockHeightCss } from '../composables/useDockLayout';
+import { rightDockActive } from '../composables/useRightDockLayout';
 import TerminalStack from './dock/TerminalStack.vue';
 import LogStack from './dock/LogStack.vue';
 
-// Sets useDockLayout's dockAnimating from the live transition on this container (height) and its bubbling stacks (flex-grow/flex-basis).
+// In narrow mode: height from useDockLayout.js. In right-dock mode: flex:1 in CSS fills the remaining space.
+const consoleStyle = computed(() =>
+  rightDockActive.value ? {} : { height: dockHeightCss.value }
+);
+
+// Sets dockAnimating from the live transition on this container (height) and its bubbling stacks (flex-grow/flex-basis).
 const DOCK_ANIM_PROPS = new Set(['height', 'flex-grow', 'flex-basis']);
 let dockAnimClear = 0;
 function onDockTransition(e) {
@@ -32,12 +40,11 @@ function onDockTransition(e) {
     dockAnimating.value = true;
     return;
   }
-  // end/cancel: the properties end within the same frame, so coalesce them into one clear.
   clearTimeout(dockAnimClear);
   dockAnimClear = setTimeout(() => { dockAnimating.value = false; }, 60);
 }
 
-// Esc closes the log stack from anywhere, except while a modal is open or focus is inside a terminal (xterm needs Esc for vim/less).
+// Esc collapses the log stack from anywhere, except inside a modal or terminal (xterm needs Esc for vim/less).
 function handleEsc(e) {
   if (e.key !== 'Escape') return;
   if (document.querySelector('.modal-overlay')) return;
@@ -47,7 +54,7 @@ function handleEsc(e) {
   isLogExpanded.value = false;
 }
 
-onMounted(() => window.addEventListener('keydown', handleEsc, true));
+window.addEventListener('keydown', handleEsc, true);
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEsc, true);
   clearTimeout(dockAnimClear);

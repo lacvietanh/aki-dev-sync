@@ -19,12 +19,13 @@
     @pointercancel="onSplitterUp"
     @dblclick="resetStackHeight(stackKey)"
   ></div>
-  <div ref="stackEl" class="dock-stack" :style="dockStackFlex(stackKey)">
+  <div ref="stackEl" class="dock-stack" :class="{ 'is-collapsed': collapsed }" :style="dockStackFlex(stackKey)">
     <div class="terminal-header">
       <div class="terminal-title"><slot name="title"></slot></div>
       <div class="terminal-actions">
         <slot name="actions"></slot>
         <button
+          v-if="showCollapseBtn"
           class="btn-tech btn-tech-secondary btn-terminal-action"
           @click="$emit('update:collapsed', !collapsed)"
           :title="collapsed ? 'Expand panel' : 'Collapse panel'"
@@ -54,12 +55,13 @@ const props = defineProps({
   collapsed: { type: Boolean, default: false },
   bodyPersist: { type: Boolean, default: false },
   stackKey: { type: String, required: true },
+  showCollapseBtn: { type: Boolean, default: true },
 });
 defineEmits(['update:collapsed']);
 
 const stackEl = ref(null);
 
-// setPointerCapture keeps the drag alive once the pointer outruns this 3px element; dockDragging drops the transitions for its duration (`.is-dragging`).
+// setPointerCapture keeps the drag alive once the pointer outruns this 3px element; dockDragging drops the transitions for its duration.
 function onSplitterDown(e) {
   e.preventDefault();
   dockDragging.value = true;

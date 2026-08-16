@@ -1,5 +1,4 @@
-<!--
-  In-app terminal dock stack. WP-A rendered exactly one TerminalView; WP-C extended this to a tab strip + v-for over multiple TerminalViews sharing one PTY-per-tab backend (src-tauri/src/pty.rs). Terminal v2 adds SCOPES (tab groups) on top — see docs/arch/terminal-stack.md for the full model.
+<!-- In-app terminal dock stack. WP-A rendered exactly one TerminalView; WP-C extended this to a tab strip + v-for over multiple TerminalViews sharing one PTY-per-tab backend (src-tauri/src/pty.rs). Terminal v2 adds SCOPES (tab groups) on top — see docs/arch/terminal-stack.md for the full model.
 
   Mount semantics, two different axes:
   - SWITCHING TABS (this component): every tab that has ever been activated stays mounted (`v-if="activatedTabs.has(t.id)"`) and only the active one is shown (`v-show`) — switching back to a tab never re-spawns its xterm instance or re-fetches its scrollback. This loop iterates the FULL tab list (not the scope-filtered one) ON PURPOSE, so switching between GROUPS never unmounts/re-spawns an xterm either — only which chip's tab is visible changes.
@@ -10,10 +9,11 @@
     stack-key="terminal"
     :collapsed="collapsed"
     body-persist
+    :show-collapse-btn="!rightDockActive"
     @update:collapsed="collapsed = $event"
   >
     <template #title>
-      <span class="term-scope-id" :title="scopeTitle">
+      <span v-if="chromeVisible.groupName" class="term-scope-id" :title="scopeTitle">
         <img
           v-if="scopeIconSrc && !scopeIconFailed"
           :src="scopeIconSrc"
@@ -24,12 +24,16 @@
         <i v-else class="fa-solid" :class="scopeProject ? 'fa-folder-open' : 'fa-terminal'"></i>
         <span class="term-scope-name">{{ scopeLabel }}</span>
       </span>
-      <TerminalTabStrip />
+      <TerminalTabStrip v-if="chromeVisible.tabStrip" />
+      <!-- Fallback: when the user has hidden both groupName and tabStrip, ensure the header is never completely empty. -->
+      <span v-if="!chromeVisible.groupName && !chromeVisible.tabStrip" class="term-scope-name">TERMINAL</span>
     </template>
-    <!-- #actions holds only ICON buttons that act on the PANEL, never on a shell: CLEAR / RESTART / KILL / OPEN stay gone (see docs/feat/in-app-terminal.md's migration table) — reachable via the tab chip's ✕ (kill), ✕+ (restart), or the OPEN popup (external). The panel collapses via the DockStack chevron. -->
+    <!-- #actions holds only ICON buttons that act on the PANEL, never on a shell. The panel collapses via the DockStack chevron. -->
     <template #actions>
+      <!-- Never a member of its own list (S5, terminal-chrome-settings.md) — hidden with the panel body, never with a preference. -->
+      <TerminalChromeMenu v-if="!collapsed" />
       <button
-        v-if="externalTerminalsSupported"
+        v-if="chromeVisible.externalTerminals"
         class="btn-tech btn-tech-secondary btn-terminal-action btn-external-term"
         title="External Terminal.app sessions — what is running in each"
         @click="openExternalTermModal"
@@ -37,9 +41,9 @@
         <i class="fa-solid fa-terminal external-term-icon"></i>
         <span v-if="externalTermTotalCount > 0" class="external-term-badge">{{ externalTermTotalCount }}</span>
       </button>
-      <!-- Hidden when both stacks are collapsed (useDockLayout.js's dockAllCollapsed): with nothing expanded there is nothing to fill the screen with, so the button would be a no-op. -->
+      <!-- Hidden in right-dock mode, or when both stacks are collapsed (useDockLayout.js's dockAllCollapsed): with nothing expanded there is nothing to fill the screen with, so the button would be a no-op. -->
       <button
-        v-if="!dockAllCollapsed"
+        v-if="!rightDockActive && !dockAllCollapsed && chromeVisible.maximize"
         class="btn-tech btn-tech-secondary btn-terminal-action"
         :title="dockMaximized ? 'Restore panel height' : 'Maximize panel'"
         @click="toggleDockMaximized"
@@ -53,8 +57,7 @@
       @focusin="hasTerminalFocus = true"
       @focusout="hasTerminalFocus = false"
     >
-      <!-- `template v-for` + `v-if` on the child (not both on the same node): Vue 3 gives v-if priority over v-for when they share a node, which would leave `t` out of scope — see https://vuejs.org/guide/essentials/list.html#v-for-with-v-if. -->
-      <!-- `&& !collapsed` IS the re-fit mechanism, and the reason TerminalView needs no change: it already watches `active` and calls scheduleFit()+focus() on the false→true edge, written for exactly this case (a container that was only shown, never resized, so the ResizeObserver never fires). Collapsing drops `active` on every view; expanding raises it on the active one, which re-fits it. -->
+      <!-- `template v-for` + `v-if` on the child: Vue 3 gives v-if priority over v-for when they share a node, which would leave `t` out of scope — see https://vuejs.org/guide/essentials/list.html#v-for-with-v-if. -->
       <template v-for="t in tabs" :key="t.id">
         <component
           :is="ViewComponent"
@@ -75,7 +78,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import DockStack from '../DockStack.vue';
 import { useTerminalViewType } from '../../composables/useTerminalViewType';
 import TerminalTabStrip from '../TerminalTabStrip.vue';
+import TerminalChromeMenu from '../terminal/TerminalChromeMenu.vue';
 import { terminalStackCollapsed } from '../../composables/useTerminalPanel';
+import { rightDockActive } from '../../composables/useRightDockLayout';
+import { chromeVisible } from '../../composables/useTerminalChrome';
 import { dockAllCollapsed, dockAnimating, dockMaximized, toggleDockMaximized } from '../../composables/useDockLayout';
 import {
   externalTerminalsSupported,
@@ -91,8 +97,13 @@ import { useTerminalTabs, activatedTabs } from '../../composables/useTerminalTab
 import { projectIconSrc } from '../../utils/projectIcon';
 import { iconTimestamp } from '../../store/projectStore';
 
-// THE ref, not a copy: useTerminalPanel.js owns this stack's collapse state so that openProjectTerminal / openGlobalTerminal — the TERMINAL column, the header icon and the OPEN popup — can expand this exact stack. Collapsed by default: the terminal starts out of the way until something explicitly asks for it.
-const collapsed = terminalStackCollapsed;
+// In right-dock mode, the terminal occupies the right column and is never collapsed. In bottom-dock mode, it follows useTerminalPanel.js's terminalStackCollapsed.
+const collapsed = computed({
+  get: () => (rightDockActive.value ? false : terminalStackCollapsed.value),
+  set: (v) => {
+    if (!rightDockActive.value) terminalStackCollapsed.value = v;
+  },
+});
 
 // ENV-1 boundary: this component stays role-agnostic. useTerminalViewType is the one module that reads isHost for this feature and hands back TerminalView (Mac) or SimpleView (phone companion).
 const { ViewComponent } = useTerminalViewType();

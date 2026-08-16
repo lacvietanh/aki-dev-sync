@@ -52,7 +52,7 @@ body {
     radial-gradient(ellipse at 50% -20%, rgba(0, 136, 255, 0.15) 0%, transparent 70%),
     url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.02' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='1'/%3E%3Ccircle cx='13' cy='13' r='1'/%3E%3C/g%3E%3C/svg%3E");
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color: #F3F4F6;
+  color: var(--text-light);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -116,24 +116,57 @@ a {
 .dashboard-layout {
   display: flex;
   flex-direction: column;
-  /* Three fallback tiers, each for a browser that can't do the next: 100vh for no-JS/no-dvh, 100dvh once the toolbar settles, --vvh once useVisualViewportHeight.js is live and keyboard-aware (docs/plan/terminal-mobile-keyboard-viewport.md §3.2). */
+  /* Three fallback tiers, each for a browser that can't do the next: 100vh for no-JS/no-dvh, 100dvh once the toolbar settles, --vvh once useVisualViewportHeight.js is live and keyboard-aware (docs/plan/done/terminal-mobile-keyboard-viewport.md §3.2). */
   height: 100vh;
   height: 100dvh;
   height: calc(var(--vvh, 100dvh));
 }
 
-.dashboard-top {
+/* Wraps dashboard-left + AppConsole only (not AppHeader, which sits above as a full-width flex item, and not the modals, which are position:fixed overlays). Column by default so an unmounted/pre-hydration frame never flashes the row shape; .is-right-dock is the ONE class useRightDockLayout.js's rightDockActive drives — no media query duplicates its breakpoint here (TERM-STACK-R). */
+.dashboard-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dashboard-main.is-right-dock {
+  flex-direction: row;
+}
+
+/* Direct children: AgentUsageSection + ProjectTable (fill column) and optional LogStack below in right-dock mode. Declared as a CSS container so child components use @container main-view queries instead of @media — that way the 700px narrow breakpoint fires on the container width (420px in right-dock), not on window.innerWidth (1920px), which would leave them in a permanently-wide layout. */
+.dashboard-left {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-bottom: 1px solid var(--border-card);
+  container-type: inline-size;
+  container-name: main-view;
 }
 
-/* height is set INLINE by AppConsole.vue from useDockLayout.js (the sum of both stacks, or the maximised height); the 40vh here is only the pre-hydration fallback. */
+/* Right-dock mode: left column gets max-width cap and a right-edge border instead of bottom border. */
+.dashboard-main.is-right-dock > .dashboard-left {
+  max-width: var(--main-view-max-width, 420px);
+  border-bottom: none;
+  border-right: 1px solid var(--border-card);
+}
+
+/* ProjectTable fills the remaining vertical space inside dashboard-left (above any LogStack below). */
+.dashboard-left > .projects-table-container {
+  flex: 1;
+  min-height: 0;
+}
+
+/* LogStack inside dashboard-left (right-dock mode only): border-top separates it from the project table. */
+.dashboard-main.is-right-dock > .dashboard-left > .dock-stack {
+  border-top: 1px solid var(--border-card);
+}
+
+/* height is set INLINE by AppConsole.vue from useDockLayout.js (the sum of both stacks, or the maximised height) in narrow mode; no inline style in right-dock mode — flex:1 below fills the rest. The calc() is the pre-hydration fallback. */
 .dashboard-bottom {
+  position: relative;
   flex: none;
-  height: 40vh;
   height: calc(var(--vvh, 100vh) * 0.4);
   display: flex;
   flex-direction: column;
@@ -145,11 +178,37 @@ a {
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
 }
 
-/* Mid-drag the eased transition makes the panel trail the pointer by a few frames (laggy splitter), so drop it while dragging — on the stack too, whose flex-basis is what a drag actually writes. Firing no transition events is also what keeps TerminalView's live per-frame fit (useDockLayout.js's dockAnimating). */
+/* Right-dock mode: TerminalStack fills the full column height since useDockLayout's inline flex was computed for the narrow two-stack layout. */
+.dashboard-main.is-right-dock .dashboard-bottom > .dock-stack {
+  flex: 1 !important;
+  height: auto !important;
+}
+
+/* When collapsed in right-dock, the dock-stack reverts to natural height (header bar only) so it does not leave a huge flex:1 void — the right column shows just the header with the EXPAND button. The empty column background is intentional: it signals "panel here, just closed". */
+.dashboard-main.is-right-dock .dashboard-bottom > .dock-stack.is-collapsed {
+  flex: none !important;
+  height: auto !important;
+}
+
+.dashboard-main.is-right-dock > .dashboard-bottom {
+  flex: 1;
+  height: auto;
+  min-width: 0;
+  border-top: none;
+  border-left: 1px solid rgba(0, 210, 255, 0.2);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+}
+
+/* In right-dock mode, the TerminalStack fills a column — the vertical splitter (ns-resize) has no meaningful drag target, so hide it to avoid confusion. */
+.dashboard-main.is-right-dock .dashboard-bottom .dock-splitter {
+  display: none;
+}
+
 .dashboard-bottom.is-dragging,
 .dashboard-bottom.is-dragging .dock-stack {
   transition: none;
 }
+
 
 /* The splitter: 3px of real layout with an 11px hit area via ::before (a 3px drag target is a miss-fest, and growing the element itself would steal that height from the terminal on every screen). */
 .dock-splitter {
@@ -160,7 +219,7 @@ a {
   cursor: ns-resize;
   background: transparent;
   transition: background 0.15s ease;
-  touch-action: none; /* or the phone scrolls the page instead of dragging the dock */
+  touch-action: none;
   z-index: 2;
 }
 
@@ -174,7 +233,7 @@ a {
 }
 
 .dock-splitter:hover,
-.dashboard-bottom.is-dragging .dock-splitter {
+.dock-splitter:active {
   background: var(--accent-cyan);
 }
 
@@ -241,7 +300,7 @@ a {
   margin: 0;
   font-size: 13px;
   font-weight: 800;
-  color: #FFF;
+  color: var(--text-light);
   text-shadow: 0 0 10px rgba(0, 210, 255, 0.6);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -271,15 +330,15 @@ a {
   width: 30px;
   height: 30px;
   border-radius: 6px;
-  color: #a5f3fc;
-  transition: all .2s;
+  color: var(--accent-cyan);
+  transition: background-color .2s, color .2s, box-shadow .2s;
   cursor: pointer;
   margin-left: 2px;
 }
 
 .titlebar-button:hover {
   background-color: rgba(0, 210, 255, 0.15);
-  color: #fff;
+  color: var(--text-light);
   box-shadow: inset 0 0 8px rgba(0, 210, 255, 0.3);
 }
 
@@ -423,7 +482,7 @@ a {
 .project-name {
   font-size: 13px;
   font-weight: 700;
-  color: #FFF;
+  color: var(--text-light);
   margin-bottom: 4px;
 }
 
@@ -432,7 +491,7 @@ a {
   flex-direction: column;
   gap: 2px;
   font-size: 10px;
-  color: #6B7280;
+  color: var(--text-darker);
   font-family: monospace;
 }
 
@@ -445,7 +504,7 @@ a {
 }
 
 .text-muted {
-  color: #6B7280;
+  color: var(--text-darker);
   font-size: 11px;
   font-style: italic;
 }
@@ -516,7 +575,7 @@ input:checked+.slider:before {
   align-items: center;
   border-radius: 6px;
   padding: 2px;
-  transition: all 0.3s;
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
   margin: 0 6px;
   border: 1px solid transparent;
 }
@@ -584,9 +643,9 @@ input:checked+.slider:before {
 }
 
 .btn-tech-pull {
-  background-color: #0088ff;
+  background-color: var(--accent-blue);
   border: 1px solid #000000;
-  color: #FFFFFF;
+  color: var(--text-light);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
 }
@@ -611,8 +670,8 @@ input:checked+.slider:before {
 
 .btn-tech-pull.btn-sync-clean:hover:not(:disabled) {
   background-color: rgba(0, 136, 255, 0.12);
-  border-color: #0088ff;
-  color: #0088ff;
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
   box-shadow: 0 0 8px rgba(0, 136, 255, 0.3);
   transform: translateY(-1px);
 }
@@ -626,9 +685,9 @@ input:checked+.slider:before {
 }
 
 .btn-tech-push {
-  background-color: #FF8C00;
+  background-color: var(--accent-amber);
   border: 1px solid #000000;
-  color: #FFFFFF;
+  color: var(--text-light);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
 }
@@ -653,8 +712,8 @@ input:checked+.slider:before {
 
 .btn-tech-push.btn-sync-clean:hover:not(:disabled) {
   background-color: rgba(255, 140, 0, 0.12);
-  border-color: #FF8C00;
-  color: #FF8C00;
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
   box-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
   transform: translateY(-1px);
 }
@@ -814,6 +873,82 @@ input:checked+.slider:before {
   font-size: 9px;
 }
 
+/* Drop-up popup shell + checkbox/action rows. Promoted from ProjectTable.vue's scoped style (docs/plan/done/terminal-chrome-settings.md §8.2): TerminalChromeMenu.vue is the second call site and the third menu in the app, so Rule of Three (RULE-ui-pattern.md A1) fired — global rather than duplicated per-component, same reason .terminal-header / .terminal-actions / .btn-terminal-action are here. */
+.open-popup-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.open-popup {
+  position: fixed;
+  z-index: 80;
+  background: rgba(22, 30, 44, 0.98);
+  border: 1px solid rgba(0, 210, 255, 0.25);
+  border-radius: 8px;
+  padding: 8px 0 6px 0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  will-change: transform, opacity;
+
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
+  transition-delay: 0.15s;
+  pointer-events: none;
+}
+
+.open-popup::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 12px;
+  background: transparent;
+}
+
+/* State, not `:hover` — a phone can never satisfy a hover selector, so the popup (and everything
+   only reachable through it) was unusable on the companion. `.is-open` is set by hover-enter on a
+   pointer device AND by a tap/click, so the Mac's behaviour is unchanged. */
+.open-popup-wrapper.is-open .open-popup {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  transition-delay: 0s;
+  pointer-events: auto;
+}
+
+.popup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  transition: background 0.12s;
+}
+
+.popup-item:hover {
+  background: rgba(0, 210, 255, 0.08);
+  color: #fff;
+}
+
+.popup-item.popup-disabled {
+  filter: grayscale(1) opacity(0.35);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.popup-run-row {
+  display: flex;
+  gap: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 2px;
+  padding-top: 2px;
+}
+
 .badge-project {
   background: var(--accent-cyan);
   color: #000;
@@ -888,6 +1023,11 @@ input:checked+.slider:before {
   align-items: center;
   z-index: 100;
   padding: 20px;
+}
+
+/* Titlebar sacred boundary for the toast (docs/plan/done/improve-jun24.md §3); !important beats sweetalert2.css's equal-specificity top-end rule regardless of style-tag injection order. */
+body.swal2-toast-shown .swal2-container.swal2-top-end {
+  top: var(--titlebar-h) !important;
 }
 
 .modal-container {
@@ -994,7 +1134,7 @@ input:checked+.slider:before {
   border-radius: var(--radius-control);
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;
 }
 
 .btn-secondary {
@@ -1057,7 +1197,7 @@ input:checked+.slider:before {
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
 }
 
 .btn-modal-action:disabled {
@@ -1251,7 +1391,7 @@ input:checked+.slider:before {
   resize: none;
   outline: none;
   box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
-  transition: all 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .code-editor:focus {
@@ -1272,7 +1412,7 @@ input:checked+.slider:before {
   min-height: 24px;
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
@@ -1356,6 +1496,8 @@ input:checked+.slider:before {
 
 /* NARROW MODE. 700px is the single narrow breakpoint for the whole app (docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so the utilities work from inside any component's <style scoped>. */
 /* MUST stay last in this file: every rule below overrides a base rule declared above it at the same specificity, so moving this block up silently disables it. A component's own <style scoped> still outranks everything here, so a modal restyling .modal-body/.modal-footer repeats its own narrow override locally. */
+
+/* Window-width breakpoint — applies to modals (position:fixed, outside .dashboard-left) and any global element that fires on the overall viewport width. */
 @media (max-width: 700px) {
   .u-narrow-hide {
     display: none !important;
@@ -1398,6 +1540,13 @@ input:checked+.slider:before {
   /* Two form columns leave ~180px each at 420px, not enough for a path input; stack them. */
   .form-grid { grid-template-columns: 1fr; }
 
+  .titlebar-button {
+    width: 19px;
+    height: 19px;
+    margin-left: 0;
+    font-size: 11px;
+  }
+
   .host-select-mini {
     max-width: 46px;
   }
@@ -1415,7 +1564,29 @@ input:checked+.slider:before {
   }
 }
 
+/* Container-width breakpoint — applies to content inside .dashboard-left. Fires on container width
+   (420px in right-dock mode), not window width, so right-dock's narrow main view gets correct styles. */
+@container main-view (max-width: 700px) {
+  .u-narrow-hide {
+    display: none !important;
+  }
+
+  .host-select-mini {
+    max-width: 46px;
+  }
+
+  .host-select-mini--wide {
+    max-width: 50px;
+  }
+}
+
 @media (min-width: 701px) {
+  .u-wide-hide {
+    display: none !important;
+  }
+}
+
+@container main-view (min-width: 701px) {
   .u-wide-hide {
     display: none !important;
   }

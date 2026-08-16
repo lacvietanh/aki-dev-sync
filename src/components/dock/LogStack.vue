@@ -1,21 +1,15 @@
-<!--
-  GLOBAL / project event log dock stack. Everything below used to live in AppConsole.vue's old
-  panel-switch branches; moved here verbatim as part of splitting the dock into
-  independent stacks (docs/arch/terminal-stack.md). Behaviour unchanged: same COPY/CLEAR
-  buttons, same project-log badge + SYNCING indicator, same log line classing.
--->
+<!-- GLOBAL / project event log dock stack. Everything below used to live in AppConsole.vue's old panel-switch branches; moved here verbatim as part of splitting the dock into independent stacks (docs/arch/terminal-stack.md). Behaviour unchanged: same COPY/CLEAR buttons, same project-log badge + SYNCING indicator, same log line classing. -->
 <template>
   <DockStack
     stack-key="log"
     :collapsed="collapsed"
-    body-persist
     @update:collapsed="collapsed = $event"
   >
     <template #title>
       <span v-if="activeLogProjectId === null"><i class="fa-solid fa-book-journal-whills text-cyan mr-1"></i> GLOBAL EVENT LOG</span>
       <span v-else>
-        <span class="badge-project">{{ projects.find(p => p.id === activeLogProjectId)?.name }}</span>
-        <i class="fa-solid fa-terminal text-amber ml-1 mr-1"></i> RAW CONSOLE
+        <span class="badge-project">{{ activeProjectName }}</span>
+        <i class="fa-solid fa-list-ul text-amber ml-1 mr-1"></i> PROJECT LOG
       </span>
       <button v-if="activeLogProjectId !== null" class="btn-cell-trigger ml-2 text-red" @click="activeLogProjectId = null" title="Close Project Log & Return to Global Log">
         <i class="fa-solid fa-circle-xmark"></i>
@@ -37,8 +31,7 @@
     <template #peek>
       <div class="log-peek log-line" :class="getLogClass(latestLogLine)">{{ latestLogLine }}</div>
     </template>
-    <!-- u-select-text (main.css): log output is the single most copy-worthy surface in the app,
-         so it opts out of the app-wide no-selection default. -->
+    <!-- u-select-text (main.css): log output is the single most copy-worthy surface in the app, so it opts out of the app-wide no-selection default. -->
     <div class="console-output u-select-text" ref="consoleRef">
       <div v-if="displayedLogs.length === 0" class="empty-logs">
         <i class="fa-solid fa-ghost mb-2"></i><br>
@@ -59,9 +52,9 @@ import { isLogExpanded } from '../../store/logStore';
 const { activeLogProjectId, displayedLogs, consoleRef, copied, copyLogs, clearLog, latestLogLine } = useLogs();
 const { projects, anySyncing } = useProjects();
 
-// This stack's collapse state IS logStore.isLogExpanded — per-screen and mirrored as such
-// (mirror.js PER_SCREEN_KEYS). It tracks "expanded", so this inverts it into the "collapsed" shape
-// DockStack takes. Writable computed, so the `@update:collapsed` assignment below flows back.
+const activeProjectName = computed(() => projects.value.find((p) => p.id === activeLogProjectId.value)?.name ?? '');
+
+// This stack's collapse state IS logStore.isLogExpanded — per-screen and mirrored as such (mirror.js PER_SCREEN_KEYS). It tracks "expanded", so this inverts it into the "collapsed" shape DockStack takes. Writable computed, so the `@update:collapsed` assignment below flows back.
 const collapsed = computed({
   get: () => !isLogExpanded.value,
   set: (v) => { isLogExpanded.value = !v; },

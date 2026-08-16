@@ -1,6 +1,6 @@
 # Dock stacks own their own height
 
-**Status:** code landed 2026-08-12, runtime verification outstanding (§4). Architecture: `docs/arch/terminal-stack.md` — the dock/stack layering. User-facing: `docs/feat/in-app-terminal.md` § Panel height.
+**Status:** code landed 2026-08-12, shipped in 1.24.0, verified on Mac 2026-08-15 — all 7 checks in §4 confirmed passing. Architecture: `docs/arch/terminal-stack.md` — the dock/stack layering. User-facing: `docs/feat/in-app-terminal.md` § Panel height.
 
 ## 1. The defect
 
@@ -53,3 +53,5 @@ Runtime — **unverified, needs a Mac run** (`npm run build:app` targets `aarch6
 5. Drag each handle: tracks the pointer with no lag, terminal re-fits live during its own drag, sibling unmoved. Double-click resets only that stack.
 6. MAXIMIZE / restore still works; collapsing everything leaves maximised mode.
 7. Quit and relaunch: both heights restored (one-time reset expected — the old single-height key is not migrated).
+
+**Result (2026-08-15):** all 7 checks confirmed passing by the owner on a real Mac.
