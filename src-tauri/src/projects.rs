@@ -51,8 +51,7 @@ pub struct SyncProject {
     pub hooks: SyncHooks,
     pub last_sync_action: Option<String>,
     pub last_sync_time: Option<u64>,
-    // Host the last sync action ran against. A project may point to different
-    // remotes over time (remote_host is editable), so record it per action.
+    // Host the last sync action ran against. A project may point to different remotes over time (remote_host is editable), so record it per action.
     #[serde(default)]
     pub last_sync_host: Option<String>,
     #[serde(default = "default_true")]
@@ -94,6 +93,9 @@ pub struct SyncProject {
     pub dev_cmd_override: Option<String>,
     #[serde(default)]
     pub build_cmd_override: Option<String>,
+    // Skips this project in background sync/git polling only; manual actions are unaffected - see docs/feat/background-refresh.md.
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 /// Validates that a single path segment contains no traversal or control characters.
@@ -121,8 +123,7 @@ pub fn validate_project_paths(project: &SyncProject) -> Result<(), String> {
     if project.local_path.trim().is_empty() {
         return Err("local_path cannot be empty".to_string());
     }
-    // An unexpanded `~/...` never worked either: commands are spawned without a shell, so the
-    // tilde would reach rsync literally. Requiring an absolute path makes that failure explicit.
+    // An unexpanded `~/...` never worked either: commands are spawned without a shell, so the tilde would reach rsync literally. Requiring an absolute path makes that failure explicit.
     if !PathBuf::from(&project.local_path).is_absolute() {
         return Err(format!(
             "local_path must be an absolute path (got '{}')",
@@ -219,8 +220,7 @@ pub fn save_projects(app: AppHandle, projects: Vec<SyncProject>) -> Result<(), S
     let path = get_projects_path(&app)?;
     let content = serde_json::to_string_pretty(&projects)
         .map_err(|e| format!("Failed to serialize projects: {}", e))?;
-    // Atomic: this one file holds every project's config, tasks and notes. A truncated write
-    // loses all of them at once, and `load_projects` rejects a half-written file wholesale.
+    // Atomic: this one file holds every project's config, tasks and notes. A truncated write loses all of them at once, and `load_projects` rejects a half-written file wholesale.
     crate::system::write_atomic(&path, &content)
         .map_err(|e| format!("Failed to write projects: {}", e))?;
     Ok(())
@@ -260,6 +260,7 @@ mod tests {
             notes: None,
             dev_cmd_override: None,
             build_cmd_override: None,
+            disabled: false,
         }
     }
 
@@ -351,8 +352,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_a_host_that_ssh_would_read_as_an_option() {
-        // A companion device can write a project record directly, so this is reachable without
-        // ever touching the host's own UI. `ssh -oProxyCommand=…` runs that command on THIS Mac.
+        // A companion device can write a project record directly, so this is reachable without ever touching the host's own UI. `ssh -oProxyCommand=…` runs that command on THIS Mac.
         let p = make_project("/home/user/app", "~/app", "-oProxyCommand=touch /tmp/pwned");
         assert!(validate_project(&p).is_err());
 

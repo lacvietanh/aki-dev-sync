@@ -1,5 +1,7 @@
 # Background Refresh
 
+> updated 2026-08-16 · v1.24.0
+
 Automatic background polling that keeps three independent data types fresh without user interaction. Each type has a different cost profile and refresh interval.
 
 > **Scope**: this doc covers *what* each refresh type fetches and what it costs. For *who triggers a refresh, where the busy indicator comes from, and how an in-flight check is cancelled*, see [docs/arch/refresh-controller.md](../arch/refresh-controller.md) (with flowcharts).
@@ -24,13 +26,13 @@ Automatic background polling that keeps three independent data types fresh witho
 
 **What it fetches:** Whether local and remote have diverged - serves the Push/Pull button highlight state. Runs `rsync --dry-run` in both directions (push and pull) via SSH.
 
-**Cost:** Medium-high. Each check spawns two SSH+rsync processes. For N projects, `checkAllSyncStatus()` runs N×2 rsync processes sequentially.
+**Cost:** Medium-high. Each check spawns two SSH+rsync processes. For N enabled projects (a project with `disabled: true` is skipped - see PROJ-TOGGLE below), `checkAllSyncStatus()` runs N×2 rsync processes sequentially.
 
-**Trigger:** the `remote_diff_interval_s` timer in `useBackgroundRefresh.js` (60s), plus every `refreshProject()` call. Also triggered 3s after a real sync completes.
+**Trigger:** the `remote_diff_interval_s` timer in `useBackgroundRefresh.js` (60s), plus every `refreshProject()` call. A real sync's own completion patches `hasPendingPush`/`hasPendingPull` directly instead of re-running this check (see [sync-flow.md](sync-flow.md) "Post-sync UI State").
 
-**Implementation:** `useSyncStatus.js` → `checkProjectSyncStatus(project)` → Tauri command `check_sync_status` → `count_rsync_changes()` in `sync.rs`.
+**Implementation:** `useSyncStatus.js` → `checkProjectSyncStatus(project)` → Tauri command `check_sync_status` → `rsync_change_files()` in `sync.rs`.
 
-**Gated by sync check:** `checkProjectSyncStatus()` early-returns if `syncCheckEnabled` (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)) is off - covers this interval poll and the manual Refresh path in one place, since both call the same function.
+**Gated by sync check:** `checkProjectSyncStatus()` early-returns if `syncCheckEnabled` (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)) is off - covers this interval poll and the manual Refresh path in one place, since both call the same function. **Gated per-project (PROJ-TOGGLE):** `checkAllSyncStatus()` and the git-status tick in `useBackgroundRefresh.js` both filter out any project with `disabled: true` before fanning out - manual per-project actions (Refresh button, PUSH/PULL, git modal) bypass this filter and always run.
 
 **Result:** `hasPendingPush` and `hasPendingPull` written into `projectRuntime`. On startup both are initialized to `null` (not `undefined`) - buttons render in a faint "checking" state (`.btn-sync-checking`) until the first check resolves. After that: `true` → fully lit, `false` → dim (`.btn-sync-clean`).
 
@@ -42,9 +44,9 @@ When `sync_git: true`, `.git/` is included in the rsync dry-run. This caused the
 
 Root cause: `git status` - and any git-aware tool (IDE background check, git hooks) - **writes** to `.git/index` during normal operation. Git uses the index to cache `stat()` metadata of tracked files; when that cache is stale, git refreshes it and writes the updated entry back to disk. This is called an *index refresh*. The write changes the mtime of `.git/index`, which in turn changes the mtime of the `.git/` directory itself.
 
-rsync sees `.git/` as modified and lists it in dry-run output → `count_rsync_changes` returned 1 → push button always lit.
+rsync sees `.git/` as modified and lists it in dry-run output → `rsync_change_files`/`compute_sync_counts` returned 1 → push button always lit.
 
-**Fix (`sync.rs` - `count_rsync_changes`):** Filter out all directory entries (lines ending with `/`) from the rsync output count. Only actual file changes increment the count.
+**Fix (`sync.rs` - `rsync_change_files`):** Filter out all directory entries (lines ending with `/`) from the rsync output count. Only actual file changes increment the count.
 
 This is safe because rsync always lists both the directory AND the changed files inside it when real file changes exist. If a commit adds `.git/COMMIT_EDITMSG` and updates `.git/index`, the output contains:
 
@@ -73,7 +75,7 @@ This gives accurate signal: Push button lights up for real commits and file chan
 
 **Trigger:** A monitor starts when it is switched on (default ON) and stops when switched off, keeping its last reading on screen as *Cached*. Polls every 30s. Monitors are session-lived - deliberately not torn down on component unmount, since they outlive whichever slot first asked for them.
 
-**Implementation:** `usageMonitor.js` (the entity) + `usageMonitorRegistry.js` (identity) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `agent_usage.rs::run_interpreter_timeout` (renamed from `run_remote_script_timeout` in 1.12.0) via `is_local_host(host)`. Design rationale: [docs/plan/done/usage-monitor-entity-refactor.md](../plan/done/usage-monitor-entity-refactor.md).
+**Implementation:** `usageMonitor.js` (the entity) + `usageMonitorRegistry.js` (identity) → Tauri command `get_agent_usage`, dispatched local-vs-SSH inside `remote_shell.rs::run_remote_script` (renamed from `run_remote_script_timeout` in 1.12.0; `agent_usage.rs` is now the `src-tauri/src/agent_usage/` module) via `is_local_host(host)`. Design rationale: [docs/plan/done/usage-monitor-entity-refactor.md](../plan/done/usage-monitor-entity-refactor.md).
 
 **Planned interval:** 30s (current) - acceptable since it's a single lightweight read.
 

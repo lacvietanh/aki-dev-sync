@@ -8,8 +8,7 @@ import { refreshClaudeMode } from '../store/claudeModeStore'
 import { checkAllSyncStatus, checkProjectSyncStatus } from './useSyncStatus'
 import { fetchGitStatus } from './useGit'
 import { fetchProjectStack } from './useProjectStack'
-// The app's single wake/self-heal mechanism lives with the usage monitor (it was built there first);
-// this file subscribes rather than running a second heartbeat. See §3.21 of the flow-audit plan.
+// The app's single wake/self-heal mechanism lives with the usage monitor (it was built there first); this file subscribes rather than running a second heartbeat. See §3.21 of the flow-audit plan.
 import { subscribeWake } from './usageMonitor'
 import { startExternalTerminalWatch } from './useExternalTerminals'
 
@@ -42,8 +41,7 @@ import { startExternalTerminalWatch } from './useExternalTerminals'
 let gitTimer = null
 let diffTimer = null
 
-// When each cycle last actually did its work. Read only by the wake self-heal below - a timer that
-// has been suspended is indistinguishable from a healthy one except by how long ago it last ran.
+// When each cycle last actually did its work. Read only by the wake self-heal below - a timer that has been suspended is indistinguishable from a healthy one except by how long ago it last ran.
 let lastGitTickAt = Date.now()
 let lastDiffTickAt = Date.now()
 
@@ -52,7 +50,8 @@ export const diffRefreshKey = ref(0)
 
 function runGitTick() {
   lastGitTickAt = Date.now()
-  projects.value.forEach(p => fetchGitStatus(p.id, true))
+  // Per-project skip (PROJ-TOGGLE) - manual git checks go through fetchGitStatus directly and are unaffected; see docs/feat/background-refresh.md.
+  projects.value.filter(p => !p.disabled).forEach(p => fetchGitStatus(p.id, true))
   gitRefreshKey.value++
 }
 
@@ -120,16 +119,14 @@ export function refreshAllProjects() {
 // two-listener shape (docs/arch/usage-claudecode.md §4): visibility/focus for the moment the user
 // looks back, plus a heartbeat for suspends that fire neither DOM event.
 //
-// It is NOT a refresh-on-focus feature: every path gap-checks first, so alt-tabbing through the
-// app costs nothing. A cycle is only re-run if it has actually missed ticks.
+// It is NOT a refresh-on-focus feature: every path gap-checks first, so alt-tabbing through the app costs nothing. A cycle is only re-run if it has actually missed ticks.
 //
 // There is exactly ONE wake mechanism in the app - `usageMonitor.subscribeWake` - and this file is a
 // subscriber, not a second implementation. Two heartbeats would mean two places to reason about when
 // recovery misbehaves, which is the opposite of what a self-heal is for.
 // ---------------------------------------------------------------------------
 
-// 2x the configured interval: one missed tick is scheduler jitter, two is a suspend. A cycle whose
-// timer is off reports 0, and the shared watchdog then skips it.
+// 2x the configured interval: one missed tick is scheduler jitter, two is a suspend. A cycle whose timer is off reports 0, and the shared watchdog then skips it.
 function gitGapThresholdMs() {
   return gitTimer ? 2 * refreshSettings.value.git_interval_s * 1000 : 0
 }
@@ -140,13 +137,11 @@ function diffGapThresholdMs() {
 let wakeInstalled = false
 
 function installWakeSelfHeal() {
-  // Host-only: the companion produces nothing (utils/scheduler.js, seam P) - its status data
-  // arrives over the mirror, so a wake there must not start firing checks of its own.
+  // Host-only: the companion produces nothing (utils/scheduler.js, seam P) - its status data arrives over the mirror, so a wake there must not start firing checks of its own.
   if (wakeInstalled || !isHost) return
   wakeInstalled = true
 
-  // One subscription per cycle, so a stalled git timer is restarted without also restarting a diff
-  // timer that was ticking fine.
+  // One subscription per cycle, so a stalled git timer is restarted without also restarting a diff timer that was ticking fine.
   //
   // The gap check is repeated inside onWake and is NOT redundant: the shared watchdog applies the
   // threshold before calling, but visibilitychange/focus do not - they wake every subscriber

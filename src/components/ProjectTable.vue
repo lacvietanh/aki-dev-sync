@@ -22,15 +22,7 @@
           </span>
         </div>
         <div class="grid-header-cell col-terminal" title="TERMINAL">
-          <button
-            class="btn-cell-trigger th-term-btn"
-            :class="{ 'is-live': globalTabCount > 0 }"
-            @click="openGlobalTerminal()"
-            :title="globalTermTitle"
-            aria-label="Global terminal">
-            <i class="fa-solid fa-terminal"></i>
-            <TerminalCountBadges :tabs="globalTabCount" :external="externalTermGlobalCount" :exited="globalHasExited" />
-          </button>
+          <TerminalScopeButton :scope="GLOBAL_SCOPE" />
         </div>
         <div class="grid-header-cell col-action" title="OPEN / SELECT-PUSH">ACTION</div>
         <div class="grid-header-cell col-sync">
@@ -46,23 +38,27 @@
       <transition-group tag="div" class="grid-body" name="project-list">
         <!-- Loading State -->
         <div v-if="isReloading && projects.length === 0" class="grid-row-special" key="loading">
-          <div style="padding: 20px 12px; width: 100%;">
-            <div style="display: flex; flex-direction: column; gap: 15px; width: 100%;">
-              <div v-for="i in 3" :key="i" style="display: flex; gap: 15px; align-items: center;">
-                <div class="skeleton-box" style="width: 28px; height: 28px; border-radius: 6px;"></div>
-                <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
-                  <div class="skeleton-box" style="height: 12px; width: 30%;"></div>
-                  <div class="skeleton-box" style="height: 10px; width: 60%;"></div>
+          <div class="skeleton-zone-wrap">
+            <div class="skeleton-zone-col">
+              <div v-for="i in 3" :key="i" class="skeleton-zone-item">
+                <div class="skeleton-box skeleton-box-icon"></div>
+                <div class="skeleton-zone-text">
+                  <div class="skeleton-box skeleton-box-name"></div>
+                  <div class="skeleton-box skeleton-box-path"></div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Empty State -->
+        <!-- Empty State with Add Project CTA -->
         <div v-else-if="projects.length === 0" class="grid-row-special empty-state" key="empty">
-          <div style="padding: 20px; text-align: center; width: 100%;">
-            <i class="fa-solid fa-folder-open mb-2"></i><br>No projects found. Add one to get started.
+          <div class="empty-state-wrap">
+            <i class="fa-solid fa-folder-open mb-2 empty-state-icon"></i>
+            <div class="empty-state-text">No projects found. Add one to get started.</div>
+            <button class="btn-tech btn-tech-primary btn-empty-add mt-2" @click="handleCreateNew">
+              <i class="fa-solid fa-plus mr-1"></i> Add Project
+            </button>
           </div>
         </div>
 
@@ -71,14 +67,15 @@
              v-for="(p, index) in projects"
              :key="p.id"
              class="grid-row"
-             :class="{ 'row-syncing': projectRuntime[p.id]?.syncing, 'row-dragging': dragFromIndex === index }"
+             :class="{ 'row-syncing': projectRuntime[p.id]?.syncing, 'row-dragging': dragFromIndex === index, 'row-disabled': p.disabled }"
              draggable="true"
              @dragstart="onRowDragStart(index, $event)"
              @dragover.prevent="onRowDragOver(index, $event)"
              @dragenter.prevent
              @drop.prevent="onRowDrop(index)"
              @dragend="onRowDragEnd"
-             @mousedown="onRowMouseDown">
+             @mousedown="onRowMouseDown"
+             :title="p.disabled ? 'Disabled - background sync/git checks are skipped for this project' : ''">
           <!-- Cell 1: Project Info -->
           <div class="grid-row-cell col-project-info">
             <div class="project-info-row">
@@ -87,15 +84,15 @@
                    class="project-drag-handle icon-glow"
                    title="Drag to reorder"
                    @mousedown="isHandleMouseDown = true">
-                <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" style="width: 100%; height: 100%; object-fit: cover;" draggable="false" @error="failedIcons[p.id] = true" />
-                <i v-else class="fa-solid fa-folder-open text-cyan" style="font-size: 16px;"></i>
+                <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="project-drag-img" draggable="false" @error="failedIcons[p.id] = true" />
+                <i v-else class="fa-solid fa-folder-open text-cyan project-drag-icon-fallback"></i>
               </div>
 
               <div class="project-text-col">
-                <div class="project-name" style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
-                  <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" style="color: var(--accent-cyan); font-size: 11px; text-decoration: none; display: flex; align-items: center; gap: 4px;">
-                    <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 9px;"></i>
+                <div class="project-name">
+                  <span class="project-name-label">{{ p.name }}</span>
+                  <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" class="project-prod-link">
+                    <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i>
                   </a>
                 </div>
                 <div class="project-paths">
@@ -144,7 +141,7 @@
 
           <!-- Cell 4: Terminal -->
           <div class="grid-row-cell col-terminal">
-            <TerminalCell :project="p" />
+            <TerminalScopeButton :scope="p" />
           </div>
 
           <!-- Cell 5: Action (OPEN + SELECT-push only) -->
@@ -162,101 +159,101 @@
                 <!-- Open Popup — visibility is state (.is-open), not CSS :hover: a phone has no
                      hover, so the popup was unreachable there. Hover still opens it on the Mac. -->
                 <div class="open-popup" :style="popupStyles[p.id]">
-                  <div class="popup-header" :title="p.name" style="display: flex; align-items: center;">
-                    <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
-                    <i v-else class="fa-solid fa-folder-open text-cyan mr-1" style="font-size: 18px;"></i>
-                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ p.name }}</span>
-                    <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
-                      <i class="fa-solid fa-file-lines"></i> REPORT
-                    </button>
-                  </div>
-                  <div style="display: flex;">
-                    <!-- LOCAL -->
-                    <div style="flex: 1; min-width: 150px;">
-                      <div class="popup-section-label">
-                        <span>💻 LOCAL</span>
-                        <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
-                          <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
-                        </button>
-                      </div>
-                      <!-- Everything below consumes the local path, so a missing volume greys the
-                           whole list (COPY above deliberately stays live — copying a path you are
-                           about to go fix is legitimate). `localBlocked` also treats a not-yet-loaded
-                           ideAvailability as UNAVAILABLE rather than available. -->
-                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('finder', p.local_path)">
-                        <i class="fa-solid fa-folder-open" style="width:14px; color: #fbbf24;"></i> Finder
-                      </div>
-                      <!-- In-app first: it is the only one of the two that works from a phone,
-                           which is the whole reason the in-app terminal exists. -->
-                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openProjectTerminal(p)">
-                        <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-cyan);"></i> In-App Terminal
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('terminal', p.local_path)">
-                        <i class="fa-solid fa-terminal" style="width:14px;"></i> Terminal
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode') }" :title="localTitle(p)" @click="openIdeLocal('vscode', p.local_path)">
-                        <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode_insiders') }" :title="localTitle(p)" @click="openIdeLocal('vscode_insiders', p.local_path)">
-                        <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
-                        <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
-                      </div>
-                      <!-- DEV/BUILD are ALWAYS rendered, disabled when nothing resolves - they used
-                           to be v-if'd out of the DOM, which silently removed the affordance from
-                           every project outside the three stacks system.rs detects a command for,
-                           with no visible route back to Project Settings' RUN COMMANDS field.
-                           docs/plan/done/dev-build-visibility.md -->
-                      <div class="popup-run-row">
-                        <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getDevCmd(p) }" @click="!localBlocked(p) && getDevCmd(p) && runProjectDev(p, getDevCmd(p))" :title="runCmdTitle(p, getDevCmd(p), 'dev')">
-                          <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-green, #10b981);"></i> DEV
-                        </div>
-                        <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getBuildCmd(p) }" @click="!localBlocked(p) && getBuildCmd(p) && runProjectCommand(p, getBuildCmd(p))" :title="runCmdTitle(p, getBuildCmd(p), 'build')">
-                          <i class="fa-solid fa-hammer" style="width:14px; color: #f59e0b;"></i> BUILD
-                        </div>
-                      </div>
-                    </div>
+                  <div class="popup-header popup-header-wrap" :title="p.name">
+                     <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
+                     <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>
+                     <span class="popup-title-text">{{ p.name }}</span>
+                     <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
+                       <i class="fa-solid fa-file-lines"></i> REPORT
+                     </button>
+                   </div>
+                   <div class="popup-columns">
+                     <!-- LOCAL -->
+                     <div class="popup-col-local">
+                       <div class="popup-section-label">
+                         <span>💻 LOCAL</span>
+                         <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
+                           <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                         </button>
+                       </div>
+                       <!-- Everything below consumes the local path, so a missing volume greys the
+                            whole list (COPY above deliberately stays live — copying a path you are
+                            about to go fix is legitimate). `localBlocked` also treats a not-yet-loaded
+                            ideAvailability as UNAVAILABLE rather than available. -->
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('finder', p.local_path)">
+                         <i class="fa-solid fa-folder-open popup-item-icon popup-icon-amber"></i> Finder
+                       </div>
+                       <!-- In-app first: it is the only one of the two that works from a phone,
+                            which is the whole reason the in-app terminal exists. -->
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openProjectTerminal(p)">
+                         <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> In-App Terminal
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('terminal', p.local_path, p.id)">
+                         <i class="fa-solid fa-terminal popup-item-icon"></i> Terminal
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode') }" :title="localTitle(p)" @click="openIdeLocal('vscode', p.local_path)">
+                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode_insiders') }" :title="localTitle(p)" @click="openIdeLocal('vscode_insiders', p.local_path)">
+                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
+                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
+                       </div>
+                       <!-- DEV/BUILD are ALWAYS rendered, disabled when nothing resolves - they used
+                            to be v-if'd out of the DOM, which silently removed the affordance from
+                            every project outside the three stacks system.rs detects a command for,
+                            with no visible route back to Project Settings' RUN COMMANDS field.
+                            docs/plan/done/dev-build-visibility.md -->
+                       <div class="popup-run-row">
+                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getDevCmd(p) }" @click="!localBlocked(p) && getDevCmd(p) && runProjectDev(p, getDevCmd(p))" :title="runCmdTitle(p, getDevCmd(p), 'dev')">
+                           <i class="fa-solid fa-terminal popup-item-icon popup-icon-green"></i> DEV
+                         </div>
+                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getBuildCmd(p) }" @click="!localBlocked(p) && getBuildCmd(p) && runProjectCommand(p, getBuildCmd(p))" :title="runCmdTitle(p, getBuildCmd(p), 'build')">
+                           <i class="fa-solid fa-hammer popup-item-icon popup-icon-amber"></i> BUILD
+                         </div>
+                       </div>
+                     </div>
 
-                    <!-- REMOTE -->
-                    <!-- The column itself is NOT gated on the sync switch: SSH Terminal, the remote
-                         IDE entries and COPY are ways to REACH the server, not rsync traffic, and
-                         hiding them was over-reach. Only Upload actually pushes files, so only it
-                         is gated (disabled + a tooltip that says why - hiding it would leave the
-                         user hunting for a menu item that used to be there). -->
-                    <div v-if="p.remote_host && p.remote_path" style="flex: 1; min-width: 180px; border-left: 1px solid rgba(255, 255, 255, 0.07); padding-left: 4px;">
-                      <div class="popup-section-label">
-                        <span>☁️ REMOTE (SSH)</span>
-                        <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
-                          <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
-                        </button>
-                      </div>
-                      <!-- In-app first, same reasoning as LOCAL's In-App Terminal above: the only one of the two
-                           that works from a phone. -->
-                      <div class="popup-item" @click="openProjectRemoteTerminal(p)">
-                        <i class="fa-solid fa-terminal" style="width:14px; color: var(--accent-cyan);"></i> SSH Terminal (In-App)
-                      </div>
-                      <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path)">
-                        <i class="fa-solid fa-terminal" style="width:14px;"></i> SSH Terminal
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode') }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
-                        <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode_insiders') }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
-                        <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
-                      </div>
-                      <div class="popup-item" :class="{ 'popup-disabled': ideMissing('antigravity') }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
-                        <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
-                      </div>
-                      <div class="popup-item"
-                           :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing || !syncCheckEnabled }"
-                           @click="!projectRuntime[p.id]?.syncing && syncCheckEnabled && requestSelectPush(p.id)"
-                           :title="!syncCheckEnabled ? 'Sync check is off - turn it on (power icon in the SYNC column header) to push files' : 'Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project\'s exclude list, unaffected by the DRY toggle'">
-                        <i class="fa-solid fa-upload" style="width:14px; color: #38bdf8;"></i> Upload (select files)
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                     <!-- REMOTE -->
+                     <!-- The column itself is NOT gated on the sync switch: SSH Terminal, the remote
+                          IDE entries and COPY are ways to REACH the server, not rsync traffic, and
+                          hiding them was over-reach. Only Upload actually pushes files, so only it
+                          is gated (disabled + a tooltip that says why - hiding it would leave the
+                          user hunting for a menu item that used to be there). -->
+                     <div v-if="p.remote_host && p.remote_path" class="popup-col-remote">
+                       <div class="popup-section-label">
+                         <span>☁️ REMOTE (SSH)</span>
+                         <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
+                           <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                         </button>
+                       </div>
+                       <!-- In-app first, same reasoning as LOCAL's In-App Terminal above: the only one of the two
+                            that works from a phone. -->
+                       <div class="popup-item" @click="openProjectRemoteTerminal(p)">
+                         <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> SSH Terminal (In-App)
+                       </div>
+                       <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path, p.id)">
+                         <i class="fa-solid fa-terminal popup-item-icon"></i> SSH Terminal
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode') }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
+                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode_insiders') }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
+                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('antigravity') }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
+                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
+                       </div>
+                       <div class="popup-item"
+                            :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing || !syncCheckEnabled }"
+                            @click="!projectRuntime[p.id]?.syncing && syncCheckEnabled && requestSelectPush(p.id)"
+                            :title="!syncCheckEnabled ? 'Sync check is off - turn it on (power icon in the SYNC column header) to push files' : 'Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project\'s exclude list, unaffected by the DRY toggle'">
+                         <i class="fa-solid fa-upload popup-item-icon popup-icon-cyan"></i> Upload (select files)
+                       </div>
+                     </div>
+                   </div>
+                 </div>
               </div>
 
               <button class="btn-tech btn-tech-secondary btn-refresh-project"
@@ -359,50 +356,34 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
-import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs';
+import { useTerminalTabs } from '../composables/useTerminalTabs';
 import { useAppWindow } from '../composables/useAppWindow';
 import { refreshIdeAvailability } from '../composables/useProjectConfig';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
-import { Toast, ideAvailability, iconTimestamp, isRefreshing, pokeExternalTermCounts, externalTermGlobalCount } from '../store/projectStore';
-import { terminalTabs, MAX_TABS_PER_SCOPE } from '../store/terminalTabsStore';
+import { scheduleExternalTermRescan } from '../composables/useExternalTerminals';
+import { Toast, ideAvailability, iconTimestamp, isRefreshing, registerExternalTerminalLaunch } from '../store/projectStore';
+import { GLOBAL_SCOPE } from '../store/terminalTabsStore';
 import { projectIconSrc } from '../utils/projectIcon';
 import { copyText } from '../utils/clipboard';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
-// R-2 write side: these run the real action on the host whether clicked on the Mac or relayed
-// from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
+// R-2 write side: these run the real action on the host whether clicked on the Mac or relayed from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
 import { requestSync, requestSelectPush, setDryRun, setRemoteHost, requestRefresh, reorderProjects, requestCancelSync } from '../store/remoteActions';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
-import TerminalCell from './TerminalCell.vue';
-import TerminalCountBadges from './terminal/TerminalCountBadges.vue';
+import TerminalScopeButton from './TerminalScopeButton.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
 
 const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
-const { openGlobalTerminal, openProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openRunCommand } = useTerminalTabs();
+const { openProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openRunCommand } = useTerminalTabs();
 
-// Global-scope mirror of TerminalCell.vue's own badge computeds (docs/plan/done/terminal-ownership-model.md
-// §7 — Rule-of-Three found only two real instances, so this stays inline rather than spawning a
-// TerminalButton abstraction for two call sites; `TerminalCountBadges` itself is already scope-agnostic).
-const globalTabCount = computed(() => terminalTabs.value.filter((t) => t.projectId == null).length)
-const globalHasExited = computed(() => terminalTabs.value.some((t) => t.projectId == null && tabAlive.value[t.id] === false))
-const globalTermTitle = computed(() => {
-  const lines = [
-    globalTabCount.value === 0
-      ? 'Global terminal (not tied to a project)'
-      : `Global terminal, ${globalTabCount.value} of ${MAX_TABS_PER_SCOPE} tabs in this group`,
-  ]
-  if (externalTermGlobalCount.value > 0) lines.push(`${externalTermGlobalCount.value} external Terminal window(s) not standing in any listed project`)
-  if (globalHasExited.value) lines.push('A shell in this group has exited')
-  return lines.join('\n')
-})
 // `false` on a companion — see openReportHtml.
 const { nativeWindow } = useAppWindow();
 
@@ -498,8 +479,7 @@ function closePopup() {
 }
 
 function onOpenHover(project, event) {
-  // A tap on a touch device also fires mouseenter first; the click that follows only promotes the
-  // already-open popup to "pinned" (see toggleOpenPopup), it never re-toggles it shut.
+  // A tap on a touch device also fires mouseenter first; the click that follows only promotes the already-open popup to "pinned" (see toggleOpenPopup), it never re-toggles it shut.
   if (openPopupId.value === project.id && openedByTap.value) return;
   openPopup(project, event?.currentTarget, false);
 }
@@ -631,33 +611,24 @@ const IDE_LOCAL_ARGS = {
   antigravity: p => ['-a', 'Antigravity IDE', p],
 }
 
-async function openIdeLocal(ideName, path) {
+async function openIdeLocal(ideName, path, projectId) {
   try {
-    // Terminal goes through a dedicated command (not `open -a Terminal <path>`) so it gets the
-    // same cold-start double-window fix as the SSH terminal.
+    // Terminal goes through a dedicated command (not `open -a Terminal <path>`) so it gets the same cold-start double-window fix as the SSH terminal.
     if (ideName === 'terminal') {
-      await invoke('open_local_terminal', { localPath: path });
-      // The badge is a live scan, not a tally, so nothing is incremented here — this only asks the
-      // host to re-scan sooner than its next tick, once the new shell has had time to `cd`.
-      pokeExternalTermCounts();
+      // `owner` (S3/S4, docs/plan/done/terminal-ownership-model.md) is the spawn-origin tag — passed unconditionally, whether or not the backend actually manages to read a tty back for it.
+      await registerExternalTerminalLaunch({ owner: projectId ?? null, path });
       return;
     }
     const args = IDE_LOCAL_ARGS[ideName]?.(path)
     if (args) await invoke('macos_open', { args });
   } catch (e) {
-    // `macos_open` now reports a non-zero `open` (missing app, unhandled URI) instead of always
-    // succeeding — surface it the same way openIdeRemote does, or the click stays silent.
+    // `macos_open` now reports a non-zero `open` (missing app, unhandled URI) instead of always succeeding — surface it the same way openIdeRemote does, or the click stays silent.
     console.error(e);
     Toast.fire({ icon: 'error', title: String(e).replace('Error: ', '') });
   }
 }
 
-// DEV/BUILD launch into the in-app terminal (docs/plan/done/dev-build-in-app-launch.md, #7) — no
-// invoke, no Toast, no in-flight guard: `openRunCommand` is synchronous frontend state plus a
-// `pty_write`, and its own (scope, runKind) dedup is what makes a repeat click safe (focuses the
-// existing DEV/BUILD tab instead of relaunching), which is a stronger guarantee than the old
-// per-project in-flight Set ever gave (that guard reset the instant the invoke settled, so a
-// second click a moment later still opened a second window).
+// DEV/BUILD launch into the in-app terminal (docs/plan/done/dev-build-in-app-launch.md, #7) — no invoke, no Toast, no in-flight guard: `openRunCommand` is synchronous frontend state plus a `pty_write`, and its own (scope, runKind) dedup is what makes a repeat click safe (focuses the existing DEV/BUILD tab instead of relaunching), which is a stronger guarantee than the old per-project in-flight Set ever gave (that guard reset the instant the invoke settled, so a second click a moment later still opened a second window).
 function runProjectCommand(project, cmd) {
   openRunCommand(project, cmd, 'build');
 }
@@ -750,7 +721,7 @@ async function openProjectRemoteTerminal(project) {
   }
 }
 
-async function openIdeRemote(ideName, host, path) {
+async function openIdeRemote(ideName, host, path, projectId) {
   try {
     const remotePath = await resolveRemoteFullPath(host, path);
     if (ideName === 'vscode') {
@@ -758,7 +729,9 @@ async function openIdeRemote(ideName, host, path) {
     } else if (ideName === 'vscode_insiders') {
       await invoke('macos_open', { args: [`vscode-insiders://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else {
-      await invoke('open_remote_subprocess', { ideName, host, path: remotePath })
+      // owner only matters to the 'terminal' branch (S3/S4) — 'antigravity' ignores it, and passing it unconditionally needs no branch here either, matching `tag_terminal_launch`'s own shape.
+      await invoke('open_remote_subprocess', { ideName, host, path: remotePath, owner: projectId ?? null })
+      if (ideName === 'terminal') scheduleExternalTermRescan();
     }
   } catch (e) {
     console.error(e);
@@ -887,6 +860,10 @@ function formatTimeAgo(timestamp) {
   background: rgba(6, 182, 212, 0.05);
 }
 
+.row-disabled {
+  opacity: 0.5;
+}
+
 .grid-row-cell {
   padding: 6px 0;
   white-space: nowrap;
@@ -900,16 +877,7 @@ function formatTimeAgo(timestamp) {
   justify-content: center;
 }
 
-/* The TERM header label IS the global-terminal button (R1) — same colour/size as the other header
-   labels, no button chrome until hover. */
-/* Now the exact same `.btn-cell-trigger` (main.css) every per-project TerminalCell.vue button uses
-   — same box, same badge anchoring, so the header instance cannot visually drift from the cell
-   instance the way the old icon-only `.th-term-btn` did (its glyph-sized box put .cell-badge's
-   -6px corner overlay squarely on top of the icon instead of outside it). Only override: sit
-   centered in the header cell rather than carrying the row cell's own margin/spacing, if any. */
-.th-term-btn {
-  margin: 0 auto;
-}
+/* The TERM header label IS the global-terminal button (R1) — same colour/size as the other header labels, no button chrome until hover. Since S5 (docs/plan/done/terminal-ownership-model.md §7) it is the SAME `TerminalScopeButton` component every per-project cell uses (`scope="GLOBAL_SCOPE"`), so the header instance cannot visually drift from the cell instance — no header-only class needed; `.grid-header-cell:not(:first-child)`'s flex-centering below already centers it like every other header cell. */
 
 .grid-header-cell:first-child,
 .grid-row-cell:first-child {
@@ -917,9 +885,7 @@ function formatTimeAgo(timestamp) {
   text-align: left;
 }
 
-/* New Project moved here from the app header (next to the project count) - same
-   btn-tech-primary cyan vibe as before, just relocated + a persistent (not hover-only) glow
-   so it still reads as the primary create action at a glance. */
+/* Persistent (not hover-only) glow so New Project still reads as the primary create action at a glance. */
 .col-project-info-header {
   display: flex;
   align-items: center;
@@ -1117,52 +1083,10 @@ fieldset:disabled .switch {
   margin-left: 0;
 }
 
-/* Open Popup */
-.open-popup-wrapper {
-  position: relative;
-  display: inline-flex;
-}
-
-.open-popup {
-  position: fixed;
-  z-index: 80;
-  background: rgba(22, 30, 44, 0.98);
-  border: 1px solid rgba(0, 210, 255, 0.25);
-  border-radius: 8px;
-  padding: 8px 0 6px 0;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  will-change: transform, opacity;
-
-  visibility: hidden;
-  opacity: 0;
-  transform: scale(0.96);
-  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
-  transition-delay: 0.15s;
-  pointer-events: none;
-}
-
-.open-popup::before {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  height: 12px;
-  background: transparent;
-}
-
-/* State, not `:hover` — a phone can never satisfy a hover selector, so the popup (and everything
-   only reachable through it) was unusable on the companion. `.is-open` is set by hover-enter on a
-   pointer device AND by a tap/click, so the Mac's behaviour is unchanged. */
-.open-popup-wrapper.is-open .open-popup {
-  visibility: visible;
-  opacity: 1;
-  transform: scale(1);
-  transition-delay: 0s;
-  pointer-events: auto;
-}
-
+/* .open-popup-wrapper / .open-popup / .popup-item / .popup-disabled / .popup-run-row are promoted
+   to main.css (docs/plan/done/terminal-chrome-settings.md §8.2) — TerminalChromeMenu.vue's second
+   call site fired Rule of Three. What stays here is project-specific: the header, the DEV/BUILD run
+   button styling, and the icons. */
 .popup-header {
   font-size: 11px;
   font-weight: 700;
@@ -1202,28 +1126,6 @@ fieldset:disabled .switch {
   color: var(--accent-cyan, #00d2ff);
 }
 
-.popup-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  cursor: pointer;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  transition: background 0.12s;
-}
-
-.popup-item:hover {
-  background: rgba(0, 210, 255, 0.08);
-  color: #fff;
-}
-
-.popup-item.popup-disabled {
-  filter: grayscale(1) opacity(0.35);
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
 /* DEV/BUILD are the one disabled state whose reason is NOT self-evident from the row itself ("no
    command detected" vs. a missing folder that greys the whole LOCAL list), so their `title` has to
    survive: `pointer-events: none` above removes the element from hit-testing entirely, which also
@@ -1236,14 +1138,6 @@ fieldset:disabled .switch {
 .popup-item.popup-run-btn.popup-disabled:hover {
   background: none;
   color: rgba(255, 255, 255, 0.8);
-}
-
-.popup-run-row {
-  display: flex;
-  gap: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin-top: 2px;
-  padding-top: 2px;
 }
 
 .popup-run-btn {
@@ -1315,7 +1209,7 @@ fieldset:disabled .switch {
    docs/plan/done/narrow-mode-and-ux-1.14.0.md, "Shared contract"). Label hiding uses the global
    .u-narrow-hide / .u-wide-hide utilities from main.css; this block only covers layout that a
    utility class can't express - column widths, gaps. */
-@media (max-width: 700px) {
+@container main-view (max-width: 700px) {
   .projects-table-container {
     /* Project name column: 12rem -> 6.5rem (widened back up from an initial 4.8rem/40% guess  - 
        that was too tight to show any of the remote path, this leaves a few characters visible).
@@ -1419,10 +1313,134 @@ fieldset:disabled .switch {
     margin-left: -6px;
   }
 
-  /* LAST ACTION's two lines get even tighter at this width - re-homed here from the old
-     .last-sync-badge/.sync-time/.sync-host rules (that column no longer exists). */
+  /* LAST ACTION font-size in narrow mode (was 7px - bumped to 9px for legibility) */
   .last-action {
-    font-size: 7px;
+    font-size: 9px;
+    line-height: 1.2;
   }
+}
+
+/* Skeleton loader classes */
+.skeleton-zone-wrap {
+  padding: 20px 12px;
+  width: 100%;
+}
+.skeleton-zone-col {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 100%;
+}
+.skeleton-zone-item {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.skeleton-box-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+.skeleton-zone-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skeleton-box-name {
+  height: 12px;
+  width: 30%;
+}
+.skeleton-box-path {
+  height: 10px;
+  width: 60%;
+}
+
+/* Empty state */
+.empty-state-wrap {
+  padding: 24px 16px;
+  text-align: center;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.empty-state-icon {
+  font-size: 24px;
+  color: var(--text-darker);
+}
+.empty-state-text {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.btn-empty-add {
+  font-size: 11px;
+  padding: 4px 12px;
+}
+
+/* Project Row presentation classes */
+.project-drag-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.project-drag-icon-fallback {
+  font-size: 16px;
+}
+.project-name-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-prod-link {
+  color: var(--accent-cyan);
+  font-size: 11px;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.project-prod-icon {
+  font-size: 9px;
+}
+
+/* Popup classes */
+.popup-header-wrap {
+  display: flex;
+  align-items: center;
+}
+.popup-icon-folder-fallback {
+  font-size: 18px;
+}
+.popup-title-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.popup-columns {
+  display: flex;
+}
+.popup-col-local {
+  flex: 1;
+  min-width: 150px;
+}
+.popup-col-remote {
+  flex: 1;
+  min-width: 180px;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  padding-left: 4px;
+}
+.popup-item-icon {
+  width: 14px;
+}
+.popup-icon-amber {
+  color: var(--accent-amber);
+}
+.popup-icon-cyan {
+  color: var(--accent-cyan);
+}
+.popup-icon-green {
+  color: var(--accent-green);
 }
 </style>

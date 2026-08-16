@@ -64,6 +64,7 @@ export async function checkProjectSyncStatus(project) {
   }
 }
 
+// Background-driven fan-out only, with per-project skip (PROJ-TOGGLE) - manual actions go through checkProjectSyncStatus directly; see docs/feat/background-refresh.md.
 export async function checkAllSyncStatus() {
-  await Promise.all(projects.value.map(p => checkProjectSyncStatus(p)))
+  await Promise.all(projects.value.filter(p => !p.disabled).map(p => checkProjectSyncStatus(p)))
 }

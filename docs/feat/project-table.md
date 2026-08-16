@@ -1,5 +1,7 @@
 # Project Table — column grid
 
+> updated 2026-08-16 · v1.24.0
+
 The main window's project list (`src/components/ProjectTable.vue`). This doc owns only the
 column-grid layout contract, not the individual buttons/badges inside each column — those are
 covered where they're introduced (e.g. `docs/feat/in-app-terminal.md` for the TERMINAL column).
@@ -18,12 +20,12 @@ SYNC cell holds the full PUSH/DRY/PULL/LOG/gear button cluster — different min
 real pixel width, so the header drifted out of alignment with the rows below it. A single grid with
 subgrid children shares one auto-floor computed once across all of them, so this can't happen no
 matter what any individual row's content needs. Fixed 2026-07 (`CHANGELOG.md` "no longer drifts out
-of alignment"), tracked as verify item U1 in `docs/plan/verify-pending.md` until confirmed at the
-420px floor on a real window.
+of alignment"), tracked as verify item U1 in `docs/plan/done/verify-pending.md` — confirmed 2026-08-15
+at the 420px floor on a real window.
 
 ## Column widths (`--grid-cols`)
 
-Six tracks: project info, GIT, TASKS, ACTIONS, LAST, SYNC.
+Six tracks, in DOM order: project info, TASKS, GIT, TERMINAL, ACTION, SYNC.
 
 - **Wide** (`.projects-table-container`, default): `minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr`
 - **Narrow** (`≤700px`, `RULE-stack-tauri`-style breakpoint shared app-wide): `minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem 1fr`
@@ -47,6 +49,6 @@ bare `1fr` auto-floor stand instead of re-guessing a fixed minimum.
 
 ## Related
 
-- `docs/plan/verify-pending.md#u1` — the one still-open runtime check for this layout (420px floor).
+- `docs/plan/done/verify-pending.md#u1` — the 420px-floor runtime check for this layout; confirmed passed 2026-08-15.
 - `docs/plan/remaining-1.22.md` PT-DOC — the decision record for why this doc exists (it didn't
   until 2026-08-01, despite the table being the app's primary surface).

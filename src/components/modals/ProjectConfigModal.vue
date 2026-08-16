@@ -135,6 +135,13 @@
 
       <div class="form-group full-width hooks-section mt-1">
         <div class="checkbox-group mb-0">
+          <input type="checkbox" id="disabled-modal" v-model="editingProject.disabled" />
+          <label for="disabled-modal">
+            <i class="fa-solid fa-pause mr-1"></i>
+            Disable this project - skip background sync/git checks (reduce system load)
+          </label>
+        </div>
+        <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="run-remote-modal" v-model="editingProject.hooks.run_hooks_on_remote" />
           <label for="run-remote-modal">Execute hooks on Remote Host via SSH (uncheck for Local Shell)</label>
         </div>
@@ -183,8 +190,7 @@ const { sshHosts } = useSsh()
 const togglePushScripts = ref(false)
 const togglePullScripts = ref(false)
 
-// Same predicate the sync path and saveConfig use, so the button state can never disagree with
-// what the app will actually accept.
+// Same predicate the sync path and saveConfig use, so the button state can never disagree with what the app will actually accept.
 const pathIssue = computed(() => projectPathIssue(editingProject.value))
 const pathError = computed(() => pathIssue.value.message)
 const localPathInvalid = computed(() => pathIssue.value.field === 'local_path')
