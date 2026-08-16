@@ -38,7 +38,7 @@ if grep -qF "$MARKER" "$ZSHRC"; then
     exit 0
 fi
 
-# Match the old guard by shape: an `if` line testing `-z "$SSH_AGENT_PID"` (any spacing/quoting variant) followed, within a few lines, by a line containing `eval "$(ssh-agent -s)"`. Line numbers are never hardcoded - they drift, and editing the wrong lines corrupts the file.
+# Match old guard dynamically by pattern rather than hardcoded line numbers to prevent file corruption.
 START_LINE=$(grep -nE 'if[[:space:]]*\[[[:space:]]*-z[[:space:]]*"?\$SSH_AGENT_PID"?[[:space:]]*\]' "$ZSHRC" | head -n1 | cut -d: -f1 || true)
 if [ -z "$START_LINE" ]; then
     echo "Could not find the old guard: no line matching an 'if [ -z \"\$SSH_AGENT_PID\" ]' shape in $ZSHRC." >&2
@@ -47,7 +47,7 @@ if [ -z "$START_LINE" ]; then
     exit 1
 fi
 
-# The guard's closing `fi` is the first `fi` at or after START_LINE that also has, somewhere in between, the `eval "$(ssh-agent -s)"` line - confirms this is the right block, not an unrelated `if [ -z ... ]` elsewhere in the file.
+# Locate closing fi following eval "$(ssh-agent -s)" to target the exact guard block.
 BLOCK=$(sed -n "${START_LINE},\$p" "$ZSHRC")
 EVAL_OFFSET=$(printf '%s\n' "$BLOCK" | grep -nE 'eval[[:space:]]+"\$\(ssh-agent[[:space:]]+-s\)"' | head -n1 | cut -d: -f1 || true)
 if [ -z "$EVAL_OFFSET" ]; then

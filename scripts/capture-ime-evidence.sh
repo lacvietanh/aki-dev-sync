@@ -1,18 +1,8 @@
 #!/usr/bin/env bash
-# Prints the exact, copy-pasteable capture recipe for the Vietnamese-IME auto-restore residual bug
-# (docs/research/terminal-vietnamese-ime-root-cause-3.md), and — if `pbcopy` is available — copies
-# the console snippet straight to the clipboard so nothing has to be retyped inside Safari.
-#
-# RUN THIS ON THE MAC (the box that has OpenKey installed and can build/run the Tauri app). This
-# dev box cannot build or run Tauri (`CLAUDE.local.md`), so the actual capture can only happen here.
-#
-# This script does NOT drive Safari or the app itself — nothing can script the Web Inspector from
-# the outside. It only (a) starts the existing dev loop, (b) prints the numbered steps, and (c)
-# stages the console snippet on the clipboard. The interactive part — opening the right Inspector
-# window, typing the sequence, reading the dump — is still done by hand, once, in Safari.
-#
-# Investigation chain: docs/research/terminal-vietnamese-ime-root-cause-jul27.md -> -2.md -> -3.md.
-# The `window.__akiIme` API this script quotes is defined in src/composables/useWkImeGuard.js.
+# Recipe for Vietnamese-IME auto-restore residual bug (docs/research/terminal-vietnamese-ime-root-cause-3.md), staging console snippet via pbcopy.
+# Run on macOS with OpenKey installed (dev box cannot build/run Tauri per CLAUDE.local.md).
+# Manual capture helper: starts dev loop, prints interactive steps, stages console snippet.
+# Investigation chain: docs/research/terminal-vietnamese-ime-root-cause-jul27.md -> -2.md -> -3.md. API window.__akiIme in src/composables/useWkImeGuard.js.
 set -euo pipefail
 
 cat <<'EOF'
@@ -74,9 +64,7 @@ cat <<'EOF'
 ─────────────────────────────────────────────────────────────────────────────
 EOF
 
-# Only step 3 is staged, deliberately. Chaining `clear()` onto it would run the reset even when the
-# answer to the target check is wrong — wiping the ring in whichever window you actually landed in,
-# which is the one thing the target check exists to prevent.
+# Stage only step 3 target check: prevents clear() from wiping the ring if attached to the wrong inspector window.
 SNIPPET="__akiIme.status().page"
 if command -v pbcopy >/dev/null 2>&1; then
   printf '%s' "$SNIPPET" | pbcopy

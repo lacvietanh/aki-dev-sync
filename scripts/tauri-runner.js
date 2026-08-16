@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-// Smart Tauri CLI runner:
-// - For `dev`: finds a free port starting from 1420, sets TAURI_DEV_PORT for Vite,
-//   and passes --config override to Tauri CLI so both sides agree on the port.
-// - For all other subcommands (build, icon, etc.): passes through unchanged.
-// Replaces the inline script chain in package.json "tauri" entry.
+// Smart Tauri CLI runner: finds free port (>=1420) & injects --config devUrl for dev; passes through other subcommands unchanged.
 
 import net from 'net';
 import { execFileSync, spawn } from 'child_process';
@@ -14,15 +10,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 const tauriBin = resolve(root, 'node_modules/.bin/tauri');
 
-// Fixed port the companion relay binds for the whole process lifetime
-// (src-tauri/src/web_server.rs `PORT`, src/constants/protocol.js `REMOTE_PORT`).
-// Neither Vite nor its HMR socket may take it — see findFreePort/hmrPort below.
+// Reserved companion relay port (src-tauri/src/web_server.rs PORT, src/constants/protocol.js REMOTE_PORT); Vite/HMR must not bind it.
 const RELAY_PORT = 1421;
 
-// Args passed by npm: `npm run tauri dev` → argv = ['dev', ...]
 const [subcommand, ...rest] = process.argv.slice(2);
 
-// Pre-flight: always run sync-version + check-env (same as the old inline chain).
+// Pre-flight: always run sync-version + check-env before executing any Tauri command.
 try {
   execFileSync(process.execPath, [resolve(__dirname, 'sync-version.js')], { stdio: 'inherit', cwd: root });
   execFileSync(process.execPath, [resolve(__dirname, 'check-env.js')], { stdio: 'inherit', cwd: root });
@@ -37,10 +30,8 @@ function spawnTauri(args, env = process.env) {
 }
 
 if (subcommand !== 'dev') {
-  // Pass through to tauri CLI unchanged (build, icon, help, etc.)
   spawnTauri(subcommand ? [subcommand, ...rest] : rest);
 } else {
-  // Dev: find a free port first, then run tauri dev with port injected.
   function isPortFree(port) {
     return new Promise(resolve => {
       const srv = net.createServer();
@@ -52,30 +43,25 @@ if (subcommand !== 'dev') {
 
   async function findFreePort(base, range = 20) {
     for (let p = base; p < base + range; p++) {
-      // RELAY_PORT is free *right now* (the app hasn't started yet) but axum claims it a few
-      // seconds later. Letting Vite take it makes that bind fail with nothing but an eprintln,
-      // silently killing remote control for the whole session — so it is never a candidate.
+      // Skip RELAY_PORT: free before app launch but claimed by Axum later; Vite binding it kills remote control.
       if (p === RELAY_PORT) continue;
       if (await isPortFree(p)) return p;
     }
     throw new Error(`No free port in range ${base}-${base + range - 1}`);
   }
 
-  // TAURI_FORCE_PORT pins the dev port (e.g. to match an existing SSH port-forward)
-  // instead of auto-picking the first free one starting at 1420.
+  // TAURI_FORCE_PORT pins dev port (e.g. SSH port-forward) instead of auto-picking free port from 1420.
   const forcedPort = process.env.TAURI_FORCE_PORT ? parseInt(process.env.TAURI_FORCE_PORT, 10) : null;
   if (forcedPort === RELAY_PORT) {
     console.error(`[tauri-runner] TAURI_FORCE_PORT=${RELAY_PORT} is reserved by the companion relay — pick another port.`);
     process.exit(1);
   }
   const devPort = forcedPort || await findFreePort(1420);
-  // devPort+1 is 1421 in the normal (devPort=1420) case — i.e. exactly the relay port. Skip it.
+  // devPort+1 is 1421 in normal (devPort=1420) case — exactly the relay port, so skip to devPort+2.
   const hmrPort = devPort + 1 === RELAY_PORT ? devPort + 2 : devPort + 1;
   console.log(`[tauri-runner] dev port=${devPort} hmr=${hmrPort}${forcedPort ? ' (forced)' : ''}`);
 
-  // Tauri CLI: override devUrl at runtime so it matches the port Vite will bind.
-  // Vite reads TAURI_DEV_PORT from env (set below) - see vite.config.js.
-  // Using --config JSON merge instead of editing tauri.conf.json keeps that file clean.
+  // Runtime devUrl override via --config JSON merge (avoids editing tauri.conf.json; Vite reads TAURI_DEV_PORT in vite.config.js).
   const configOverride = JSON.stringify({
     build: { devUrl: `http://localhost:${devPort}` },
   });

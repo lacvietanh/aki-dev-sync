@@ -13,20 +13,8 @@ FILE_EXISTS=$([ -f "$FILE" ] && echo yes || echo no)
 CREDS_EXISTS=$([ -f "$CREDS" ] && echo yes || echo no)
 _log "start: cache_file=$FILE exists=$FILE_EXISTS creds_exists=$CREDS_EXISTS now=$NOW"
 
-# ── 5. Auth info ──────────────────────────────────────────────────────
-# `claude auth status` is run LIVE on every single poll, no TTL, no "once per app launch"
-# force flag. Two real bugs came from ever caching this: (1) the original sticky-email bug
-# this whole fix was written for - a 300s-old cache trailing an account switch - and (2) a
-# second one found after switching to reading ~/.claude.json's oauthAccount "live" instead:
-# that file is itself just a cache the CLI flushes on its own schedule, and when two `claude`
-# processes share one CLAUDE_CONFIG_DIR (a real, supported multi-account workflow - see
-# docs/ref/multiple-account-config-dir.md), whichever process's background refresh flushes
-# last wins - so a probe could read a correct switch for one cycle and then read it clobbered
-# back on the next, with nothing in this script having changed. `claude auth status` does NOT
-# write ~/.claude.json (verified: mtime is unchanged after running it) - it queries the
-# CLI's own live credential state directly, so it is the one source not subject to that
-# clobber race. The rule this whole section follows: whatever made the FIRST read correct
-# (a forced, uncached live check) is what EVERY read must do - not a special case for read #1.
+# ── 5. Auth info (docs/ref/multiple-account-config-dir.md) ─────────────
+# Run `claude auth status` live every poll without TTL to prevent multi-process CLAUDE_CONFIG_DIR clobber races.
 AUTH_CACHE="$HOME/.claude/auth-cache.json"
 AUTH_CACHE_EXISTS=$([ -f "$AUTH_CACHE" ] && echo yes || echo no)
 _log "auth: running live claude auth status (cache_exists=$AUTH_CACHE_EXISTS, used only as fallback if this call fails)"
@@ -37,27 +25,15 @@ if [ "$AUTH_INFO" != '{}' ] && [ "$AUTH_LEN" -gt 2 ]; then
     printf '%s' "$AUTH_INFO" > "$AUTH_CACHE"
     _log "auth: cached to $AUTH_CACHE (fallback only, not read unless the live call fails)"
 elif [ "$AUTH_CACHE_EXISTS" = "yes" ]; then
-    # claude auth status failed/empty this cycle - fall back to the last-known cache instead
-    # of blanking the email display; the very next poll retries the live call.
+    # Fallback to stale cache if live auth status failed to prevent blanking email; next poll retries live.
     _log "auth: WARNING claude_auth_status empty this cycle - falling back to stale cache"
     AUTH_INFO=$(python3 -c "import json,sys; d=json.load(open('$AUTH_CACHE')); print(json.dumps(d))" 2>/dev/null || echo '{}')
 else
     _log "auth: WARNING output was empty or {} - not caching"
 fi
 
-# ── 5b. ~/.claude.json - rateLimitTier/organizationType + cache-ownership uuid ─────
-# The CLI writes oauthAccount to .claude.json INSIDE its config dir, and that dir's default -
-# used whenever $CLAUDE_CONFIG_DIR is unset, which is the common case: it is a per-command alias
-# override (see docs/ref/multiple-account-config-dir.md), not something a shell exports globally -
-# is $HOME/.claude, NOT bare $HOME. NOT used for email/orgName (see §5c) - the CLI flushes this
-# file on its own internal schedule, and when two `claude` processes share one CLAUDE_CONFIG_DIR
-# (a real, supported workflow), whichever one flushes last wins here regardless of which logged in
-# most recently. CURRENT_ACCT/CURRENT_ACCT_UUID below are still used for cache-ownership matching
-# (§3b/6b - "does this quota cache belong to the currently signed-in account") and
-# LIVE_ORG_TIER/LIVE_ORG_TYPE for tier/subtype (§6), since `claude auth status` doesn't report
-# either. accountUuid is the stable identity for that matching: two accounts can share an email
-# (delete-and-recreate under the same address is a real case this was built for), so email alone
-# is not a safe "same account" test.
+# ── 5b. Identity/tiers from .claude.json (docs/ref/multiple-account-config-dir.md, §3b/§6b/§6) ─
+# Uses accountUuid for stable cache-ownership match; extracts tiers unexposed by auth status.
 CLAUDE_JSON_PATH="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json"
 CURRENT_ACCT=""
 CURRENT_ACCT_UUID=""
@@ -66,8 +42,7 @@ LIVE_USER_TIER=""
 LIVE_ORG_TYPE=""
 LIVE_ORG_NAME=""
 if [ -f "$CLAUDE_JSON_PATH" ]; then
-    # organizationName is emitted LAST because it is free-form text: any `|` inside it stays in
-    # the final field instead of shifting the ones before it.
+    # organizationName is emitted last because it may contain `|` which stays in the final field.
     CLAUDE_JSON_INFO=$(AKI_CLAUDE_JSON="$CLAUDE_JSON_PATH" python3 -c '
 import json, os
 def one(v):
@@ -94,32 +69,17 @@ except Exception:
 fi
 _log "identity: source=$CLAUDE_JSON_PATH current_account='$CURRENT_ACCT' uuid='$CURRENT_ACCT_UUID' live_org_tier='$LIVE_ORG_TIER' live_user_tier='$LIVE_USER_TIER' live_org_type='$LIVE_ORG_TYPE'"
 
-# ── 5c. Email/orgName come from AUTH_INFO as-is - no ~/.claude.json override ──
-# A prior version of this fix overrode email/orgName here from ~/.claude.json's oauthAccount,
-# reasoning that the file was rewritten by the CLI "on every login and account switch" and was
-# therefore more current than a TTL-cached auth status. That assumption doesn't hold when two
-# `claude` processes share one CLAUDE_CONFIG_DIR (see §5's note): the file is a cache the CLI
-# flushes on its own schedule, and whichever process flushes last wins, independent of which
-# account most recently logged in. §5's live, uncached `claude auth status` call already IS the
-# fix (queries current credential state directly, not subject to the clobber race) - AUTH_INFO's
-# email/orgName from that call are used untouched. ~/.claude.json is still read below (§5b) for
-# rateLimitTier/organizationType, which `claude auth status` does not report.
+# ── 5c. Email/orgName retained from AUTH_INFO (§5) without ~/.claude.json override ──
+# Avoids multi-process flush clobber race; .claude.json is used only for tiers (§5b, §6).
 
-# ── 6. Read subscription metadata ─────────────────────────────────────
-# Priority, most-live-first: ~/.claude.json (rateLimitTier/organizationType - the one thing it's
-# still needed for, since `claude auth status` doesn't report either) → the live auth status call
-# from §5 → .credentials.json (last resort only - see 5b for why it can trail an account switch by
-# hours). Previously .credentials.json was read FIRST and always won when present, which is
-# exactly backwards: it is the least current of the three sources whenever one exists.
+# ── 6. Subscription metadata priority: .claude.json -> live auth (§5) -> .credentials.json fallback ──
 SUB_TYPE="Unknown"
 TIER="Unknown"
 if [ -n "$LIVE_ORG_TIER" ] || [ -n "$LIVE_USER_TIER" ]; then
     TIER="${LIVE_ORG_TIER:-$LIVE_USER_TIER}"
     _log "meta: tier source=claude.json tier=$TIER"
 fi
-# organizationType in the live file carries the same fact one level less processed
-# (`claude_max` → `max`, `claude_pro` → `pro`). It is read FIRST because `claude auth status`'s
-# subscriptionType is the fallback for an account whose oauthAccount carries no organizationType.
+# Map live organizationType (claude_max -> max, claude_pro -> pro); auth status subscriptionType is fallback.
 case "$LIVE_ORG_TYPE" in
     claude_*)
         SUB_TYPE="${LIVE_ORG_TYPE#claude_}"
@@ -183,13 +143,8 @@ except Exception as e:
     RESETS_AT_PCT=$(printf '%s' "$RESETS_AT" | awk '{print $2}')
     _log "cache: five_hour.resets_at=$RESETS_AT_VAL $RESETS_AT_PCT now=$NOW"
 
-    # ── 3b. Does this cache belong to the account that is signed in now? ──
-    # STALE_RESET means "this account's window rolled over", and the app answers it by KEEPING the
-    # data it already shows and marking it cached. That answer is wrong for a cache left behind by a
-    # different account: the reset almost always reads as overdue there, so the short-circuit below
-    # would fire before the account gate at §6b ever runs, and the previous account's email would
-    # stay on the card forever. When the owner does not match, fall through instead - §6b drops the
-    # cache and §7 emits the live identity on its own.
+    # ── 3b. Cache ownership verification (§6b, §7) ─────────────────────────
+    # Non-matching owner bypasses STALE_RESET to let §6b drop stale foreign cache and §7 emit live identity.
     CACHE_OWNER_MATCHES=1
     if [ -n "$CURRENT_ACCT" ] || [ -n "$CURRENT_ACCT_UUID" ]; then
         CACHE_OWNER_MATCHES=$(AKI_RL="$FILE" AKI_ACCT="$CURRENT_ACCT" AKI_UUID="$CURRENT_ACCT_UUID" python3 -c '
@@ -232,27 +187,8 @@ else:
         _log "stale_check: resets_at=0 or empty → no stale check, treating as valid"
     fi
 
-    # ── 6b. Read-side sanitizing (v5 gates - mirrors statusline-unified.sh writer) ─
-    # DESIGN LOCK - same invariants as the `aki-rlcache` writer block in
-    # src-tauri/src/statusline-unified.sh: an entry whose resets_at has passed must never be
-    # shown, and a cache written by a different account must never be shown - gated on
-    # accountUuid (stable) with an email fallback only when neither side has a uuid (pre-v5
-    # cache, or a client old enough to have none). The writer only protects hosts that already
-    # received the new script; this reader protects the app even against a host still running an
-    # older statusline hook. Read-only: never touches $FILE. See docs/arch/usage-claudecode.md §3.
-
-    # Sanitizer emits one "LOG:<message>" line per decision, followed by exactly one final
-    # "STATUS:<code>[:<json>]" line. Everything goes to stdout (no stray files, no reliance on a
-    # writable $HOME/.claude for a scratch stderr file), so every decision is readable from the
-    # single captured string and the outcome is carried by that STATUS line rather than by an exit
-    # code.
-    #
-    # The `|| echo` guard is what keeps a python3 failure from killing the script: under POSIX sh a
-    # plain `VAR=$(cmd)` DOES take the command's exit status, so with `set -e` at the top a host
-    # without python3 aborted here - silently and permanently unmonitorable, no stdout, no log line
-    # saying why. (An earlier comment here claimed the opposite; it was wrong.) With the guard the
-    # missing interpreter arrives as an ordinary non-OK STATUS, which the branch below already
-    # handles as "no trustworthy data". Same guard as the auth reads at §5.
+    # ── 6b. Read-side sanitizing (v5 gates - mirrors statusline-unified.sh, docs/arch/usage-claudecode.md §3) ─
+    # DESIGN LOCK: Drops expired/mismatched caches via accountUuid; emits LOG/STATUS to stdout with `|| echo` guard.
     SANITIZED=$(python3 -c "
 import json, sys
 now = $NOW
@@ -336,9 +272,7 @@ print('STATUS:OK:' + json.dumps(out))
     SANITIZE_STATUS=$(printf '%s' "$SANITIZE_LAST" | awk -F: '{print $2}')
     _log "sanitize: status=${SANITIZE_STATUS:-NONE}"
 
-    # The STATUS line is the only verdict. There is no exit-code conjunct here any more: the guard
-    # on the substitution above pins the status to 0 unconditionally, so testing it could only ever
-    # be true - a dead branch that read as a second safety net while checking nothing.
+    # The STATUS line is the sole verdict; substitution guard ensures exit code is 0.
     SANITIZED_JSON=""
     if [ "$SANITIZE_STATUS" = "OK" ]; then
         SANITIZED_JSON=$(printf '%s' "$SANITIZE_LAST" | cut -d: -f3-)
@@ -348,11 +282,7 @@ print('STATUS:OK:' + json.dumps(out))
 fi
 
 # ── 7. Write stdout payload ───────────────────────────────────────────────────────
-# The identity frames are emitted even when there is no trustworthy quota cache. They used to sit
-# inside the cache-file test, so a host with a correct, current account but no rate-limit cache
-# reported no account at all - and right after an account switch, when §6b drops the previous
-# account's cache, the app had nothing to update the email from and kept showing the old account
-# until it was restarted. Identity does not depend on quota; it must not be gated on it.
+# Emit identity frames even without valid quota cache so account switches update UI immediately (§6b).
 emit_frames() {
     printf '%s\n' "$1"
     echo "|||MTIME|||$2"

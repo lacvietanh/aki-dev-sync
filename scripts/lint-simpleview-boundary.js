@@ -1,9 +1,5 @@
-// Lint guard for SimpleView architecture boundaries (WI-6).
-// Ensures src/composables/usePtyStream.js and src/utils/ansiStrip.js enforce the
-// SimpleView boundary:
-//   - Must NOT contain identifiers 'cols' or 'rows' (never learn or handle grid dimensions)
-//   - Must NOT contain cursor addressing escape patterns (ESC[H, ESC[r;cH)
-//   - Must NOT import or reference '@xterm/xterm'
+// Architectural boundary guard (WI-6): ensures usePtyStream.js & ansiStrip.js never handle grid geometry, cursor addressing, or mount xterm.
+
 
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -40,8 +36,7 @@ const PATTERNS = [
   },
 ];
 
-// Blank out full-line comments so prose describing a forbidden pattern cannot self-trip the grep.
-// Preserves line count so reported line numbers match original source file.
+// Strips full-line comments to avoid self-tripping pattern checks while preserving line count for error reporting.
 function stripCommentLines(src) {
   return src
     .split('\n')

@@ -1,16 +1,6 @@
-// Layer 2 of the "shell-via-SSH must never die silently" defense.
-// (See docs/arch/usage-claudecode.md §3c and docs/research/claudecode-usage-FINAL.md)
-//
-// Every script delivered through `ssh host sh` runs under POSIX sh (dash on most
-// Linux remotes), NOT the login shell. A single bashism (e.g. `set -o pipefail`)
-// silently kills the whole script with exit 2 and zero output. This guard fails the
-// build/dev startup the moment a known dash-killer appears in a remote script, so
-// the dash/pipefail regression can never ship again.
-//
-// Three checks per file (best-effort - skips a checker if its binary is absent):
-//   1. Regex scan for runtime bashisms `dash -n` cannot catch (e.g. `set -o pipefail`).
-//   2. `dash -n`     - real POSIX syntax check, when dash is installed.
-//   3. `shellcheck -s sh` - deep POSIX lint, when shellcheck is installed.
+// Layer 2 POSIX sh defense for ssh host sh payloads (see docs/arch/usage-claudecode.md §3c and docs/research/claudecode-usage-FINAL.md).
+// Remote scripts execute under POSIX sh (dash) where bashisms cause silent exit 2; checks: regex scan, dash -n, and shellcheck.
+
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -19,16 +9,14 @@ import { dirname, join } from 'node:path';
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
-// Scripts that are include_str!'d in Rust and piped to `ssh host sh`.
-// Keep in sync with `include_str!(... .sh)` calls in src-tauri/src/agent_usage/ and remote_shell.rs.
+// Keep in sync with include_str!(... .sh) payloads in src-tauri/src/agent_usage/ and remote_shell.rs piped to ssh host sh.
 const REMOTE_SCRIPTS = [
   'get-claudecode-usage.sh',
   'provision-claudecode.sh',
   'get-antigravity-usage.sh',
 ];
 
-// Runtime bashisms that `dash -n` (syntax-only) will NOT flag but that break dash.
-// `set -o pipefail` is handled separately below (it has an approved guarded idiom).
+// Runtime bashisms missed by syntax-only dash -n that break dash (pipefail handled separately below).
 const BASHISM_PATTERNS = [
   { re: /\bset\s+-o\s+(errexit|nounset|xtrace|noglob)\b/, msg: '`set -o <long-name>` is a bashism - use the short form (`set -e`/`-u`/`-x`/`-f`) for POSIX sh' },
   { re: /\[\[\s/, msg: '`[[ ... ]]` is a bashism - use `[ ... ]` (test) for POSIX sh' },
@@ -38,16 +26,12 @@ const BASHISM_PATTERNS = [
   { re: /\b[A-Za-z_]\w*=\(\s*[^)]*\)/, msg: 'array assignment `var=( ... )` is a bashism - POSIX sh has no arrays' },
 ];
 
-// Blank out full-line comments so the regex scan never trips on prose that merely
-// mentions a bashism (e.g. a comment explaining the dash/pipefail pitfall). Newlines
-// are preserved so reported line numbers stay accurate.
+// Strips full-line comments to avoid regex false positives while preserving line count for error reporting.
 function stripCommentLines(src) {
   return src.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
 }
 
-// `set -o pipefail` is allowed ONLY in the subshell-probe idiom that is dash-safe:
-//   ( set -o pipefail ) 2>/dev/null && set -o pipefail
-// Any line that uses `set -o pipefail` WITHOUT wrapping a probe in `( ... )` is unsafe.
+// Unguarded set -o pipefail force-exits dash (exit 2); only approved idiom is: ( set -o pipefail ) 2>/dev/null && set -o pipefail
 function findUnsafePipefail(code, report) {
   code.split('\n').forEach((line, i) => {
     if (/\bset\s+-o\s+pipefail\b/.test(line) && !/\(\s*set\s+-o\s+pipefail\s*\)/.test(line)) {

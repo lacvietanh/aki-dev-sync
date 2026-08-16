@@ -143,9 +143,7 @@ while IFS= read -r line; do
                 fi
 
                 # ── 4. Connect RPC Probe ────────────────────────────────────
-                # Probe directly against the real RPC endpoint instead of root `/`.
-                # Root `/` returns 404 on new Antigravity IDE builds even when the
-                # RPC server is healthy, causing false "could not connect" failures.
+                # Probe RetrieveUserQuotaSummary directly; root `/` returns 404 on new Antigravity IDE builds.
                 found_base_url=""
                 hdr_csrf=""
                 if [ -n "$csrf_token" ]; then
@@ -259,14 +257,7 @@ while IFS= read -r line; do
                         PROCESSES_FOUND=$((PROCESSES_FOUND + 1))
                         proc_type="cli"
 
-                        # Same argv extraction as the language-server branch above. It used to be
-                        # absent here (and hardcoded to `undefined` in the JS probe this script was
-                        # ported from), so an `agy` session was probed with NO X-Codeium-Csrf-Token
-                        # header and NO seeded port: if the Connect API asks for the token, every
-                        # request 401s and the whole poll is an anonymous "exited 1", which the app
-                        # renders as an ever-older cached reading. Extraction is unconditional and
-                        # costs nothing when the process genuinely carries neither flag - the values
-                        # come out empty and the probe behaves exactly as it did before.
+                        # Extract --csrf_token and --extension_server_port to avoid 401s on agy CLI Connect RPC calls.
                         csrf_token=$(extract_arg "$cmdline" "--csrf_token")
                         ext_port=$(extract_arg "$cmdline" "--extension_server_port")
                         hdr_csrf=""
@@ -322,9 +313,7 @@ while IFS= read -r line; do
 
                         found_base_url=""
 
-                        # Same direct-RPC probe as the IDE/Desktop branch above.
-                        # Root `/` returns 404 on new Antigravity builds — probe the
-                        # real endpoint so 404 on `/` no longer blocks detection.
+                        # Probe RetrieveUserQuotaSummary directly to bypass 404 on root `/` on new builds.
                         RPC_PATH="/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
                         RPC_BODY='{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en"}}'
 
@@ -378,9 +367,7 @@ while IFS= read -r line; do
                         status_code=$(printf '%s\n' "$status_resp" | tail -n 1)
                         status_body=$(printf '%s\n' "$status_resp" | sed '$d')
 
-                        # A 401 for a process that exposes no --csrf_token argv is a permanent,
-                        # nameable condition, not one more transient miss. Name it in the log so it
-                        # is distinguishable from "the IDE is mid-restart".
+                        # Log 401 without --csrf_token to distinguish permanent token requirements from transient restarts.
                         if [ "$status_code" = "401" ] && [ -z "$csrf_token" ]; then
                             _log "CLI PID $pid: GetUserStatus returned 401 and this process exposes no --csrf_token argv - its quota cannot be read"
                         fi

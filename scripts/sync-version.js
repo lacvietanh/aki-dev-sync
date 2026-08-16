@@ -15,7 +15,7 @@ try {
 
   let cargoToml = fs.readFileSync(cargoTomlPath, 'utf8');
 
-  // Replace version under [package]
+  // Syncs version field under [package] in Cargo.toml to match package.json.
   const newCargoToml = cargoToml.replace(
     /(\[package\][\s\S]*?version\s*=\s*)"[^"]+"/,
     `$1"${version}"`

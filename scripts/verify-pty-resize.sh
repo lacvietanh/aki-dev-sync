@@ -1,23 +1,9 @@
 #!/usr/bin/env bash
-# Prints the settling test for ITEM-2 (#1) of the 2026.07.30 terminal/usage/UI council session:
-# "terminal resize must sync both the remote browser and the app".
-#
-# RUN THIS ON THE MAC, paired with a phone/browser companion (Remote Control). This dev box cannot
-# build or run Tauri (CLAUDE.local.md), so the actual verification can only happen here.
-#
-# Council finding (docs/plan/done/backlog-jul27.md WS-... / akiflow session
-# 2026.07.30-0213-terminal-usage-ui-backlog, checklist.md ITEM-2): all four hypotheses for a real
-# resize-sync defect were refuted by source reading — the host (Mac) is already the sole resize
-# authority (src-tauri/src/pty.rs pty_resize -> real TIOCSWINSZ), the FRAME_PTY_RESIZE broadcast is
-# structurally protected (src/services/hostInvoke.js COMPANION_ALLOWED_COMMANDS omits pty_resize,
-# so a companion cannot even attempt to resize the shared PTY; src-tauri/src/web_server.rs's
-# congestion-drop path never coalesces/drops pty_resize), and a fresh companion join already gets
-# a correct-size snapshot via pushAllScrollbacks. No code fix was made because no static defect
-# was found — this script exists to run the one check that source-reading cannot settle: whether
-# the *repaint*, not the resize logic, silently fails on the companion's own font-zoom path.
-#
-# This script does NOT drive the app or a browser itself — nothing can script that from outside.
-# It only prints the numbered steps; the interactive part is done by hand, once.
+# Settling test for ITEM-2 (#1) of 2026.07.30 terminal/usage/UI council: "terminal resize must sync both remote browser and app".
+# Run on macOS paired with companion (CLAUDE.local.md: dev box cannot build/run Tauri).
+# Council finding: docs/plan/done/backlog-jul27.md (akiflow 2026.07.30-0213-terminal-usage-ui-backlog, checklist.md ITEM-2).
+# Invariants verified: host is sole resize authority (src-tauri/src/pty.rs TIOCSWINSZ); FRAME_PTY_RESIZE protected (src/services/hostInvoke.js COMPANION_ALLOWED_COMMANDS, src-tauri/src/web_server.rs, pushAllScrollbacks snapshot).
+# Purpose: verifies companion font-zoom repaint behavior (manual test protocol printing numbered steps).
 set -euo pipefail
 
 cat <<'EOF'
