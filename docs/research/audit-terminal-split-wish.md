@@ -1,10 +1,6 @@
 # Audit — `wish-terminal-split-simpleview.md`
 
-**Date:** 2026-08-01
-**Mode:** akiflow tier=2 audit. Report only; no code, no config, and no edit to the wish doc itself.
-**Baseline:** `docs/plan/wish-terminal-split-simpleview.md` as of the prior council `2026.08.01-1732-right-dock-mac-rerun`, whose four closed items became that doc's Right-Dock Decisions 1–4.
-**Council record:** `~/.aki/agent-council/aki-dev-sync/2026.08.01-1834-review-terminal-split-wish/` (`chat.md` for the argument, `checklist.md` for the closures).
-**Purpose:** establish whether the wish plan is factually true about the current code, architecturally sound, coherent as a user flow, and executable now — before any of it is built.
+**Date:** 2026-08-01 **Mode:** akiflow tier=2 audit. Report only; no code, no config, and no edit to the wish doc itself. **Baseline:** `docs/plan/done/wish-terminal-split-simpleview.md` as of the prior council `2026.08.01-1732-right-dock-mac-rerun`, whose four closed items became that doc's Right-Dock Decisions 1–4. **Council record:** `~/.aki/agent-council/aki-dev-sync/2026.08.01-1834-review-terminal-split-wish/` (`chat.md` for the argument, `checklist.md` for the closures). **Purpose:** establish whether the wish plan is factually true about the current code, architecturally sound, coherent as a user flow, and executable now — before any of it is built.
 
 ## Verdict
 

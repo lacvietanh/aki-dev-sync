@@ -147,7 +147,7 @@ a {
 
 /* Right-dock mode: left column gets max-width cap and a right-edge border instead of bottom border. */
 .dashboard-main.is-right-dock > .dashboard-left {
-  max-width: var(--main-view-max-width, 440px);
+  max-width: var(--main-view-max-width, 420px);
   border-bottom: none;
   border-right: 1px solid var(--border-card);
 }
@@ -1450,10 +1450,19 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 /* NARROW MODE. 700px is the single narrow breakpoint for the whole app (docs/plan/done/narrow-mode-and-ux-1.14.0.md "Shared contract"). Global/unscoped so the utilities work from inside any component's <style scoped>. */
 /* MUST stay last in this file: every rule below overrides a base rule declared above it at the same specificity, so moving this block up silently disables it. A component's own <style scoped> still outranks everything here, so a modal restyling .modal-body/.modal-footer repeats its own narrow override locally. */
 
+/* Base utility state: wide items visible by default; narrow-only items hidden by default. */
+.u-wide-hide {
+  display: none !important;
+}
+
 /* Window-width breakpoint — applies to modals (position:fixed, outside .dashboard-left) and any global element that fires on the overall viewport width. */
 @media (max-width: 700px) {
   .u-narrow-hide {
     display: none !important;
+  }
+
+  .u-wide-hide {
+    display: inline !important;
   }
 
   /* Pin/minimize/close overflowed the titlebar at narrow widths; shrink a little, not to icon-only, just enough to fit. */
@@ -1514,23 +1523,15 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
     display: none !important;
   }
 
+  .u-wide-hide {
+    display: inline !important;
+  }
+
   .host-select-mini {
     max-width: 46px;
   }
 
   .host-select-mini--wide {
     max-width: 50px;
-  }
-}
-
-@media (min-width: 701px) {
-  .u-wide-hide {
-    display: none !important;
-  }
-}
-
-@container main-view (min-width: 701px) {
-  .u-wide-hide {
-    display: none !important;
   }
 }

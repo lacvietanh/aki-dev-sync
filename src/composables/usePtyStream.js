@@ -2,7 +2,7 @@
 //
 // A companion screen that renders the PTY byte stream as a plain text line stream instead of mounting a full terminal emulator. It never learns cols/rows, never implements grid geometry, and honours only cursor-up, line-erase, and carriage-return — no cursor addressing, scroll regions, or column tracking.
 //
-// Contract: docs/plan/wish-terminal-split-simpleview.md
+// Contract: docs/plan/done/wish-terminal-split-simpleview.md
 import { onBeforeUnmount, ref } from 'vue'
 import { onFrame, send } from '../services/bridge'
 import { invoke } from '../utils/tauri'

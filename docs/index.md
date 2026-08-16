@@ -67,11 +67,10 @@
 
 ## Plans (Active)
 
-- [docs/plan/remaining-1.22.md](plan/remaining-1.22.md) - Single entry point for everything outstanding after the 1.22.0 release, each row pointing at its owning file for detail. Still open: GBOARD (Android/Gboard double-insert defect, unconfirmed on hardware) and U3 (GlobalNoteModal min-height, no tracking checklist yet). Everything else originally tracked here (PT-DOC, WS-C-RESIDUAL, T1-T6/U1/U2/U4/I1/I2, HARDWRAP, WS-B, WS-A S3-S6, WS-A-S1-2, TOAST) is resolved, recorded in the file's own "Resolved" sections
-- [docs/plan/remaining-1.25.md](plan/remaining-1.25.md) - Active plan continuing `remaining-1.22.md`; items 1, 2, 5 resolved, item 3 (right-dock) and item 4 (idle perf) built and code-decided, both still needing an on-Mac runtime/profiler check
-- [docs/plan/wish-terminal-split-simpleview.md](plan/wish-terminal-split-simpleview.md) - SimpleView half shipped in 1.23.0, then superseded as the companion's default mount by `wish-terminal-manual-resize-authority.md` (2026-08-11) — `SimpleView.vue` stays in the tree unreferenced, not deleted. Right-Dock Mac half stays unbuilt, unscheduled; that is the only reason this file stays out of `done/`
+- [docs/plan/remaining-1.22.md](plan/remaining-1.22.md) - Single entry point for everything outstanding after the 1.22.0 release (all items resolved as of 2026-08-16)
 
 ## Plans (Completed)
+- [docs/plan/done/wish-terminal-split-simpleview.md](plan/done/wish-terminal-split-simpleview.md) - SimpleView half shipped in 1.23.0 then rejected/superseded in 1.24.0 by `wish-terminal-manual-resize-authority.md`; Right-Dock Mac half shipped in 1.25.0 (`useRightDockLayout.js`). Full plan resolved and moved to `done/` 2026-08-17
 - [docs/plan/done/claudecode-usage-cleanup-FINAL.md](plan/done/claudecode-usage-cleanup-FINAL.md) - Kế hoạch dọn (đã hoàn tất): xoá force-sync, gỡ oauth, xoá cleanup_orphan
 - [docs/plan/done/usage-probe-oop.md](plan/done/usage-probe-oop.md) - **Shipped in `610fd93`, not active** - Antigravity usage probe refactor (WS-C): Node script to POSIX shell port, deleting `Interpreter::Node`, and splitting `agent_usage.rs` (892 lines) into seven modules plus `remote_shell.rs`. This row previously pointed at `plan/usage-probe-oop.md` and called the work active; that file is an untracked pre-refactor copy sitting on top of the shipped one, and the row was written from it
 - [docs/plan/done/verify-pending.md](plan/done/verify-pending.md) - **✅ DONE, owner-verified on real hardware 2026-08-15.** Consolidated runtime-verification backlog: every "fixed but unverified at runtime" item across the active plans, grouped by surface (terminal/UI/infra), each with what changed, file:line, and the exact steps that settle it — all steps run and passed

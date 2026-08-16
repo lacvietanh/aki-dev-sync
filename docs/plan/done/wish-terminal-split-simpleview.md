@@ -2,8 +2,8 @@
 
 > **Status:** SimpleView — shipped in 1.23.0, then **superseded 2026-08-12 in 1.24.0** by Direction C (`docs/plan/done/wish-terminal-manual-resize-authority.md`): the companion goes back to mounting the real `TerminalView` (xterm.js, full TUI support) with an explicit, revocable resize-authority handoff, instead of SimpleView's plain-text stream. SV-1..SV-7 below stay as the historical record of that shipped-then-superseded design.
 > **Owner verdict, 2026-08-17: rejected, do not resurrect.** Tried in production and found too poor an experience to keep — this closes the direction outright, not merely a preference for Direction C. Any future phone-terminal work starts from Direction C's model; this SimpleView approach is not a fallback to reconsider.
-> Right-Dock Mac — still unbuilt, gated behind its own preconditions (see "Right-Dock Mac" section) and not yet started; unaffected by the SimpleView supersession (RD-2 already noted the two were independent). This doc stays in `docs/plan/` (deliberately not moved to `done/`) while its Right-Dock milestone remains live wishlist content. Decisions are settled as of `docs/research/audit-terminal-split-wish.md` (2026-08-01), which corrected one broken SimpleView decision and four factual errors in an earlier draft of this doc — see SV-1..SV-7 and RD-1..RD-4 below. Do not start SimpleView and Right-Dock as one PR: they remain independent milestones, and neither is a prerequisite for the other.
-> Written 2026-08-01, Right-Dock section expanded 2026-08-01, corrected against audit 2026-08-01. Not a blocker for any current release.
+> **Right-Dock Mac:** **Shipped in 1.25.0** (`src/composables/useRightDockLayout.js`). With SimpleView rejected/superseded and Right-Dock shipped, this doc is fully resolved and moved to `docs/plan/done/`.
+> Written 2026-08-01, Right-Dock section expanded 2026-08-01, corrected against audit 2026-08-01. Moved to `done/` 2026-08-17.
 
 ## Goal
 

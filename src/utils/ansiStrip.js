@@ -1,4 +1,4 @@
-// ANSI-aware PTY byte-stream parser for SimpleView (docs/plan/wish-terminal-split-simpleview.md, BRIEF.md § Pinned module contracts).
+// ANSI-aware PTY byte-stream parser for SimpleView (docs/plan/done/wish-terminal-split-simpleview.md, BRIEF.md § Pinned module contracts).
 // Stateful parser emitting 5 token types: text, nl, cr, up, eraseLine (dropping SGR colors, cursor addressing, scroll regions).
 // 64-byte pending tail cap prevents memory growth on unterminated binary streams.
 
