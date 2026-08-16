@@ -41,7 +41,7 @@
         <i class="fa-solid fa-terminal external-term-icon"></i>
         <span v-if="externalTermTotalCount > 0" class="external-term-badge">{{ externalTermTotalCount }}</span>
       </button>
-      <!-- Hidden in right-dock mode, or when both stacks are collapsed (useDockLayout.js's dockAllCollapsed): with nothing expanded there is nothing to fill the screen with, so the button would be a no-op. -->
+      <!-- Hidden in right-dock mode or when dockAllCollapsed is true to prevent no-op maximization. -->
       <button
         v-if="!rightDockActive && !dockAllCollapsed && chromeVisible.maximize"
         class="btn-tech btn-tech-secondary btn-terminal-action"
@@ -57,7 +57,7 @@
       @focusin="hasTerminalFocus = true"
       @focusout="hasTerminalFocus = false"
     >
-      <!-- `template v-for` + `v-if` on the child: Vue 3 gives v-if priority over v-for when they share a node, which would leave `t` out of scope — see https://vuejs.org/guide/essentials/list.html#v-for-with-v-if. -->
+      <!-- template v-for with child v-if prevents Vue 3 v-if precedence over v-for scoping issues. -->
       <template v-for="t in tabs" :key="t.id">
         <component
           :is="ViewComponent"
@@ -115,24 +115,24 @@ watch(() => tabs.value.length, (n) => {
   if (n === 0) collapsed.value = true;
 });
 
-// Icon mechanism (named explicitly): utils/projectIcon.js's projectIconSrc(id, timestamp) + projectStore.iconTimestamp, with a @error fallback flag — the exact trio ProjectTable.vue, GitModal.vue and ProjectTasksModal.vue already use. Resolves the aki-devsync-icon:// protocol on the host and the mirrored data URI on a companion, so the phone's stack header shows the same icon for free.
+// Resolves project icon via projectIconSrc(id, timestamp) with @error fallback across host and companion.
 const scopeIconFailed = ref(false);
 watch(scope, () => { scopeIconFailed.value = false; }); // reset per scope, not globally
 
 const scopeIconSrc = computed(() => (scopeProject.value ? projectIconSrc(scopeProject.value.id, iconTimestamp.value) : ''));
 
-// ALL external Terminal.app sessions right now, not just the ones standing in a project directory: every project's own count (externalTermCounts) plus the global complement (sessions matching no project path) that the same scan already produces (useExternalTerminals.js).
+// Sums external Terminal.app sessions across all project directories plus non-project global sessions.
 const externalTermTotalCount = computed(() =>
   Object.values(externalTermCounts.value).reduce((sum, n) => sum + n, 0) + externalTermGlobalCount.value
 );
-// 'TERMINAL' spelled out, matching the project table's TERMINAL column — one canonical term for one concept. A project scope shows the project's own 4-char abbreviation instead: that is an identity, not the word for the feature.
+// Canonical 'TERMINAL' label when in global scope, or 4-char project abbreviation in project scope.
 const scopeLabel = computed(() => (scopeProject.value ? scopeProject.value.name.slice(0, 4).toUpperCase() : 'TERMINAL'));
 const scopeTitle = computed(() => (scopeProject.value ? `Terminal group: ${scopeProject.value.name}` : 'Global terminal group'));
 
-// ⌘T / ⌘W / ⌘⇧[ / ⌘⇧] / ⌘+ / ⌘- / ⌘0 — only while focus is inside this stack's terminal area (a hidden xterm textarea, or the compose input, living inside .pty-terminal triggers the focusin/focusout above). preventDefault() ONLY when a shortcut is actually recognised and handled, or e.g. ⌘W would additionally close the Tauri window itself. newTab/closeTab/cycleTab are already scope-filtered (useTerminalTabs.js), so these bindings need no changes for scopes: ⌘T/⌘W/⌘⇧[/⌘⇧] all act within the current group only.
+// Scoped terminal shortcuts (⌘T, ⌘W, ⌘⇧[, ⌘⇧], ⌘±0) handled on focus; preventDefault prevents Tauri window close.
 const hasTerminalFocus = ref(false);
 
-// DockStack.vue's bodyPersist body no longer uses `v-show` (it stays painted so the collapse CSS transition can clip it in one smooth motion instead of popping it away first) - which also means it no longer gets the free auto-blur a browser gives an element that becomes `display:none`. Collapsing via a click (the header's CLOSE button) already moves focus there for free; this covers every OTHER path to `collapsed = true` (⌘W on the last tab above, or an external caller like useTerminalPanel.js's collapse action) so a keystroke typed after closing can't still land in the now-invisible xterm textarea.
+// Explicit blur on collapse: body-persist avoids display:none, so focus must be dropped manually to prevent hidden input.
 watch(collapsed, (isCollapsed) => {
   if (isCollapsed && hasTerminalFocus.value) document.activeElement?.blur?.();
 });
@@ -146,7 +146,7 @@ function onKeydown(e) {
   } else if (e.key === 'w' && !e.shiftKey) {
     e.preventDefault();
     closeTab(activeTabId.value);
-    // `e.code`, not `e.key`: with Shift held, `e.key` reports the shifted character ('{'/'}'), not the bracket, so a `e.key === '['` test never matches ⌘⇧[. The physical key code is shift-invariant.
+    // Uses e.code (BracketLeft/Right) because e.key shifts to '{'/ '}' under Shift.
   } else if (e.shiftKey && e.code === 'BracketLeft') {
     e.preventDefault();
     cycleTab(-1);
@@ -154,7 +154,7 @@ function onKeydown(e) {
     e.preventDefault();
     cycleTab(1);
   }
-  // ⌘+ / ⌘- / ⌘0 — VS Code's terminal zoom. `e.code` again, and for the same reason as the brackets above: ⌘+ is physically ⌘⇧= on a US layout, so `e.key` reports '+' with Shift and '=' without. The physical key is the stable test, and it also picks up the numeric keypad. No `!e.shiftKey` guard here, unlike ⌘T/⌘W: Shift is part of how ⌘+ is typed at all. These sit after the bracket branches, which they cannot shadow — BracketLeft/Right are different codes entirely.
+  // Zoom shortcuts use e.code to handle US layout shift keys (⌘⇧= for ⌘+) and numpad keys stably.
   else if (e.code === 'Equal' || e.code === 'NumpadAdd') {
     e.preventDefault();
     zoomInTerminalFont();
@@ -198,7 +198,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true));
   position: relative;
 }
 
-/* Same fa-terminal glyph as the in-app tab/header identity, boxed in a rounded outline so this one specific button reads as "a terminal in its own window" (external) rather than the bare glyph in-app terminal uses everywhere else. */
+/* Boxed outline distinguishes external window session button from the bare in-app terminal icon. */
 .external-term-icon {
   border: 1.5px solid currentColor;
   border-radius: 5px;

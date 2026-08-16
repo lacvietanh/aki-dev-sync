@@ -16,7 +16,6 @@
       </label>
     </div>
 
-    <!-- Add task -->
     <div class="task-add-row mb-3">
       <input
         v-model="newTitle"
@@ -46,9 +45,7 @@
           class="task-item-row"
           :class="[{ 'is-done': task.done, 'has-detail': !!task.detail }]"
         >
-          <!-- Left side controls: Pin, Wish -->
           <div class="task-states-left">
-            <!-- Pin Toggle -->
             <button
               class="task-state-icon-btn pin-btn"
               :class="{ 'is-active': task.pin }"
@@ -59,7 +56,6 @@
               <i class="fa-solid fa-thumbtack"></i>
             </button>
 
-            <!-- Wish Toggle -->
             <button
               class="task-state-icon-btn wish-btn"
               :class="{ 'is-active': task.wish }"
@@ -72,7 +68,6 @@
           </div>
 
           <div class="task-info">
-            <!-- Enter key marks task as Done -->
             <input
               v-model="task.title"
               @change="$emit('update:title', task, task.title)"
@@ -96,7 +91,6 @@
 
           <span class="task-time" :title="'Updated ' + timeAgo(task.updated_at) + ' ago'">{{ timeAgo(task.updated_at) }}</span>
 
-          <!-- Mark Done Checklist Checkbox -->
           <button
             class="task-check-btn"
             :class="{ 'is-completed': task.done }"
@@ -132,10 +126,7 @@ const props = defineProps({
   tasks: { type: Array, default: () => [] },
   summary: { type: Object, default: () => ({ total: 0, open: 0, doing: 0, todo: 0, done: 0 }) },
   hideCompleted: { type: Boolean, default: false },
-  /** Read-only mode: the backing `.akidevsync/notes.json` could not be read (unmounted volume,
-   *  corrupt file), so nothing here may be edited. Presentational only — this component still knows
-   *  nothing about files; it is told, not asked. COPY stays enabled deliberately: getting text OUT
-   *  is exactly what someone wants when saving is impossible. */
+  // Read-only when notes file is unreadable; copy action stays enabled so user can still export text.
   disabled: { type: Boolean, default: false },
 })
 
@@ -177,19 +168,14 @@ function timeAgo(ts) {
   return `${Math.floor(s / 86400)}d`
 }
 
-// { [taskId]: HTMLTextAreaElement } — this component's OWN rendered detail fields, collected via
-// template refs rather than looked up with document.querySelector. The document is shared with every
-// other TaskListPanel on screen (the project modal and the global note both render one), so a
-// document-wide selector could focus another panel's row.
+// Scoped template refs prevent document query collisions across multiple TaskListPanel instances.
 const detailEls = new Map()
 function setDetailEl(taskId, el) {
   if (el) detailEls.set(taskId, el)
   else detailEls.delete(taskId)
 }
 
-// Scroll-to-new-task: when the incoming list grows by one, focus the newest task's detail field.
-// Pure DOM behaviour, not data — the new task itself is created upstream (useTaskCollection);
-// this component only reacts to its own `tasks` prop growing.
+// Focus and scroll to the newest task's detail field when a task is added.
 watch(
   () => props.tasks.length,
   (newLen, oldLen) => {
@@ -338,7 +324,6 @@ watch(
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* Dim the completed rows */
 .task-item-row.is-done {
   opacity: 0.45;
   filter: grayscale(0.6);
@@ -392,8 +377,7 @@ watch(
   color: var(--text-darker) !important;
 }
 
-/* min-width:0 - the title <input> has a ~200px intrinsic width and a flex item defaults to
-   min-width:auto, so the row refused to shrink and overflowed the modal body at 420px. */
+/* min-width:0 overrides flex item default to prevent ~200px input from overflowing at narrow widths */
 .task-info {
   flex: 1;
   min-width: 0;
@@ -417,7 +401,6 @@ watch(
   border-bottom-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Strike-through when completed */
 .is-done .task-title-input {
   text-decoration: line-through;
   color: var(--text-darker);
@@ -520,7 +503,7 @@ watch(
   background: rgba(239, 68, 68, 0.1);
 }
 
-/* Narrow mode (SSoT 700px, main.css). A task row carries seven fixed-width items around one flexible title; at 420px the 10px gaps alone ate 50px and squeezed the title to a few characters. Tightening the gaps and the row padding buys back ~60px without dropping a control - the project rule forbids hiding state, and every icon here is a state. */
+/* Narrow mode (700px): tighter gaps and padding preserve ~60px for title without hiding state controls. */
 @media (max-width: 700px) {
   .task-item-row {
     gap: 5px;

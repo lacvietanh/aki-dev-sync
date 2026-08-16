@@ -1,4 +1,4 @@
-<!-- Terminal controls — 3-dot drop-up (docs/plan/done/terminal-chrome-settings.md §8). Reuses ProjectTable.vue's .open-popup/.popup-item drop-up model (promoted to main.css — this is its second call site, Rule of Three evidence for the extraction). Rows are real <label>+<input type="checkbox"> (S6): a checkbox-shaped menu built from .popup-item divs is not keyboard-reachable. -->
+<!-- Terminal controls 3-dot drop-up (terminal-chrome-settings.md §8). Uses .open-popup/.popup-item from main.css with accessible <label>+<input type="checkbox"> rows (§6). -->
 <template>
   <div class="open-popup-wrapper chrome-menu-wrapper" :class="{ 'is-open': open }" @keydown.esc.stop="onEscape">
     <button
@@ -13,7 +13,7 @@
       <i class="fa-solid fa-ellipsis-vertical"></i>
     </button>
     <div class="open-popup" :style="menuStyle" aria-label="Terminal controls">
-      <!-- `title` sits on this wrapper, not on `.popup-item`: `.popup-disabled` sets `pointer-events: none` on the locked tab-strip row, which would swallow hover and make its explanatory title unreadable if the title lived on that same element (§8.3). -->
+      <!-- title sits on wrapper, not .popup-item: .popup-disabled sets pointer-events:none, swallowing hover tooltips (§8.3). -->
       <div v-for="row in chromeMenuRows" :key="row.key" :title="row.title">
         <label class="popup-item" :class="{ 'popup-disabled': row.locked }">
           <input
@@ -53,11 +53,7 @@ const triggerEl = ref(null)
 const open = ref(false)
 const menuStyle = ref({})
 
-// Measured on open, before the CSS transition makes the element visible — same trick
-// ProjectTable.vue's positionPopup uses (the element is visibility: hidden, not display: none).
-// Direction is context-dependent: bottom dock → drop-UP (button is near the bottom of the screen);
-// right dock → drop-DOWN (button is near the top, so the drop-up formula would put the menu
-// above the viewport).
+// Position on open (visibility:hidden): drop-UP for bottom dock, drop-DOWN for right dock to fit viewport.
 function positionMenu() {
   const rect = triggerEl.value?.getBoundingClientRect()
   if (!rect) return
@@ -111,9 +107,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDo
 </script>
 
 <style scoped>
-/* .chrome-menu-wrapper carries no rules of its own — .open-popup-wrapper (main.css) already gives position/display, and this class exists only as the onDocPointerDown scope hook. */
-
-/* Same tint the codebase already uses for an armed toggle (.pty-key.is-armed, TerminalView.vue) — reused here rather than a second definition, per the SSoT this file's other classes already obey. */
+/* Scope hook for onDocPointerDown; styles come from .open-popup-wrapper in main.css. */
+/* Armed toggle tint matches .pty-key.is-armed in TerminalView.vue. */
 .btn-terminal-action.is-armed {
   color: var(--bg-primary);
   background: var(--accent-cyan);

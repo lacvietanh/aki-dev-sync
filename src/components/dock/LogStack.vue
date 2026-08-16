@@ -54,7 +54,7 @@ const { projects, anySyncing } = useProjects();
 
 const activeProjectName = computed(() => projects.value.find((p) => p.id === activeLogProjectId.value)?.name ?? '');
 
-// This stack's collapse state IS logStore.isLogExpanded — per-screen and mirrored as such (mirror.js PER_SCREEN_KEYS). It tracks "expanded", so this inverts it into the "collapsed" shape DockStack takes. Writable computed, so the `@update:collapsed` assignment below flows back.
+// Inverts logStore.isLogExpanded (per-screen mirrored) to DockStack's collapsed state; writable computed syncs back.
 const collapsed = computed({
   get: () => !isLogExpanded.value,
   set: (v) => { isLogExpanded.value = !v; },

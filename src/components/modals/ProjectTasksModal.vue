@@ -10,8 +10,7 @@
           v-show="showIcon"
         />
         <i class="fa-solid fa-list-check mr-1" v-show="!showIcon"></i>
-        <!-- Read-only reason lives as a SUFFIX on the title that is already here, plus its tooltip —
-             no banner, no extra row (Extreme Narrow, CLAUDE.md). -->
+        <!-- Read-only reason lives as a title suffix + tooltip without extra rows (Extreme Narrow). -->
         <span :title="notesEntry.error || undefined">
           Tasks: {{ tasksProject.name }}<template v-if="!writable"> — {{ notesEntry.status }}</template>
         </span>
@@ -78,16 +77,11 @@ function handleIconError() {
   showIcon.value = false
 }
 
-// Reset icon state when project changes
 watch(tasksProject, () => {
   showIcon.value = true
 })
 
-// Re-read the file every time this modal opens for a project. Two things it catches that a
-// boot-time hydrate cannot: a volume that has since been mounted (the entry flips from
-// `unavailable` back to writable without a reload), and a `git pull` that changed notes.json under
-// us. Routed through the action so a COMPANION's open also triggers the read — on the Mac, where
-// the filesystem is (read_project_notes is not in the companion allowlist).
+// Re-reads notes on open to catch remounts/git-pulls; routed via action so companion triggers Mac filesystem read.
 watch(
   [showTasksModal, tasksProject],
   ([open, project]) => {

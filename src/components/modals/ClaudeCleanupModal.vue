@@ -62,9 +62,7 @@
       <button class="btn-modal-action btn-rescan" :disabled="loading || busy" title="Measure again" @click="rescan">
         <i class="fa-solid fa-rotate"></i>
       </button>
-      <!-- Two-state button rather than a second dialog: the narrow-UI principle (CLAUDE.md) says a
-           state change rides an existing element, and the confirm is more legible on the button that
-           carries the action than in a modal stacked over this one. -->
+      <!-- Two-state button confirm rides existing element per narrow-UI principle (CLAUDE.md) rather than stacked modal. -->
       <button
         class="btn-modal-action btn-cleanup-delete"
         :class="{ arming: arming }"
@@ -105,10 +103,7 @@ const selected = reactive(new Set())
 const open = reactive(new Set())
 const status = reactive({ msg: '', err: false })
 
-// Selection is per entry, not per group: the group checkbox is a shortcut over its own entries and
-// never a unit of its own. `agent-memory` is the reason - it sits alone in its own group so that
-// "select everything in Data" cannot reach authored content, while still being one click away for
-// someone who genuinely wants a clean slate.
+// Selection is per-entry (`agent-memory` sits alone so selecting all in Data never touches authored content).
 const selectedBytes = computed(() =>
   groups.value
     .filter((g) => g.deletable)
@@ -176,10 +171,7 @@ async function onDelete() {
   busy.value = true
   status.msg = ''
   try {
-    // Keys, never paths — the backend resolves each one against its own catalogue and refuses
-    // anything else (docs/feat/claudecode-cleanup.md § Safety). Re-derived from the current scan
-    // rather than sent straight from `selected`, so a key left over from a previous scan cannot ride
-    // along.
+    // Keys only (backend catalogue resolution safety); re-derived from scan to drop stale selected keys.
     const keys = groups.value
       .filter((g) => g.deletable)
       .flatMap((g) => g.entries.filter((e) => e.exists && selected.has(e.key)).map((e) => e.key))
@@ -191,9 +183,7 @@ async function onDelete() {
       : `Freed ${formatBytes(report.freedBytes)}.`
     selected.clear()
     await rescan()
-    // The Account group holds the very files the usage panel reads (auth-cache.json,
-    // rate-limits-cache.json - docs/arch/usage-claudecode.md). Without this the panel keeps showing
-    // quota numbers whose source no longer exists.
+    // Account group deletion removes usage panel cache files; refresh to clear stale quota numbers.
     triggerManualRefresh()
   } catch (e) {
     status.msg = String(e)
@@ -295,8 +285,7 @@ watch(
   color: #1a1a1a;
 }
 
-/* Partial selection reads as filled-but-hollow, so "some of this group" is distinguishable from
-   "all of it" at a glance rather than only via the icon. */
+/* Partial selection visual: distinguishable from full selection at a glance. */
 .pick.some {
   background: rgba(217, 119, 87, 0.35);
   color: #f5c4ae;
@@ -313,8 +302,7 @@ watch(
   font-size: 7px;
 }
 
-/* The memory group holds content the agent wrote, not state it cached - it is deletable like
-   anything else, but it should never be mistaken for the Cache row above it. */
+/* Memory group holds agent-authored content, distinct from cache state. */
 .group.warn {
   border-color: rgba(245, 158, 11, 0.35);
 }
@@ -485,8 +473,7 @@ watch(
   color: #fecaca;
 }
 
-/* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global narrow
-   rule, so the trim has to be repeated here. */
+/* Narrow mode (SSoT 700px, main.css): scoped padding overrides global narrow rule. */
 @media (max-width: 700px) {
   .modal-body   { padding: 10px 10px 8px; }
   .modal-footer { padding: 8px 10px 10px; }

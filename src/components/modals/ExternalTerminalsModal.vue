@@ -1,13 +1,9 @@
 <!--
-  External Terminal.app sessions — the detail behind the TERM cell's slate badge.
+  External Terminal.app sessions — detail behind TERM cell's slate badge.
 
-  DELIBERATELY NOT A SCREEN MIRROR. The app cannot read another application's window contents, and
-  the MVP does not pretend to: it reports what the OS can actually tell us about each session — the
-  directory it stands in, how long it has been alive, and what it is executing right now. That last
-  one is the part worth opening the modal for ("which window is the one running the dev server?").
+  DELIBERATELY NOT A SCREEN MIRROR: Reports OS-level session info (cwd, uptime, current command) rather than window contents.
 
-  One "session" is the ROOT of a cwd subtree (src-tauri/src/system.rs), i.e. one window/tab, not the
-  four processes inside it — the same rule the badge counts by, so the two can never disagree.
+  One "session" is the root of a cwd subtree (src-tauri/src/system.rs, 1 window/tab) matching the badge count SSoT.
 -->
 <template>
   <BaseModal
@@ -22,8 +18,7 @@
     </template>
 
     <div class="modal-body scrollable">
-      <!-- Error sits ABOVE the list, never instead of it: a failed re-scan must not blank out the
-           sessions we did successfully read a moment ago (they are almost certainly still true). -->
+      <!-- Error sits above list, never replacing it: failed re-scan must not blank out valid prior sessions. -->
       <div v-if="externalTermError" class="exterm-error mb-3">
         <i class="fa-solid fa-triangle-exclamation"></i> {{ externalTermError }}
       </div>
@@ -41,8 +36,7 @@
             <i class="fa-solid" :class="s.project_path ? 'fa-folder-open' : 'fa-terminal'"></i>
             {{ projectNameOf(s) }}
           </span>
-          <!-- Narrow mode: pid keeps its number (the one field you actually retype into `kill`),
-               tty and uptime drop out rather than wrapping the row onto three lines. -->
+          <!-- Narrow mode: keep PID for `kill`; hide tty and uptime to avoid wrapping row onto three lines. -->
           <span class="exterm-meta">
             <span class="exterm-tag" title="Process id">{{ s.pid }}</span>
             <span class="exterm-tag u-narrow-hide" title="Controlling terminal">{{ s.tty }}</span>
@@ -82,16 +76,7 @@ import {
   closeExternalTermModal,
 } from '../../composables/useExternalTerminals'
 
-// One existing line's text (docs/plan/done/terminal-ownership-model.md §5/S6), no new row: TAGGED
-// (`owner` matches a currently-listed project id — S3's spawn-origin tag, authoritative, cwd not
-// consulted at all) reads "launched from X" even when the session's cwd doesn't say so (an SSH
-// session's cwd is the local $HOME). ADOPTED (untagged, cwd matches a listed project's `local_path`)
-// reads "in X's folder" — today's existing reading, unchanged. Neither matching: the plain short
-// name, same as before S6.
-//
-// `project_path` comes back as the ORIGINAL path string the scan was given (the backend resolves
-// symlinks for matching but reports the un-resolved name), so this lookup is a plain string compare
-// against the same field the store holds.
+// Label logic (terminal-ownership-model.md §5): TAGGED (owner ID) -> "launched from X"; ADOPTED (project_path == local_path) -> "in X's folder"; fallback -> shortDir.
 function projectNameOf(s) {
   if (s.owner) {
     const tagged = projects.value.find(p => p.id === s.owner)
@@ -102,8 +87,7 @@ function projectNameOf(s) {
   return adopted ? `in ${adopted.name}'s folder` : shortDir(s.cwd)
 }
 
-/** Last path segment, `~` for home. A full path is already on the line below; the heading wants the
- *  short name a person would say out loud. */
+// Returns last path segment (~ for home) for concise heading display.
 function shortDir(p) {
   const trimmed = String(p || '').replace(/\/+$/, '')
   return trimmed.split('/').pop() || trimmed || '/'
@@ -120,8 +104,7 @@ function shortDir(p) {
   font-size: 11px;
 }
 
-/* Local, not a shared `.alert-box`: that class is scoped to IntroModal.vue and has never been a
-   global. One error line does not justify promoting it. */
+/* Scoped error style; .alert-box in IntroModal.vue is not a global. */
 .exterm-error {
   padding: 8px 10px;
   border: 1px solid var(--accent-red);

@@ -96,10 +96,7 @@ async function applyMode(mode) {
       mode: 'native', endpoint: null, apiKey: null,
       modelOpus: null, modelSonnet: null, modelHaiku: null,
     });
-    // Read the mode back from ~/.claude/settings.json instead of assuming the write did what was
-    // asked. `claudeMode` gates the local usage monitor (usageMonitorRegistry.js), so a stale or
-    // optimistic value there means the app is polling native quota numbers for a proxied CLI -
-    // the one thing that panel must never do.
+    // Re-read ~/.claude/settings.json directly to prevent polling native quota for a proxied CLI (gates usageMonitorRegistry).
     await refreshClaudeMode();
     status.msg = mode === 'proxy'
       ? 'Proxy applied. Restart Claude Code to take effect.'
@@ -260,8 +257,7 @@ async function applyMode(mode) {
   color: #fba97a;
 }
 
-/* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global
-   narrow rule, so the trim has to be repeated here. */
+/* Narrow mode (SSoT 700px, main.css): scoped padding outranks global narrow rule so trim is repeated here. */
 @media (max-width: 700px) {
   .modal-body   { padding: 10px 10px 8px; }
   .modal-footer { padding: 8px 10px 10px; }

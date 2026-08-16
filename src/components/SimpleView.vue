@@ -1,8 +1,4 @@
-<!--
-  Phone companion terminal view — renders the PTY byte stream as a plain text line stream. No xterm.js, no cols/rows, no grid geometry. Companion-only by TerminalStack.vue's routing (useTerminalViewType.js); this file itself is role-agnostic and never checks isHost.
-
-  Key row and compose row are copy-adapted from TerminalView.vue (SV-4: Rule of Three — this is the second consumer, not the third, and the two are not drop-in identical). Props match TerminalView.vue exactly so TerminalStack.vue's v-for can use either with no change to loop logic.
--->
+<!-- Phone companion terminal view: renders PTY byte stream as plain text lines. -->
 <template>
   <div class="sv-terminal">
     <!-- Scrolling text stream — the plain-text alternative to xterm's canvas grid. -->
@@ -16,10 +12,7 @@
       <div v-if="buffer" class="sv-line sv-line--buffer">{{ buffer }}</div>
     </div>
 
-    <!--
-      Key row: copy-adapted from TerminalView.vue. SimpleView is always the companion surface so the key row is always shown — there is no showKeyRow gate. sendRaw comes from usePtyStream rather than usePtyTerminal, but the wire path (FRAME_PTY_INPUT) is identical.
-      @mousedown.prevent + @touchstart.prevent: same fix as TerminalView.vue — prevents the button tap from moving focus away from the compose textarea and closing the soft keyboard.
-    -->
+    <!-- Key row: touch buttons for terminal control keys without dropping input focus. -->
     <div class="pty-key-row">
       <button
         v-for="k in KEY_ROW"
@@ -36,9 +29,7 @@
       </button>
     </div>
 
-    <!--
-      Compose row: copy-adapted from TerminalView.vue. Native <textarea> (no xterm, so no IME trap). No .prevent on the textarea itself — it must keep native focus so an IME can compose.
-    -->
+    <!-- Compose row: native textarea for mobile IME input composition. -->
     <div class="pty-compose-row">
       <textarea
         ref="composeInputEl"
@@ -64,7 +55,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { usePtyStream } from '../composables/usePtyStream'
 
-// Props match TerminalView.vue exactly so TerminalStack.vue's v-for can use either with no change to loop logic (docs/plan/wish-terminal-split-simpleview.md §SimpleView.vue interface).
+// Props match TerminalView.vue interface for TerminalStack routing.
 const props = defineProps({
   cwd:    { type: String,  default: null },
   tabId:  { type: Number,  default: 0 },
@@ -73,8 +64,7 @@ const props = defineProps({
 
 const { lines, buffer, alive, sendRaw, start } = usePtyStream(props.tabId)
 
-// ── Auto-scroll ────────────────────────────────────────────────────────────────
-// Track whether the user is at (or within a threshold of) the bottom. When they are, auto-scroll on every new line; when they have scrolled up, do not forcibly pull them back — that would interrupt reading history mid-stream.
+// Auto-scroll on new lines unless user has manually scrolled up.
 const streamEl = ref(null)
 const userScrolledUp = ref(false)
 const SCROLL_THRESHOLD = 40 // px from the bottom to still count as "at the bottom"
@@ -108,8 +98,7 @@ watch(
   },
 )
 
-// ── Key row ────────────────────────────────────────────────────────────────────
-// Data-driven key row, same shape as TerminalView.vue. Sticky Ctrl/Shift latches are owned locally (no usePtyTerminal — this composable does not exist here), because SimpleView has no xterm binding to pipe through.
+// Data-driven key row with local modifier latches.
 const KEY_ROW = [
   { title: 'Esc',                                          label: 'Esc',   seq: '\x1b' },
   { title: 'Tab',                                          label: 'Tab',   seq: '\t', shiftSeq: '\x1b[Z' },
@@ -129,8 +118,7 @@ function toggleModifier(mod) {
   pendingModifiers.value = { ...pendingModifiers.value, [mod]: !pendingModifiers.value[mod] }
 }
 
-// Translate a key-row entry into the raw bytes to send, applying any armed modifiers.
-// Mirrors the emitKey contract from usePtyTerminal.js without importing that composable.
+// Translate a key-row entry into raw bytes to send with active modifiers.
 function emitKeyRaw(k) {
   // Ctrl modifier: convert a printable character to its control byte (A→\x01, C→\x03, …).
   if (k.char !== undefined) {
@@ -175,8 +163,7 @@ function onKeyClick(k) {
   fireKey(k)
 }
 
-// ── Compose row ────────────────────────────────────────────────────────────────
-// Copy-adapted from TerminalView.vue. Same IME guard, same multi-line join, same send-then-refocus pattern. No xterm dependency here — sendRaw goes to usePtyStream.
+// Compose input handling with IME composition guard and multiline send.
 const composeInputEl = ref(null)
 const composeText = ref('')
 const POST_COMPOSITION_MS = 50 // same window as useTerminalTextDrain.js
@@ -207,7 +194,6 @@ function onComposeKeydown(e) {
 }
 
 // Returns the control byte for a character, or null if none applies.
-// Used by the compose keydown guard — mirrors the usePtyTerminal.js helper.
 function ctrlByteFor(char) {
   const code = char.toUpperCase().charCodeAt(0)
   if (code >= 64 && code <= 95) return code - 64
@@ -216,21 +202,20 @@ function ctrlByteFor(char) {
 
 function onComposeSend() {
   if (!sendRaw) return
-  // Multi-line compose: join with \r, send the whole thing, then add the final \r. A single-line send is bit-identical to before (text + '\r'). Empty text + send is still useful (a bare Enter), so always appends '\r'.
+  // Multiline compose joins with \r and appends trailing \r for execution.
   const textLines = (composeText.value || '').split(/\r\n|\n|\r/)
   sendRaw(textLines.join('\r') + '\r')
   composeText.value = ''
   composeInputEl.value?.focus()
 }
 
-// ── Lifecycle ──────────────────────────────────────────────────────────────────
 onMounted(async () => {
   await start()
   // Initial scroll after the stream renders its first batch of lines.
   nextTick(scrollToBottom)
 })
 
-// Consumed by dock/TerminalStack.vue's header buttons — same shape as TerminalView.vue. `alive` is the tri-state ref itself ('unknown'|true|false) from usePtyStream. Only `alive` is exposed: SimpleView has no xterm to restart/clear/kill/focus/openExternal.
+// Expose alive status for TerminalStack header controls.
 defineExpose({
   alive: computed(() => alive.value ?? 'unknown'),
 })
@@ -248,7 +233,7 @@ defineExpose({
   min-height: 0;
 }
 
-/* Scrolling text stream — the phone's xterm replacement. `font-family: ui-monospace` gives the same monospace coverage as the xterm side without importing the terminal library. The background and text colours match the xterm THEME object in TerminalView.vue so the two surfaces look consistent when a user glances between them. `word-break: break-all` prevents an extremely long unspaced line (e.g. a base64 dump) from overflowing the viewport on a narrow phone. */
+/* Plain text streaming terminal viewport for mobile companion screens. */
 .sv-stream {
   flex: 1;
   min-height: 0;
@@ -265,14 +250,14 @@ defineExpose({
   user-select: text;
 }
 
-/* Each committed line occupies its own block so a bare \n from the PTY adds a blank line exactly as it does in a real terminal. `min-height: 1lh` ensures blank lines are visible (an empty <div> collapses to zero in most browsers). */
+/* Committed output lines with minimum 1lh height for empty blank lines. */
 .sv-line {
   display: block;
   min-height: 1lh;
   white-space: pre-wrap;
 }
 
-/* In-progress buffer line: slightly dimmed to distinguish it from committed output. This is the write buffer from usePtyStream — text that has arrived but whose newline has not yet landed. */
+/* In-progress uncommitted PTY buffer line. */
 .sv-line--buffer {
   opacity: 0.7;
 }

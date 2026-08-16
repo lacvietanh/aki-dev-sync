@@ -21,8 +21,7 @@
 
     <div class="modal-body">
             <div class="preview-box">
-              <!-- u-select-text (main.css): the rendered line is worth copying into a terminal or
-                   an issue, so it opts out of the app-wide no-selection default. -->
+              <!-- u-select-text (main.css): line opts out of app-wide no-selection default for easy copying. -->
               <pre class="preview-line u-select-text" v-html="previewHtml"></pre>
             </div>
 
@@ -30,16 +29,14 @@
               <span>Fields <span class="hint">(drag the grip to reorder)</span></span>
               <button type="button" class="toggle-all-btn" @click="toggleAllFields">{{ allFieldsEnabled ? 'Uncheck all' : 'Check all' }}</button>
             </div>
-            <!-- Pinned, not part of the draggable field-list below: it must always render first,
-                 so unlike every other field it has no grip handle and isn't a TransitionGroup item. -->
+            <!-- Pinned first: rendered without drag grip outside TransitionGroup. -->
             <div class="row-item pinned-row" :title="CATALOG.cli_tag.desc">
               <i class="fa-solid fa-thumbtack pin-icon" title="Fixed position - always first"></i>
               <label class="ctl-toggle">
                 <input type="checkbox" :checked="fieldEnabled('cli_tag')" @change="setFieldEnabled('cli_tag', $event.target.checked)" />
                 <span class="ctl-label">{{ CATALOG.cli_tag.label }}</span>
               </label>
-              <!-- Account lives in this cluster, not in the draggable list: the script glues it to
-                   the tag and paints it on the tag's own background. -->
+              <!-- Account is clustered with tag on same background, excluded from draggable list. -->
               <label class="ctl-toggle" :title="CATALOG.account.desc">
                 <input type="checkbox" :checked="fieldEnabled('account')" @change="setFieldEnabled('account', $event.target.checked)" />
                 <span class="ctl-label">{{ CATALOG.account.label }}</span>
@@ -73,8 +70,7 @@
                             <input type="checkbox" :disabled="controlBlocked(control)" :checked="fieldEnabled(control.key)" @change="setFieldEnabled(control.key, $event.target.checked)" />
                             <span class="ctl-label">{{ control.label }}</span>
                           </label>
-                          <!-- Hint text, not a control: at narrow widths its room is better spent on
-                               the toggles and inputs beside it (u-narrow-hide, main.css). -->
+                          <!-- Hint text hidden on narrow screens (u-narrow-hide, main.css). -->
                           <span v-else-if="control.type === 'parts'" class="ctl-parts u-narrow-hide">
                             <span v-for="(p, pi) in control.items" :key="pi" class="ctl-part">{{ p }}</span>
                           </span>
@@ -123,9 +119,7 @@
             </TransitionGroup>
 
             <div class="section-label">Dynamic color <span class="hint">(each band starts at the % below it)</span></div>
-            <!-- The ladder drawn to scale: every band's width is its share of 0-100, and the number
-                 sits under the band's own left edge, so the input's position *is* its meaning - no
-                 </≥ symbols to decode. -->
+            <!-- Ladder drawn to scale: band width proportional to 0-100 share with input under left edge. -->
             <div class="ladder-bar">
               <div v-for="t in ladder" :key="t.key" class="ladder-cell" :style="{ flexGrow: Math.max(1, t.to - t.from) }">
                 <span class="ladder-seg" :style="{ background: t.hex }" :title="swatchTitle(t)"></span>
@@ -139,9 +133,7 @@
               </div>
             </div>
 
-            <!-- There is no separator character any more: blocks are told apart by alternating
-                 background shades. Two swatch rows, not a free color picker - the choice is
-                 restricted to the neutral ramp so a background can never fight a text color. -->
+            <!-- Alternating background shades on neutral ramp distinguish blocks without fighting text color. -->
             <div class="section-label">
               <span>Block background</span>
               <label class="sep-toggle" title="Pad every block with a space on each side, so the shades read as separate plates instead of one strip. The tag cluster is never padded.">
@@ -175,10 +167,7 @@
               >
                 <input type="checkbox" :value="h" v-model="selectedHosts" />
                 {{ h === 'local' ? 'Local' : h }}
-                <!-- One tag per CLI actually present on that host: lit = its statusline renders,
-                     hollow amber = the CLI is there but nothing is wired up. A CLI the host does
-                     not have prints nothing at all - absence is the honest reading, and it costs
-                     no width. -->
+                <!-- Tag per host CLI: lit = live statusline, hollow amber = CLI present but unwired, absent = not installed. -->
                 <span
                   v-for="t in cliTags(h)"
                   :key="t.cli"
@@ -231,8 +220,7 @@ const STORAGE_KEY = 'aki-statusline-config';
 const CONFIG_VERSION = 3;
 const TARGETS_KEY = 'aki-statusline-targets';
 
-// UI-only metadata for the field keys the Rust side understands (src-tauri/src/statusline.rs).
-// Keep in sync with `default_config()` there when adding a new field key.
+// UI metadata for statusline field keys; keep in sync with `default_config()` in src-tauri/src/statusline.rs.
 const CATALOG = {
   cli_tag:     { label: 'CLI tag', desc: 'Colored tag at the very start of the line identifying which CLI rendered it - always first, cannot be reordered' },
   identity_user: { label: 'user', desc: 'Local username, cut to the width set on this row' },
@@ -261,8 +249,7 @@ const TIER_BY_KEY = Object.fromEntries(TIERS.map(t => [t.key, t]));
 const CALM = TIERS[0];
 const TIER_KEYS = ['green', 'yellow', 'orange', 'red'];
 
-// The dollar spend a session's cost is scaled against before being run through the ladder.
-// Mirrors COST_FULL_USD in src-tauri/src/statusline.rs.
+// Scaling ceiling for session cost dynamic color (mirrors COST_FULL_USD in src-tauri/src/statusline.rs).
 const COST_FULL_USD = 30;
 
 // TRUNC_MIN/MAX bounds - rationale: docs/feat/statusline-customizer.md § Truncate widths.
@@ -318,30 +305,7 @@ function colorTitle(key) {
 const COLOR_EDITABLE = new Set(['identity_user', 'identity_host', 'account', 'cwd', 'model', 'git_branch']);
 function isColorEditable(key) { return COLOR_EDITABLE.has(key); }
 
-// Declarative row/group catalog (RULE-design-core: one shape for every row, not a hardcoded
-// special case per group). A GROUP describes 1..N lines of controls; every key it lists moves
-// together as one draggable row. Any cfg.fields key NOT listed in any group here renders as a
-// plain 1-line, 1-toggle(+color) row - see `rows` computed below, which is the only place that
-// tells bare fields and groups apart, and it does so from data, not markup.
-//
-// Control types:
-//   toggle  - one field's enable checkbox. `dependsOn` greys it out and forces it off while the
-//             named field is off (effort only means something next to a model name).
-//   master  - a UI-only checkbox reflecting/setting several fields at once. No field key of its own.
-//   color   - the field's color picker, or the recessed "Dynamic color" note when the color is
-//             computed from the value rather than chosen (see COLOR_EDITABLE).
-//   parts   - non-interactive: names the pieces the field actually prints, in print order, so the
-//             row shows what it builds instead of only what it is called.
-//
-// A line normally holds one flat list of `controls`. A line may instead hold `segments` - several
-// sub-lists that each render as one flex unit. Special segment flags:
-//   tight   - visually brackets its controls with a subtle border (identity's `user @ host`).
-//   spacer  - an empty flex-1 gap; separates left controls from right controls in the same row.
-//
-// `GROUPS` here is a UI grouping only. The generated script has no notion of it: each block is a
-// `g_<block>` variable assembled in src-tauri/src/statusline-unified.sh, and the row order becomes
-// BLOCK_ORDER. A group's `sep` must therefore match how that block glues its members in the
-// template (identity '@', model '', quota ' ', cache ' ') - the preview is what would drift.
+// Declarative row/group catalog; group.sep matches block assembly in src-tauri/src/statusline-unified.sh.
 const GROUPS = [
   {
     id: 'identity',
@@ -452,9 +416,7 @@ const GROUPS = [
   },
 ];
 
-// SSOT for the statusline defaults - see docs/feat/statusline-customizer.md § SSOT: the Vue component.
-//
-// Transcribed from the verified reference implementation (src-tauri/src/statusline-unified.sh, spec §8.2). If the two ever disagree again, the script is right and this list is wrong.
+// Statusline defaults SSoT (mirrors reference implementation in src-tauri/src/statusline-unified.sh).
 function defaultLocalConfig() {
   return {
     fields: [
@@ -499,9 +461,7 @@ function clampTrunc(val, fallback, name) {
   return Math.min(truncMax(name), Math.max(TRUNC_MIN, n));
 }
 
-// Loads the saved config, keeping only what the current catalog still knows about. There is NO migration path: an unknown key is dropped, a missing one takes its default.
-//
-// What survives from a saved config: which fields are on, their colors, their order, the ladder thresholds, the truncate widths and the zebra shades. Everything else is rebuilt from default.
+// Loads saved config; drops unknown keys and falls back to defaults without migration.
 function loadCfg() {
   const def = defaultLocalConfig();
   let saved = null;
@@ -543,8 +503,7 @@ const busy = ref(false);
 const status = reactive({ msg: '', err: false });
 const results = ref([]);
 const selectedHosts = ref(['local']);
-// Which CLIs Apply writes to. Both are on by default - the previous `['ag']` default meant a plain
-// Apply silently skipped ~/.claude/statusline-command.sh, so edits aimed at Claude Code never landed. Persisted separately from the field config so the choice survives closing the modal.
+// Target CLIs for Apply; both enabled by default and persisted separately from field config.
 const selectedTargets = ref(loadTargets());
 const hostStatus = ref({});
 
@@ -676,7 +635,7 @@ function toggleAllFields() {
 // A line is authored either as one flat `controls` list or as explicit `segments` when part of it is its own visual unit - normalized here so the template renders one shape, not two.
 function segmentsOf(line) { return line.segments || [{ controls: line.controls }]; }
 
-// The color control is a swatch, not a named dropdown: the name of a color says less than the color, and costs several times the width (extreme-narrow rule, CLAUDE.md). One picker is open at a time, keyed by field.
+// Color swatch control (extreme-narrow rule); one picker open at a time keyed by field.
 const pickerFor = ref(null);
 function togglePicker(key) { pickerFor.value = pickerFor.value === key ? null : key; }
 function pickColor(key, color) {
@@ -710,9 +669,7 @@ function lineActive(line) {
   });
 }
 
-// Projects cfg.fields into display rows (groups collapsed, bare fields as-is) - see docs/feat/statusline-customizer.md § Fields, groups, blocks.
-//
-// `cli_tag` is excluded here on purpose - it gets its own pinned, non-draggable row in the template (rendered outside this list) instead of one more entry a user could drag around.
+// Projects cfg.fields into display rows; pinned `cli_tag` & `account` are excluded from draggable list.
 const rows = computed(() => {
   // `account` joins cli_tag in the pinned row: the script prints it glued to the tag, sharing that cluster's own background, so it has no position of its own to drag it to.
   const consumed = new Set(['cli_tag', 'account']);
@@ -822,8 +779,7 @@ async function apply() {
   }
 }
 
-// ---- live preview: mirrors the rendering rules in src-tauri/src/statusline-unified.sh, against fixed
-// sample data, purely for on-screen feedback (never sent to the backend). ----
+// ---- live preview: mirrors rendering rules in src-tauri/src/statusline-unified.sh against fixed sample data ----
 const SAMPLE = {
   user: 'aki', host: 'akitao', account: 'user-a@example.com', cwd: 'Aki-Dev-Sync', model: 'sonnet 5', effort: 'med',
   ctxPct: 72, ctxUsed: '134.4k', ctxMax: '1M',
@@ -875,8 +831,7 @@ function renderField(key) {
     case 'effort':
       return span(SAMPLE.effort, GREY_HEX);
     case 'context':
-      // No percentage: the script dropped it and colors the token count itself against a fixed
-      // 200k scale, because that number is what starts to hurt regardless of the window size.
+      // Token count is colored against 200k scale without displaying percentage.
       return span('ctx', WHITE_HEX) + span(SAMPLE.ctxUsed, tierHex(SAMPLE.ctxPct)) +
         span('/', GREY_HEX) + span(SAMPLE.ctxMax, GREY_HEX);
     case 'rate_limits_5h': {
@@ -969,8 +924,7 @@ const previewHtml = computed(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 8px 10px;
-  /* A block never breaks internally (see .pv-block), so one long block in a narrow window has to
-     scroll inside this box rather than widening the modal. */
+  /* Prevents modal widening on narrow windows with unbroken preview blocks. */
   overflow-x: auto;
 }
 
@@ -983,10 +937,7 @@ const previewHtml = computed(() => {
   word-break: normal;
 }
 
-/* One statusline block (a field, or a whole group). inline-block + nowrap makes the line break
-   between blocks rather than inside one. The alternating background is set inline per block (see
-   previewHtml) and is the only thing separating two blocks - so no margin or padding here, or the
-   gap would reintroduce the separator this design removed. */
+/* Statusline block: inline-block + nowrap breaks between blocks; zebra background provides separation. */
 :deep(.pv-block) {
   display: inline-block;
   white-space: nowrap;
@@ -1049,8 +1000,7 @@ const previewHtml = computed(() => {
 
 .row-item.dragging { opacity: 0.4; }
 
-/* Drop-position indicator: a thin accent line on the edge the dragged row would land on  - 
-   communicated via an existing element's border, no extra DOM. */
+/* Drop-position indicator: accent line on target edge without extra DOM. */
 .row-item.drop-before { box-shadow: inset 0 2px 0 0 #d97757; }
 .row-item.drop-after { box-shadow: inset 0 -2px 0 0 #d97757; }
 
@@ -1100,9 +1050,7 @@ const previewHtml = computed(() => {
   min-width: 0;
 }
 
-/* One checkbox shape for the whole modal. The native control renders as a light filled square,
-   which at 14px sat right beside the color swatches and read as "the white color". This one is
-   hollow when off and carries a drawn check when on - a state, not a color sample. */
+/* Custom checkbox shape: hollow when off, drawn check when on to avoid confusion with color swatches. */
 .ctl-toggle input[type="checkbox"],
 .host-chip input[type="checkbox"],
 .sep-toggle input[type="checkbox"],
@@ -1148,13 +1096,11 @@ const previewHtml = computed(() => {
 
 .ctl-master { font-weight: 600; }
 
-/* A toggle whose parent field is off: still readable, clearly not actionable. No extra row or
-   explanatory text - the greying is the whole message (extreme-narrow rule, CLAUDE.md). */
+/* Blocked toggle visual: dimmed and not actionable when parent field is inactive (CLAUDE.md). */
 .ctl-blocked { cursor: not-allowed; opacity: 0.4; }
 .ctl-blocked input { cursor: not-allowed; }
 
-/* Non-interactive: the pieces the field prints, in print order, so the row shows its shape.
-   Monospace + very low contrast so it reads as a hint, never as a control. */
+/* Non-interactive field format preview tokens. */
 .ctl-parts {
   display: flex;
   align-items: center;
@@ -1196,8 +1142,7 @@ const previewHtml = computed(() => {
   gap: 5px;
 }
 
-/* Flexible gap between left and right control clusters in a row (identity id vs user@host,
-   model swatch vs effort, 5h/7d toggle vs Reset ETA). Clamped so it's ≈3vw but never tiny. */
+/* Flexible clamped gap between left and right control clusters in a row. */
 .ctl-spacer { flex: 0 0 clamp(12px, 3vw, 40px); }
 
 /* Color swatch button (current color) + its pop-out palette. One picker open at a time. */
@@ -1226,8 +1171,7 @@ const previewHtml = computed(() => {
   outline-offset: 1px;
 }
 
-/* 2 columns x 4 rows, filled column-first (top-to-bottom then next column) - a vertical grid
-   takes less horizontal space than the old single row of 8 swatches. */
+/* 2x4 swatch grid filled column-first for compact width. */
 .swatch-pop {
   position: absolute;
   right: 0;
@@ -1260,8 +1204,7 @@ const previewHtml = computed(() => {
   flex-shrink: 0;
 }
 
-/* The "separate" switch rides in the section label rather than taking a row of its own - it is a
-   property of the backgrounds named right beside it (extreme-narrow rule, CLAUDE.md). */
+/* Separate switch in section label per extreme-narrow rule (CLAUDE.md). */
 .sep-toggle {
   display: inline-flex;
   align-items: center;
@@ -1275,8 +1218,7 @@ const previewHtml = computed(() => {
 }
 .sep-toggle input { margin: 0; }
 
-/* A row's one-line note: states behaviour the row has no control for, so the user stops looking
-   for the switch. Recessed - it is not another setting. */
+/* Recessed row note for fixed behaviours without dedicated toggles. */
 .row-note {
   font-size: 9px;
   color: #475569;
@@ -1284,8 +1226,7 @@ const previewHtml = computed(() => {
   line-height: 1.2;
 }
 
-/* Per-field truncate width. Sits inline in the row it belongs to rather than in a settings block
-   of its own - the number means nothing away from the field it cuts. */
+/* Inline per-field truncate width input. */
 .ctl-trunc {
   display: inline-flex;
   align-items: center;
@@ -1383,8 +1324,7 @@ const previewHtml = computed(() => {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* TransitionGroup reorder animation - rows slide into their new slot; enter/leave stay minimal
-   since rows are only added/removed on Reset, not during a drag (drag mutates order in place). */
+/* TransitionGroup reorder animation for draggable rows. */
 .row-move { transition: transform 0.2s ease; }
 .row-enter-active, .row-leave-active { transition: opacity 0.15s ease; }
 .row-enter-from, .row-leave-to { opacity: 0; }
@@ -1408,9 +1348,7 @@ const previewHtml = computed(() => {
 
 .host-chip.active { color: #fba97a; border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
 
-/* Per-CLI state, inside the chip. Lit = renders a line; hollow amber = CLI present, nothing wired.
-   Deliberately a bordered rectangle with a letter in it - a color swatch is a solid, borderless
-   square of a single color, so the two can never be read as the same control. */
+/* Per-CLI state inside chip: lit = renders line, hollow amber = unwired, distinct from swatch. */
 .cli-tag {
   font-size: 8px;
   line-height: 1;
@@ -1526,15 +1464,12 @@ const previewHtml = computed(() => {
   cursor: pointer;
 }
 
-/* Narrow mode (SSoT 700px, main.css) - this file's scoped padding outranks the global
-   narrow rule, so the trim has to be repeated here. */
+/* Narrow mode (SSoT 700px, main.css): scoped padding overrides global narrow rule. */
 @media (max-width: 700px) {
   .modal-body   { padding: 10px 10px 8px; }
   .modal-footer { padding: 8px 10px 10px; }
 
-  /* main.css clamps every direct child of a modal <h2> to one ellipsized line so a long project
-     name cannot push the close button off screen. This title is a wrapping flex row instead, so it
-     has to opt back out or the "Apply to" pair gets clipped rather than dropping to a second line. */
+  /* Wrapping flex title opts out of modal h2 single-line clamp (main.css) to preserve target selector. */
   .modal-title-wrap {
     white-space: normal;
     overflow: visible;
@@ -1542,8 +1477,7 @@ const previewHtml = computed(() => {
   }
   .header-target-selector { margin-left: 0; gap: 8px; }
 
-  /* Rows carry a toggle, a swatch and a number input; the flexible gap is the only part that can
-     give without something being cut off. */
+  /* Reduced flexible gap on narrow screens to prevent control clipping. */
   .ctl-spacer { flex-basis: 6px; }
 }
 </style>
