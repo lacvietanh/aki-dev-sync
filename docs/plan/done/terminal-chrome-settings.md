@@ -64,7 +64,7 @@ Effective visibility of any control is:
 
 `visible = capability(control, thisScreen) && preference[control]`
 
-with one absolute rule: **preference never widens capability.** A control the screen cannot support is not rendered, and its checkbox is not offered as checkable — a phone must never be able to tick "External terminals", whose `list_external_terminals` command is deliberately absent from `services/hostInvoke.js`'s companion allowlist and could only ever open a modal showing an error.
+with one absolute rule: **preference never widens capability.** A control the screen cannot support is not rendered, and its checkbox is not offered as checkable — a phone must never be able to tick "External terminals", whose `describe_terminal_sessions` command (renamed from `list_external_terminals`, 2026-08-16) is deliberately absent from `services/hostInvoke.js`'s companion allowlist and could only ever open a modal showing an error.
 
 Mechanically this follows the pattern `docs/arch/terminal-stack.md` § "The capability pattern" already establishes: the composable publishes named capabilities (`showKeyRow`, `ownsPtySize`, `externalTerminalsSupported`) and the component asks what it can *do*, never who it is. `useTerminalChrome.js` (§5) follows suit — it may import `isHost` from `services/bridge` (as `useExternalTerminals.js` and `usePtyTerminal.js` already do), and publishes a `chromeVisible` map plus a `chromeMenuRows` list; `TerminalStack.vue` and `TerminalView.vue` read the map and never gain an `isHost` import (ENV-1).
 

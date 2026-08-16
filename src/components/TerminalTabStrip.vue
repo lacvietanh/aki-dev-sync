@@ -27,12 +27,18 @@
       @click="onChipClick(t)"
       @contextmenu.prevent="startRename(t)"
     >
-      <i
-        class="fa-solid fa-thumbtack icon-pin"
+      <span
+        class="tab-icon-btn icon-pin"
         :class="{ 'is-pinned': t.pinned }"
-        :title="t.pinned ? 'Unpin' : 'Pin — show in every group'"
+        :title="t.pinned ? 'Unpin — keep in this group only' : 'Pin — show in every group'"
+        :aria-label="t.pinned ? 'Unpin tab' : 'Pin tab'"
+        role="button"
+        tabindex="0"
         @click.stop="togglePin(t.id)"
-      ></i>
+        @keydown.enter.stop="togglePin(t.id)"
+      >
+        <i class="fa-solid fa-thumbtack"></i>
+      </span>
       <i class="fa-solid fa-terminal icon-default"></i>
       <input
         v-if="renamingId === t.id"
@@ -46,7 +52,17 @@
         @keydown.esc="renamingId = null"
       />
       <span v-else class="tab-title">{{ t.title }}</span>
-      <i class="fa-solid fa-xmark icon-close" @click.stop="closeTab(t.id)"></i>
+      <span
+        class="tab-icon-btn icon-close"
+        title="Close tab (⌘W)"
+        aria-label="Close tab"
+        role="button"
+        tabindex="0"
+        @click.stop="closeTab(t.id)"
+        @keydown.enter.stop="closeTab(t.id)"
+      >
+        <i class="fa-solid fa-xmark"></i>
+      </span>
     </button>
     <button class="tab term-tab term-tab-add" :class="{ 'is-full': scopeFull }" :title="addTitle" @click="newTab">
       <i class="fa-solid fa-plus"></i>
@@ -141,6 +157,14 @@ function commitRename(t, value) {
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
+.tab-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 2px;
+}
+
 /* Left-edge pin toggle — reuses the chip's own existing accent color (the active-chip blue), no new
    token. Sits inside the same 4px gap as every other chip icon, so the chip's width/height is
    unchanged (Extreme Narrow) — it just claims a slice of the space the title already truncates into. */
@@ -154,7 +178,7 @@ function commitRename(t, value) {
 }
 .term-tab .icon-pin.is-pinned {
   opacity: 1;
-  color: #60a5fa;
+  color: var(--accent-blue);
 }
 
 .tab-title {
@@ -199,9 +223,11 @@ function commitRename(t, value) {
 .term-tab .icon-close {
   flex: 0 0 auto;
   opacity: 0.5;
+  font-size: 11px;
 }
 .term-tab .icon-close:hover {
   opacity: 1;
+  color: var(--accent-red);
 }
 
 .term-tab-add {
