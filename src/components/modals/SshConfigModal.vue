@@ -45,8 +45,7 @@ const {
   closeSshModal, handleEditorTab, saveSshConfig, undoSshConfig, redoSshConfig
 } = useSsh()
 
-// The host-side project migration now lives in the saveSshConfig/undo/redo action path
-// (remoteActions.applySshHostsChange), so the modal no longer forwards saveProjectsList.
+// Save, undo, and redo actions delegate to useSsh composable.
 function save() { saveSshConfig() }
 function undo() { undoSshConfig() }
 function redo() { redoSshConfig() }
@@ -102,10 +101,7 @@ function redo() { redoSshConfig() }
   box-shadow: 0 0 0 2px rgba(0, 210, 255, 0.2);
 }
 
-/* Narrow mode (SSoT 700px, main.css). This body also carries `.ssh-editor-container`, whose 20px
-   padding lives in main.css at the same specificity as the global `.modal-body` trim - which of
-   the two wins depends on source order. Restating it here (scoped, so it carries a data-v
-   attribute and outranks both) makes the result deterministic instead of order-dependent. */
+/* Narrow mode container padding (<=700px). */
 @media (max-width: 700px) {
   .ssh-editor-container {
     padding: 10px;

@@ -3,9 +3,7 @@
     <!-- Premium Tooltip Container -->
     <div class="usage-circle-container" :class="{ 'is-muted': muted }" @mouseenter="updateTime">
       <div class="circle-main-row">
-        <!-- Wide layout: label sits beside the ring. At the narrow breakpoint (<=700px) this
-             same span gets absolutely repositioned over the ring's top interior instead  - 
-             see the @media block below - so this markup covers both without branching. -->
+        <!-- Repositioned over ring interior at container width <=700px -->
         <span class="circle-sub-label">{{ subLabel }}</span>
         <div class="circle-svg-wrapper">
           <svg class="radial-progress" viewBox="0 0 36 36">
@@ -16,11 +14,7 @@
                     cy="18"
                     r="15"
                     stroke-width="3" />
-            <!-- Active Progress Circle - wrapped in Vue's native <Transition> so appearing/
-                 disappearing (N/A <-> real data, e.g. right after an account switch momentarily
-                 clears percentage) fades via Vue's own enter/leave lifecycle instead of an
-                 abrupt v-if mount/unmount. The persistent :stroke-dashoffset CSS transition
-                 below still handles same-element percentage changes while mounted. -->
+            <!-- Vue Transition provides fade enter/leave when data availability toggles -->
             <Transition name="circle-fill">
               <circle
                       v-if="hasPercentage && percentage > 0"
@@ -94,15 +88,12 @@ const props = defineProps({
     type: Number,
     default: null
   },
-  // This reading is still correct but no longer decision-relevant, so it is drawn dimmed and
-  // without the colour ladder - the eye should land on the reading that still matters. Set by the
-  // caller for ONE pool at a time (AgentUsage.vue passes its own pool's weekly state); this
-  // component never infers it, so it can't leak across pools.
+  // Dimmed display when reading is valid but secondary to caller focus
   muted: {
     type: Boolean,
     default: false
   },
-  // Why it is dimmed, shown as an extra tooltip line. No effect unless `muted`.
+  // Reason shown in tooltip when muted
   mutedReason: {
     type: String,
     default: ''
@@ -349,9 +340,7 @@ export default {
   color: var(--text-darker);
 }
 
-/* `muted`: no colour ladder, just a dim reading (see the prop's comment). Dimming is applied to
-   the ring + time line only, never to the tooltip that explains why - and it adds no element of
-   its own, per the extreme-narrow UI principle. */
+/* Muted state: dims ring and time line without altering tooltip */
 .color-muted {
   stroke: rgba(255, 255, 255, 0.22);
   color: var(--text-darker);
@@ -363,11 +352,7 @@ export default {
   transition: opacity 0.2s ease;
 }
 
-/* Tooltip implementation - opens upward (not below-right) and sized down. The usage panel
-   that hosts these circles (AgentUsageSection.vue) is a fixed-height box with overflow-y:auto,
-   and a tooltip opening downward from a circle near the bottom of that box got clipped by the
-   scroll container before it ever became visible. Opening upward + shrinking the footprint is
-   a global fix (not narrow-breakpoint-only) since the clipping isn't width-dependent. */
+/* Tooltip positioned upward to prevent clipping inside scrollable parent containers */
 .premium-tooltip {
   visibility: hidden;
   opacity: 0;
@@ -454,10 +439,7 @@ export default {
   margin-top: 1px;
 }
 
-/* Narrow mode only (<=700px) - the ring is the only thing with spare room at this width, so the
-   label moves off to the side and onto the ring itself instead: absolutely positioned over the
-   ring's top interior, tiny but still legible, with the percentage nudged down a touch to make
-   room. Outside this breakpoint the wide "label beside ring" layout above is untouched. */
+/* Narrow mode (<=700px): center sub-label over ring interior */
 @container main-view (max-width: 700px) {
   .circle-main-row {
     position: relative;

@@ -1,22 +1,6 @@
-<!--
-  Companion pairing screen — docs/plan/done/remote-control.md §7.1.
-
-  Renders ONLY on a phone/browser companion that has no accepted token (`needsPairing`), and covers
-  the app completely: behind it every panel would be empty anyway, since no state can be mirrored
-  until the socket is paired. On the host it renders nothing at all.
-
-  Deliberately full-viewport with large touch targets — the "Extreme Narrow" rule tunes the Mac
-  window's density and does not apply to a phone screen that is showing one input.
--->
+<!-- Companion pairing screen rendered on unauthenticated phone/browser companion (docs/plan/done/remote-control.md §7.1). -->
 <template>
-  <!-- Shown whenever the companion is NOT ready (socket not open). On the host `ready` is always
-       true, so this renders nothing.
-
-       ROBUST-1: the code-entry form is ALWAYS present here, in every not-ready state — no token,
-       stale token, connecting, closed, errored. An earlier version hid the input whenever a token
-       existed and only revealed it on a 4001 close; a phone whose socket hung at "connecting" or
-       failed with a non-4001 error then had no way to re-enter a code and sat on a dead
-       "Connecting…" screen forever. Keeping the form always visible makes that unreachable. -->
+  <!-- Form is always present in not-ready states to prevent dead-end screens on socket hang. -->
   <div v-if="!ready" class="pair-gate">
     <div class="pair-card">
       <i class="fa-solid fa-tower-broadcast pair-ic"></i>
@@ -60,7 +44,7 @@ const { ready, needsPairing, busy, error, connectionState, submitCode } = useCom
 const code = ref('');
 const codeInput = ref(null);
 
-// Strip anything that isn't a digit as it is typed: iOS autofill and some keyboards paste the code with spaces or a trailing character, which would fail the 6-digit check for no visible reason.
+// Strip non-digits on input to handle iOS autofill spaces or trailing characters.
 function onInput() {
   code.value = code.value.replace(/\D/g, '').slice(0, 6);
 }
@@ -81,7 +65,7 @@ const stateLabel = computed(() => {
 });
 
 onMounted(() => {
-  // The code input is present in every not-ready state now (ROBUST-1), so focus it whenever it exists. On the host the gate renders nothing, so `codeInput` is null and this no-ops.
+  // Focus code input on mount if rendered.
   codeInput.value?.focus();
 });
 </script>

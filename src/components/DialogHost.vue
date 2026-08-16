@@ -1,8 +1,5 @@
 <template>
-  <!-- Renders nothing itself — Swal.fire is a portal-style overlay driven imperatively below.
-       Mounted on BOTH host and companion (docs/plan/done/1.20.0-terminal-and-remote-sync.md §3): the
-       requirement is that the STATE (pendingDialog) is mirrored, not that the widget is
-       hand-built, so this keeps the visual diff at zero by reusing Swal under the hood. -->
+  <!-- Imperative Swal.fire overlay driven by pendingDialog state mirroring. -->
   <div style="display:none" aria-hidden="true"></div>
 </template>
 
@@ -11,10 +8,7 @@ import { watch } from 'vue'
 import Swal from 'sweetalert2'
 import { pendingDialog, resolveDialog } from '../store/dialogStore'
 
-// The dialog id this screen currently has a Swal open for (or null). Used to (a) avoid
-// re-opening the same dialog on a redundant mirror re-render and (b) recognise, once Swal.fire's
-// promise settles, whether this screen's answer is still the one that matters (first-answer-wins,
-// see showDialog below).
+// Active dialog ID currently open on this screen (first-answer-wins dedup).
 let openId = null
 
 const SWAL_DEFAULTS = {
@@ -27,17 +21,12 @@ watch(
   pendingDialog,
   (d) => {
     if (!d) {
-      // Cleared by whichever screen answered first (could be this one, via showDialog below, or
-      // the other one via a mirrored delta). If we still have a Swal open for a dialog that is
-      // now gone, close it so this screen does not keep showing a decision nobody is waiting on.
+      // Close stale modal if cleared by another screen answering first.
       if (openId && Swal.isVisible()) Swal.close()
       openId = null
       return
     }
-    // A *different* id here means either a brand-new dialog or the next one being promoted off
-    // dialogStore's queue after the previous was answered. Both are the same job: show `d`. On the
-    // screen that did NOT answer, its old Swal is still open — Swal.fire supersedes it and settles
-    // its promise as dismissed, which showDialog's stale-id guard below drops as a silent no-op.
+    // Show new or promoted dialog when ID differs from current open modal.
     if (d.id === openId) return // already showing this exact dialog
     openId = d.id
     showDialog(d)
@@ -65,10 +54,7 @@ async function showDialog(d) {
   if (d.kind === 'typed') {
     opts.input = 'text'
     opts.inputPlaceholder = d.inputPlaceholder || ''
-    // Local, UX-only gate (mirrors the old preConfirm) so the Enter/Confirm button gives
-    // immediate feedback on a mismatch. NOT the authoritative check — the code awaiting
-    // askConfirm() on the host re-validates `answer.typed` itself (remote-control.md §3.4:
-    // "the typed confirmation travels with the answer and is validated on the Mac").
+    // Client UX validation before submitting typed confirmation.
     if (d.requireText) {
       opts.preConfirm = (val) => {
         if (val !== d.requireText) {
@@ -86,10 +72,7 @@ async function showDialog(d) {
 
   const result = await Swal.fire(opts)
 
-  // While this screen's Swal was open, the OTHER screen may have already answered (first-answer-
-  // wins) — the watcher above then nulled pendingDialog and force-closed this Swal, which is what
-  // just made Swal.fire's promise settle. Only send an answer if this dialog is still the one
-  // pending; otherwise this screen's click is the losing one and becomes a silent no-op.
+  // Ignore resolution if another screen already answered this dialog.
   if (!pendingDialog.value || pendingDialog.value.id !== d.id) return
   openId = null
 

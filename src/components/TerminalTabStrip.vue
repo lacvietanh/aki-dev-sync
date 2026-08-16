@@ -1,21 +1,4 @@
-<!--
-  Terminal tab strip — renders the ACTIVE SCOPE's tabs; always rendered — it carries the +
-  affordance for the group. Chips reuse AgentUsageSlot.vue's `.tab-group` / `.tab` visual language
-  as a base (not moved to main.css — CLAUDE.md: only WP-A's DockStack geometry pass owns main.css,
-  everything else is scoped) but are no longer icon-only: each now shows a truncated title and its
-  own close-x, sized via flex/min/max-width so the strip fills available width evenly.
-
-  Extreme Narrow (CLAUDE.md): an exited tab is communicated by tinting ITS OWN chip's icon red plus
-  a tooltip — no banner, no extra element. Each chip now carries a title label (truncated) and its
-  own dedicated close-x region on the right — wide enough that the x has a hit-area separate from
-  the title/activate area, so a mid-chip click can no longer land on it by accident (the old
-  icon-only chip was too narrow for that separation, which is why the x used to only appear on the
-  active chip's hover).
-
-  Titles auto-follow the shell's own OSC title escapes (TerminalView.vue's `onTitleChange`), same
-  as an external Terminal.app window's titlebar — and right-clicking a chip turns its title into an
-  editable field for a manual rename, which then sticks (terminalTabsStore.js's `titleLocked`).
--->
+<!-- Terminal tab strip for active scope tabs with title, pin, close, and inline rename. -->
 <template>
   <div class="tab-group term-tab-group">
     <button
@@ -77,10 +60,7 @@ import { MAX_TABS_PER_SCOPE, renameTerminalTab, toggleTabPinned } from '../store
 
 const { scopedTabs: tabs, ownedScopeTabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
 
-// The per-group cap, carried by the tooltip the chip already had — no new element, no new row.
-// Never the global ceiling: that one is a machine guard and stays invisible until it fires.
-// Keyed off `ownedScopeTabs`, NOT `tabs` (the strip's display list) — a pinned tab borrowed from a
-// foreign group must never count against or inflate THIS group's own cap reading.
+// Scope cap uses ownedScopeTabs so foreign pinned tabs do not count against this group.
 const scopeFull = computed(() => ownedScopeTabs.value.length >= MAX_TABS_PER_SCOPE)
 const addTitle = computed(() =>
   scopeFull.value
@@ -96,9 +76,7 @@ function togglePin(id) {
   toggleTabPinned(id)
 }
 
-// Rename, via right-click rather than a full context menu: the chip only ever has ONE thing a menu
-// would offer (close already has its own always-visible x), so a menu with a single row would just
-// be an extra click to reach the same result (design.A2 — no abstraction without evidence).
+// Right-click triggers inline title renaming.
 const renamingId = ref(null)
 const renameInputEl = ref(null)
 
@@ -129,8 +107,7 @@ function commitRename(t, value) {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  /* Extreme Narrow: 1px 2px is the whole chip's padding. The BORDER (not whitespace) is what
-     separates one tab from the next, so it is visible on every chip, not just the active one. */
+  /* Extreme Narrow: border separates tabs with minimal padding. */
   gap: 4px;
   background: rgba(15, 20, 30, 0.6);
   border: 1px solid var(--border-card);
@@ -138,12 +115,7 @@ function commitRename(t, value) {
   padding: 1px 5px;
   box-sizing: border-box;
   cursor: pointer;
-  /* Chip fills the header vertically minus 2px breathing top+bottom (4px total) — derived from
-     main.css's :root --control-h (the one height every control in a row/header derives from), so
-     this can never drift out of sync with the header's own height by hand. Width is now ~3x the
-     old icon-only square (min 84px, was ~24px) so a title fragment and a close-x both fit with
-     their own hit-areas; flex-grow lets tabs share leftover strip width evenly up to max-width
-     rather than all pinning to the min. */
+  /* Height derived from --control-h with flex sizing across min/max width bounds. */
   height: calc(var(--control-h, 28px) - 4px);
   flex: 1 1 84px;
   min-width: 84px;
@@ -165,9 +137,7 @@ function commitRename(t, value) {
   border-radius: 2px;
 }
 
-/* Left-edge pin toggle — reuses the chip's own existing accent color (the active-chip blue), no new
-   token. Sits inside the same 4px gap as every other chip icon, so the chip's width/height is
-   unchanged (Extreme Narrow) — it just claims a slice of the space the title already truncates into. */
+/* Pin toggle reuses active accent color within existing chip gap. */
 .term-tab .icon-pin {
   flex: 0 0 auto;
   font-size: 10px;
@@ -211,15 +181,13 @@ function commitRename(t, value) {
   border-color: rgba(96, 165, 250, 0.55);
 }
 
-/* 'unknown' renders exactly like `true` (normal) — only a STATED death (=== false) tints. */
+/* 'unknown' renders like true (normal); only explicit exit (=== false) tints. */
 .term-tab.is-exited { border-color: var(--accent-red); }
 .term-tab.is-exited .icon-default {
   color: var(--accent-red);
 }
 
-/* Close-x is now always visible, not hover-only — the chip is wide enough (min 84px) that it has
-   its own hit-area to the right of the title, distinct from the activate area, so it no longer
-   needs to hide to avoid stray clicks the way the old icon-only chip did. */
+/* Close button has dedicated hit-area to the right of the title. */
 .term-tab .icon-close {
   flex: 0 0 auto;
   opacity: 0.5;
@@ -241,9 +209,7 @@ function commitRename(t, value) {
   opacity: 1;
 }
 
-/* At the group's cap the + stays where it is and keeps its resting mute on hover — DIMMED, NEVER
-   HIDDEN: a + that vanishes reads as a bug, a + that will not brighten reads as a limit. The click
-   still fires and still Toasts the reason, so the state is discoverable without a tooltip too. */
+/* Dimmed on hover when cap is reached instead of hidden. */
 .term-tab-add.is-full {
   cursor: not-allowed;
 }
