@@ -268,6 +268,7 @@ export function releaseAgoClock() {
 // @docs docs/plan/done/1.16.1-ag-usage.md
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
+import { rightDockActive } from '../composables/useRightDockLayout';
 import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
 import { refreshSettings } from '../store/refreshStore';
@@ -356,18 +357,22 @@ function isAccountLive(acc) {
   return true;
 }
 
-// Truncate email in header to preserve stable layout width.
-const isNarrow = ref(typeof window !== 'undefined' && window.innerWidth <= 700);
-function updateIsNarrow() { isNarrow.value = window.innerWidth <= 700; }
+// Truncate email in header to preserve stable layout width. Mirrors the @container
+// main-view (max-width: 700px) breakpoint every sibling component uses: in right-dock
+// mode dashboard-left is capped at MAIN_VIEW_MAX_WIDTH (440, always under 700) regardless
+// of window width, so window.innerWidth alone under-truncates there.
+const windowNarrow = ref(typeof window !== 'undefined' && window.innerWidth <= 700);
+function updateWindowNarrow() { windowNarrow.value = window.innerWidth <= 700; }
+const isNarrow = computed(() => rightDockActive.value || windowNarrow.value);
 function truncEmail(email) {
   const max = isNarrow.value ? 7 : 12;
   return email.length > max ? email.slice(0, max) + '…' : email;
 }
 onMounted(() => {
-  window.addEventListener('resize', updateIsNarrow);
+  window.addEventListener('resize', updateWindowNarrow);
 });
 onUnmounted(() => {
-  window.removeEventListener('resize', updateIsNarrow);
+  window.removeEventListener('resize', updateWindowNarrow);
 });
 
 // Antigravity 2.1.1+ Groups & Buckets detection
