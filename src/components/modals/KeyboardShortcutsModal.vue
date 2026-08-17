@@ -5,9 +5,12 @@
     </template>
 
     <div class="modal-body">
-      <div class="shortcut-row" v-for="s in SHORTCUTS" :key="s.key">
-        <span class="shortcut-key">{{ s.key }}</span>
-        <span class="shortcut-desc">{{ s.desc }}</span>
+      <div class="shortcut-group" v-for="g in GROUPS" :key="g.title">
+        <div class="shortcut-group-title">{{ g.title }}</div>
+        <div class="shortcut-row" v-for="s in g.items" :key="s.key">
+          <span class="shortcut-key">{{ s.key }}</span>
+          <span class="shortcut-desc">{{ s.desc }}</span>
+        </div>
       </div>
     </div>
   </BaseModal>
@@ -19,10 +22,27 @@ import BaseModal from './BaseModal.vue';
 defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
 
-const SHORTCUTS = [
-  { key: 'F1', desc: 'Narrow + Stick Top-Left' },
-  { key: 'F2', desc: 'Width 1400px (Ultra)' },
-  { key: 'F3', desc: 'Center Primary' },
+const GROUPS = [
+  {
+    title: 'Window',
+    items: [
+      { key: 'F1', desc: 'Narrow window, docked top-left' },
+      { key: 'F2', desc: 'Ultra-wide window (1400px)' },
+      { key: 'F3', desc: 'Centered on the primary monitor' },
+    ],
+  },
+  {
+    title: 'Terminal (when a terminal is focused)',
+    items: [
+      { key: '⌘T', desc: 'New terminal tab' },
+      { key: '⌘W', desc: 'Close current tab' },
+      { key: '⌘⇧[', desc: 'Previous tab' },
+      { key: '⌘⇧]', desc: 'Next tab' },
+      { key: '⌘+', desc: 'Zoom in terminal font' },
+      { key: '⌘-', desc: 'Zoom out terminal font' },
+      { key: '⌘0', desc: 'Reset terminal font size' },
+    ],
+  },
 ];
 </script>
 
@@ -30,7 +50,21 @@ const SHORTCUTS = [
 .modal-body {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+
+.shortcut-group {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+}
+
+.shortcut-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
 }
 
 .shortcut-row {
@@ -42,7 +76,7 @@ const SHORTCUTS = [
 
 .shortcut-key {
   flex-shrink: 0;
-  min-width: 28px;
+  min-width: 40px;
   text-align: center;
   padding: 2px 6px;
   font-size: 10px;

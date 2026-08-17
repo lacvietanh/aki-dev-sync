@@ -152,7 +152,7 @@
                   <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
-                <div class="open-popup" popover :id="`open-popup-${p.id}`" @beforetoggle="onPopupBeforeToggle($event, p.id)" @click="closeOnAction">
+                <div class="open-popup" popover :id="`open-popup-${p.id}`" @beforetoggle="onPopupBeforeToggle($event, p.id)" @toggle="onPopupToggle($event, p.id)" @click="closeOnAction">
                   <div class="popup-header popup-header-wrap" :title="p.name">
                      <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                      <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>
@@ -388,7 +388,7 @@ watch([projects, iconTimestamp], () => {
   failedIcons.value = {};
 });
 
-// Anchors the popover to its trigger. It lives in the top layer, so these are viewport coordinates and no ancestor overflow or containment applies. Right-aligned rather than centred: aligning an edge needs no width measurement, and `max-width` below keeps the far edge on-screen.
+// Anchors the popover to its trigger before layout runs (right-aligned placeholder, avoids a flash at 0,0 since the popover is still display:none at `beforetoggle`).
 function anchorPopover(popoverEl, id) {
   const trigger = document.querySelector(`[popovertarget="open-popup-${id}"]`);
   if (!trigger) return;
@@ -402,6 +402,20 @@ function onPopupBeforeToggle(e, id) {
   anchorPopover(e.target, id);
   // TTL-cached IDE availability refresh on popup open.
   refreshIdeAvailability();
+}
+
+// Recenters on the trigger once the popover has real layout (`toggle` fires after `beforetoggle`, once display is applied), matching the pre-popover centered+clamped placement so a narrow window never clips the menu off-screen.
+function onPopupToggle(e, id) {
+  if (e.newState !== 'open') return;
+  const trigger = document.querySelector(`[popovertarget="open-popup-${id}"]`);
+  if (!trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const popoverEl = e.target;
+  const margin = 8;
+  const width = popoverEl.getBoundingClientRect().width;
+  const left = Math.min(Math.max(rect.left + rect.width / 2 - width / 2, margin), window.innerWidth - width - margin);
+  popoverEl.style.left = `${left}px`;
+  popoverEl.style.right = 'auto';
 }
 
 /** Picking an action dismisses the menu; COPY/REPORT buttons stop propagation, so they leave it open. */

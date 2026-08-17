@@ -10,7 +10,7 @@
     >
       <i class="fa-solid fa-ellipsis-vertical"></i>
     </button>
-    <div class="open-popup" popover id="terminal-chrome-menu" aria-label="Terminal controls" @beforetoggle="onBeforeToggle">
+    <div class="open-popup" popover id="terminal-chrome-menu" aria-label="Terminal controls" @beforetoggle="onBeforeToggle" @toggle="onToggle">
       <!-- title sits on wrapper, not .popup-item: .popup-disabled sets pointer-events:none, swallowing hover tooltips (§8.3). -->
       <div v-for="row in chromeMenuRows" :key="row.key" :title="row.title">
         <label class="popup-item" :class="{ 'popup-disabled': row.locked }">
@@ -49,7 +49,7 @@ import { rightDockActive } from '../../composables/useRightDockLayout'
 
 const triggerEl = ref(null)
 
-// Drop-UP for the bottom dock, drop-DOWN for the right dock, where there is no room above. Right-aligned to the trigger; the popover sits in the top layer, so these are viewport coordinates.
+// Drop-UP for the bottom dock, drop-DOWN for the right dock, where there is no room above. Right-aligned placeholder before layout runs (still display:none at `beforetoggle`); the popover sits in the top layer, so these are viewport coordinates.
 function onBeforeToggle(e) {
   if (e.newState !== 'open') return
   const rect = triggerEl.value?.getBoundingClientRect()
@@ -65,6 +65,18 @@ function onBeforeToggle(e) {
     style.top = 'auto'
   }
   markChromeMenuSeen()
+}
+
+// Clamps the popover fully inside the window once it has real layout (`toggle` fires after `beforetoggle`), so a narrow right-dock window never clips it off-screen.
+function onToggle(e) {
+  if (e.newState !== 'open') return
+  const rect = triggerEl.value?.getBoundingClientRect()
+  if (!rect) return
+  const margin = 8
+  const width = e.target.getBoundingClientRect().width
+  const left = Math.min(Math.max(rect.right - width, margin), window.innerWidth - width - margin)
+  e.target.style.left = `${left}px`
+  e.target.style.right = 'auto'
 }
 </script>
 
