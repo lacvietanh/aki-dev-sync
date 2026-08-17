@@ -69,9 +69,9 @@
 ## Plans (Active)
 
 - [docs/plan/remaining-1.22.md](plan/remaining-1.22.md) - Single entry point for everything outstanding after the 1.22.0 release (all items resolved as of 2026-08-16)
-- [docs/plan/ship-1.26.md](plan/ship-1.26.md) - Splits the merged CHANGELOG section apart: `[1.25.0]` back to exactly what the published tag `7835cf3` contains, everything after it into a new `[1.26.0]`, with the shipped/post-tag boundary established marker by marker rather than from commit messages. Also carries the 18 code changes neither section recorded, the corrected sweep figures, and the new F1/F2/F3 window shortcuts plus a 1400px width preset
 
 ## Plans (Completed)
+- [docs/plan/done/ship-1.26.md](plan/done/ship-1.26.md) - Split the merged CHANGELOG section apart: `[1.25.0]` back to exactly what the published tag `7835cf3` contains, everything after it into a new `[1.26.0]`, with the shipped/post-tag boundary established marker by marker rather than from commit messages. Also added the 18 code changes neither section recorded, the corrected sweep figures, and the new F1/F2/F3 window shortcuts plus a 1400px width preset. Shipped 2026-08-17
 - [docs/plan/done/wish-terminal-split-simpleview.md](plan/done/wish-terminal-split-simpleview.md) - SimpleView half shipped in 1.23.0 then rejected/superseded in 1.24.0 by `wish-terminal-manual-resize-authority.md`; Right-Dock Mac half shipped in 1.25.0 (`useRightDockLayout.js`). Full plan resolved and moved to `done/` 2026-08-17
 - [docs/plan/done/claudecode-usage-cleanup-FINAL.md](plan/done/claudecode-usage-cleanup-FINAL.md) - Kế hoạch dọn (đã hoàn tất): xoá force-sync, gỡ oauth, xoá cleanup_orphan
 - [docs/plan/done/usage-probe-oop.md](plan/done/usage-probe-oop.md) - **Shipped in `610fd93`, not active** - Antigravity usage probe refactor (WS-C): Node script to POSIX shell port, deleting `Interpreter::Node`, and splitting `agent_usage.rs` (892 lines) into seven modules plus `remote_shell.rs`. This row previously pointed at `plan/usage-probe-oop.md` and called the work active; that file is an untracked pre-refactor copy sitting on top of the shipped one, and the row was written from it
