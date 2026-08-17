@@ -152,7 +152,7 @@
                   <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
-                <div class="open-popup" popover :id="`open-popup-${p.id}`" :style="`position-anchor: --open-anchor-${p.id}`" @beforetoggle="onPopupOpen" @click="closeOnAction">
+                <div class="open-popup anchor-left" popover :id="`open-popup-${p.id}`" :style="`position-anchor: --open-anchor-${p.id}`" @beforetoggle="onPopupOpen" @click="closeOnAction">
                   <div class="popup-header popup-header-wrap" :title="p.name">
                      <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                      <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>

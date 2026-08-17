@@ -879,14 +879,14 @@ input:checked+.slider:before {
   display: inline-flex;
 }
 
-/* A native popover: the top layer takes it out of every ancestor's overflow and containment, and brings click-outside dismissal, Esc and one-menu-at-a-time with it. Position is CSS Anchor Positioning, not JS: each trigger sets a unique `anchor-name` (inline, since it must be per-row) and the popover targets it via `position-anchor`. Centered above the trigger by default; `position-try-fallbacks` lets the engine flip to left- or right-aligned on its own when centered would overflow the viewport - no getBoundingClientRect/measurement JS involved. */
+/* A native popover: the top layer takes it out of every ancestor's overflow and containment, and brings click-outside dismissal, Esc and one-menu-at-a-time with it. Position is CSS Anchor Positioning, not JS. Default anchors the popup's RIGHT edge to the trigger's right edge (correct for TerminalChromeMenu: its trigger sits at the right end of the header actions row, so the popup has room to grow leftward). `.anchor-left` (ProjectTable's OPEN button, which is the FIRST/leftmost action in its cell) flips to the LEFT edge instead, so it grows rightward into the row rather than off the left edge of a narrow right-dock column - that mismatch (a left-positioned trigger anchored by its right edge) was the actual cause of the earlier left-edge overflow. `position-try-fallbacks` lets the engine flip sides on its own if the chosen edge would still overflow. */
 .open-popup {
   position: fixed;
-  position-try-fallbacks: --open-popup-left, --open-popup-right;
+  position-try-fallbacks: --open-popup-left;
   inset: auto;
   bottom: calc(anchor(top) + 4px);
-  left: anchor(center);
-  translate: -50% 0;
+  right: anchor(right);
+  translate: 0 0;
   margin: 0;
   max-width: calc(100vw - 16px);
   z-index: 80;
@@ -899,18 +899,23 @@ input:checked+.slider:before {
   overflow: visible;
 }
 
-@position-try --open-popup-left {
+.open-popup.anchor-left {
+  right: auto;
   left: anchor(left);
-  translate: 0 0;
+  position-try-fallbacks: --open-popup-right;
+}
+
+@position-try --open-popup-left {
+  right: auto;
+  left: anchor(left);
 }
 
 @position-try --open-popup-right {
   left: auto;
   right: anchor(right);
-  translate: 0 0;
 }
 
-/* Dropdown variant (right-dock mode has no room above the trigger): anchors below instead of above. */
+/* Dropdown variant: anchors below the trigger instead of above, for whenever there isn't reliably room above it - right-dock mode (no room above at all) and the maximized terminal panel (trigger sits near the top of the window, so a drop-up can be clipped/obscured above it). */
 .open-popup.is-dropdown {
   bottom: auto;
   top: calc(anchor(bottom) + 4px);

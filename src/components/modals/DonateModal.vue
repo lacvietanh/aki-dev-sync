@@ -6,6 +6,7 @@
 
     <div class="modal-body">
       <p class="donate-blurb">If you find this tool helpful, consider supporting its development!</p>
+      <p class="donate-note">Suggested note: <code>{{ donateNote }}</code></p>
 
       <div class="qr-row">
         <span class="qr-label">PayPal</span>
@@ -32,6 +33,7 @@ defineProps({ show: { type: Boolean, default: false } });
 defineEmits(['close']);
 
 const BANK_QR_URL = 'https://app.akinet.me/en/qr-bank/?bank=970422&acc=0869297957&tpl=print&amount=0&info=Donate+AkiDevSync&name=LacVietAnh&view=1';
+const donateNote = `DONATE FROM AKI DEV SYNC ${__APP_VERSION__}`;
 
 function openLink(url) {
   invoke('macos_open', { args: [url] }).catch(console.error);
@@ -51,6 +53,17 @@ function openLink(url) {
   color: #94a3b8;
   margin: 0 0 4px;
   text-align: center;
+}
+
+.donate-note {
+  font-size: 10px;
+  color: #64748b;
+  margin: 0 0 4px;
+  text-align: center;
+}
+
+.donate-note code {
+  color: #a5f3fc;
 }
 
 .qr-row {

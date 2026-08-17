@@ -12,7 +12,7 @@
     </button>
     <div
       class="open-popup"
-      :class="{ 'is-dropdown': rightDockActive }"
+      :class="{ 'is-dropdown': rightDockActive || dockMaximized }"
       style="position-anchor: --chrome-menu-anchor"
       popover
       id="terminal-chrome-menu"
@@ -53,6 +53,7 @@ import {
   showAllVisible,
 } from '../../composables/useTerminalChrome'
 import { rightDockActive } from '../../composables/useRightDockLayout'
+import { dockMaximized } from '../../composables/useDockLayout'
 
 // Positioning is CSS Anchor Positioning (main.css .open-popup / .is-dropdown), not JS - this only handles the side effect of opening.
 function onOpen(e) {
