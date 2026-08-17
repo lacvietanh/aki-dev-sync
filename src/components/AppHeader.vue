@@ -221,9 +221,6 @@
                 </button>
               </div>
             </div>
-            <a href="#" @click.prevent="showShortcutsModal = true" class="icon-dropdown-item" title="View the F1/F2/F3 window shortcuts">
-              <i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts
-            </a>
             </template>
             <div class="icon-dropdown-separator"></div>
             <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
@@ -256,6 +253,9 @@
         <button class="btn-tech btn-tech-secondary btn-note" @click="openGlobalNote" title="Global Note">
           <i class="fa-solid fa-note-sticky" :class="{ 'has-note': noteContent }"></i>
           <TaskCountBadges :pinned="globalNoteSummary.doing" :open="globalNoteSummary.todo" />
+        </button>
+        <button class="btn-tech btn-tech-secondary btn-shortcuts" @click="showShortcutsModal = true" title="Keyboard Shortcuts">
+          <i class="fa-solid fa-keyboard"></i>
         </button>
         <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="showDonateModal = true" title="Donate - support development">
           <i class="fa-solid fa-heart"></i>
@@ -1023,6 +1023,10 @@ function onViewShortcut(e) {
   margin-left: 10px;
 }
 
+.btn-shortcuts {
+  margin-left: 6px;
+}
+
 .btn-donate {
   margin-left: 6px;
   color: #f87171;
@@ -1225,6 +1229,10 @@ function onViewShortcut(e) {
   /* Gap between the INTRO button and the Global Note button, halved (10px -> 5px). */
   .btn-note {
     margin-left: 5px;
+  }
+
+  .btn-shortcuts {
+    margin-left: 3px;
   }
 
   /* Tighter button padding at 700px narrow breakpoint. */
