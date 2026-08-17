@@ -1,18 +1,19 @@
 # Open Popup
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-08-17 · v1.26.0
 
 Một menu popup tập trung giúp hợp nhất các thao tác mở dự án Local và Remote SSH trên nhiều IDE khác nhau. Được tái cấu trúc từ các nút bấm phân tán (xem thêm chi tiết kiến trúc macOS open consolidation).
 
 ## Chức năng chính
 
 ### 1. Unified Trigger (Nút OPEN)
-- Visibility is driven by state (`.is-open` on the wrapper), not a CSS `:hover` rule: a phone companion has no hover, so the popup - and everything only reachable through it - used to be unreachable there.
-  - **Hover** opens it (unchanged on the Mac); moving the pointer away closes it again.
-  - **Tap / click** on the `OPEN` button toggles it and *pins* it: it then stays open until an Esc, a pointerdown outside the popup, or another click on the same button.
-  - At most one popup is open app-wide.
-- A 150ms transition delay keeps a fast pointer pass from flickering the menu.
-- Position is computed on open (`position: fixed`, centred on the viewport, clamped to an 8px margin) and stored in a **component-local** ref (`popupStyles`), never in `projectRuntime`: that store is mirrored, so a hover on the Mac used to broadcast its own coordinates over the phone's.
+- The menu is a **native popover** (`popover` attribute + `popovertarget` on the OPEN button, since 1.26.0). The browser owns every part of its behavior; the app owns only where it appears.
+  - **Click / tap** on `OPEN` toggles it. There is no hover-open: a phone companion has no hover, and one interaction model beats two.
+  - Closing is native: click outside, `Esc`, or another click on the same button. Opening one popover closes any other, so at most one is open app-wide — enforced by the browser, not by app state.
+  - Picking any `.popup-item` dismisses the menu; the `COPY` and `REPORT` buttons stop propagation, so they leave it open.
+- The popover renders in the **top layer**, which is what makes it correct rather than merely simpler: the project table scrolls (`overflow-y: auto`) and `.dashboard-left` is a CSS container (`container-type: inline-size`, which brings `contain: layout` and therefore becomes the containing block for `fixed` descendants). Any in-flow popup is clipped by the first and mis-anchored by the second. The top layer escapes both.
+- Placement is one function, `anchorPopover` in `ProjectTable.vue`, run on `beforetoggle`: it aligns the menu's **right** edge to the trigger's right edge and its bottom to the trigger's top. Aligning an edge needs no width measurement; `max-width: calc(100vw - 16px)` on `.open-popup` keeps the far edge on-screen. Coordinates are written to the element's own inline style, never to `projectRuntime` — that store is mirrored, so shared coordinates would broadcast one device's layout onto another's.
+- The same shell serves `TerminalChromeMenu.vue`, which drops **down** instead of up when the right dock is active (no room above the trigger there).
 
 ### 2. Local IDE Targets
 Hiển thị danh sách các lối tắt mở code tại thư mục máy Local:

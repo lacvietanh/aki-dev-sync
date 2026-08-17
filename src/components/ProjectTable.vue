@@ -147,16 +147,12 @@
           <div class="grid-row-cell col-action">
             <div class="actions-wrapper">
               <!-- Open Popup Trigger (OPEN Button) -->
-              <div class="open-popup-wrapper"
-                   :class="{ 'is-open': openPopupId === p.id }"
-                   @mouseenter="onOpenHover(p, $event)"
-                   @mouseleave="onOpenHoverLeave(p)">
-                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup" @click.stop="toggleOpenPopup(p, $event)">
+              <div class="open-popup-wrapper">
+                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup" :popovertarget="`open-popup-${p.id}`">
                   <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
                 </button>
 
-                <!-- Open Popup: state-driven visibility (.is-open). -->
-                <div class="open-popup" :style="popupStyles[p.id]">
+                <div class="open-popup" popover :id="`open-popup-${p.id}`" @beforetoggle="onPopupBeforeToggle($event, p.id)" @click="closeOnAction">
                   <div class="popup-header popup-header-wrap" :title="p.name">
                      <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                      <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>
@@ -333,7 +329,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch } from 'vue';
 import { invoke } from '../utils/tauri';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
@@ -392,91 +388,26 @@ watch([projects, iconTimestamp], () => {
   failedIcons.value = {};
 });
 
-// Per-screen popup placement styles (local ref to prevent multi-device wire bleed).
-const popupStyles = ref({});
-
-// Active open popup project ID and tap-pinned flag.
-const openPopupId = ref(null);
-const openedByTap = ref(false);
-
-// Fixed-position popup calculator centered on trigger button midpoint.
-function positionPopup(project, wrapperEl) {
-  if (!wrapperEl) return;
-  const rect = wrapperEl.getBoundingClientRect();
-  const popupEl = wrapperEl.querySelector('.open-popup');
-  const margin = 8;
-  let left = rect.left;
-  if (popupEl) {
-    const popupWidth = popupEl.getBoundingClientRect().width || popupEl.offsetWidth || 0;
-    const triggerCenter = rect.left + rect.width / 2;
-    left = triggerCenter - popupWidth / 2;
-    left = Math.min(Math.max(left, margin), window.innerWidth - popupWidth - margin);
-  }
-  popupStyles.value = {
-    ...popupStyles.value,
-    [project.id]: {
-      position: 'fixed',
-      bottom: `${window.innerHeight - rect.top}px`,
-      left: `${left}px`,
-      transformOrigin: 'bottom center'
-    }
-  };
+// Anchors the popover to its trigger. It lives in the top layer, so these are viewport coordinates and no ancestor overflow or containment applies. Right-aligned rather than centred: aligning an edge needs no width measurement, and `max-width` below keeps the far edge on-screen.
+function anchorPopover(popoverEl, id) {
+  const trigger = document.querySelector(`[popovertarget="open-popup-${id}"]`);
+  if (!trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  popoverEl.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+  popoverEl.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
 }
 
-function openPopup(project, wrapperEl, byTap) {
-  positionPopup(project, wrapperEl);
-  openPopupId.value = project.id;
-  openedByTap.value = byTap;
+function onPopupBeforeToggle(e, id) {
+  if (e.newState !== 'open') return;
+  anchorPopover(e.target, id);
   // TTL-cached IDE availability refresh on popup open.
   refreshIdeAvailability();
 }
 
-function closePopup() {
-  openPopupId.value = null;
-  openedByTap.value = false;
+/** Picking an action dismisses the menu; COPY/REPORT buttons stop propagation, so they leave it open. */
+function closeOnAction(e) {
+  if (e.target.closest('.popup-item')) e.currentTarget.hidePopover();
 }
-
-function onOpenHover(project, event) {
-  // Tapping promotes an open popup to pinned without closing it.
-  if (openPopupId.value === project.id && openedByTap.value) return;
-  openPopup(project, event?.currentTarget, false);
-}
-
-function onOpenHoverLeave(project) {
-  if (openPopupId.value === project.id && !openedByTap.value) closePopup();
-}
-
-function toggleOpenPopup(project, event) {
-  if (openPopupId.value === project.id && openedByTap.value) {
-    closePopup();
-    return;
-  }
-  openPopup(project, event?.currentTarget?.closest('.open-popup-wrapper'), true);
-}
-
-// Document pointerdown dismissal for touch devices.
-function onDocPointerDown(e) {
-  if (!e.target.closest?.('.open-popup-wrapper')) closePopup();
-}
-
-function onDocKeydown(e) {
-  if (e.key === 'Escape') closePopup();
-}
-
-watch(openPopupId, (id) => {
-  if (id) {
-    document.addEventListener('pointerdown', onDocPointerDown, true);
-    document.addEventListener('keydown', onDocKeydown);
-  } else {
-    document.removeEventListener('pointerdown', onDocPointerDown, true);
-    document.removeEventListener('keydown', onDocKeydown);
-  }
-});
-
-onUnmounted(() => {
-  document.removeEventListener('pointerdown', onDocPointerDown, true);
-  document.removeEventListener('keydown', onDocKeydown);
-});
 
 // Check if IDE availability probe is unready or missing.
 function ideMissing(name) {

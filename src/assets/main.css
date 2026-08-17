@@ -879,42 +879,20 @@ input:checked+.slider:before {
   display: inline-flex;
 }
 
+/* A native popover: the top layer takes it out of every ancestor's overflow and containment, and brings click-outside dismissal, Esc and one-menu-at-a-time with it. `inset: auto` and `margin: 0` undo the UA's centring so the anchoring script's bottom/right can apply; `max-width` is what keeps a wide menu inside a narrow window without measuring it. */
 .open-popup {
   position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: calc(100vw - 16px);
   z-index: 80;
   background: rgba(22, 30, 44, 0.98);
+  color: inherit;
   border: 1px solid rgba(0, 210, 255, 0.25);
   border-radius: 8px;
   padding: 8px 0 6px 0;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  will-change: transform, opacity;
-
-  visibility: hidden;
-  opacity: 0;
-  transform: scale(0.96);
-  transition: opacity 0.15s ease, visibility 0.15s ease, transform 0.15s ease;
-  transition-delay: 0.15s;
-  pointer-events: none;
-}
-
-.open-popup::before {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  height: 12px;
-  background: transparent;
-}
-
-/* State-based open (.is-open): handles hover on desktop and tap on companion devices. */
-.open-popup-wrapper.is-open .open-popup {
-  visibility: visible;
-  opacity: 1;
-  transform: scale(1);
-  transition-delay: 0s;
-  pointer-events: auto;
+  overflow: visible;
 }
 
 .popup-item {
