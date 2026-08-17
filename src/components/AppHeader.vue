@@ -220,25 +220,16 @@
                   <i class="fa-solid fa-crosshairs"></i> Center Primary
                 </button>
               </div>
-              <span
-                class="view-combo-key col-1"
-                @click="applyViewComboSafe(1)"
-                title="F1 - Narrow + Stick Top-Left">F1</span>
-              <span
-                class="view-combo-key col-2"
-                @click="applyViewSafe('width', 'ultrawide')"
-                title="F2 - Width 1400px">F2</span>
-              <span
-                class="view-combo-key col-3"
-                @click="applyViewSafe('place', 'center')"
-                title="F3 - Center Primary">F3</span>
             </div>
+            <a href="#" @click.prevent="showShortcutsModal = true" class="icon-dropdown-item" title="View the F1/F2/F3 window shortcuts">
+              <i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts
+            </a>
             </template>
             <div class="icon-dropdown-separator"></div>
             <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
               <i class="fa-brands fa-github"></i> GitHub Repository
             </a>
-            <a href="#" @click.prevent="openLink(DONATE_URL)" class="icon-dropdown-item donate-link">
+            <a href="#" @click.prevent="showDonateModal = true" class="icon-dropdown-item donate-link">
               <i class="fa-solid fa-heart"></i> Donate to AkiDevSync
             </a>
           </div>
@@ -266,7 +257,7 @@
           <i class="fa-solid fa-note-sticky" :class="{ 'has-note': noteContent }"></i>
           <TaskCountBadges :pinned="globalNoteSummary.doing" :open="globalNoteSummary.todo" />
         </button>
-        <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="openLink(DONATE_URL)" title="Donate - support development">
+        <button class="btn-tech btn-tech-secondary btn-donate u-narrow-hide" @click="showDonateModal = true" title="Donate - support development">
           <i class="fa-solid fa-heart"></i>
         </button>
         <div class="btn-group-refresh">
@@ -292,6 +283,8 @@
         <ClaudeProfileModal :show="showProfileModal" @close="showProfileModal = false" />
         <ClaudeCleanupModal :show="showCleanupModal" @close="showCleanupModal = false" />
         <GeminiAllowlistModal :show="showAllowlistModal" @close="showAllowlistModal = false" />
+        <KeyboardShortcutsModal :show="showShortcutsModal" @close="showShortcutsModal = false" />
+        <DonateModal :show="showDonateModal" @close="showDonateModal = false" />
 
         <!-- Custom Traffic Lights: native-window only. -->
         <template v-if="nativeWindow">
@@ -336,12 +329,13 @@ import ClaudeSettingModal from './modals/ClaudeSettingModal.vue';
 import ClaudeProfileModal from './modals/ClaudeProfileModal.vue';
 import ClaudeCleanupModal from './modals/ClaudeCleanupModal.vue';
 import GeminiAllowlistModal from './modals/GeminiAllowlistModal.vue';
+import KeyboardShortcutsModal from './modals/KeyboardShortcutsModal.vue';
+import DonateModal from './modals/DonateModal.vue';
 import TaskCountBadges from './tasks/TaskCountBadges.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
 const AKICLAUDEDOC_REPO_URL = 'https://github.com/lacvietanh/AkiClaudeDoc';
-const DONATE_URL = 'https://app.akinet.me/en/qr-bank/?bank=970422&acc=0869297957&tpl=print&amount=0&info=Donate+AkiDevSync&name=LacVietAnh&view=1';
 const UPDATE_DISMISS_KEY = 'aki-devsync-update-dismissed';
 
 const appVersion = __APP_VERSION__;
@@ -353,6 +347,8 @@ const showStatuslineModal = ref(false);
 const showProfileModal = ref(false);
 const showCleanupModal = ref(false);
 const showAllowlistModal = ref(false);
+const showShortcutsModal = ref(false);
+const showDonateModal = ref(false);
 const isDev = import.meta.env.DEV;
 const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
@@ -883,44 +879,6 @@ function onViewShortcut(e) {
 .icon-dropdown-preset-btn.is-active {
   background: rgba(0, 210, 255, 0.14);
   border-color: rgba(0, 210, 255, 0.45);
-}
-
-/* Absolute overlay badge positioned between columns. */
-.view-preset-grid {
-  position: relative;
-}
-
-.view-combo-key {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  padding: 1px 4px;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.3;
-  letter-spacing: 0.3px;
-  color: #a5f3fc;
-  background: #0b1220;
-  border: 1px solid rgba(0, 210, 255, 0.35);
-  border-radius: 3px;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.view-combo-key:hover {
-  background: rgba(0, 210, 255, 0.18);
-}
-
-.view-combo-key.col-1 {
-  left: 25%;
-}
-
-.view-combo-key.col-2 {
-  left: 50%;
-}
-
-.view-combo-key.col-3 {
-  left: 75%;
 }
 
 .remember-view {
