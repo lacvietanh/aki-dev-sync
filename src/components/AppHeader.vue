@@ -208,7 +208,7 @@
                   class="icon-dropdown-preset-btn"
                   :class="{ 'is-active': savedView.place === 'stick' }"
                   @click="applyViewSafe('place', 'stick')"
-                  title="Snap window to the top-left of the top-left-most connected monitor, spanning the full work-area height">
+                  title="Snap window to the top-left of the monitor it is currently on, spanning the full work-area height">
                   <i class="fa-solid fa-border-top-left"></i> Stick Top-Left
                 </button>
                 <button
@@ -377,6 +377,7 @@ const {
   restorePin,
   applyView,
   applyViewCombo,
+  toggleUltrawide,
   savedView,
   rememberView,
   toggleRememberView,
@@ -574,12 +575,17 @@ function applyViewComboSafe(slot) {
   applyViewCombo(slot).catch((e) => console.error(`Failed to apply window combo ${slot}:`, e));
 }
 
-// Global shortcuts for window views (F1 / F2 / F3) — bare function keys, so any modifier disqualifies.
+function toggleUltrawideSafe() {
+  toggleUltrawide().catch((e) => console.error('Failed to toggle ultrawide window view:', e));
+}
+
+// Global shortcuts for window views (F1 / F2 / F3 / F12) — bare function keys, so any modifier disqualifies.
 function onViewShortcut(e) {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.repeat) return;
   if (e.key === 'F1') { e.preventDefault(); applyViewComboSafe(1); return; }
-  if (e.key === 'F2') { e.preventDefault(); applyViewSafe('width', 'ultrawide'); return; }
-  if (e.key === 'F3') { e.preventDefault(); applyViewSafe('place', 'center'); }
+  if (e.key === 'F2') { e.preventDefault(); toggleUltrawideSafe(); return; }
+  if (e.key === 'F3') { e.preventDefault(); applyViewSafe('place', 'center'); return; }
+  if (e.key === 'F12') { e.preventDefault(); togglePin(); }
 }
 </script>
 

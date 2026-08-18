@@ -43,7 +43,7 @@ const NARROW_WIDTH = 440;
 const WIDE_WIDTH = 768;
 const ULTRAWIDE_WIDTH = 1400;
 
-/** Companion shape: same 13 keys as host (AppHeader destructures all — missing key crashes); the three async ones must return a Promise (call sites use `.catch`). */
+/** Companion shape: every key the host returns (AppHeader destructures all — missing key crashes); the async ones must return a Promise (call sites use `.catch`). */
 function companionWindow() {
   const noop = () => {};
   const noopAsync = () => Promise.resolve();
@@ -56,6 +56,7 @@ function companionWindow() {
     restorePin: noop,
     applyView: noopAsync,
     applyViewCombo: noopAsync,
+    toggleUltrawide: noopAsync,
     savedView,
     rememberView,
     toggleRememberView: noop,
@@ -170,6 +171,11 @@ export function useAppWindow() {
     if (rememberView.value) await captureBounds();
   }
 
+  /** Toggles the width axis between narrow and ultrawide, reading the last-applied preset from `savedView` rather than the window's real (possibly hand-dragged) width. */
+  async function toggleUltrawide() {
+    await applyView("width", savedView.value.width === "ultrawide" ? "narrow" : "ultrawide");
+  }
+
   /** Width before placement: `setWidthPreset` may nudge x to keep the window on-screen, so running it after a placement would undo that placement. */
   async function applyViewCombo(slot) {
     const combo = VIEW_COMBOS[slot];
@@ -223,15 +229,16 @@ export function useAppWindow() {
     await appWindow.setSize(new LogicalSize(width, height));
   }
 
-  /** Moves the window flush against the top-left-most monitor's work area, spanning its full height. */
+  /** Moves the window flush against the current monitor's work area, spanning its full height; falls back to the topmost-leftmost monitor if the current one can't be determined. */
   async function stickTopLeft() {
-    const monitors = await availableMonitors();
-    if (!monitors.length) return;
-
-    // Topmost-leftmost = smallest (x + y) among monitor origins, not necessarily the primary.
-    const target = monitors.reduce((best, m) =>
-      m.position.x + m.position.y < best.position.x + best.position.y ? m : best
-    );
+    let target = await currentMonitor();
+    if (!target) {
+      const monitors = await availableMonitors();
+      if (!monitors.length) return;
+      target = monitors.reduce((best, m) =>
+        m.position.x + m.position.y < best.position.x + best.position.y ? m : best
+      );
+    }
 
     const workPos = target.workArea.position.toLogical(target.scaleFactor);
     const workSize = target.workArea.size.toLogical(target.scaleFactor);
@@ -263,6 +270,7 @@ export function useAppWindow() {
     restorePin,
     applyView,
     applyViewCombo,
+    toggleUltrawide,
     savedView,
     rememberView,
     toggleRememberView,

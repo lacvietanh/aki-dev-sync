@@ -26,9 +26,10 @@ const GROUPS = [
   {
     title: 'Window',
     items: [
-      { key: 'F1', desc: 'Narrow window, docked top-left' },
-      { key: 'F2', desc: 'Ultra-wide window (1400px)' },
+      { key: 'F1', desc: 'Narrow window, docked top-left of the current monitor' },
+      { key: 'F2', desc: 'Toggle ultra-wide (1400px) / narrow window' },
       { key: 'F3', desc: 'Centered on the primary monitor' },
+      { key: 'F12', desc: 'Toggle pin (always on top, all spaces)' },
     ],
   },
   {
