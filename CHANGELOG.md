@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [1.27.0] - 2026-08-18
+
+#### Changed
+- **`F1` now snaps to the monitor the app is currently on**, via `currentMonitor()`, instead of always the topmost-leftmost monitor of the whole system - falls back to the old topmost-leftmost pick only when the current monitor can't be determined.
+- **`F2` is now a toggle** between `ultrawide` (1400px) and `narrow`, reading the last-applied width preset rather than one-way to 1400px - pressing it again returns to `narrow`.
+- **Terminal tabs dropped the default terminal glyph.** A pinned tab now shows the project icon instead, with the pin marker shrunk to an absolute overlay at its top-left corner - no new element added to the tab, per the Extreme Narrow UI rule.
+- **Agent Usage: removed the "Stale" badge and its tooltip.** Past the existing 10-minute threshold, the panel now shows only the data-age ("ago") text - no separate stale state or label.
+- **Task detail text limit raised from 500 to 1500 characters** in `TaskListPanel.vue` - since both Project Tasks and Global Note already share this one component, the change applies to both without touching either modal.
+
+#### Added
+- **`F12` toggles the pin (always on top, all spaces)**, equivalent to the titlebar pin button.
+
 ### [1.26.0] - 2026-08-17
 
 #### Added
