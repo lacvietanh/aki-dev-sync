@@ -10,11 +10,31 @@
       @click="onChipClick(t)"
       @contextmenu.prevent="startRename(t)"
     >
+      <span v-if="t.pinned" class="tab-icon-project">
+        <img
+          v-if="projectIconSrc(t.projectId, iconTimestamp)"
+          :src="projectIconSrc(t.projectId, iconTimestamp)"
+          class="tab-project-img"
+          draggable="false"
+        />
+        <i v-else class="fa-solid fa-terminal tab-project-img-fallback"></i>
+        <span
+          class="tab-icon-btn icon-pin is-pinned tab-pin-overlay"
+          title="Unpin — keep in this group only"
+          aria-label="Unpin tab"
+          role="button"
+          tabindex="0"
+          @click.stop="togglePin(t.id)"
+          @keydown.enter.stop="togglePin(t.id)"
+        >
+          <i class="fa-solid fa-thumbtack"></i>
+        </span>
+      </span>
       <span
+        v-else
         class="tab-icon-btn icon-pin"
-        :class="{ 'is-pinned': t.pinned }"
-        :title="t.pinned ? 'Unpin — keep in this group only' : 'Pin — show in every group'"
-        :aria-label="t.pinned ? 'Unpin tab' : 'Pin tab'"
+        title="Pin — show in every group"
+        aria-label="Pin tab"
         role="button"
         tabindex="0"
         @click.stop="togglePin(t.id)"
@@ -22,7 +42,6 @@
       >
         <i class="fa-solid fa-thumbtack"></i>
       </span>
-      <i class="fa-solid fa-terminal icon-default"></i>
       <input
         v-if="renamingId === t.id"
         ref="renameInputEl"
@@ -57,6 +76,8 @@
 import { computed, nextTick, ref } from 'vue'
 import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs'
 import { MAX_TABS_PER_SCOPE, renameTerminalTab, toggleTabPinned } from '../store/terminalTabsStore'
+import { iconTimestamp } from '../store/projectStore'
+import { projectIconSrc } from '../utils/projectIcon'
 
 const { scopedTabs: tabs, ownedScopeTabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
 
@@ -151,6 +172,39 @@ function commitRename(t, value) {
   color: var(--accent-blue);
 }
 
+/* Pinned tab: project icon fills the space the default terminal glyph used to occupy. */
+.tab-icon-project {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--control-h, 28px) - 8px);
+  height: calc(var(--control-h, 28px) - 8px);
+  padding: 1px;
+}
+.tab-project-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 2px;
+}
+.tab-project-img-fallback {
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+/* Pin overlay: shrunk marker anchored to the pinned project icon's top-left corner. */
+.tab-pin-overlay {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  font-size: 7px;
+  padding: 1px;
+  background: var(--bg-primary);
+  border-radius: 50%;
+}
+
 .tab-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -183,8 +237,12 @@ function commitRename(t, value) {
 
 /* 'unknown' renders like true (normal); only explicit exit (=== false) tints. */
 .term-tab.is-exited { border-color: var(--accent-red); }
-.term-tab.is-exited .icon-default {
+.term-tab.is-exited .tab-project-img-fallback {
   color: var(--accent-red);
+}
+.term-tab.is-exited .tab-project-img {
+  filter: grayscale(1);
+  opacity: 0.5;
 }
 
 /* Close button has dedicated hit-area to the right of the title. */
