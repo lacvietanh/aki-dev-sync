@@ -106,7 +106,6 @@
       <!-- Cache/age note badge and reload button. -->
       <div class="agent-status-badges">
         <span v-if="ageNote" class="cached-note" :title="ageNote.title">{{ ageNote.text }}</span>
-        <span v-else-if="stale" class="badge-stale" title="Data is older than 10 minutes">Stale</span>
         <button class="btn-ui-action btn-reload" @click="$emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
           <RefreshRing :interval-s="sourceOff ? 0 : refreshSettings.usage_interval_s" :refresh-key="drainKey" :overlay="true" />
           <i class="fa-solid" :class="loading ? 'fa-circle-notch fa-spin' : 'fa-rotate-right'"></i>
@@ -507,8 +506,8 @@ onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 onMounted(retainAgoClock);
 onUnmounted(releaseAgoClock);
 
-// Freshness evaluation (derived reactively from agoNow): older than 10m or past 5h reset.
-const stale = computed(() => {
+// Gates whether the header prints the data-age text: older than 10m, unknown mtime, or past 5h reset.
+const shouldShowAge = computed(() => {
   if (!props.data) return false;
   // No mtime reported: age is unknown.
   if (!props.dataAt) return true;
@@ -545,12 +544,12 @@ const cachedAbsTime = computed(() => formatAbsTime(props.cachedAt));
 const dataAgo = computed(() => (props.dataAt ? `${formatAgo(props.dataAt)} ago` : ''));
 const dataAbsTime = computed(() => formatAbsTime(props.dataAt));
 
-// Header age note for active/cached AG accounts or stale Claude Code data.
+// Header age note for active/cached AG accounts or aged Claude Code data.
 const ageNote = computed(() => {
   if (props.agentId === 'antigravity') {
     return props.isCached ? { text: cachedAgo.value, title: `Data cached at ${cachedAbsTime.value}` } : null;
   }
-  return (stale.value && dataAgo.value) ? { text: dataAgo.value, title: `Data from ${dataAbsTime.value}` } : null;
+  return (shouldShowAge.value && dataAgo.value) ? { text: dataAgo.value, title: `Data from ${dataAbsTime.value}` } : null;
 });
 
 // Claude Code bucket display order.
@@ -1021,17 +1020,7 @@ async function handleIconClick() {
   gap: 6px;
 }
 
-.badge-stale {
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  background: var(--bg-tertiary);
-  color: var(--text-darker);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-/* Data-age note, shared by AG's cached reading and Claude Code's stale reading: plain amber text, not a badge box (keeps the header narrow - no padding, border or background to pay for) */
+/* Data-age note, shared by AG's cached reading and Claude Code's aged reading: plain amber text, not a badge box (keeps the header narrow - no padding, border or background to pay for) */
 .cached-note {
   font-size: 9px;
   font-weight: 600;
