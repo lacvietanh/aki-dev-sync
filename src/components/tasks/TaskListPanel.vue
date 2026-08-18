@@ -83,7 +83,7 @@
               @change="$emit('update:detail', task, task.detail)"
               class="task-detail-textarea"
               placeholder="Add detail description..."
-              maxlength="500"
+              maxlength="1500"
               :disabled="disabled || task.done"
               rows="1"
             ></textarea>
