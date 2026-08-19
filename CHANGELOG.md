@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [Unreleased]
 
+### [1.28.0] - 2026-08-19
+
 #### Added
 - **Glass Effect toggle**, in the App-icon menu below "Enable SSH Terminal Color" - turns the frosted-glass blur back on for the chrome surfaces listed below, off by default, persisted in `localStorage` (`src/composables/useVisualEffects.js`).
 
