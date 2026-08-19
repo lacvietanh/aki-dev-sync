@@ -92,6 +92,6 @@ The plan as written (§4 WS2 Action 1) proposed replacing the blur outright with
 
 - [x] §4 WS3 step 1 - app launched, idle on dashboard.
 - [x] §4 WS3 step 2 (partial) - owner read Activity Monitor's **GPU History** window (system-wide, not the single-process `Aki Dev Sync Graphics and Media` % column this step originally specified): idle and under normal use now sits around **25%**, down from the **~95%** baseline observed before this fix. A large, real drop, but not the same metric as the `< 2%` per-process target - the process-specific reading was not taken, so that exact target is not confirmed hit.
-- [ ] §4 WS3 step 3 - Instruments Tiler/Device/Renderer Utilization `< 5%` - not run (no Instruments session performed).
+- [x] §4 WS3 step 3 - owner confirmed closed; superseded by the GPU History reading above (line 94) as the accepted evidence for this fix - Instruments' per-process Tiler/Device/Renderer breakdown itself was not separately run.
 - [x] §4 WS3 step 4 - terminal tabs, dock collapse/expand, `htop`/shell use confirmed smooth and responsive; cursor blinks only on the active+focused tab; RefreshRing's stepped countdown confirmed visually (nhảy từng nấc, không mượt liên tục).
 

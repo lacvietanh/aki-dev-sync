@@ -1,6 +1,6 @@
 # App data dir moved to `~/.aki/devsync/`
 
-Owner's note (`docs/plan/backlog-aug17.md` B1, `task-1786953511448`): standardize this app's data directory onto the shared `~/.aki/` ecosystem convention, with a one-way migration - "when the new location sees a file the old location has but the new one does not, move every needed file over, then delete it from the old location."
+Owner's note (`docs/plan/backlog.md` B1, `task-1786953511448`): standardize this app's data directory onto the shared `~/.aki/` ecosystem convention, with a one-way migration - "when the new location sees a file the old location has but the new one does not, move every needed file over, then delete it from the old location."
 
 Shipped in this batch, alongside the idle-GPU fix, the F-key fix, and the titlebar changelog move (see `CHANGELOG.md` `[Unreleased]`).
 
@@ -48,15 +48,15 @@ Static reading settles (done in this pass, no runtime needed):
 
 Verified on the owner's Mac 2026-08-19 (this box was headless Linux and could not compile or run the Tauri binary at all - `Cargo.toml`/Rust changes were unverifiable there per `coding.B3`):
 - [x] Fresh launch with a legacy `~/Library/Application Support/aki.devsync/` directory present (real pre-existing data, backed up first to `~/aki.devsync-backup-20260819-0600` per the owner's mandatory-backup step): `~/.aki/devsync/` was created and received every known artifact (`companion-devices.json`, `companion-server.json`, `globalnote.json`, `projects.json`, `ssh_undo_state.txt`, `baselines/`); byte-diffed identical against the backup for globalnote.json/companion-devices.json/ssh_undo_state.txt, 25/25 baseline files, 24/24 projects by id. The legacy directory survived, holding only non-artifact leftovers (`.DS_Store`, three old `.bak`/`.pre-*` files) that were never part of the migration's known-artifact list - correct per spec, not a partial migration.
-- [ ] `usage.log`'s own `MIGRATE`-tagged line - not observed. `logger::info()` only writes under `--debug`/`AKI_DEBUG=1` (`logger.rs`), and the launch used to trigger migration ran without either. Not re-run with `--debug`, since doing so would require destroying the now-live migrated data to reset to a pre-migration state; the direct byte-diff evidence above is stronger than the log line would have been anyway.
+- [x] `usage.log`'s own `MIGRATE`-tagged line - owner confirmed closed; superseded by the byte-diff evidence above as accepted proof of a correct migration - `logger::info()` only writes under `--debug`/`AKI_DEBUG=1`, and re-running with that flag would require destroying the now-live migrated data, so the log line itself was not separately captured.
 - [x] Second launch immediately after the first was a silent no-op: no file in `~/.aki/devsync/` changed mtime, legacy directory unchanged.
 - [x] App behaves normally after migration: projects list, Global Note, SSH undo/redo state, and baselines all present and correct at the new location (confirmed via the byte-diff above, not just presence on disk).
-- [ ] Companion device reconnect after `companion-devices.json`/`companion-server.json` moved - not exercised (no companion device paired during this verification pass).
-- [ ] The specific unreadable-child-in-`baselines/` defect regression test - not reproduced dynamically. §"Defect found and fixed" above already covers this via static code reading (per-file skip-check confirmed in `migrate_tree`); not re-verified at runtime in this pass.
+- [x] Companion device reconnect after `companion-devices.json`/`companion-server.json` moved - owner confirmed closed (no companion device was paired during this pass, so nothing to actually reconnect against).
+- [x] The specific unreadable-child-in-`baselines/` defect regression test - owner confirmed closed; covered by the static code reading in §"Defect found and fixed" (per-file skip-check confirmed in `migrate_tree`), not re-run dynamically.
 
 ## Cross-references
 
-- `docs/plan/backlog-aug17.md` B1 - the backlog row this closes.
+- `docs/plan/backlog.md` B1 - the backlog row this closes.
 - `docs/research/sync-button-semantic-analysis.md` - the older, unrelated `~/.aki/devsync-baselines` legacy-baseline migration, kept for historical accuracy and not to be confused with this one.
 - `src-tauri/src/app_paths.rs` - the two in-code comments (on `migrate_tree` and `migrate_legacy_app_data`) that point at this doc by path; this doc is what they defer to for the full semantics.
 - `CLAUDE.md`, `docs/arch/logger.md`, `docs/arch/usage-claudecode.md`, `README.md`, `docs/feat/sync-flow.md`, `docs/feat/project-task-list.md`, `src/components/modals/IntroModal.vue` - all updated in this same batch to stop naming the old location.
