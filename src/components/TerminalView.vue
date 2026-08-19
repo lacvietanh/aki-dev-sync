@@ -209,6 +209,25 @@ function onMountClick() {
   term?.focus()
 }
 
+// True only while this tab's own textarea holds native DOM focus.
+const hasFocus = ref(false)
+
+// Blinks only when both active and focused, so hidden/unfocused tabs stop paying for the repaint timer.
+function updateCursorBlink() {
+  if (!term) return
+  term.options.cursorBlink = props.active && hasFocus.value
+}
+
+function onTerminalFocus() {
+  hasFocus.value = true
+  updateCursorBlink()
+}
+
+function onTerminalBlur() {
+  hasFocus.value = false
+  updateCursorBlink()
+}
+
 // Terminal theme palette matching app dark theme tokens.
 const THEME = {
   background: '#05070c',
@@ -288,6 +307,7 @@ watch(terminalFontScale, () => scheduleFit())
 watch(
   () => props.active,
   (isActive) => {
+    updateCursorBlink()
     if (!isActive) return
     scheduleFit()
     term?.focus()
@@ -301,7 +321,7 @@ onMounted(async () => {
     fontFamily: FONT_FAMILY,
     fontSize: BASE_FONT_SIZE,
     lineHeight: 1.4,
-    cursorBlink: true,
+    cursorBlink: false,
     scrollback: 5000,
     allowProposedApi: true,
     macOptionClickForcesSelection: true, // without this, Option-drag can't select while a TUI has mouse-mode on
@@ -312,6 +332,8 @@ onMounted(async () => {
 
   // After open(): `term.textarea` / `term.element` do not exist before it.
   textDrain = useTerminalTextDrain(term)
+  term.textarea.addEventListener('focus', onTerminalFocus)
+  term.textarea.addEventListener('blur', onTerminalBlur)
 
   // Auto-sync shell OSC 0/2 window title changes to tab store.
   term.onTitleChange((title) => {

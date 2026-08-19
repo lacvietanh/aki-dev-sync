@@ -642,10 +642,15 @@ function formatTimeAgo(timestamp) {
   position: sticky;
   top: 0;
   background: rgba(10, 15, 22, 0.95);
-  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-card);
   z-index: 10;
   box-sizing: border-box;
+}
+
+/* Glass effect opt-in (src/composables/useVisualEffects.js) — see main.css's grouped block for
+   the other permanently-mounted chrome surfaces this pairs with. */
+html.fx-glass .grid-header {
+  backdrop-filter: blur(8px);
 }
 
 .grid-header-cell {

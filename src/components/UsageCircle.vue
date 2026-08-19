@@ -361,7 +361,6 @@ export default {
   left: 0;
   transform: translateY(-4px);
   background: rgba(18, 18, 22, 0.95);
-  backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   padding: 6px 8px;
@@ -390,6 +389,13 @@ export default {
   visibility: visible;
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Glass effect opt-in (src/composables/useVisualEffects.js). Scoped to the hover-visible state
+   only: the base rule above carries no backdrop-filter at all, so a hidden tooltip never holds a
+   composited blur layer regardless of this setting. */
+html.fx-glass .usage-circle-container:hover .premium-tooltip {
+  backdrop-filter: blur(8px);
 }
 
 .tooltip-header {

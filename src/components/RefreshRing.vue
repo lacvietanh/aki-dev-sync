@@ -9,26 +9,33 @@
       class="rr-fill"
       :key="refreshKey"
       cx="18" cy="18" r="15"
-      :style="{ animationDuration: intervalS + 's', stroke: strokeColor }"
+      :style="{ animationDuration: intervalS + 's', animationTimingFunction: `steps(${stepCount})`, stroke: strokeColor }"
     />
   </svg>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue';
+
+const props = defineProps({
   intervalS: { type: Number, required: true },
   refreshKey: { type: Number, required: true },
   strokeColor: { type: String, default: 'rgba(6, 182, 212, 0.55)' },
   overlay: { type: Boolean, default: false },
 });
+
+// ~1 step/second, capped so a long refresh interval doesn't repaint every frame.
+const MAX_STEPS = 60;
+const stepCount = computed(() => Math.min(Math.max(Math.round(props.intervalS), 1), MAX_STEPS));
 </script>
 
 <style scoped>
 .refresh-ring {
   transform: rotate(-90deg);
-  overflow: visible;
   pointer-events: none;
   flex-shrink: 0;
+  /* Keeps the stepped countdown from dirtying ancestors; clips nothing, since the r=15 circles already fit viewBox 0 0 36 36 in both size modes. */
+  contain: paint;
 }
 /* Inline mode: fixed size, sits in flex row */
 .refresh-ring--inline {
