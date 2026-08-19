@@ -39,7 +39,7 @@ Same composable (one owner for "selection → clipboard"):
 
 - The mouse-reporting lock toggle proposed in B10. It fixes only the selection half, breaks scroll and click inside the TUI while on, and needs new UI in an app under the Extreme-Narrow rule. Closed, not deferred.
 - `⌘C` sending `SIGINT` when there is no selection (raised in `docs/plan/done/terminal-ime-input-layer-separation.md` §247). Never implemented, not part of this fix, no behaviour change either way.
-- Copy-on-select (auto-copy the moment a selection exists). It would also work, and it silently overwrites the clipboard on every stray drag. Rejected in favour of the stash, which keeps `⌘C` explicit.
+- Copy-on-select (auto-copy the moment a selection exists). It would also work, and it silently overwrites the clipboard on every stray drag. Rejected in favour of the stash, which keeps `⌘C` explicit. Re-raised by the owner after the hand-test (§6) once it was clear the highlight still doesn't survive a post-release mouse move (F2's second mechanism, untouched by this fix) — reaffirmed rejected: macOS has one system clipboard, unlike X11 where select-to-copy writes to a separate PRIMARY buffer, so copy-on-select here would silently clobber whatever the user last actually copied on every stray selection, including one made just to re-read text.
 
 ## 6. Verify
 
@@ -50,8 +50,8 @@ Static — settled by reading the diff, no runtime needed (`coding.B3`):
 - [ ] `hasTerminalFocus` has no remaining readers; both call sites use the live DOM check.
 - [ ] `npm run typecheck` — only if `package.json` actually defines it; this is JS/Vue with no type surface added, so its absence is not a gap.
 
-Runtime — one batch, on the owner's Mac, after the build:
-- [ ] In an SSH terminal running `claude`: select with `⌥`-drag, release, press `⌘C` → the text is in the clipboard, **whether or not the highlight survived**. This is the one that closes the owner's report.
-- [ ] Same, without Option and without a TUI (plain shell output): select, `⌘C` → clipboard has it.
-- [ ] Does the highlight now survive the release? Then run `__akiTermCopy.status()` in the Safari inspector attached to the app (target `localhost`, **not** `Main.html` — that is the inspector's own UI) and record `rearmSuppressed` / `protocolChanges`. A non-zero `rearmSuppressed` confirms F2's first mechanism; zero with the wipe still happening means it is one of the other two, recorded as a follow-up rather than guessed at.
-- [ ] `⌘⇧]` pressed three times in a row cycles three tabs, without clicking the terminal in between.
+Runtime — one batch, on the owner's Mac, after the build (`Aki-DevSync-v1.28.1.0622-uni.dmg`, run 2026-08-20):
+- [x] **PASS.** In an SSH terminal running `claude`: select with `⌥`-drag, release, press `⌘C` → the text is in the clipboard, **whether or not the highlight survived**. Owner confirmed the clipboard has the text.
+- [x] **PASS.** Same, without Option and without a TUI (plain shell output): select, `⌘C` → clipboard has it.
+- [x] **Highlight does not survive the release** — owner reports it is still lost on the smallest mouse move after release, unchanged from before. Diagnosed, not a regression: F2 listed three independent clear-selection mechanisms and this fix only suppresses the first (redundant protocol re-arm); the owner's symptom (any small move wipes it) matches the second — xterm's `onUserInput` fires on any forwarded mouse event and unconditionally clears the selection, which this fix does not touch. Since `⌘C` already copies correctly via the stash regardless of highlight state (the two items above), the `__akiTermCopy.status()` diagnostic step was skipped — its trigger condition ("highlight now survives") did not occur. Not scheduled as a follow-up: fixing it would mean overriding xterm's core "any input clears selection" behaviour for a purely cosmetic property, which risks the TUI's own mouse interaction for no functional gain.
+- [x] **PASS.** `⌘⇧]` pressed three times in a row cycles three tabs, without clicking the terminal in between.
