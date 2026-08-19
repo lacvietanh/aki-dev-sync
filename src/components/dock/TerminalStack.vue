@@ -53,9 +53,8 @@
     </template>
     <!-- No #peek slot: the terminal stack collapses to header-only (unlike the log stack, there is no "latest line" concept worth surfacing while collapsed). -->
     <div
+      ref="mountWrapEl"
       class="terminal-mount-wrap"
-      @focusin="hasTerminalFocus = true"
-      @focusout="hasTerminalFocus = false"
     >
       <!-- template v-for with child v-if prevents Vue 3 v-if precedence over v-for scoping issues. -->
       <template v-for="t in tabs" :key="t.id">
@@ -130,11 +129,12 @@ const scopeLabel = computed(() => (scopeProject.value ? scopeProject.value.name.
 const scopeTitle = computed(() => (scopeProject.value ? `Terminal group: ${scopeProject.value.name}` : 'Global terminal group'));
 
 // Scoped terminal shortcuts (⌘T, ⌘W, ⌘⇧[, ⌘⇧], ⌘±0) handled on focus; preventDefault prevents Tauri window close.
-const hasTerminalFocus = ref(false);
+const mountWrapEl = ref(null);
+const hasTerminalFocus = () => !!mountWrapEl.value?.contains(document.activeElement);
 
 // Explicit blur on collapse: body-persist avoids display:none, so focus must be dropped manually to prevent hidden input.
 watch(collapsed, (isCollapsed) => {
-  if (isCollapsed && hasTerminalFocus.value) document.activeElement?.blur?.();
+  if (isCollapsed && hasTerminalFocus()) document.activeElement?.blur?.();
 });
 
 function onKeydown(e) {
@@ -147,7 +147,7 @@ function onKeydown(e) {
     newTab();
     return;
   }
-  if (!hasTerminalFocus.value) return;
+  if (!hasTerminalFocus()) return;
   if (e.key === 'w' && !e.shiftKey) {
     e.preventDefault();
     closeTab(activeTabId.value);

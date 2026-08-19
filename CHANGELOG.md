@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ### [Unreleased]
 
+### [1.28.1] - 2026-08-20
+
+#### Fixed
+- **`⌘C` now copies the terminal selection**, including a selection a mouse-tracking TUI wiped a moment after it was made. xterm's only copy route is a native `copy` DOM event that only ever gets fed a selection on Linux (primary-selection emulation) - in this WKWebView it never fired, so `⌘C` silently touched nothing, on any target. The terminal now claims `⌘C` itself and writes the selection through the app's own clipboard path, plus stashes the last non-empty selection so a wipe right after selecting doesn't lose it. Also suppresses a redundant mouse-protocol re-arm that was clearing the selection outright when a TUI re-emitted a mouse mode already active.
+- **Terminal tab shortcuts (`⌘⇧[`, `⌘⇧]`, `⌘W`, zoom) now repeat**, instead of working once per terminal click. The focus flag they gated on went stale on every tab switch - it's a live focus check now.
+
 ### [1.28.0] - 2026-08-19
 
 #### Added

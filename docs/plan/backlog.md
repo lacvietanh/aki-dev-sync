@@ -95,11 +95,13 @@ Yêu cầu ban đầu của owner trong đợt 1.28: theo dõi được nhiều 
 
 Owner tự hoãn nguyên văn: "mất thời gian cho cái này vì cần tôi giúp debug -> tạm bỏ qua tính năng này". Không có code nào cho mục này trong đợt 1.28. Không lên lịch lại cho tới khi owner chủ động mở lại.
 
-## B10 — SSH terminal: khoá mouse reporting để copy chắc chắn
+## B10 — SSH terminal: copy được text (đóng, đã chuyển thành plan)
 
-Copy text từ `claude` chạy qua SSH (in-app terminal lẫn Terminal.app) bị hên xui — Option+kéo-chọn rồi nhả chuột, selection thường bị mất theo lúc nhả (~2-3/100 lần giữ được). Điều tra 2026-08-19: xterm.js's `shouldForceSelection` chỉ đọc `e.altKey` — về lý thuyết đủ, nhưng lỗi tái hiện y hệt ở Terminal.app (không dùng xterm.js) với cùng target `claude` qua SSH, nên nguyên nhân nằm ở `claude`'s mouse-tracking mode phối hợp với độ trễ báo modifier-key của macOS khi kéo nhanh — không phải bug trong code app này, không sửa được bằng cách đổi logic chọn.
+**Kết luận cũ ở mục này là sai và đã bị thay thế.** Vòng điều tra 2026-08-19 kết luận "không sửa được bằng code của app này" dựa trên việc Terminal.app cũng lỗi giống hệt — nhưng triệu chứng giống nhau không có nghĩa là cơ chế giống nhau, và vòng 2026-08-20 tìm ra một lỗi nằm hoàn toàn trong tầm tay app: `⌘C` **chưa bao giờ** copy được trong terminal này, kể cả khi không có TUI nào bật mouse-mode. xterm chỉ đổ vùng chọn vào textarea cho cơ chế primary-selection của Linux, nên trong WKWebView sự kiện `copy` không bao giờ có gì để bám vào.
 
-Đề xuất: thêm toggle "khoá mouse reporting" riêng cho SSH tab — bật lên thì PTY không nhận mouse event nữa, kéo chọn ăn chắc 100% không phụ thuộc timing Option key. Cần quyết định UI (project này theo luật Extreme Narrow — không thêm row/button tuỳ tiện), owner đã chọn "làm task riêng" thay vì bỏ qua (2026-08-19). Chưa có code cho mục này.
+Chi tiết cơ chế + bằng chứng: `docs/research/terminal-copy-selection-root-cause.md`. Việc phải làm: `docs/plan/terminal-copy-selection.md`.
+
+Toggle "khoá mouse reporting" đề xuất ở vòng trước **đóng, không lên lịch**: nó chỉ chữa nửa vùng-chọn, tắt luôn scroll/click bên trong TUI, và cần thêm UI trong một app đang theo luật Extreme Narrow.
 
 ---
 

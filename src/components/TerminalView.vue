@@ -80,12 +80,13 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { usePtyTerminal } from '../composables/usePtyTerminal'
 import { useTerminalTextDrain, POST_COMPOSITION_MS } from '../composables/useTerminalTextDrain'
+import { useTerminalCopy } from '../composables/useTerminalCopy'
 import { chromeVisible } from '../composables/useTerminalChrome'
 import { renameTerminalTab, reclaimResizeAuthority } from '../store/terminalTabsStore'
 import {
@@ -106,6 +107,7 @@ const props = defineProps({
 const mountEl = ref(null)
 let term = null
 let textDrain = null
+let termCopy = null
 let fitAddon = null
 let resizeObserver = null
 // shallowRef prevents unwrapping nested refs returned by usePtyTerminal composable.
@@ -310,7 +312,8 @@ watch(
     updateCursorBlink()
     if (!isActive) return
     scheduleFit()
-    term?.focus()
+    // Deferred past v-show's reveal of this tab; a pre-flush focus() lands on a still-hidden element and is dropped.
+    nextTick(() => term?.focus())
   }
 )
 
@@ -332,6 +335,7 @@ onMounted(async () => {
 
   // After open(): `term.textarea` / `term.element` do not exist before it.
   textDrain = useTerminalTextDrain(term)
+  termCopy = useTerminalCopy(term)
   term.textarea.addEventListener('focus', onTerminalFocus)
   term.textarea.addEventListener('blur', onTerminalBlur)
 
@@ -358,6 +362,7 @@ onBeforeUnmount(() => {
   if (fitFrame) cancelAnimationFrame(fitFrame)
   if (resizeObserver) resizeObserver.disconnect()
   if (textDrain) textDrain.dispose()
+  if (termCopy) termCopy.dispose()
   if (term) term.dispose()
 })
 

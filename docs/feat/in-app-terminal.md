@@ -1,6 +1,6 @@
 # In-app terminal — feature
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-08-20 · v1.28.0
 
 A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/arch/remote-views-roadmap.md` § Terminal View.
 
@@ -126,6 +126,15 @@ The research chain remains the root-cause record, now four rounds deep:
 - `docs/research/terminal-vietnamese-ime-root-cause-4.md` — the 229 mechanism was inverted; decides the drain architecture. §7 point 1 (a narrow keypress veto) superseded by `-5.md`; everything else stands.
 - `docs/research/terminal-vietnamese-ime-root-cause-5.md` — **head of the chain.** The jul31 double-space blocker: root cause traced to `_keyPress`'s unforced `cancel()` for space and uppercase A-Z, fix broadened the veto to every keypress, confirmed on real hardware.
 
+### Copying text out (1.28.1)
+
+`⌘C` copies the selection. It had never done so before 1.28.1 — not under a full-screen program, not at a plain shell prompt — because xterm's only copy route is a native browser `copy` event fed from a real DOM selection, and it builds one only on Linux (primary-selection emulation); in this app's webview the event therefore never had anything to fire on. The terminal now claims the key itself and writes through the same clipboard path as every COPY button in the app (`src/composables/useTerminalCopy.js`).
+
+Two things follow from that, both deliberate:
+
+- **`⌘C` copies the last text you selected in this tab**, not only a selection still highlighted right now. A program that tracks the mouse (`claude`, `agy`, anything full-screen) makes xterm drop the highlight almost immediately — the text is stashed the moment it is selected, so the key still copies what you meant. With nothing ever selected in that tab, `⌘C` does nothing at all, exactly as before.
+- **Selecting text under such a program still needs `⌥`** held while dragging, unchanged: the program owns the mouse, and Option is xterm's escape hatch out of it (`macOptionClickForcesSelection`, 1.23). The app additionally swallows a redundant re-arm of the program's mouse mode, which is the most likely reason the highlight used to vanish on release — see `docs/research/terminal-copy-selection-root-cause.md`.
+
 ## Panel size and font zoom (1.22.0)
 
 Two VS Code affordances, split by which surface has a keyboard:
@@ -191,5 +200,7 @@ Compilation is no longer open: `cargo check` is clean and `cargo test --lib` pas
 Still open: a `npm run build:rmud` linking `portable-pty` against `universal-apple-darwin` (the unit suite builds only the dev profile for this host), and all live behaviour — typing from each side, `Ctrl+C` via the sticky modifier, resize propagation, scrollback replay after a phone lock, and whether a real `npm run build`'s output volume stays inside the coalescing thresholds. Two things specifically want eyes because they are timing properties no unit test here covers: that a keystroke echoed less than 20ms after the previous flush now appears immediately (the flusher thread added in 1.20.0), and that quitting the app really does take an `ssh` session down with it.
 
 Specific to the fix round: the terminal must fill the panel at first open **and** after collapsing and re-expanding the dock; `exit` must show `[process exited]` on both screens; RESTART must give a working prompt (and be safe to double-tap); CLEAR must leave the phone's screen empty too, and stay empty after the phone reconnects; OPEN must land `Terminal.app` in the directory you last `cd`'d to, which is the one path here that depends on `/usr/sbin/lsof` output format.
+
+Specific to copy (1.28.1, `docs/plan/terminal-copy-selection.md` §6): `⌘C` copying a selection at a plain prompt and under `claude` over SSH, whether the highlight now survives the mouse release, and `⌘⇧]` cycling tabs three times in a row — none of it is checkable off the Mac, so all of it is open.
 
 Specific to keyboard input, largely resolved by the 2026-07-31 hardware run (`docs/research/terminal-input-jul31.md`, `docs/research/terminal-vietnamese-ime-root-cause-5.md`): direct Vietnamese typing with OpenKey, plain fast English typing, arrows/Ctrl+C/Ctrl+D/F-keys, Shift+Enter in the compose box, and the sticky Ctrl/Shift latch are all confirmed on real hardware, both on the Mac and over a remote Chrome/Android session, with no double space (the blocker that stood in the way of confirming any of this — root cause and fix in `-5.md`). Still open: Option+arrow-key combinations (deliberately not exercised yet — do not read this as PASS) and the Android/Gboard defect where a corrected character arrives alongside the original it replaced (`docs/plan/done/terminal-input-jul31.md` §2.2, also tracked in `docs/plan/remaining-1.22.md`), tracked separately and not yet root-caused. Also verify: the splitter tracks the pointer without the dock oscillating, and that the terminal re-fits to each new height; that `⌘+`/`⌘-` change cols/rows on the Mac and that the phone's zoom buttons change its own font size independently, with no grid re-fit or oscillation; and that `describe_terminal_sessions` (renamed from `list_external_terminals`) parses real `ps -axo pid=,ppid=,tty=,etime=,command=` output (the column walk is unit-tested against synthetic lines, not against the real `ps`).
