@@ -4,9 +4,10 @@ Chốt từ 10 task chưa `done` trong `.akidevsync/notes.json` (đọc 2026-08-
 
 | # | Note | Loại | Trạng thái |
 |---|---|---|---|
-| B1 | app data dir → `~/.aki/devsync/` | research trước | pin |
+| B1 | app data dir → `~/.aki/devsync/` | research trước | code shipped 2026-08-19, chờ verify trên Mac |
 | B2 | project config vào `.akidevsync/` trong repo | research trước | pin |
-| B3 | GPU cao khi app idle | research trước | pin |
+| B3 | GPU cao khi app idle | research trước | shipped 2026-08-19, số đo GPU chưa đo lại trên Mac |
+| B9 | Claude Code: xem được nhiều account | code | tạm bỏ qua (owner) |
 | B4 | Task Notes: nới giới hạn text, dùng chung pattern | code | pin |
 | B5 | AGY pre-allow list: bổ sung mục | code | — |
 | B6 | REPORT: định nghĩa "file mới" theo chu kỳ check | code | wish |
@@ -28,6 +29,8 @@ Việc:
 2. Migration đặt ở đầu vòng đời khởi động, trước mọi lệnh đọc/ghi appdata; copy xong mới xoá nguồn để crash giữa chừng không mất dữ liệu. Copy pattern từ migration baseline sẵn có ở `src-tauri/src/sync.rs:538`.
 3. Migration là hành động lên hệ thống thật, không phải chỉ viết code (`coding.B3`): phải chạy trên máy Mac có dữ liệu thật mới được đóng.
 
+**Code shipped 2026-08-19**: `src-tauri/src/app_paths.rs` là funnel duy nhất (`app_data_dir()` + `migrate_legacy_app_data()`), chạy ở đầu `setup()` trong `lib.rs`, trước cả `logger::init`. Chi tiết migration, checklist verify: `docs/plan/done/appdata-dir-to-aki-devsync.md`. Chưa đóng theo mục 3 ở trên — chưa chạy trên Mac có dữ liệu thật.
+
 ## B2 — Đưa project config vào chính repo, ở `.akidevsync/`
 
 Note `task-1785676763350`. Đã có tiền lệ: `notes.json` của tính năng task list đã nằm trong `.akidevsync/` của từng repo từ 1.22.0 (`docs/feat/project-task-list.md`).
@@ -43,6 +46,8 @@ Note `task-1786650061322`, pin. Câu hỏi của note: vì sao app ăn GPU nhi�
 Đây là việc đo trước, sửa sau. Nghi phạm phải kiểm tra bằng số liệu chứ không đoán: animation/transition CSS chạy vĩnh viễn (`animation: … infinite`, thanh progress, con trỏ nhấp nháy của terminal khi tab không hiển thị), timer/interval của usage monitor và refresh controller vẫn quay khi cửa sổ bị che, xterm render liên tục, và mọi `requestAnimationFrame` không có điều kiện dừng.
 
 Ràng buộc: chỉ đo được trên Mac với app chạy thật (`coding.B3`) — Activity Monitor/`powermetrics` cho số nền, Safari Web Inspector cho phần web (nhớ chọn đúng target `localhost`, không phải `Main.html` của chính inspector). Kết quả vào một research doc (`docs/research/`, schema `docs.B2`) trước khi mở việc sửa.
+
+**Shipped 2026-08-19**: research đã có ở `docs/research/perf-idle-gpu-cpu.md` (đợt trước) và plan `docs/plan/done/fix-idle-gpu-webkit-compositor.md` (đợt này, phần "Implemented"). `backdrop-filter` gỡ khỏi chrome thường trực, đưa vào công tắc "Glass Effect" (mặc định tắt); con trỏ terminal chỉ nhấp nháy ở tab đang active + đang focus; `RefreshRing` đổi sang bước ~1 giây thay vì animate mỗi frame. Số đo GPU/CPU thật chưa được đo lại trên Mac — mục tiêu `< 2%`/`< 5%` của plan gốc vẫn còn để ngỏ.
 
 ## B4 — Task Notes: nới giới hạn text, dùng chung pattern
 
@@ -83,6 +88,18 @@ Chưa đủ để làm: cần chốt (a) app biết project là "web" và biết
 ## B8 — Note rỗng
 
 `task-1786949417624` không có title lẫn detail. Xoá trong app, không phải việc code.
+
+## B9 — Claude Code: xem được nhiều account (tạm bỏ qua)
+
+Yêu cầu ban đầu của owner trong đợt 1.28: theo dõi được nhiều account Claude Code, giống pattern app đã làm cho Antigravity — nhưng cách detect account khác nhau giữa hai CLI (`docs/arch/usage-claudecode.md` §1 vs `docs/arch/usage-antigravity.md`).
+
+Owner tự hoãn nguyên văn: "mất thời gian cho cái này vì cần tôi giúp debug -> tạm bỏ qua tính năng này". Không có code nào cho mục này trong đợt 1.28. Không lên lịch lại cho tới khi owner chủ động mở lại.
+
+## B10 — SSH terminal: khoá mouse reporting để copy chắc chắn
+
+Copy text từ `claude` chạy qua SSH (in-app terminal lẫn Terminal.app) bị hên xui — Option+kéo-chọn rồi nhả chuột, selection thường bị mất theo lúc nhả (~2-3/100 lần giữ được). Điều tra 2026-08-19: xterm.js's `shouldForceSelection` chỉ đọc `e.altKey` — về lý thuyết đủ, nhưng lỗi tái hiện y hệt ở Terminal.app (không dùng xterm.js) với cùng target `claude` qua SSH, nên nguyên nhân nằm ở `claude`'s mouse-tracking mode phối hợp với độ trễ báo modifier-key của macOS khi kéo nhanh — không phải bug trong code app này, không sửa được bằng cách đổi logic chọn.
+
+Đề xuất: thêm toggle "khoá mouse reporting" riêng cho SSH tab — bật lên thì PTY không nhận mouse event nữa, kéo chọn ăn chắc 100% không phụ thuộc timing Option key. Cần quyết định UI (project này theo luật Extreme Narrow — không thêm row/button tuỳ tiện), owner đã chọn "làm task riêng" thay vì bỏ qua (2026-08-19). Chưa có code cho mục này.
 
 ---
 
