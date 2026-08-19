@@ -15,6 +15,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 #### Fixed
 - **`F1`-`F3` and `F12` now reach the app's window-shortcut handler while typing in the in-app terminal**, as long as the terminal is on its normal screen buffer (a shell prompt) - previously xterm always consumed those bare function keys first. A full-screen program using the alternate screen buffer (`vim`, `htop`, `mc`) still gets them, unchanged. One shared list, `src/constants/windowShortcuts.js`, is now read by both the terminal's key handler and `AppHeader.vue`'s shortcut handler.
+- **In-app terminals no longer leak `CLAUDE_CODE_CHILD_SESSION` into spawned shells.** `portable-pty`'s `CommandBuilder` inherits the whole parent process environment by default; when this app itself was launched from inside a Claude Code session, that session's own `CLAUDE_CODE_CHILD_SESSION=1` propagated into every terminal tab, silently disabling transcript saving for any `claude` CLI run inside one. Now stripped at the one PTY-spawn funnel (`src-tauri/src/pty.rs`).
 - **`⌘T` now opens a new terminal from anywhere**, not only while an existing terminal tab already has focus - previously pressing it with the dock collapsed or no tab open did nothing. It now also un-collapses the dock. Every other terminal shortcut (`⌘W`, tab cycling, zoom) still requires an existing terminal in focus, since they only make sense on one.
 
 ### [1.27.0] - 2026-08-18

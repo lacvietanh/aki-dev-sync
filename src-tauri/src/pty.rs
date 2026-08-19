@@ -409,6 +409,8 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
     cmd.arg("-l");
     // Marks this shell for anything that cares (prompt customisation, statusline scripts) and matches what Terminal.app-launched shells see.
     cmd.env("TERM", "xterm-256color");
+    // CommandBuilder inherits the parent env by default; strips a Claude Code session marker that would otherwise disable transcript saving for `claude` runs in a spawned tab (see CHANGELOG [Unreleased]).
+    cmd.env_remove("CLAUDE_CODE_CHILD_SESSION");
     // R-1 (docs/plan/done/dev-build-in-app-launch.md, RULE-stack-tauri A2 / CLAUDE.md's cold-start PATH race): a DEV/BUILD press writes its command into this shell right after this call returns, which can race `-l`'s own .zprofile/.zshrc sourcing (nvm, path_helper, zinit) — the same failure this project has hit before, an intermittent `exit=127 command not found` that self-heals within minutes. Prepending the well-known macOS install dirs to the CHILD's PATH here means they are present before rc-sourcing even starts, not contingent on it finishing first. Applied to every spawned tab, not just DEV/BUILD ones, so this is one shared preamble at the one dispatch funnel rather than something patched in per call site. Does NOT cover an nvm-managed node/npm (version-numbered path nvm resolves dynamically) — a known, stated gap, not a claim of full coverage.
     if let Ok(home) = std::env::var("HOME") {
         let seeded = format!(
