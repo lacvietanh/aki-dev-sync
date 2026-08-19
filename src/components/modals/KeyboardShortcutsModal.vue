@@ -30,6 +30,7 @@ const GROUPS = [
       { key: 'F2', desc: 'Toggle ultra-wide (1400px) / narrow window' },
       { key: 'F3', desc: 'Centered on the primary monitor' },
       { key: 'F12', desc: 'Toggle pin (always on top, all spaces)' },
+      { key: 'F1–F3, F12', desc: 'reach the app at a shell prompt in the terminal; stay with a full-screen program (vim, htop) instead' },
     ],
   },
   {

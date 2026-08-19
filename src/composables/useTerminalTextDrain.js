@@ -1,6 +1,8 @@
 // Terminal input text drain: handles text insertion and IME composition (keys owned by xterm).
 // Reference architecture: docs/research/terminal-vietnamese-ime-root-cause-4.md §7 & terminal-gboard-double-insert.md.
 
+import { WINDOW_FUNCTION_KEYS } from '../constants/windowShortcuts'
+
 const RING_MAX = 400
 const ring = []
 const counts = {
@@ -187,6 +189,15 @@ export function useTerminalTextDrain(term) {
 
   // Veto xterm keypress without preventDefault so browser inserts into textarea for drain.
   function customKeyEventHandler(ev) {
+    // Returning false skips xterm's own key handling, so it never calls stopPropagation() and the window shortcut listener still sees the event.
+    if (
+      ev.type === 'keydown' &&
+      WINDOW_FUNCTION_KEYS.includes(ev.key) &&
+      !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey &&
+      term?.buffer?.active?.type !== 'alternate' // alt-screen TUIs (vim, htop, mc) keep the F-keys for themselves
+    ) {
+      return false
+    }
     if (ev.type !== 'keypress') return true
     counts.keypressVetoed++
     record('keypress-vetoed', { key: ev.key, charCode: ev.charCode })

@@ -139,11 +139,16 @@ watch(collapsed, (isCollapsed) => {
 
 function onKeydown(e) {
   // macOS-only app: ⌘ only. Ctrl+T/W belong to the shell running inside the terminal, not to this dock's tab management.
-  if (!hasTerminalFocus.value || !e.metaKey) return;
+  if (!e.metaKey) return;
+  // ⌘T opens a terminal from anywhere, unlike every shortcut below - matches Terminal.app/browser convention.
   if (e.key === 't' && !e.shiftKey) {
     e.preventDefault();
+    collapsed.value = false;
     newTab();
-  } else if (e.key === 'w' && !e.shiftKey) {
+    return;
+  }
+  if (!hasTerminalFocus.value) return;
+  if (e.key === 'w' && !e.shiftKey) {
     e.preventDefault();
     closeTab(activeTabId.value);
     // Uses e.code (BracketLeft/Right) because e.key shifts to '{'/ '}' under Shift.

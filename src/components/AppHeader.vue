@@ -8,9 +8,6 @@
           <div class="icon-dropdown">
             <div class="icon-dropdown-header-info">
               <span class="version-info-tag"><i class="fa-solid fa-code"></i> {{ appVersion }} {{ buildTime }}</span>
-              <a href="#" @click.prevent="showChangelogModal = true" class="header-changelog-link" title="View Changelog">
-                <i class="fa-solid fa-clock-rotate-left"></i> View Changelog
-              </a>
             </div>
             <div class="icon-dropdown-preset-row">
               <button
@@ -41,6 +38,13 @@
             <a href="#" @click.prevent="enableSshTerminalColor" class="icon-dropdown-item icon-dropdown-item-ssh-color" title="Tints the Terminal background while an SSH session is active, so it's visually distinct from local - row shows the actual tint">
               <i class="fa-solid fa-palette"></i> Enable SSH Terminal Color
             </a>
+            <div class="icon-dropdown-ac-section">
+              <span class="ac-title"><i class="fa-solid fa-water"></i> Glass Effect:</span>
+              <label class="remember-view" :class="{ on: glassEnabled }" title="Frosted-glass blur on translucent surfaces - costs GPU, off by default">
+                <input type="checkbox" :checked="glassEnabled" @change="onToggleGlass" />
+                {{ glassEnabled ? 'On' : 'Off' }}
+              </label>
+            </div>
             <!-- Host-only: writes local Mac config via native window. -->
             <template v-if="nativeWindow">
             <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item statusline-menu-item" title="Build & deploy statuslines for AG CLI (~/.gemini/antigravity-cli/) visually, apply to local and/or remote hosts">
@@ -223,6 +227,9 @@
             </div>
             </template>
             <div class="icon-dropdown-separator"></div>
+            <a href="#" @click.prevent="showChangelogModal = true" class="icon-dropdown-item" title="View Changelog">
+              <i class="fa-solid fa-clock-rotate-left"></i> View Changelog
+            </a>
             <a href="#" @click.prevent="openLink(REPO_URL)" class="icon-dropdown-item">
               <i class="fa-brands fa-github"></i> GitHub Repository
             </a>
@@ -237,7 +244,7 @@
           <span v-if="isDev" class="dev-tag">DEV</span>
         </div>
       </div>
-      <span class="app-version clickable" @click="showChangelogModal = true" title="View Changelog">
+      <span class="app-version">
         <span v-if="newVersionAvailable" class="version-row">
           <span class="update-badge" @click.stop="showUpdateModal = true" :title="'New version ' + newVersionAvailable + ' available! Click for details.'">
             <i class="fa-solid fa-circle-arrow-up"></i> Update
@@ -317,6 +324,8 @@ import { useSsh } from '../composables/useSsh';
 import { useIntro } from '../composables/useIntro';
 import { openGlobalNote, noteContent, globalNoteSummary } from '../composables/useGlobalNote';
 import { useRemoteControl } from '../composables/useRemoteControl';
+import { glassEnabled, setGlassEnabled } from '../composables/useVisualEffects';
+import { WINDOW_FUNCTION_KEYS } from '../constants/windowShortcuts';
 import { STATUSLINE_COLORS } from '../utils/statuslineColors';
 import { copyText } from '../utils/clipboard';
 import { tierCount, setTierCount, rowsToSlots, slotsToRows, TIER_ROW_OPTIONS } from '../store/usageTierStore';
@@ -533,6 +542,10 @@ function openLink(url) {
   invoke('macos_open', { args: [url] }).catch(console.error);
 }
 
+function onToggleGlass(e) {
+  setGlassEnabled(e.target.checked);
+}
+
 async function enableSshTerminalColor() {
   try {
     await invoke('install_ssh_terminal_color');
@@ -582,6 +595,7 @@ function toggleUltrawideSafe() {
 // Global shortcuts for window views (F1 / F2 / F3 / F12) — bare function keys, so any modifier disqualifies.
 function onViewShortcut(e) {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.repeat) return;
+  if (!WINDOW_FUNCTION_KEYS.includes(e.key)) return;
   if (e.key === 'F1') { e.preventDefault(); applyViewComboSafe(1); return; }
   if (e.key === 'F2') { e.preventDefault(); toggleUltrawideSafe(); return; }
   if (e.key === 'F3') { e.preventDefault(); applyViewSafe('place', 'center'); return; }
@@ -761,20 +775,6 @@ function onViewShortcut(e) {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.header-changelog-link {
-  color: #94a3b8;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  transition: color 0.12s;
-}
-
-.header-changelog-link:hover {
-  color: #e2e8f0;
 }
 
 .icon-dropdown-ac-section {
@@ -1119,15 +1119,6 @@ function onViewShortcut(e) {
   text-overflow: ellipsis;
 }
 
-.app-version.clickable {
-  cursor: pointer;
-  transition: color 0.2s;
-}
-
-.app-version.clickable:hover {
-  color: #3b82f6;
-}
-
 .title-block {
   display: flex;
   align-items: center;
@@ -1220,16 +1211,6 @@ function onViewShortcut(e) {
     font-weight: 600;
     letter-spacing: 0.5px;
     line-height: 1.3;
-  }
-
-  /* Disable changelog click during drag in narrow mode; update badge remains clickable. */
-  .app-version.clickable {
-    pointer-events: none;
-    cursor: default;
-  }
-
-  .app-version .update-badge {
-    pointer-events: auto;
   }
 
   /* Gap between the INTRO button and the Global Note button, halved (10px -> 5px). */
