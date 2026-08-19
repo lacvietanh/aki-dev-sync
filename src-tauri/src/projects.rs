@@ -125,9 +125,7 @@ pub fn get_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(get_app_data_dir(app)?.join("projects.json"))
 }
 
-/// Returns the app data directory. `app` is unused (the dir no longer derives from the Tauri
-/// app handle - see `app_paths::app_data_dir`) but kept so `ssh.rs`/`web_server.rs` call sites
-/// do not need to change.
+/// Returns the app data directory. `app` is unused (the dir no longer derives from the Tauri app handle - see `app_paths::app_data_dir`) but kept so `ssh.rs`/`web_server.rs` call sites do not need to change.
 pub fn get_app_data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     crate::app_paths::app_data_dir()
 }
