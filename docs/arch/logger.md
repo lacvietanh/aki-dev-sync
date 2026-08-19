@@ -1,6 +1,6 @@
 # Kiến trúc Logger - `logger.rs`
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-08-19 · v1.27.0
 
 Module logging dùng chung cho toàn bộ usage-data pipeline. Ghi vào file cố định trên disk; không phụ thuộc thư viện ngoài.
 
@@ -41,12 +41,10 @@ AKI_DEBUG=1 /Applications/Aki\ Dev\ Sync.app/Contents/MacOS/aki-dev-sync
 ## Log file location
 
 ```
-# macOS
-~/Library/Application Support/aki.devsync/usage.log
-
-# Linux
-~/.local/share/aki.devsync/usage.log
+~/.aki/devsync/usage.log
 ```
+
+Cùng một đường dẫn trên mọi OS kể từ đợt chuyển app data dir sang hệ sinh thái `~/.aki/` (`docs/plan/done/appdata-dir-to-aki-devsync.md`) — trước đó là `~/Library/Application Support/aki.devsync/usage.log` (macOS) / `~/.local/share/aki.devsync/usage.log` (Linux), theo mặc định per-OS của Tauri.
 
 Cùng thư mục với `projects.json`. Path chính xác được in vào DevTools F12 lúc startup:
 

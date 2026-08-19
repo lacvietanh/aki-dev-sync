@@ -22,7 +22,7 @@ This document covers the core synchronization capabilities of Aki Dev Sync, desi
 **Consequence:** The status checker (`rsync_change_files`) must count **additive transfers only** - files the source has to send to the destination. `deleting …` lines from rsync must be excluded from the count. See `sync.rs → rsync_change_files`.
 
 **Resolved (Tier 2 Baseline Manifest - v1.7.0):**  
-rsync is stateless. Without extra context it cannot distinguish "remote created file X" from "local deleted file X" (PULL ambiguity), nor "Mac created file Y" from "remote deleted file Y" (PUSH ambiguity). Both issues are now resolved using a local baseline snapshot written to `{appDataDir}/baselines/{project_id}.json` after every full sync. See §2 Sync Status Checker below for the full reclassification logic.
+rsync is stateless. Without extra context it cannot distinguish "remote created file X" from "local deleted file X" (PULL ambiguity), nor "Mac created file Y" from "remote deleted file Y" (PUSH ambiguity). Both issues are now resolved using a local baseline snapshot written to `~/.aki/devsync/baselines/{project_id}.json` after every full sync. See §2 Sync Status Checker below for the full reclassification logic.
 
 ---
 
@@ -61,7 +61,7 @@ rsync is stateless. Without extra context it cannot distinguish "remote created 
 - It runs a silent `rsync --dry-run` to detect changes.
 - **Button Glow**: If there are changes to Push, the PUSH button lights up. If there are changes to Pull, the PULL button lights up.
 - **Additive-only count (CRITICAL):** The status checker counts only **transfer lines** from rsync output - lines representing content the source has to offer the destination. `deleting …` lines are **excluded** from the count. A deletion listed in a PULL dry-run means "local has a file remote doesn't" - that is the opposite direction's signal, not incoming remote content. Including it caused PULL to light incorrectly when the remote was empty. See `docs/research/sync-button-semantic-analysis.md` for full analysis.
-- **Tier 2 Baseline Reclassification (v1.7.0):** After every full successful sync, a snapshot of the local file list is written to `{appDataDir}/baselines/{project_id}.json`. On the next status check, both PUSH and PULL lists are filtered against this baseline:
+- **Tier 2 Baseline Reclassification (v1.7.0):** After every full successful sync, a snapshot of the local file list is written to `~/.aki/devsync/baselines/{project_id}.json`. On the next status check, both PUSH and PULL lists are filtered against this baseline:
 
   | Case | rsync sees | Baseline says | Classification |
   |------|-----------|---------------|----------------|

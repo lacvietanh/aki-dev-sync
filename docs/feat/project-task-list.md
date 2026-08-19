@@ -107,7 +107,7 @@ Writes are additionally **serialised per project id** (`queueNotesWrite` in `rem
 
 so a cleared key is never re-materialized, not even by a stale companion array (the `sync_git` precedent). An on-disk file with content **wins** over the legacy fields; an `unavailable`/`corrupt` directory is skipped entirely and retried next launch. Both fields and `ProjectTask` are deleted in 1.23.0.
 
-### Global tasks — `{appDataDir}/globalnote.json`
+### Global tasks — `~/.aki/devsync/globalnote.json`
 
 Unchanged, and deliberately not moved: the Global Note is not project-scoped, so it has no repo to live in (`src-tauri/src/global_note.rs`).
 

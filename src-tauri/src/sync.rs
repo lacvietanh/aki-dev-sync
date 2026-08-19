@@ -14,17 +14,17 @@ use crate::projects::{validate_path_segment, validate_project, SyncProject};
 static RSYNC_VERSIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 // Cached once on first command invocation (run_sync or check_sync_status).
-// Tauri's app data dir is fixed for the lifetime of the process.
+// The app data dir is fixed for the lifetime of the process.
 static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 fn get_rsync_versions() -> &'static Mutex<HashMap<String, String>> {
     RSYNC_VERSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-// Caches appDataDir once per process so baseline_dir() resolves correctly; safe to call repeatedly from any command with AppHandle.
-fn ensure_app_data_dir(app: &tauri::AppHandle) {
+// Caches the app data dir once per process so baseline_dir() resolves correctly; safe to call repeatedly from any command.
+fn ensure_app_data_dir(_app: &tauri::AppHandle) {
     if APP_DATA_DIR.get().is_none() {
-        if let Ok(dir) = app.path().app_data_dir() {
+        if let Ok(dir) = crate::app_paths::app_data_dir() {
             let _ = APP_DATA_DIR.set(dir);
         }
     }

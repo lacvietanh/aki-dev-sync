@@ -64,7 +64,7 @@ Root cause of the 1.9.3 regression that deleted the entire Antigravity multi-acc
 
 ### Runtime log location
 
-- Usage/debug log: `~/Library/Application Support/aki.devsync/usage.log` (macOS) / `~/.local/share/aki.devsync/usage.log` (Linux). Ref: `docs/arch/logger.md`, `docs/arch/usage-claudecode.md`.
+- Usage/debug log: `~/.aki/devsync/usage.log` - same path on every OS since the app data dir move (`docs/plan/done/appdata-dir-to-aki-devsync.md`); no more per-OS split. Ref: `docs/arch/logger.md`, `docs/arch/usage-claudecode.md`.
 
 ### Statusline script paths (local machine)
 

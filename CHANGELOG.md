@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Changed
+- **App data directory moved from Tauri's per-OS default (`~/Library/Application Support/aki.devsync/` on macOS) to `~/.aki/devsync/`**, matching the rest of the `~/.aki/` ecosystem. A one-time migration runs at startup, before the logger opens its file: `projects.json`, `usage.log`, `globalnote.json`, `ssh_undo_state.txt`, `ssh_redo_state.txt`, `baselines/`, `companion-devices.json`, `companion-server.json` are each walked per file (a directory's children are copied individually, not as one unit), a file is copied only when the destination lacks it, its source is deleted only once its own copy succeeds, and a legacy directory is removed only once it is actually empty - so a single unreadable child can never strand the rest of an artifact, and a partial migration is safely retried on the next launch instead of reading as already done. Verified on the owner's Mac: fresh launch created `~/.aki/devsync/`, moved every artifact byte-identical (globalnote.json, companion-devices.json, ssh_undo_state.txt diffed identical; 25/25 baseline files, 24/24 projects), legacy directory survived holding only non-artifact leftovers as expected, and a second launch was a silent no-op - see `docs/plan/done/appdata-dir-to-aki-devsync.md`.
+
 ### [1.27.0] - 2026-08-18
 
 #### Changed

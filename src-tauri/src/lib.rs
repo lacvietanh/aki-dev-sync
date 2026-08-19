@@ -1,4 +1,5 @@
 mod agent_usage;
+mod app_paths;
 mod claude_cleanup;
 mod claude_profile;
 mod gemini_allowlist;
@@ -19,7 +20,10 @@ mod web_server;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            // Must run before logger::init: it moves usage.log itself, and the logger has not opened a file yet to log through.
+            let migration_summary = app_paths::migrate_legacy_app_data(app.handle());
             logger::init(app.handle());
+            logger::info("MIGRATE", &migration_summary);
             // Remote Control relay (docs/plan/done/remote-control.md §7) — binds the axum server on Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
             web_server::init(app.handle());
             Ok(())

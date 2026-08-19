@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 pub fn default_true() -> bool {
     true
@@ -122,24 +122,14 @@ pub fn validate_project(project: &SyncProject) -> Result<(), String> {
 }
 
 pub fn get_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Cannot get app data dir: {}", e))?;
-    if !app_dir.exists() {
-        fs::create_dir_all(&app_dir)
-            .map_err(|e| format!("Failed to create app data dir: {}", e))?;
-    }
-    Ok(app_dir.join("projects.json"))
+    Ok(get_app_data_dir(app)?.join("projects.json"))
 }
 
-/// Returns the app data directory - avoids repeated `parent().unwrap()` at call sites.
-pub fn get_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    get_projects_path(app).and_then(|p| {
-        p.parent()
-            .map(|d| d.to_path_buf())
-            .ok_or_else(|| "Cannot determine app data directory".to_string())
-    })
+/// Returns the app data directory. `app` is unused (the dir no longer derives from the Tauri
+/// app handle - see `app_paths::app_data_dir`) but kept so `ssh.rs`/`web_server.rs` call sites
+/// do not need to change.
+pub fn get_app_data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
+    crate::app_paths::app_data_dir()
 }
 
 /// Synchronous load_projects body: stats up to 7 icon paths per project (reading ≤250KB each); external mounts can stall in kernel metadata().

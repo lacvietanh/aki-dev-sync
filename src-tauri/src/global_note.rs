@@ -1,5 +1,3 @@
-use tauri::Manager;
-
 /// On-disk shape: `#[serde(default)]` backfills empty tasks for legacy single-content files without migrations.
 /// Tasks is opaque (`serde_json::Value`), owned solely by src/utils/tasks.js and never validated by Rust.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -10,17 +8,13 @@ pub struct GlobalNoteFile {
     pub tasks: Vec<serde_json::Value>,
 }
 
-fn note_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("globalnote.json"))
+fn note_path() -> Result<std::path::PathBuf, String> {
+    Ok(crate::app_paths::app_data_dir()?.join("globalnote.json"))
 }
 
 #[tauri::command]
-pub async fn read_global_note(app: tauri::AppHandle) -> Result<GlobalNoteFile, String> {
-    let path = note_path(&app)?;
+pub async fn read_global_note(_app: tauri::AppHandle) -> Result<GlobalNoteFile, String> {
+    let path = note_path()?;
 
     if !path.exists() {
         return Ok(GlobalNoteFile::default());
@@ -35,18 +29,14 @@ pub async fn read_global_note(app: tauri::AppHandle) -> Result<GlobalNoteFile, S
 /// Serialized by `WRITE_LOCK` (async mutex) to prevent concurrent host/companion lost updates across `.await` points.
 #[tauri::command]
 pub async fn write_global_note(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     content: Option<String>,
     tasks: Option<Vec<serde_json::Value>>,
 ) -> Result<(), String> {
     static WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = WRITE_LOCK.lock().await;
 
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-
-    let path = dir.join("globalnote.json");
+    let path = note_path()?;
 
     let mut current = if path.exists() {
         let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;

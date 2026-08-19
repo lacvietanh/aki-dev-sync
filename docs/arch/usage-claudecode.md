@@ -210,9 +210,17 @@ Nếu chỉ dùng Claude app/Cowork nhiều giờ mà không mở Claude Code, c
 
 Đây **không phải TODO**. Cách duy nhất vá được là gọi endpoint nội bộ của Anthropic bằng token của user - đã cân nhắc và bác bỏ, lý do đầy đủ ở research §3.
 
+## 6b. Phát hiện mở (2026-08-19, chưa fix): `CLAUDE_JSON_PATH` mặc định có thể không trỏ đúng file thật
+
+`scripts/get-claudecode-usage.sh:37` — `CLAUDE_JSON_PATH="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json"`. Với `CLAUDE_CONFIG_DIR` không set (trường hợp mặc định, đa số máy), giá trị suy ra là `$HOME/.claude/.claude.json`.
+
+**Xác minh trên máy dev hiện tại** (Linux, không phải Mac production target, `CLAUDE_CONFIG_DIR` rỗng): `$HOME/.claude.json` tồn tại (126387 bytes), `$HOME/.claude/.claude.json` **không tồn tại**. Tức là với cấu hình mặc định trên máy này, `CLAUDE_JSON_PATH` trỏ sai chỗ - nhánh đọc `CLAUDE_JSON_INFO` (§1 "File trên máy được theo dõi") không bao giờ chạy, và toàn bộ luồng tier/subtype/uuid đọc từ `.claude.json` rơi thẳng xuống fallback tiếp theo (`auth-cache.json`/`claude auth status` live) mà không ai biết nhánh chính đã im lặng bỏ qua.
+
+Đây là phát hiện, chưa phải kết luận đã đóng: chưa xác nhận hành vi này có lặp lại trên Mac (target thật của app) hay chỉ riêng máy dev này; cũng chưa đối chiếu với đoạn "bug thứ hai" ở §1 (`docs/plan/done/cc-account-identity-ssot.md` §14) từng chốt path là `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json` - hai kết luận này đang mâu thuẫn nhau và cần một lượt xác minh trên Mac để phân xử. **Không sửa script trong đợt này** - ngoài phạm vi write set của lane này và ngoài scope batch 1.28.
+
 ## 7. Đọc log khi debug
 
-Log: `~/Library/Application Support/aki.devsync/usage.log` (macOS).
+Log: `~/.aki/devsync/usage.log` (mọi OS kể từ `docs/plan/done/appdata-dir-to-aki-devsync.md`; trước đó `~/Library/Application Support/aki.devsync/usage.log` trên macOS).
 Bật chi tiết: chạy app với `--debug` hoặc `AKI_DEBUG=1`.
 
 | Tag | Nguồn |

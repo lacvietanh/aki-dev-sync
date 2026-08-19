@@ -9,7 +9,6 @@
 // Log file: {app_data_dir}/usage.log  (same directory as projects.json)
 // File is trimmed to the most recent 512 KB whenever it exceeds 1 MB - checked at startup AND as the file grows, because a long `--debug` session never restarts and used to grow without bound.
 
-use tauri::Manager;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -29,14 +28,12 @@ static LOG_LOCK: Mutex<()> = Mutex::new(());
 static BYTES_SINCE_CHECK: AtomicU64 = AtomicU64::new(0);
 const CHECK_EVERY_BYTES: u64 = 65_536;
 
-pub fn init(handle: &tauri::AppHandle) {
+pub fn init(_handle: &tauri::AppHandle) {
     let debug = std::env::args().any(|a| a == "--debug")
         || std::env::var("AKI_DEBUG").map(|v| !v.is_empty()).unwrap_or(false);
     DEBUG_MODE.store(debug, Ordering::Relaxed);
 
-    let path = handle
-        .path()
-        .app_data_dir()
+    let path = crate::app_paths::app_data_dir()
         .map(|d| d.join("usage.log"))
         .unwrap_or_else(|_| PathBuf::from("usage.log"));
 
