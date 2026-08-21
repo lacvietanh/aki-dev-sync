@@ -38,6 +38,7 @@
 - [docs/ref/multiple-account-config-dir.md](ref/multiple-account-config-dir.md) - Custom configuration directory environment variables (`CLAUDE_CONFIG_DIR` & `GEMINI_DIR`) for multi-account CLI profiling and shell alias setup
 - [docs/ref/ssh-agent-leak.md](ref/ssh-agent-leak.md) - Why the owner's `~/.zshrc` guard spawns an orphaned `ssh-agent` on every new shell (~270 processes over 11 days), why the app's login-shell spawns (`pty.rs`, `system.rs`) amplify the rate, why the app's process-group teardown cannot reap a daemonized agent, and the one-shot Mac fix (`scripts/fix-ssh-agent-leak.sh`) - a machine-config issue, no app code change
 - [docs/ref/claudecode-cleanup-paths.md](ref/claudecode-cleanup-paths.md) - Danh mục đường dẫn Claude Code CLI trên đĩa theo 4 nhóm (Account & Auth, Transcripts & History, Cache/Telemetry, Protected - không được xoá) kèm kịch bản dọn dẹp chuẩn (Full Clean / Keep Auth); dùng làm chuẩn thiết kế cho `docs/feat/claudecode-cleanup.md`
+- [docs/ref/macos-terminal-tcc-permissions.md](ref/macos-terminal-tcc-permissions.md) - Kiến trúc phân quyền macOS TCC đối với ứng dụng desktop (Aki Dev Sync) khi spawn tiến trình PTY/Terminal (`zsh`, `claude`, `agy`, `find`, `fd`), cơ chế Responsible Process attribution & 3 tầng quyền (FDA, Protected Folders, Developer Tools), giải pháp xử lý dứt điểm và kỷ luật scoping
 
 ## Research
 - [docs/research/index.md](research/index.md) - Schema note: pre-2026-07 docs predate the current B2 field set/supersede-chain rule; new docs must follow it in full
