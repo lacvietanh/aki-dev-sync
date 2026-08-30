@@ -34,3 +34,7 @@ REPORT.html
 # "Self-hosting wrinkle" for why that is left uncommitted here despite the feature's own design intent
 # ("meant to be committed") for every OTHER project this app manages.
 .akidevsync/
+
+# Postman GUI workspace scaffolding (auto-generated when Postman opens this folder)
+.postman/
+postman/
