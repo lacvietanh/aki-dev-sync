@@ -152,6 +152,15 @@ pub async fn load_projects(app: AppHandle) -> Result<Vec<SyncProject>, String> {
         .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
+/// Re-reads projects.json from disk and rebuilds the icon cache in place — the only way to pick up
+/// an icon added/replaced after boot, since `load_and_cache_project_icons` otherwise only runs once at startup.
+#[tauri::command]
+pub async fn reload_project_icons(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || load_projects_blocking(app).map(|_| ()))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
 #[tauri::command]
 pub fn save_projects(app: AppHandle, projects: Vec<SyncProject>) -> Result<(), String> {
     // Last line of defense (untrusted frontend): empty local_path becomes rsync --delete / (root mirror). Write rejection is recoverable; destructive sync is not.

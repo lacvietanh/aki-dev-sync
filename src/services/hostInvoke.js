@@ -32,6 +32,7 @@ export const COMPANION_ALLOWED_COMMANDS = new Set([
   'read_global_note',
   'read_project_changelog',
   'read_ssh_config',
+  'reload_project_icons',
   'resolve_remote_path',
   'resolve_report_html',
   'build_remote_ssh_command',
@@ -58,7 +59,7 @@ export const COMPANION_ALLOWED_COMMANDS = new Set([
   'undo_ssh_config',
   'redo_ssh_config',
   // Header one-shot installers — idempotent, user-initiated, no data loss.
-  'install_akiclaudedoc',
+  'install_akidevrule',
   'install_ssh_terminal_color',
 ])
 

@@ -76,6 +76,19 @@
         <p class="text-muted" style="font-size: 11px; margin-top: 6px; font-style: italic;">Applies standard exclude filters for both PUSH and PULL (overwrites current excludes).</p>
       </div>
 
+      <!-- PROJECT ICON -->
+      <div class="full-width config-group mb-1 mt-1" style="border: 1px dashed #4b5563; padding: 12px; border-radius: 8px;">
+        <h4 class="group-title text-muted" style="font-size: 12px; margin-bottom: 8px;"><i class="fa-solid fa-image mr-1"></i> PROJECT ICON</h4>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <img v-if="!iconLoadFailed && iconPreviewSrc" :src="iconPreviewSrc" alt=""
+               style="width: 32px; height: 32px; border-radius: 6px;" @error="iconLoadFailed = true" />
+          <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" :disabled="reloadingIcon" @click="reloadIcon">
+            <i class="fa-solid fa-rotate mr-1"></i> {{ reloadingIcon ? 'Reloading...' : 'Reload Icon' }}
+          </button>
+        </div>
+        <p class="text-muted" style="font-size: 11px; margin-top: 6px; font-style: italic;">Detected by project type: Tauri (src-tauri/tauri.conf.json) checks src-tauri/icons/32x32.png, 64x64.png, icon.png, 128x128.png. Nuxt (nuxt.config.ts|js) or web (package.json/index.html) checks public/favicon/icon-48.png, public/favicon.ico, public/favicon/favicon.ico, public/favicon/icon-192.png, public/icon.png, favicon.ico, icon.png. Other project types check the same list minus icon-192.png. Among the candidates that exist, the smallest file wins - and if that one is over 250 KB, no icon is shown rather than the next candidate. Reload after adding or replacing an icon file.</p>
+      </div>
+
       <!-- PUSH + PULL side-by-side -->
       <div class="excludes-split full-width mt-1">
         <!-- PUSH GROUP -->
@@ -178,14 +191,32 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useProjects } from '../../composables/useProjects'
 import { useSsh } from '../../composables/useSsh'
 import { projectPathIssue } from '../../composables/useProjectConfig'
+import { iconTimestamp, refreshProjectIcons } from '../../store/projectStore'
+import { projectIconSrc } from '../../utils/projectIcon'
 
 const { showConfigModal, editingProject, closeConfig, saveConfig, confirmRemove, Toast, projectRuntime } = useProjects()
 const { sshHosts } = useSsh()
+
+const iconPreviewSrc = computed(() => projectIconSrc(editingProject.value?.id, iconTimestamp.value))
+const iconLoadFailed = ref(false)
+const reloadingIcon = ref(false)
+watch(() => editingProject.value?.id, () => { iconLoadFailed.value = false })
+
+async function reloadIcon() {
+  reloadingIcon.value = true
+  try {
+    await refreshProjectIcons()
+    iconTimestamp.value = Date.now()
+    iconLoadFailed.value = false
+  } finally {
+    reloadingIcon.value = false
+  }
+}
 
 const togglePushScripts = ref(false)
 const togglePullScripts = ref(false)

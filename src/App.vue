@@ -55,7 +55,7 @@ import { useSsh } from './composables/useSsh';
 import { initGlobalNote } from './composables/useGlobalNote';
 import { initTerminalTabs } from './composables/useTerminalTabs';
 import { refreshClaudeMode } from './store/claudeModeStore';
-import { refreshProjectIcons } from './store/projectStore';
+import { loadProjectIconsMap } from './store/projectStore';
 import { initRemote } from './services';
 import { onHostBoot } from './utils/scheduler';
 import { useCompanionPairing } from './composables/useCompanionPairing';
@@ -80,7 +80,7 @@ onMounted(() => {
     initGlobalNote();
     initTerminalTabs();
     refreshClaudeMode();
-    refreshProjectIcons();
+    loadProjectIconsMap();
 
     if (localStorage.getItem(LEGACY_BASELINE_CLEANUP_KEY) !== 'true') {
       invoke('cleanup_legacy_baselines')

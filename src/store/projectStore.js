@@ -68,12 +68,23 @@ export const iconTimestamp = ref(Date.now())
 export const projectIcons = ref({})
 
 // Host-side icon map loader; companions receive updates via state mirror.
-export async function refreshProjectIcons() {
+// Reads the backend cache as-is - `load_projects` builds it, so the boot path needs nothing more.
+export async function loadProjectIconsMap() {
   try {
     projectIcons.value = await invoke('get_project_icons_map')
   } catch (e) {
     console.error('[projectStore] failed to load project icons', e)
   }
+}
+
+// Rescans project directories before reading, for an icon added or replaced after boot.
+export async function refreshProjectIcons() {
+  try {
+    await invoke('reload_project_icons')
+  } catch (e) {
+    console.error('[projectStore] failed to rescan project icons', e)
+  }
+  await loadProjectIconsMap()
 }
 
 // True when any project is currently syncing - used by header/console
