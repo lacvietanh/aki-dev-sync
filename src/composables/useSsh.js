@@ -2,7 +2,7 @@ import { invoke } from "../utils/tauri";
 import { useLogs } from "./useLogs";
 import { Toast } from "./useProjects";
 import {
-  sshHosts, selectedSshHost, setSelectedSshHost, showSshModal,
+  sshHosts, selectedSshHost, showSshModal,
   sshConfigText, hasSshUndo, hasSshRedo
 } from "../store/sshStore";
 
@@ -93,7 +93,6 @@ export function useSsh() {
   return {
     sshHosts,
     selectedSshHost,
-    setSelectedSshHost,
     showSshModal,
     sshConfigText,
     hasSshUndo,
