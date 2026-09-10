@@ -122,6 +122,13 @@ function commitRename(t, value) {
   align-items: center;
   gap: 2px;
   min-width: 0;
+  /* Fixed-width tabs (below) can exceed available space; scroll horizontally like VSCode instead of squashing every tab. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* Thinner than the global 6px (main.css) so an always-visible macOS scrollbar cannot grow this row; colours inherit from there. */
+.tab-group::-webkit-scrollbar {
+  height: 4px;
 }
 
 .tab {
@@ -136,11 +143,11 @@ function commitRename(t, value) {
   padding: 1px 5px;
   box-sizing: border-box;
   cursor: pointer;
-  /* Height derived from --control-h with flex sizing across min/max width bounds. */
   height: calc(var(--control-h, 28px) - 4px);
-  flex: 1 1 84px;
+  /* No grow/shrink: width tracks content between the bounds below, so tight space overflows the strip (scroll) instead of squashing every tab equally. */
+  flex: 0 0 auto;
   min-width: 84px;
-  max-width: 160px;
+  max-width: 220px;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.4px;

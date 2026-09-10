@@ -15,6 +15,7 @@
 //   `scrollbacks` → `min_accepted` (`append_scrollback`, `retire_generation`)
 //   `OutBuf` → `min_accepted`    (`flush_locked` → `generation_accepted`)
 // `min_accepted` is a LEAF — nothing is ever locked while holding it. And the standing invariant holds unchanged: NO path holds both the `OutBuf` lock and a `scrollbacks` lock.
+// `tab_meta` is also a LEAF, same discipline as `min_accepted`: it is only ever locked on its own, briefly, to read or upsert one tab's durable metadata.
 
 // COMPILED AND TESTED ON MAC. This file once carried a "VERIFY ON MAC" caveat because `portable-pty = "0.9"`'s API was used here from knowledge of the crate rather than a resolved docs build; `cargo check` and `cargo test --lib` have since both passed on this machine, so every shape it listed as assumed is confirmed real: `SlavePty::spawn_command` returning `Box<dyn Child + Send + Sync>`, `MasterPty::get_size`, `CommandBuilder::cwd`/`arg`/`env`, and `Child::kill`/`wait`/`process_id`.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -35,7 +36,9 @@ const DEFAULT_TAB: TabId = 0;
 
 /// How many tabs may exist at once, GLOBALLY. Each LIVE tab costs a shell process plus three raw threads (reader, flusher, writer) and up to `SCROLLBACK_CAP` of buffer, so this is a real resource bound and not a UI preference.
 ///
-/// THIS IS THE MACHINE GUARD, NOT THE USER-FACING RULE. The frontend layers a per-project cap of 5 on top of it (`MAX_TABS_PER_SCOPE` in `src/store/terminalTabsStore.js`); this backend is scope-blind and only ever sees flat `TabId`s, so the ceiling is derived from that cap instead: `16 = 1 + 3 × 5` — the one global tab the frontend guarantees can never be closed, plus three project groups each at their full per-project cap. `src/store/terminalTabsStore.js` mirrors this same number and must be updated in the same commit (see `constant_guards` below).
+/// THIS IS THE MACHINE GUARD, NOT THE USER-FACING RULE. The frontend layers a per-project cap of 5 on top of it (`MAX_TABS_PER_SCOPE` in `src/store/terminalTabsStore.js`), and this backend does not ENFORCE that per-scope cap — it only ever counts flat `TabId`s against the global ceiling, so the ceiling is derived from the frontend's cap instead: `16 = 1 + 3 × 5` — the one global tab the frontend guarantees can never be closed, plus three project groups each at their full per-project cap. `src/store/terminalTabsStore.js` mirrors this same number and must be updated in the same commit (see `constant_guards` below).
+///
+/// NOTE: this backend is no longer "scope-blind" in the sense of not KNOWING which project a tab belongs to — `TabMeta` (below) durably records `project_id`/`title`/`pinned` per tab so a frontend reload can re-adopt a surviving shell into its correct project instead of every tab landing in the global scope. It remains scope-blind only for CAPACITY: it never checks a tab's `project_id` against `MAX_TABS_PER_SCOPE`, which stays a frontend-only budget.
 ///
 /// It is also bound to `web_server::COMPANION_QUEUE_LIMIT_BYTES` by INVARIANT R — raising it alone re-breaks a joining phone's scrollback replay. That relation is asserted in `web_server.rs`.
 pub(crate) const MAX_TABS: usize = 16;
@@ -86,9 +89,27 @@ struct PtySession {
     generation: u64,
 }
 
+/// Durable, session-independent facts about a tab — survives a shell dying (EOF, `pty_kill`) and a
+/// frontend reload alike, and is only forgotten when the tab itself is closed (`drop_tab_state`).
+/// This is what lets `adoptTabs` (`src/store/terminalTabsStore.js`) rebuild the correct scope/title/pin
+/// after a webview reload instead of defaulting every surviving shell into the global scope.
+#[derive(Default, Clone)]
+struct TabMeta {
+    /// `None` = global scope. Set once, at the tab's first `pty_spawn`, and never reassigned after —
+    /// nothing in this app's frontend ever moves a tab to a different project.
+    project_id: Option<String>,
+    /// `None` = no title recorded yet (frontend falls back to its own default, e.g. "Shell {id}").
+    title: Option<String>,
+    pinned: bool,
+}
+
 struct PtyState {
     /// Live sessions, keyed by tab. Absent key = "that tab has no shell right now" — the exact meaning `Option<PtySession>` carried before tabs existed.
     sessions: StdMutex<HashMap<TabId, PtySession>>,
+    /// Durable per-tab facts (`TabMeta`) — see its own doc comment. A LEAF, like `min_accepted`: never
+    /// locked while holding any other lock in this module, and nothing in this module is ever locked
+    /// while holding it.
+    tab_meta: StdMutex<HashMap<TabId, TabMeta>>,
     /// Each tab's input queue — see `InputChannel`. Its own mutex rather than a field on `PtySession` on purpose: keystrokes must not queue behind whatever else holds the sessions lock (a resize, a `pty_cwd`, a spawn), and this one is only ever taken for the microseconds it costs to clone a channel handle.
     inputs: StdMutex<HashMap<TabId, InputChannel>>,
     /// One ring buffer per tab. A tab with no live session keeps its buffer (that is how the `[process exited]` notice is still readable on a tab whose shell is gone); `drop_tab_state` is the only thing that removes one.
@@ -110,6 +131,7 @@ static PTY: OnceLock<PtyState> = OnceLock::new();
 fn pty_state() -> &'static PtyState {
     PTY.get_or_init(|| PtyState {
         sessions: StdMutex::new(HashMap::new()),
+        tab_meta: StdMutex::new(HashMap::new()),
         inputs: StdMutex::new(HashMap::new()),
         scrollbacks: StdMutex::new(HashMap::new()),
         generation: AtomicU64::new(0),
@@ -172,6 +194,23 @@ fn drop_tab_state(tab_id: TabId) {
     state.inputs.lock().unwrap().remove(&tab_id);
     state.scrollbacks.lock().unwrap().remove(&tab_id);
     state.min_accepted.lock().unwrap().remove(&tab_id);
+    state.tab_meta.lock().unwrap().remove(&tab_id);
+}
+
+/// Upserts ONE tab's durable metadata: `Some(v)` overwrites that field, `None` leaves whatever is
+/// already recorded untouched. PATCH semantics on purpose (not a full replace) — the backward-compat
+/// seam every other command in this module already uses for `tab_id`: an older companion bundle
+/// calling `pty_spawn` with no `project_id`/`title` must not erase ownership a newer caller already
+/// recorded, it must simply say nothing about it.
+fn upsert_tab_meta(tab_id: TabId, project_id: Option<String>, title: Option<String>) {
+    let mut all = pty_state().tab_meta.lock().unwrap();
+    let entry = all.entry(tab_id).or_default();
+    if project_id.is_some() {
+        entry.project_id = project_id;
+    }
+    if title.is_some() {
+        entry.title = title;
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -371,9 +410,21 @@ fn writer_loop(rx: std::sync::mpsc::Receiver<Vec<u8>>, mut writer: Box<dyn Write
 }
 
 /// Spawns ONE TAB's PTY if that tab does not already have one; a no-op returning `Ok(())` on every later call for the same tab (T-3). `cwd` (T-8) is only honoured on that tab's first, actual spawn — which is what makes a project tab start in the project directory without anyone typing a `cd`. Initial size is a placeholder 80x24; the host's `usePtyTerminal.js` calls `pty_resize` immediately after mount once it knows the real fit (T-4).
+///
+/// `project_id`/`title`: the frontend's CURRENT belief about this tab's ownership/title, recorded into
+/// `TabMeta` on every call — including the no-op path, and independent of whether a real spawn happens
+/// this time — so metadata upserted here survives a later reload even for a tab whose shell was already
+/// running when this call landed. See `upsert_tab_meta` for why this is a patch, not a replace.
 #[tauri::command]
-pub async fn pty_spawn(app: AppHandle, tab_id: Option<u32>, cwd: Option<String>) -> Result<(), String> {
+pub async fn pty_spawn(
+    app: AppHandle,
+    tab_id: Option<u32>,
+    cwd: Option<String>,
+    project_id: Option<String>,
+    title: Option<String>,
+) -> Result<(), String> {
     let tab_id = tab_id.unwrap_or(DEFAULT_TAB);
+    upsert_tab_meta(tab_id, project_id, title);
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let result = spawn_if_absent(app.clone(), tab_id, cwd);
         // Broadcast liveness even on the no-op path: the caller is not the only screen, and the OTHER screen may still believe this tab's shell is dead (it is the screen that did not press the button). Announcing the state rather than the event is what keeps the two in step regardless of who acted.
@@ -382,6 +433,27 @@ pub async fn pty_spawn(app: AppHandle, tab_id: Option<u32>, cwd: Option<String>)
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+/// Renames ONE tab (CLAUDE.md multi-entity guard: id-scoped, touches no other tab's metadata). Mirrors
+/// `terminalTabsStore.js`'s `renameTerminalTab` action so the durable title survives a reload; called
+/// fire-and-forget from JS right after the local rename, same shape as `pty_close_tab`'s optimistic-UI callers.
+///
+/// Plain in-memory map mutation behind a `std::sync::Mutex` — no subprocess, no network — so per
+/// `RULE-stack-tauri` A1 this does not need `async`/`spawn_blocking`; it is not the blocking bug class that rule guards against.
+#[tauri::command]
+pub fn pty_rename_tab(tab_id: u32, title: String) {
+    upsert_tab_meta(tab_id, None, Some(title));
+}
+
+/// Flips/sets ONE tab's pinned flag in durable metadata (CLAUDE.md multi-entity guard: id-scoped). Mirrors
+/// `terminalTabsStore.js`'s `toggleTabPinned` action so a pinned tab is still shown pinned after a reload.
+///
+/// Same non-blocking shape as `pty_rename_tab` — a lock around a `HashMap` insert, not `RULE-stack-tauri` A1's blocking-subprocess bug class.
+#[tauri::command]
+pub fn pty_set_tab_pinned(tab_id: u32, pinned: bool) {
+    let mut all = pty_state().tab_meta.lock().unwrap();
+    all.entry(tab_id).or_default().pinned = pinned;
 }
 
 /// The actual spawn, synchronous. Called only from inside a `spawn_blocking` closure. Takes the sessions lock itself and no-ops if a live session is already on this tab (T-3 idempotency, per tab).
@@ -550,11 +622,16 @@ pub async fn pty_close_tab(app: AppHandle, tab_id: u32) -> Result<(), String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
 }
 
-/// One row of `pty_list_tabs`.
+/// One row of `pty_list_tabs`. `project_id`/`title`/`pinned` come from `TabMeta` — the durable facts
+/// `terminalTabsStore.js`'s `adoptTabs` rehydrates from on a frontend reload, instead of defaulting
+/// every surviving shell into the global scope with a placeholder title.
 #[derive(Serialize)]
 pub struct PtyTabInfo {
     id: TabId,
     alive: bool,
+    project_id: Option<String>,
+    title: Option<String>,
+    pinned: bool,
 }
 
 /// Every tab the BACKEND knows about, sorted by id. Two callers, both of which need the exited ones as well as the live ones:
@@ -574,7 +651,21 @@ pub async fn pty_list_tabs() -> Result<Vec<PtyTabInfo>, String> {
             }
         }
         ids.sort_unstable();
-        ids.into_iter().map(|id| PtyTabInfo { id, alive: live.contains(&id) }).collect()
+        // Locked and released per id rather than once for the whole loop: `tab_meta` is a leaf lock
+        // (module doc comment) and this keeps that true trivially, at a cost this list is never
+        // large enough (MAX_TABS = 16) to matter.
+        ids.into_iter()
+            .map(|id| {
+                let meta = state.tab_meta.lock().unwrap().get(&id).cloned().unwrap_or_default();
+                PtyTabInfo {
+                    id,
+                    alive: live.contains(&id),
+                    project_id: meta.project_id,
+                    title: meta.title,
+                    pinned: meta.pinned,
+                }
+            })
+            .collect()
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))

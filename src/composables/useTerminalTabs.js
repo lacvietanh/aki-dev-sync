@@ -294,9 +294,13 @@ export function useTerminalTabs() {
       setActiveTab(existing.id)
       if (tabLiveness.value[existing.id] === false) {
         setTabPendingCmd(existing.id, cmd)
-        invoke('pty_spawn', { tabId: existing.id, cwd: project.local_path }).catch((e) =>
-          console.error('[useTerminalTabs] openRunCommand respawn failed', e)
-        )
+        // Current ownership/title, same reason ensureSpawned (usePtyTerminal.js) sends them on every spawn call.
+        invoke('pty_spawn', {
+          tabId: existing.id,
+          cwd: project.local_path,
+          projectId: existing.projectId ?? null,
+          title: existing.title ?? null,
+        }).catch((e) => console.error('[useTerminalTabs] openRunCommand respawn failed', e))
       }
       return
     }
@@ -367,7 +371,7 @@ export async function initTerminalTabs() {
     adoptTabs(list)
     seedTabLiveness(list) // list still carries each tab's raw `alive` — adoptTabs' own mapped shape drops it
   }
-  activeTerminalScope.value = GLOBAL_SCOPE // defensive: setActiveTab would derive the same, but boot should not depend on it
+  activeTerminalScope.value = GLOBAL_SCOPE // only survives when there are no tabs; setActiveTab below derives the real scope from the adopted tab, which since TabMeta is no longer always global
   const first = terminalTabs.value[0]
   if (first) setActiveTab(first.id)
 }

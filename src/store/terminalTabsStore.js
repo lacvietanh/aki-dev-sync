@@ -110,6 +110,10 @@ export const renameTerminalTab = action('terminalTabsStore.renameTerminalTab', (
   const next = { ...tab, title: trimmed }
   if (!auto) next.titleLocked = true
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
+  // Mirror to the backend's durable TabMeta so a later reload's adoptTabs sees this title, not a placeholder.
+  invoke('pty_rename_tab', { tabId: id, title: trimmed }).catch((e) =>
+    console.error('[terminalTabsStore] pty_rename_tab failed', e)
+  )
 })
 
 /** Flips ONE tab's pinned flag (display-only across group strips, id-scoped per CLAUDE.md multi-entity guard). */
@@ -119,6 +123,10 @@ export const toggleTabPinned = action('terminalTabsStore.toggleTabPinned', (id) 
   const tab = terminalTabs.value[idx]
   const next = { ...tab, pinned: !tab.pinned }
   terminalTabs.value = [...terminalTabs.value.slice(0, idx), next, ...terminalTabs.value.slice(idx + 1)]
+  // Mirror to the backend's durable TabMeta so a later reload's adoptTabs sees this pin, not the default unpinned state.
+  invoke('pty_set_tab_pinned', { tabId: id, pinned: next.pinned }).catch((e) =>
+    console.error('[terminalTabsStore] pty_set_tab_pinned failed', e)
+  )
 })
 
 /** Sets PTY resize authority for ONE tab ('host' or companion connection id; docs/plan/done/wish-terminal-manual-resize-authority.md). */
@@ -136,8 +144,25 @@ export function reclaimResizeAuthority(id) {
   setResizeOwner(id, 'host')
 }
 
-/** Host boot only: adopts surviving backend PTY shells into global scope (projectId: null) on frontend reload. */
+/**
+ * Host boot only: rebuilds the tab list from the backend's own record after a frontend reload wiped
+ * local state (the PTY sessions survive; this JS module does not). `pty_list_tabs` now returns each
+ * tab's durable `project_id`/`title`/`pinned` (src-tauri/src/pty.rs `TabMeta`), so a tab is re-adopted
+ * into its actual project scope with its real title and pin — landing in the global scope with a
+ * placeholder title is now the DEGENERATE case, applied only to a tab the backend genuinely has no
+ * owner recorded for, not blindly to every tab.
+ *
+ * Called only while `terminalTabs.value` is still empty (see `initTerminalTabs`), so replacing the
+ * whole array is not the multi-entity-wipe CLAUDE.md warns about — there is no sibling tab state here
+ * to lose, this call IS the bootstrap of that state from the one source (the backend) that survived.
+ */
 export const adoptTabs = action('terminalTabsStore.adoptTabs', (list) => {
   if (!Array.isArray(list) || list.length === 0) return
-  terminalTabs.value = list.map((t) => ({ id: t.id, title: `Shell ${t.id}`, projectId: null, cwd: null }))
+  terminalTabs.value = list.map((t) => ({
+    id: t.id,
+    title: t.title || `Shell ${t.id}`,
+    projectId: t.project_id ?? null,
+    cwd: null,
+    pinned: !!t.pinned,
+  }))
 })

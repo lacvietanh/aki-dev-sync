@@ -128,7 +128,15 @@ export function usePtyTerminal(term, tabId = 0) {
 
   async function ensureSpawned(cwd) {
     try {
-      await invoke('pty_spawn', { tabId, cwd: cwd ?? null })
+      // Current known ownership/title, so the backend's durable TabMeta stays in sync on every spawn
+      // call — including the idempotent no-op path — not just this tab's very first spawn.
+      const tab = terminalTabs.value.find((t) => t.id === tabId)
+      await invoke('pty_spawn', {
+        tabId,
+        cwd: cwd ?? null,
+        projectId: tab?.projectId ?? null,
+        title: tab?.title ?? null,
+      })
       // Optimistically marks alive on resolved spawn to avoid a 1-frame WS latency gap.
       alive.value = true
     } catch (e) {
