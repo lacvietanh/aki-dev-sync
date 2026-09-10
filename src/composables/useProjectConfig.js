@@ -51,6 +51,26 @@ function migrateStripNotesExcludes(loadedProjects) {
   return changed
 }
 
+/** Shared with `createNewProject`'s default exclude lists (SSoT). */
+const PYCACHE_EXCLUDE_ENTRY = '__pycache__/'
+
+/**
+ * Migration adding `__pycache__/` to existing projects' pull/push exclude lists (already default for new projects).
+ * Idempotent entry-scoped addition (multi-entity guard).
+ */
+function migrateAddPycacheExcludes(loadedProjects) {
+  let changed = false
+  for (const p of loadedProjects) {
+    const nextPull = ensureEntry(p.pull_excludes, PYCACHE_EXCLUDE_ENTRY)
+    const nextPush = ensureEntry(p.push_excludes, PYCACHE_EXCLUDE_ENTRY)
+    if (nextPull === p.pull_excludes && nextPush === p.push_excludes) continue
+    p.pull_excludes = nextPull
+    p.push_excludes = nextPush
+    changed = true
+  }
+  return changed
+}
+
 function ensureEntry(list, entry) {
   const arr = list || []
   return arr.includes(entry) ? arr : [...arr, entry]
@@ -133,6 +153,10 @@ export async function loadData(sshHosts, showToast = false) {
     if (migrateStripNotesExcludes(loaded)) {
       migrated = true
       appendGlobalLog("MIGRATE", "Removed .akidevsync/ from the default pull/push exclude lists.")
+    }
+    if (migrateAddPycacheExcludes(loaded)) {
+      migrated = true
+      appendGlobalLog("MIGRATE", "Added __pycache__/ to the default pull/push exclude lists.")
     }
 
     for (const p of loaded) {
@@ -281,8 +305,8 @@ export async function createNewProject(sshHosts) {
       remote_host: sshHosts.value[0] || "localhost",
       remote_path: "~/",
       production_url: productionUrl,
-      pull_excludes: [".DS_Store", "*.log", ".git/", "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
-      push_excludes: [".DS_Store", "*.log", "node_modules/", ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
+      pull_excludes: [".DS_Store", "*.log", ".git/", "node_modules/", PYCACHE_EXCLUDE_ENTRY, ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
+      push_excludes: [".DS_Store", "*.log", "node_modules/", PYCACHE_EXCLUDE_ENTRY, ".nuxt/", ".output/", ".wrangler/", "dist/", ".claude/"],
       hooks: { pre_pull_cmd: null, post_pull_cmd: null, pre_push_cmd: null, post_push_cmd: null, run_hooks_on_remote: true },
       last_sync_action: null,
       last_sync_time: null,
