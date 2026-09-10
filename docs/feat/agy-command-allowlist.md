@@ -1,6 +1,6 @@
 # Pre-allow AGY Commands
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-09-10 · v1.28.1
 
 Menu action (`AppHeader.vue` → "Pre-allow AGY Commands") that seeds a checked-in, recommended set of
 dev commands into `permissions.allow` in `~/.gemini/antigravity-cli/settings.json` on one or more
@@ -8,7 +8,7 @@ hosts, so a new machine or a new agy account stops hitting a permission prompt f
 command (`git status`, `curl`, `jq`, `agy` itself, ...).
 
 Code: `src-tauri/src/gemini_allowlist.rs` (backend), `src/components/modals/GeminiAllowlistModal.vue`
-(UI), `share/gemini_allowlist_unified.json` (the seed list, checked in as SSOT).
+(UI), `share/gemini_allowlist_unified.json` (the seed list, checked in as SSOT — 100 entries, covering the akiflow/akidevsync-notes script paths and the read-only shell and `git` commands `aki-mcp-sv`'s own allowlist treats as safe).
 
 ## What it touches, what it doesn't
 
