@@ -10,7 +10,7 @@
         @update:model-value="onNoteInput"
         label="Global Note"
         placeholder="Ghi chú tổng hợp..."
-        :maxlength="100000"
+        :maxlength="GLOBAL_NOTE_MAX"
         :rows="2"
       />
 
@@ -37,6 +37,7 @@
 import BaseModal from './BaseModal.vue'
 import NotesField from '../tasks/NotesField.vue'
 import TaskListPanel from '../tasks/TaskListPanel.vue'
+import { GLOBAL_NOTE_MAX } from '../../constants/taskLimits'
 import {
   showGlobalNote, noteContent, noteSaving, closeGlobalNote, onNoteInput,
   useGlobalTaskCollection,

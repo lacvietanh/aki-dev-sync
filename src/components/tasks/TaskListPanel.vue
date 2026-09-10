@@ -23,7 +23,7 @@
         type="text"
         class="task-add-input"
         :placeholder="disabled ? 'Read-only — the notes file could not be read' : 'Add a new task...'"
-        maxlength="200"
+        :maxlength="TASK_TITLE_MAX"
         :disabled="disabled"
       />
       <button class="btn-tech btn-tech-primary task-add-btn" :disabled="disabled || !newTitle.trim()" @click="submitNew" aria-label="Add task" title="Add task">
@@ -74,7 +74,7 @@
               @keyup.enter="$emit('toggle', task, 'done')"
               type="text"
               class="task-title-input"
-              maxlength="200"
+              :maxlength="TASK_TITLE_MAX"
               :disabled="disabled || task.done"
             />
             <textarea
@@ -83,7 +83,7 @@
               @change="$emit('update:detail', task, task.detail)"
               class="task-detail-textarea"
               placeholder="Add detail description..."
-              maxlength="1500"
+              :maxlength="TASK_DETAIL_MAX"
               :disabled="disabled || task.done"
               rows="1"
             ></textarea>
@@ -121,6 +121,7 @@
 import { ref, nextTick, watch } from 'vue'
 import { Toast } from '../../store/projectStore'
 import { copyText } from '../../utils/clipboard'
+import { TASK_TITLE_MAX, TASK_DETAIL_MAX } from '../../constants/taskLimits'
 
 const props = defineProps({
   tasks: { type: Array, default: () => [] },

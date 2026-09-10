@@ -20,11 +20,12 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { NOTES_MAX } from '../../constants/taskLimits'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
   placeholder: { type: String, default: '' },
-  maxlength: { type: Number, default: 1500 },
+  maxlength: { type: Number, default: NOTES_MAX },
   rows: { type: Number, default: 2 },
   label: { type: String, default: 'Notes' },
   readonly: { type: Boolean, default: false },
