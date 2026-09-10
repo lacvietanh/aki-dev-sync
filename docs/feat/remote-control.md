@@ -1,8 +1,8 @@
 # Remote Control (companion) — feature
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-09-09 · v1.28.1
 
-Control the Mac app from a phone (or any browser) on the same LAN or over Tailscale. The Mac webview stays the single source of truth; the phone is a thin mirror that shows the same state and sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`.
+Control the Mac app from a phone (or any browser) on the same LAN, over Tailscale, or through a public HTTPS origin the owner runs. The Mac webview stays the single source of truth; the phone is a thin mirror that shows the same state and sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`; how a request reaches the Mac at all (edges, the shared 443 mount, the pairing boundary): `docs/arch/remote-ingress.md`.
 
 > **Status:** foundation + host entry point + **companion control (R-2)** + pairing gate shipped. The Rust relay (`src-tauri/src/web_server.rs`) must be built on the Mac before it works end-to-end. A phone can now push, pull, flip DRY, refresh and toggle sync-check; the full pairing modal (QR + device management) is still Wave 2. Every companion state and failure case is enumerated in **"Companion states — every case"** below.
 >
@@ -48,26 +48,54 @@ The menu reflects the **relay's** real state, not the window's: reloading the ap
 
 > **Why `action()` is split from `intents.js` (REGISTRY-1).** `remoteActions.js` and `syncCheckStore.js` live in `src/store/` and need `action()` at their definition site. If they imported it from `intents.js` — which does `import.meta.glob('../store/*.js')` — that would form a hard `store → intents → (glob) → store` import cycle evaluated at bootstrap, the classic cause of a blank page on the phone. `action.js` depends only on `bridge` + `protocol` (neither touches a store), so `store → action → bridge` has no back-edge. The glob-based dispatch registry stays in `intents.js`, which **no store imports**, and is built lazily on first dispatch for good measure.
 
+## Ingress — the three URL kinds a phone can open
+
+*Designed shape of `docs/plan/remote-ingress-rework.md`, executing `docs/research/remote-ingress-tailscale-conflict.md`. Written, not yet exercised on a Mac.*
+
+The edge is swappable: relay, pairing, mirror and PTY code only ever see one origin and never learn which edge produced it. The mode is one stored value (in `~/.aki/devsync/`, defaulting to `tailscale`, `#[serde(default)]` so an existing install needs no migration) and it chooses only what the *public* row is.
+
+| Kind | What the phone opens | Who runs the edge |
+| :-- | :-- | :-- |
+| `lan` | `http://<ip>:1421` | nobody — derived from network interfaces, available in every mode, never a "mode" itself |
+| `tailscale` | `https://<magicdns>/` | the app, via `tailscale serve` proxying to `127.0.0.1:1421` |
+| `public` | `https://<host>/` | the owner — a Cloudflare tunnel forwarding to `127.0.0.1:1421`; the app only stores and displays the origin, and spawns nothing |
+
+**The device token is per-origin.** It lives in the phone's `localStorage`, so the LAN address, the `.ts.net` name and a public hostname are three separate credentials — adding or switching a hostname costs one re-pair per device, once. That is the price of `bridge.js` being origin-relative (`wss://<host>/ws` from an https page, `ws://<host>:1421/ws` from http, never a hardcoded port that would be blocked as mixed content), which is the same property that lets a new edge work with no companion-side change at all.
+
+**Shared domain with `aki-mcp-sv`, never a shared subdomain and never a shared tunnel.** The sibling app (an MCP server on `127.0.0.1:9999`) and this one sit on one domain as `mcp.<domain>` and `devsync.<domain>`, each with its own DNS record and its own Cloudflare tunnel: shared domain and shared configuration vocabulary, separate infrastructure, so either app runs alone in any order with nothing to arbitrate. Splitting a single hostname by path was rejected — the companion is a SPA whose assets, `/ws` and `/pair` are all origin-relative, so it would need a base-path-aware build plus a prefix-stripping router (`docs/research/remote-ingress-tailscale-conflict.md` F1/F3).
+
+**`tailscale` mode owns only its own mount.** `serve` and `funnel` are two front-ends over one per-node config, both defaulting to port 443 and path `/`, so a blanket `serve --https=443 off` clears every handler on the node rather than the one this app installed. The app no longer issues one: disabling acts only on the handler whose proxy target is `127.0.0.1:1421` and is a no-op when the mount is not ours, so switching Remote Control off cannot take the sibling app's public endpoint down with it. Enabling is refused symmetrically — when another process owns the tailnet 443 `/` mount, the app names that owner's target instead of silently stealing the mount.
+
+In `public` mode the app touches Tailscale not at all — no status probe, no serve command — and the settings modal shows the active origin instead of Tailscale controls, since a failing Tailscale check reported to someone deliberately running their own edge is a false alarm.
+
+Enabling HTTPS certs for the tailnet stays the one step the app cannot do: MagicDNS + HTTPS on in the Tailscale admin console, once. `scripts/tailscale-serve-https.sh` remains a CLI fallback.
+
+| Piece | Where |
+| :-- | :-- |
+| Mount ownership, ingress storage, URL list, pairing gate | `src-tauri/src/web_server.rs` |
+| Foreign-mount state, ingress mode | `src/composables/useRemoteControl.js` |
+| Mode picker, public origin field, paired devices, HTTPS row | `src/components/modals/RemoteSettingsModal.vue` |
+
+The AppHeader dropdown keeps on/off, the pair code and the URL rows, plus one entry point into that modal; the HTTPS row moved into it.
+
 ## Security model (summary)
 
-- **Off means off.** While the toggle is off, `:1421` serves *nothing* to the LAN — not the page, not (in dev) the proxied dev server. Everything returns 503 until the user turns it on. Since 1.20.0 the On/Off choice **survives a restart** (`companion-server.json`), which does not weaken this: what is restored is always the user's own last decision, never a default the app picked — a fresh install still starts off. The **pairing code is deliberately not persisted**; a restore mints a new one, so a code read off the Mac's screen last week is already dead. The 10-strike lockout is persisted too, so an attacker cannot clear it by waiting for a restart.
+- **Off means off.** While the toggle is off, `:1421` serves *nothing* to the LAN — not the page, not (in dev) the proxied dev server. Everything returns 503 until the user turns it on. Since 1.20.0 the On/Off choice **survives a restart** (`companion-server.json`), which does not weaken this: what is restored is always the user's own last decision, never a default the app picked — a fresh install still starts off. The **pairing code is deliberately not persisted**; a restore mints a new one, so a code read off the Mac's screen last week is already dead. The pairing lock described below is in-memory and time-limited, so nothing an attacker triggers survives as a persisted off-switch.
 - **A tailnet peer cannot claim `role=host`.** The host role was gated on `is_loopback()` alone, but `tailscale serve` proxies every tailnet connection through `127.0.0.1` — so with HTTPS on, any peer could take the host slot, cut the real Mac's mirror and feed every phone forged state. Since 1.20.0 the host role also requires a 128-bit token minted per process, never persisted, handed only to the Tauri webview: a proxy can forge a source address, not a value it was never given.
 - The server binds all interfaces but is **useless without a token**. A stranger on the same wifi hitting `:1421` gets only the pairing page; they need the 6-digit code shown on the Mac screen.
-- **10 wrong codes in a row disable remote control** and wipe the code — the guess space of a 6-digit code is small enough to walk otherwise. Turn it back on from the menu for a fresh code.
+- **Repeated wrong codes lock *pairing*, not the server.** The penalty is a time-limited pairing lock counted per source IP with a global ceiling behind it: `/pair` is refused for a cooling window while `enabled`, every live socket and every already-paired device stay untouched, and the lock lapses on its own. It used to switch Remote Control off and persist that off — sound while only a LAN or tailnet could reach the endpoint, but the moment the origin can be public that shape is a **remote kill switch anyone who learns the hostname can throw**, recoverable only by walking to the Mac, which is the one thing the feature exists to avoid needing. The 6-digit code's guess space still needs a counter behind it, which is why the penalty is throttled rather than dropped.
+- **A public origin additionally accepts a long random pairing secret in the URL**, so the phone pairs by opening a link rather than by typing six digits into an endpoint the whole internet can also type into. Six digits stay for LAN typing.
 - Tokens are **per-device and revocable** (`list_paired_devices()` / `revoke_device(id)` — Wave 2 UI). Revoking one device leaves every other paired device untouched (scoped-clear rule).
-- LAN and Tailscale use the **same** token — the token is the identity, not the network path.
+- **The token is the identity, not the network path** — but the browser stores it per origin, so each hostname is paired separately (see *Ingress* above). Revoking a device closes every one of its live connections on every origin.
+- **What a public origin changes, stated plainly.** Reach goes from "anyone on the LAN or tailnet" to "anyone who learns the hostname", which in practice means background scanners within hours of the DNS record existing. What holds unchanged: `/ws` is useless without a per-device token, `role=host` additionally requires a per-process secret only the Tauri webview is handed, and the tunnel forwards only `127.0.0.1:1421`. What does not carry over: route-narrowing at the edge buys nothing here, because the phone legitimately needs every route (`/`, `/pair`, `/ws`, assets). The permissive CORS layer that used to wrap `/ws` and `/pair` was removed on 2026-09-09 — no legitimate caller is cross-origin, so the browser now refuses such a request by default (verdict and reasoning: `docs/plan/remote-ingress-rework.md` §4 item 4). A Cloudflare Access policy in front is an optional second gate, never a replacement for the pairing gate.
 - This is **not multi-tenant**: every paired device is a mirror of the one Mac session, not a separate account (SCOPE-1).
 
 ## Platform / build notes
 
 - **One address in dev and release (PORT-1).** The phone always uses `http://<ip>:1421`. In a release build axum serves the embedded frontend on 1421; in `npm run tauri dev` axum reverse-proxies the page to the Vite dev server (localhost) on the same 1421, so DX matches production and hot-reload still works. See `docs/plan/done/remote-control.md` §7.2.
 - macOS-only, like the rest of the app. Tailscale is only *noticed* (via `if-addrs` reading the `100.64/10` CGNAT range) and offered as an address — never installed or configured for the user.
-- **Minimal PWA (install as a standalone app).** `index.html` carries the favicon (`/icon.png`), the apple-* / `mobile-web-app-capable` meta tags and a `manifest.webmanifest` (`display: standalone`, 192/512 icons); `public/sw.js` is a network-passthrough service worker (caches nothing — this tool needs the live Mac; no stale-shell risk) registered from `main.js` **companion-only + secure-context-only**. Standalone by platform: **iOS** "Add to Home Screen" works over plain http (apple meta tags); **desktop Chrome** "Create shortcut → Open as window" works via the favicon; **Android Chrome** needs **HTTPS** (e.g. a Tailscale funnel) for a true standalone WebAPK — over plain LAN http it stays a browser shortcut. Bundled into the `.app` only on a Mac rebuild (`index.html`/`public/` are Vite-built into the embedded frontend).
-- **HTTPS over Tailscale (unlocks the Android standalone PWA) — in-app toggle.** axum serves plain http on 1421, so `https://100.x:1421` fails (no TLS there). `tailscale serve` terminates TLS with a real cert for `<machine>.<tailnet>.ts.net` on 443 and proxies to `http://127.0.0.1:1421` (page + `/ws` + `/pair`, same origin). This is wired into the app as a menu toggle:
-  - Rust: `web_server.rs` `get_tailscale_https` / `set_tailscale_https` (async + `spawn_blocking`; resolve the `tailscale` binary via explicit install paths then PATH; `serve --bg http://127.0.0.1:PORT` to enable, `serve --https=443 off` to disable). Registered in `lib.rs`. An enable that fails because the tailnet has no HTTPS certs returns tailscale's own error (with the admin URL) verbatim.
-  - Frontend: `useRemoteControl.js` `httpsEnabled`/`httpsUrl`/`toggleHttps` + the **HTTPS (PWA)** row in `AppHeader.vue`, shown only when tailscale is present. Turning Remote Control **off also turns serve off** — nothing left proxying in the background.
-  - `bridge.js` `wsUrl()`/`pairDevice()` are **origin-relative** (`wss://<host>/ws` from an https page, `ws://<host>:1421/ws` from http) — a hardcoded `ws://…:1421` would be blocked as mixed content from the https origin. The device token is per-origin, so the `.ts.net` origin needs a one-time re-pair.
-  - **The one manual step the app can't do:** enabling HTTPS certs for the tailnet is an admin-console account setting (MagicDNS + HTTPS on) — done once. `scripts/tailscale-serve-https.sh` remains as a CLI fallback but is no longer required once the toggle ships.
+- **Minimal PWA (install as a standalone app).** `index.html` carries the favicon (`/icon.png`), the apple-* / `mobile-web-app-capable` meta tags and a `manifest.webmanifest` (`display: standalone`, 192/512 icons); `public/sw.js` is a network-passthrough service worker (caches nothing — this tool needs the live Mac; no stale-shell risk) registered from `main.js` **companion-only + secure-context-only**. Standalone by platform: **iOS** "Add to Home Screen" works over plain http (apple meta tags); **desktop Chrome** "Create shortcut → Open as window" works via the favicon; **Android Chrome** needs **HTTPS** (either ingress mode that provides it — Tailscale or a public origin) for a true standalone WebAPK — over plain LAN http it stays a browser shortcut. Bundled into the `.app` only on a Mac rebuild (`index.html`/`public/` are Vite-built into the embedded frontend).
+- **HTTPS** is what unlocks the Android standalone PWA and is served by the edge, not by axum: axum is plain http on 1421, so `https://<ip>:1421` never works. Which edge terminates TLS is the ingress mode — see **"Ingress — the three URL kinds a phone can open"** above.
 - The host role stamp is `if (window.__TAURI_INTERNALS__) window.__AKI_ROLE__='host'` in `src/boot/roleStamp.js`, imported first in `main.js` (a module, not an inline script — the host CSP `script-src 'self'` blocks inline). A phone browser never has `__TAURI_INTERNALS__`, so it defaults to companion. See `docs/plan/done/remote-control.md` §9 (S-1) for why this replaced the originally-planned Rust init-script.
 
 ## Backpressure — what happens when a phone cannot keep up
@@ -157,7 +185,7 @@ The host runs its OWN websocket to the relay (`ws://127.0.0.1:1421/ws?role=host`
 | C1 | Correct 6-digit code | `POST /pair` 200 → token stored → `connect()` → `open`. |
 | C2 | Wrong code | `POST /pair` 401 → "Invalid pairing code"; form stays, input cleared. |
 | C3 | Fewer than 6 digits | blocked client-side; the Pair button stays disabled. |
-| C4 | 10 wrong codes in a row | relay disables remote control + wipes the code (429). The phone must wait for the user to re-enable it on the Mac for a fresh code. |
+| C4 | Too many wrong codes from one source | `/pair` is refused for a cooling window (429). Remote Control stays on and paired devices keep working; the phone can retry once the lock lapses, with no trip to the Mac. |
 
 ### Readiness gate & premature work (READY-1)
 
@@ -255,7 +283,7 @@ The single reference to check every control against while editing. Goal (plan §
 | Changelog / Update / Intro / Profile / Statusline modals | `show*Modal=true` | LOCAL modal-open | LOCAL-OK |
 | Copy remote URL | `copyRemoteUrl` | LOCAL clipboard | LOCAL-OK |
 | Open repo/donate links | `openLink(url)` | RPC `macos_open` | RPC-OK |
-| Install AkiClaudeDoc / SSH color | `installAkiClaudeDoc`/`enableSshTerminalColor` | RPC | RPC-OK |
+| Install AkiDevRule / SSH color | `installAkiDevRule`/`enableSshTerminalColor` | RPC | RPC-OK |
 | Remember-view toggle | `toggleRememberView` | `useAppWindow` local pref | REVIEW (window pref of the Mac) |
 
 ### Usage (`AgentUsageSection.vue` / `AgentUsageSlot.vue` / `AgentUsage.vue`)

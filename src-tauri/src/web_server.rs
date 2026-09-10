@@ -20,10 +20,10 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex as StdMutex, OnceLock,
     },
     time::{SystemTime, UNIX_EPOCH},
@@ -37,8 +37,26 @@ use tokio::{
 /// Fixed relay port (baked into `tauri.conf.json` CSP `connect-src` and `get_companion_url()`). Not user-configurable (plan §7.1a).
 const PORT: u16 = 1421;
 
-/// How many consecutive bad `/pair` codes are tolerated before the relay shuts itself off.
+/// Bad `/pair` codes tolerated from ONE source address before pairing — not the server — is locked.
 const MAX_PAIR_FAILURES: u32 = 10;
+
+/// Ceiling behind the per-address counter so a distributed flood still costs only a cooling window.
+const MAX_PAIR_FAILURES_GLOBAL: u32 = 100;
+
+/// How long `/pair` stays refused after the strike count is reached. Nothing about the lock is persisted, and `enabled` is never touched (docs/plan/remote-ingress-rework.md §4).
+const PAIR_LOCK_SECS: u64 = 300;
+
+/// Idle strike records older than this are dropped, so a scan cannot grow the map without bound.
+const PAIR_RECORD_TTL_SECS: u64 = 900;
+
+/// Hard cap on tracked source addresses; the least recently seen record is dropped first.
+const MAX_PAIR_IP_RECORDS: usize = 512;
+
+// ── Ingress modes (docs/plan/remote-ingress-rework.md §5) ─────────────────────────────────────
+/// App-managed `tailscale serve` — the default and the only mode that touches Tailscale at all.
+const INGRESS_TAILSCALE: &str = "tailscale";
+/// The owner runs the edge; the app only stores and displays the origin it terminates at.
+const INGRESS_PUBLIC: &str = "public";
 
 // ── WS close codes (mirrored in src/constants/protocol.js — keep both in sync) ─────────────
 // Distinct codes prevent companions from treating temporary server-off state as credential revocation.
@@ -223,8 +241,103 @@ struct RelayState {
     host_token: String,
     /// Gate controlling whether remote control accepts connections/pairing.
     enabled: AtomicBool,
-    /// Consecutive invalid pairing attempts before automatic server disable (rate-limit guard against brute-force).
-    pair_failures: AtomicU32,
+    /// Long-form pairing secret accepted in place of the 6-digit code on an origin the whole internet can also type into. Minted with the code, never persisted.
+    pair_link_token: StdMutex<String>,
+    /// Strike records and the cooling lock they trigger; in memory only.
+    pair_gate: StdMutex<PairGate>,
+    /// Which edge produces the public URL, mirrored from `companion-server.json`.
+    ingress: StdMutex<IngressSetting>,
+}
+
+/// One source address's recent bad-code history.
+#[derive(Default)]
+struct PairAttempts {
+    failures: u32,
+    locked_until: u64,
+    last_seen: u64,
+}
+
+/// The `/pair` throttle: strikes counted per source address, with a global ceiling behind them.
+#[derive(Default)]
+struct PairGate {
+    per_ip: HashMap<IpAddr, PairAttempts>,
+    global_failures: u32,
+    global_locked_until: u64,
+}
+
+impl PairGate {
+    /// Seconds this address must wait, or `None` when it may try now.
+    fn retry_after(&self, ip: IpAddr, now: u64) -> Option<u64> {
+        let until = self
+            .global_locked_until
+            .max(self.per_ip.get(&ip).map(|a| a.locked_until).unwrap_or(0));
+        (until > now).then(|| until - now)
+    }
+
+    fn record_failure(&mut self, ip: IpAddr, now: u64) {
+        self.global_failures += 1;
+        if self.global_failures >= MAX_PAIR_FAILURES_GLOBAL {
+            self.global_locked_until = now + PAIR_LOCK_SECS;
+            self.global_failures = 0;
+        }
+        let entry = self.per_ip.entry(ip).or_default();
+        entry.failures += 1;
+        entry.last_seen = now;
+        if entry.failures >= MAX_PAIR_FAILURES {
+            entry.locked_until = now + PAIR_LOCK_SECS;
+            entry.failures = 0;
+        }
+    }
+
+    fn record_success(&mut self, ip: IpAddr) {
+        self.per_ip.remove(&ip);
+        self.global_failures = 0;
+    }
+
+    /// Drops records that are neither locked nor recently active, then trims the least recently seen until the map is back inside its cap.
+    fn prune(&mut self, now: u64) {
+        self.per_ip
+            .retain(|_, a| a.locked_until > now || now.saturating_sub(a.last_seen) < PAIR_RECORD_TTL_SECS);
+        while self.per_ip.len() > MAX_PAIR_IP_RECORDS {
+            let Some(oldest) = self.per_ip.iter().min_by_key(|(_, a)| a.last_seen).map(|(ip, _)| *ip) else {
+                break;
+            };
+            self.per_ip.remove(&oldest);
+        }
+    }
+}
+
+/// Outcome of one `/pair` attempt, decided entirely from relay state so it is testable without a socket.
+enum PairVerdict {
+    Disabled,
+    /// Refused for this many more seconds.
+    Locked(u64),
+    Rejected,
+    Accepted,
+}
+
+/// The one stored ingress decision: which edge produces the public URL, and the origin it resolves to.
+#[derive(Clone)]
+struct IngressSetting {
+    mode: String,
+    origin: String,
+}
+
+impl Default for IngressSetting {
+    fn default() -> Self {
+        IngressSetting { mode: INGRESS_TAILSCALE.to_string(), origin: String::new() }
+    }
+}
+
+/// Anything that is not a mode this build knows falls back to `tailscale`, so a newer or hand-edited file cannot leave the app in a mode it cannot serve.
+fn normalize_ingress(mode: &str, origin: &str) -> IngressSetting {
+    let mode = if mode == INGRESS_PUBLIC { INGRESS_PUBLIC } else { INGRESS_TAILSCALE };
+    IngressSetting { mode: mode.to_string(), origin: trim_origin(origin) }
+}
+
+/// Stored origins carry no trailing slash, so every consumer can append a path unconditionally.
+fn trim_origin(origin: &str) -> String {
+    origin.trim().trim_end_matches('/').to_string()
 }
 
 impl RelayState {
@@ -239,7 +352,9 @@ impl RelayState {
             server_state_path: StdMutex::new(None),
             host_token: generate_token(),
             enabled: AtomicBool::new(false),
-            pair_failures: AtomicU32::new(0),
+            pair_link_token: StdMutex::new(String::new()),
+            pair_gate: StdMutex::new(PairGate::default()),
+            ingress: StdMutex::new(IngressSetting::default()),
         }
     }
 
@@ -287,17 +402,28 @@ impl RelayState {
         std::fs::write(&path, content).map_err(|e| e.to_string())
     }
 
-    /// Records the user's LAST EXPLICIT on/off choice so a restart resumes it (see `init` for the
-    /// reasoning). Same blocking-write discipline as `persist_devices`: callers on the async
+    /// Writes the whole `companion-server.json` from live state — the LAST EXPLICIT on/off choice
+    /// so a restart resumes it (see `init`), plus the ingress decision — so saving one can never
+    /// drop the other. Same blocking-write discipline as `persist_devices`: callers on the async
     /// runtime must route it through `spawn_blocking`. Best-effort by design — failing to write
     /// this preference must never fail the toggle the user just asked for.
-    fn persist_enabled(&self, enabled: bool) {
+    fn persist_server_state(&self) {
         let Some(path) = self.server_state_path.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
             return;
         };
-        let content = serde_json::json!({ "enabled": enabled }).to_string();
-        if let Err(e) = std::fs::write(&path, content) {
-            eprintln!("[web_server] could not persist the remote-control on/off state: {}", e);
+        let ingress = self.ingress.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let persisted = PersistedServerState {
+            enabled: self.enabled.load(Ordering::SeqCst),
+            ingress_mode: ingress.mode,
+            ingress_origin: ingress.origin,
+        };
+        match serde_json::to_string(&persisted) {
+            Ok(content) => {
+                if let Err(e) = std::fs::write(&path, content) {
+                    eprintln!("[web_server] could not persist the remote-control state: {}", e);
+                }
+            }
+            Err(e) => eprintln!("[web_server] could not serialize the remote-control state: {}", e),
         }
     }
 
@@ -305,16 +431,64 @@ impl RelayState {
     /// other and leave disk disagreeing with memory.
     fn set_enabled(&self, enabled: bool) {
         self.enabled.store(enabled, Ordering::SeqCst);
-        self.persist_enabled(enabled);
+        self.persist_server_state();
+    }
+
+    /// The whole pairing decision in one place: gate first, then secret. A bad code costs a cooling
+    /// window and never the server itself (docs/plan/remote-ingress-rework.md §4).
+    fn judge_pair_attempt(&self, code: &str, ip: IpAddr, now: u64) -> PairVerdict {
+        if !self.enabled.load(Ordering::SeqCst) {
+            return PairVerdict::Disabled;
+        }
+        let mut gate = self.pair_gate.lock().unwrap_or_else(|e| e.into_inner());
+        gate.prune(now);
+        if let Some(retry_after) = gate.retry_after(ip, now) {
+            return PairVerdict::Locked(retry_after);
+        }
+        let offered = code.trim();
+        let expected = self.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let link = self.pair_link_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if (expected.is_empty() || offered != expected) && (link.is_empty() || offered != link) {
+            gate.record_failure(ip, now);
+            return match gate.retry_after(ip, now) {
+                Some(retry_after) => PairVerdict::Locked(retry_after),
+                None => PairVerdict::Rejected,
+            };
+        }
+        gate.record_success(ip);
+        PairVerdict::Accepted
+    }
+
+    /// Mints the 6-digit code and its long-form twin together, so no path can hand out one without the other.
+    fn mint_pairing_secrets(&self) -> String {
+        let code = generate_pairing_code();
+        *self.pairing_code.lock().unwrap_or_else(|e| e.into_inner()) = code.clone();
+        *self.pair_link_token.lock().unwrap_or_else(|e| e.into_inner()) = generate_token();
+        code
     }
 }
 
-/// `companion-server.json` — the one bit of relay state that outlives the process. `#[serde(default)]`
-/// per CLAUDE.md's serde rule, so an older/partial file degrades to "off" instead of failing the read.
-#[derive(Serialize, Deserialize, Default)]
+/// `companion-server.json` — the relay state that outlives the process. `#[serde(default)]`
+/// per CLAUDE.md's serde rule, so an older/partial file degrades to "off" on the Tailscale ingress
+/// instead of failing the read.
+#[derive(Serialize, Deserialize)]
 struct PersistedServerState {
     #[serde(default)]
     enabled: bool,
+    #[serde(default = "default_ingress_mode", rename = "ingressMode")]
+    ingress_mode: String,
+    #[serde(default, rename = "ingressOrigin")]
+    ingress_origin: String,
+}
+
+fn default_ingress_mode() -> String {
+    INGRESS_TAILSCALE.to_string()
+}
+
+impl Default for PersistedServerState {
+    fn default() -> Self {
+        PersistedServerState { enabled: false, ingress_mode: default_ingress_mode(), ingress_origin: String::new() }
+    }
 }
 
 static RELAY: OnceLock<RelayState> = OnceLock::new();
@@ -411,8 +585,10 @@ pub fn init(app_handle: &AppHandle) {
                 .and_then(|c| serde_json::from_str::<PersistedServerState>(&c).ok())
                 .unwrap_or_default();
             *state.server_state_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(server_state_path);
+            *state.ingress.lock().unwrap_or_else(|e| e.into_inner()) =
+                normalize_ingress(&restored.ingress_mode, &restored.ingress_origin);
             if restored.enabled {
-                *state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()) = generate_pairing_code();
+                state.mint_pairing_secrets();
                 state.enabled.store(true, Ordering::SeqCst);
             }
         }
@@ -450,8 +626,7 @@ async fn serve_forever(app: AppHandle) {
 fn build_router(app: &AppHandle) -> Router {
     let router = Router::new()
         .route("/ws", get(ws_handler))
-        .route("/pair", post(pair_handler))
-        .layer(tower_http::cors::CorsLayer::permissive());
+        .route("/pair", post(pair_handler));
 
     if cfg!(debug_assertions) {
         let vite_origin = resolve_vite_origin(app);
@@ -755,37 +930,32 @@ struct PairResponse {
     token: String,
 }
 
-async fn pair_handler(headers: HeaderMap, Json(body): Json<PairRequest>) -> Response {
+async fn pair_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<PairRequest>,
+) -> Response {
     let state = relay();
-    if !state.enabled.load(Ordering::SeqCst) {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({ "error": "remote control is disabled on the host" })),
-        )
-            .into_response();
-    }
-
-    let expected = state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if expected.is_empty() || body.code.trim() != expected {
-        let failures = state.pair_failures.fetch_add(1, Ordering::SeqCst) + 1;
-        if failures >= MAX_PAIR_FAILURES {
-            // Disables server after consecutive bad pairing codes to mitigate brute-force attacks.
-            state.enabled.store(false, Ordering::SeqCst);
-            state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clear();
-            let _ = tauri::async_runtime::spawn_blocking(|| relay().persist_enabled(false)).await;
-            eprintln!(
-                "[web_server] {} consecutive bad pairing codes — remote control disabled, turn it back on to get a new code",
-                failures
-            );
+    match state.judge_pair_attempt(&body.code, addr.ip(), now_secs()) {
+        PairVerdict::Disabled => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "remote control is disabled on the host" })),
+            )
+                .into_response()
+        }
+        PairVerdict::Locked(retry_after) => {
             return (
                 StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({ "error": "too many bad codes — remote control was disabled on the host" })),
+                Json(serde_json::json!({ "error": "too many bad codes — pairing is locked for a few minutes", "retryAfterSecs": retry_after })),
             )
-                .into_response();
+                .into_response()
         }
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "invalid code" }))).into_response();
+        PairVerdict::Rejected => {
+            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "invalid code" }))).into_response()
+        }
+        PairVerdict::Accepted => {}
     }
-    state.pair_failures.store(0, Ordering::SeqCst);
 
     // Extracts device label from User-Agent header (truncated to 80 chars).
     let label = headers
@@ -839,14 +1009,13 @@ pub struct CompanionUrl {
 
 // ── Tauri commands (all async + spawn_blocking per CLAUDE.md's never-block-UI rule) ──────────
 
-/// Starts companion server: generates fresh pairing code, enables relay, and resets failure count.
+/// Starts companion server: mints a fresh pairing code and link token, clears the pairing throttle, and enables the relay.
 #[tauri::command]
 pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<CompanionServerInfo, String> {
         let state = relay();
-        let code = generate_pairing_code();
-        *state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()) = code.clone();
-        state.pair_failures.store(0, Ordering::SeqCst);
+        let code = state.mint_pairing_secrets();
+        *state.pair_gate.lock().unwrap_or_else(|e| e.into_inner()) = PairGate::default();
         state.set_enabled(true);
         Ok(CompanionServerInfo { pairing_code: code, port: PORT })
     })
@@ -891,6 +1060,9 @@ pub struct CompanionStatus {
     /// The process-local secret the `role=host` websocket requires (`RelayState::host_token`).
     #[serde(rename = "hostToken")]
     host_token: String,
+    /// Long-form pairing secret `/pair` accepts in place of the 6-digit code, so the host UI can build a one-tap pairing link for a public origin.
+    #[serde(rename = "pairLinkToken")]
+    pair_link_token: String,
 }
 
 #[tauri::command]
@@ -902,6 +1074,7 @@ pub async fn get_companion_status() -> Result<CompanionStatus, String> {
             pairing_code: state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             port: PORT,
             host_token: state.host_token.clone(),
+            pair_link_token: state.pair_link_token.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         })
     })
     .await
@@ -928,6 +1101,10 @@ pub async fn get_companion_url() -> Result<Vec<CompanionUrl>, String> {
                 }
                 if_addrs::IfAddr::V6(_) => {}
             }
+        }
+        let ingress = relay().ingress.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if ingress.mode == INGRESS_PUBLIC && !ingress.origin.is_empty() {
+            out.push(CompanionUrl { kind: "public", url: ingress.origin });
         }
         Ok(out)
     })
@@ -974,12 +1151,50 @@ fn tailscale_https_url() -> Option<String> {
     }
 }
 
-/// Returns true if `tailscale serve` is active for local port 1421.
-fn tailscale_serve_on() -> bool {
+/// Who holds the node's 443 `/` mount. `tailscale serve` and `tailscale funnel` share one per-node
+/// config, so a sibling app's Funnel and this app's serve compete for the same handler — see
+/// docs/research/remote-ingress-tailscale-conflict.md F1.
+#[derive(PartialEq, Debug)]
+enum MountOwner {
+    Ours,
+    /// Held by something else, described by its proxy target.
+    Foreign(String),
+    Vacant,
+}
+
+/// Parses a `ServeConfig` as printed by `tailscale serve status --json`: `Web["<host>:443"].Handlers["/"]`.
+fn parse_mount_owner(status_json: &str, target: &str) -> MountOwner {
+    let Ok(config) = serde_json::from_str::<serde_json::Value>(status_json) else {
+        return MountOwner::Vacant;
+    };
+    let Some(web) = config.get("Web").and_then(|w| w.as_object()) else {
+        return MountOwner::Vacant;
+    };
+    for (host_port, server) in web {
+        if !host_port.ends_with(":443") {
+            continue;
+        }
+        let Some(handler) = server.get("Handlers").and_then(|h| h.get("/")) else {
+            continue;
+        };
+        let proxy = handler.get("Proxy").and_then(|p| p.as_str()).unwrap_or_default();
+        if proxy.contains(target) {
+            return MountOwner::Ours;
+        }
+        return MountOwner::Foreign(if proxy.is_empty() { handler.to_string() } else { proxy.to_string() });
+    }
+    MountOwner::Vacant
+}
+
+/// The ONE ownership check. Enable and disable both route through it, so the safety cannot be lost
+/// by a caller that forgets it (`pattern.A8`). A CLI that will not run reads as `Vacant`, which is
+/// the conservative answer for both: enable proceeds, disable does nothing.
+fn mount_owner() -> MountOwner {
     let target = format!("127.0.0.1:{}", PORT);
-    run_tailscale(&["serve", "status"])
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains(&target))
-        .unwrap_or(false)
+    match run_tailscale(&["serve", "status", "--json"]) {
+        Ok(out) if out.status.success() => parse_mount_owner(&String::from_utf8_lossy(&out.stdout), &target),
+        _ => MountOwner::Vacant,
+    }
 }
 
 #[derive(Serialize)]
@@ -990,31 +1205,72 @@ pub struct TailscaleHttps {
     enabled: bool,
     /// `https://<magicdns>/` — present whenever the DNS name is readable, even while disabled.
     url: Option<String>,
+    /// What holds the 443 `/` mount when this app does not, so the UI can name it instead of the app stealing it.
+    #[serde(rename = "foreignTarget")]
+    foreign_target: Option<String>,
+}
+
+/// Reads the live Tailscale state around one already-determined mount owner.
+fn https_state(owner: MountOwner) -> TailscaleHttps {
+    let url = tailscale_https_url();
+    let available = url.is_some() || run_tailscale(&["version"]).map(|o| o.status.success()).unwrap_or(false);
+    let (enabled, foreign_target) = match owner {
+        MountOwner::Ours => (true, None),
+        MountOwner::Foreign(target) => (false, Some(target)),
+        MountOwner::Vacant => (false, None),
+    };
+    TailscaleHttps { available, enabled, url, foreign_target }
+}
+
+/// In `public` mode the edge is the owner's, so the app reports Tailscale as none of its business rather than probing it (docs/plan/remote-ingress-rework.md §5).
+fn tailscale_unmanaged() -> TailscaleHttps {
+    TailscaleHttps { available: false, enabled: false, url: None, foreign_target: None }
+}
+
+fn ingress_mode() -> String {
+    relay().ingress.lock().unwrap_or_else(|e| e.into_inner()).mode.clone()
 }
 
 /// Checks Tailscale HTTPS status and MagicDNS URL.
 #[tauri::command]
 pub async fn get_tailscale_https() -> Result<TailscaleHttps, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<TailscaleHttps, String> {
-        let url = tailscale_https_url();
-        let available = url.is_some()
-            || run_tailscale(&["version"]).map(|o| o.status.success()).unwrap_or(false);
-        let enabled = available && tailscale_serve_on();
-        Ok(TailscaleHttps { available, enabled, url })
+        if ingress_mode() == INGRESS_PUBLIC {
+            return Ok(tailscale_unmanaged());
+        }
+        Ok(https_state(mount_owner()))
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Configures `tailscale serve` for HTTPS relay (`--bg http://127.0.0.1:1421` or `--https=443 off`).
+/// Mounts or unmounts THIS app's own 443 `/` handler and nothing else: it refuses to take a mount
+/// another app holds, and unmounting is a no-op unless the handler there proxies our port
+/// (docs/plan/remote-ingress-rework.md §3).
 #[tauri::command]
 pub async fn set_tailscale_https(enable: bool) -> Result<TailscaleHttps, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<TailscaleHttps, String> {
-        let port_arg = format!("http://127.0.0.1:{}", PORT);
+        if ingress_mode() == INGRESS_PUBLIC {
+            if enable {
+                return Err("remote ingress is set to a public origin — Tailscale is not managed by the app in this mode".to_string());
+            }
+            return Ok(tailscale_unmanaged());
+        }
+        let owner = mount_owner();
+        if let (true, MountOwner::Foreign(target)) = (enable, &owner) {
+            return Err(format!(
+                "the tailnet's 443 / mount is currently served to {} — turn that off first, or switch this app to a public ingress",
+                target
+            ));
+        }
+        if !enable && owner != MountOwner::Ours {
+            return Ok(https_state(owner));
+        }
+        let proxy_target = format!("http://127.0.0.1:{}", PORT);
         let args: Vec<&str> = if enable {
-            vec!["serve", "--bg", port_arg.as_str()]
+            vec!["serve", "--bg", proxy_target.as_str()]
         } else {
-            vec!["serve", "--https=443", "off"]
+            vec!["serve", "--https=443", "--set-path=/", "off"]
         };
         let out = run_tailscale(&args)?;
         if !out.status.success() {
@@ -1023,11 +1279,82 @@ pub async fn set_tailscale_https(enable: bool) -> Result<TailscaleHttps, String>
             let m = if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() };
             return Err(if m.is_empty() { "tailscale serve failed".to_string() } else { m.to_string() });
         }
-        Ok(TailscaleHttps {
-            available: true,
-            enabled: tailscale_serve_on(),
-            url: tailscale_https_url(),
-        })
+        Ok(https_state(mount_owner()))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+// ── Remote ingress (docs/plan/remote-ingress-rework.md §5) ───────────────────────────────────
+
+#[derive(Serialize)]
+pub struct RemoteIngress {
+    mode: String,
+    origin: String,
+    /// A hint only — see `suggested_public_origin`.
+    #[serde(rename = "suggestedOrigin")]
+    suggested_origin: Option<String>,
+}
+
+/// Best-effort hint from the sibling app `aki-mcp-sv`, which records its own edge in
+/// `~/.aki/mcpsv/ingress.json`. Every failure — no file, no permission, an unexpected shape — is
+/// `None`: Dev Sync must never need that file to work.
+fn suggested_public_origin() -> Option<String> {
+    let path = dirs::home_dir()?.join(".aki").join("mcpsv").join("ingress.json");
+    let content = std::fs::read_to_string(path).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&content).ok()?;
+    sibling_origin(config.get("origin")?.as_str()?, "devsync")
+}
+
+/// `https://mcp.example.com` → `https://devsync.example.com`: same domain, sibling subdomain. An
+/// origin with no subdomain to replace yields nothing rather than a guess at the apex.
+fn sibling_origin(origin: &str, label: &str) -> Option<String> {
+    let rest = origin
+        .trim()
+        .strip_prefix("https://")
+        .or_else(|| origin.trim().strip_prefix("http://"))?;
+    let host = rest.split('/').next()?.split(':').next()?;
+    let labels: Vec<&str> = host.split('.').collect();
+    if labels.len() < 3 || labels.iter().any(|l| l.is_empty()) {
+        return None;
+    }
+    Some(format!("https://{}.{}", label, labels[1..].join(".")))
+}
+
+fn remote_ingress_view() -> RemoteIngress {
+    let ingress = relay().ingress.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    RemoteIngress { mode: ingress.mode, origin: ingress.origin, suggested_origin: suggested_public_origin() }
+}
+
+#[tauri::command]
+pub async fn get_remote_ingress() -> Result<RemoteIngress, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<RemoteIngress, String> { Ok(remote_ingress_view()) })
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+}
+
+/// Stores the ingress decision. `origin: None` leaves the stored origin as it is, so switching mode
+/// back and forth does not cost the owner the hostname they typed.
+#[tauri::command]
+pub async fn set_remote_ingress(mode: String, origin: Option<String>) -> Result<RemoteIngress, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<RemoteIngress, String> {
+        if mode != INGRESS_TAILSCALE && mode != INGRESS_PUBLIC {
+            return Err(format!("unknown ingress mode '{}' — expected '{}' or '{}'", mode, INGRESS_TAILSCALE, INGRESS_PUBLIC));
+        }
+        let state = relay();
+        {
+            let mut ingress = state.ingress.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(origin) = origin {
+                let origin = trim_origin(&origin);
+                if !origin.is_empty() && !origin.starts_with("https://") && !origin.starts_with("http://") {
+                    return Err(format!("'{}' is not a full origin — it must start with https:// or http://", origin));
+                }
+                ingress.origin = origin;
+            }
+            ingress.mode = mode;
+        }
+        state.persist_server_state();
+        Ok(remote_ingress_view())
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
@@ -1440,5 +1767,157 @@ mod tests {
         assert!(!serde_json::from_str::<PersistedServerState>("{}").unwrap().enabled);
         assert!(serde_json::from_str::<PersistedServerState>(r#"{"enabled":true}"#).unwrap().enabled);
         assert!(!PersistedServerState::default().enabled);
+    }
+
+    // ── W1: who owns the tailnet's 443 `/` mount ─────────────────────────────────────────────
+
+    /// The detector this replaced grepped `serve status` text for our port, so a sibling app's
+    /// Funnel on the same mount read as "off" and enabling then silently stole it.
+    #[test]
+    fn the_443_mount_is_ours_only_when_it_proxies_our_port() {
+        let target = format!("127.0.0.1:{}", PORT);
+        let ours = r#"{"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:1421"}}}}}"#;
+        let funnel = r#"{"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}},"AllowFunnel":{"mac.tail1234.ts.net:443":true}}"#;
+
+        assert_eq!(parse_mount_owner(ours, &target), MountOwner::Ours);
+        assert_eq!(parse_mount_owner(funnel, &target), MountOwner::Foreign("http://127.0.0.1:9999".to_string()), "a foreign mount must be reported WITH its target, so the UI can name what is holding it");
+        assert_eq!(parse_mount_owner("{}", &target), MountOwner::Vacant, "an empty serve config is what a fresh node prints");
+        assert_eq!(parse_mount_owner("not json at all", &target), MountOwner::Vacant);
+        assert_eq!(parse_mount_owner(r#"{"Web":{"mac.tail1234.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}"#, &target), MountOwner::Vacant, "another port is not the mount this app manages");
+        assert_eq!(parse_mount_owner(r#"{"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/mcp":{"Proxy":"http://127.0.0.1:9999"}}}}}"#, &target), MountOwner::Vacant, "another path is not the mount this app manages");
+    }
+
+    // ── W2: the pairing gate throttles, it does not shut the server down ─────────────────────
+
+    fn enabled_relay() -> (RelayState, String) {
+        let state = RelayState::new();
+        let code = state.mint_pairing_secrets();
+        state.enabled.store(true, Ordering::SeqCst);
+        (state, code)
+    }
+
+    fn ip(n: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(203, 0, 113, n))
+    }
+
+    /// The regression this exists to prevent: ten bad codes from an unauthenticated stranger used
+    /// to switch remote control off and persist that off, recoverable only at the Mac itself.
+    #[test]
+    fn a_bad_code_storm_locks_pairing_and_leaves_the_server_enabled() {
+        let (state, code) = enabled_relay();
+        let now = 1_000_000;
+        for _ in 0..MAX_PAIR_FAILURES * 3 {
+            state.judge_pair_attempt("not-the-code", ip(7), now);
+        }
+
+        assert!(state.enabled.load(Ordering::SeqCst), "a stranger must never be able to switch remote control off");
+        assert!(!state.pairing_code.lock().unwrap().is_empty(), "the owner's pairing code must survive the storm");
+        assert!(matches!(state.judge_pair_attempt(&code, ip(7), now), PairVerdict::Locked(_)), "the attacking address is throttled, even with the right code");
+        assert!(matches!(state.judge_pair_attempt(&code, ip(8), now), PairVerdict::Accepted), "one address's strikes must not lock everybody out");
+        assert!(matches!(state.judge_pair_attempt(&code, ip(7), now + PAIR_LOCK_SECS + 1), PairVerdict::Accepted), "the lock is a window and expires on its own");
+
+        state.enabled.store(false, Ordering::SeqCst);
+        assert!(matches!(state.judge_pair_attempt(&code, ip(8), now), PairVerdict::Disabled));
+    }
+
+    /// The difference between a throttle and a kill switch: devices that already paired are outside
+    /// the gate entirely, so a flood costs a delayed re-pair and never a live session.
+    #[test]
+    fn an_already_paired_device_still_authenticates_after_a_lock() {
+        let (state, code) = enabled_relay();
+        let now = 1_000_000;
+        assert!(matches!(state.judge_pair_attempt(&code, ip(1), now), PairVerdict::Accepted));
+        let device = PairedDevice { id: generate_id(), token: generate_token(), label: "phone".into(), paired_at: now };
+        let token = device.token.clone();
+        state.devices.lock().unwrap().push(device);
+
+        for _ in 0..MAX_PAIR_FAILURES_GLOBAL * 2 {
+            state.judge_pair_attempt("not-the-code", ip(2), now);
+        }
+
+        assert!(state.enabled.load(Ordering::SeqCst));
+        // Exactly the lookup `handle_socket` performs for a `role=companion` connection.
+        let known = state.devices.lock().unwrap().iter().any(|d| d.token == token);
+        assert!(known, "a lock on pairing must not revoke a device that already paired");
+    }
+
+    /// A distributed flood must still land on a cooling window, never on the old outcome.
+    #[test]
+    fn a_flood_from_many_addresses_hits_the_global_ceiling_not_an_off_switch() {
+        let (state, code) = enabled_relay();
+        let now = 1_000_000;
+        for i in 0..MAX_PAIR_FAILURES_GLOBAL {
+            state.judge_pair_attempt("not-the-code", ip((i % 200) as u8 + 1), now);
+        }
+
+        assert!(state.enabled.load(Ordering::SeqCst));
+        assert!(matches!(state.judge_pair_attempt(&code, ip(250), now), PairVerdict::Locked(_)), "the ceiling holds even for an address with no strikes of its own");
+        assert!(matches!(state.judge_pair_attempt(&code, ip(250), now + PAIR_LOCK_SECS + 1), PairVerdict::Accepted));
+    }
+
+    /// Six digits are safe on a LAN because of the strike counter; a public origin needs a secret
+    /// the whole internet cannot also type. Both arrive in the same `code` field.
+    #[test]
+    fn either_the_six_digit_code_or_the_long_link_token_pairs() {
+        let (state, code) = enabled_relay();
+        let link = state.pair_link_token.lock().unwrap().clone();
+        let now = 1_000_000;
+
+        assert_eq!(code.len(), 6);
+        assert_eq!(link.len(), 32, "128-bit hex");
+        assert!(link.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(matches!(state.judge_pair_attempt(&link, ip(1), now), PairVerdict::Accepted));
+        assert!(matches!(state.judge_pair_attempt(&format!("  {}  ", code), ip(1), now), PairVerdict::Accepted), "a code pasted with whitespace still pairs");
+        assert!(matches!(state.judge_pair_attempt("not-the-code", ip(1), now), PairVerdict::Rejected));
+
+        // Both secrets share one lifetime: minting replaces the pair, so a restart invalidates an old link.
+        state.mint_pairing_secrets();
+        assert!(matches!(state.judge_pair_attempt(&link, ip(1), now), PairVerdict::Rejected));
+    }
+
+    /// The throttle must not become a memory leak an internet-wide scan can drive.
+    #[test]
+    fn the_per_address_record_map_stays_bounded() {
+        let mut gate = PairGate::default();
+        let now = 1_000_000;
+        for i in 0..(MAX_PAIR_IP_RECORDS as u32 * 4) {
+            gate.record_failure(IpAddr::V4(Ipv4Addr::from(i + 1)), now);
+            gate.prune(now);
+        }
+        assert!(gate.per_ip.len() <= MAX_PAIR_IP_RECORDS);
+
+        gate.prune(now + PAIR_RECORD_TTL_SECS + PAIR_LOCK_SECS + 1);
+        assert!(gate.per_ip.is_empty(), "records with nothing left to remember are dropped once they go quiet");
+    }
+
+    // ── W3: the ingress mode ─────────────────────────────────────────────────────────────────
+
+    /// CLAUDE.md serde rule: an install written before this feature must load as Tailscale, unchanged.
+    #[test]
+    fn persisted_ingress_defaults_to_tailscale() {
+        let old = serde_json::from_str::<PersistedServerState>(r#"{"enabled":true}"#).unwrap();
+        assert!(old.enabled);
+        assert_eq!(old.ingress_mode, INGRESS_TAILSCALE);
+        assert_eq!(old.ingress_origin, "");
+        assert_eq!(PersistedServerState::default().ingress_mode, INGRESS_TAILSCALE);
+
+        let saved = serde_json::from_str::<PersistedServerState>(r#"{"enabled":true,"ingressMode":"public","ingressOrigin":"https://devsync.example.com"}"#).unwrap();
+        assert_eq!(saved.ingress_mode, INGRESS_PUBLIC);
+        assert_eq!(saved.ingress_origin, "https://devsync.example.com");
+
+        assert_eq!(normalize_ingress("cloudflared", "").mode, INGRESS_TAILSCALE, "a mode this build cannot serve falls back rather than sticking");
+        assert_eq!(normalize_ingress(INGRESS_PUBLIC, " https://x.example.com/// ").origin, "https://x.example.com", "a stored origin never keeps a trailing slash");
+    }
+
+    /// The sibling-app hint is a suggestion, never a dependency.
+    #[test]
+    fn the_sibling_origin_hint_is_best_effort() {
+        assert_eq!(sibling_origin("https://mcp.example.com", "devsync").as_deref(), Some("https://devsync.example.com"));
+        assert_eq!(sibling_origin("https://mcp.example.com/", "devsync").as_deref(), Some("https://devsync.example.com"));
+        assert_eq!(sibling_origin("https://mcp.a.b.example.com", "devsync").as_deref(), Some("https://devsync.a.b.example.com"));
+
+        for junk in ["", "example.com", "https://example.com", "ftp://mcp.example.com", "https://", "https://mcp..com"] {
+            assert_eq!(sibling_origin(junk, "devsync"), None, "`{}` must yield no hint at all", junk);
+        }
     }
 }

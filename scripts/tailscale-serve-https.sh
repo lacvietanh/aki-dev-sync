@@ -10,6 +10,11 @@
 # Tailscale admin console prereqs (https://login.tailscale.com/admin/dns): MagicDNS ON, HTTPS Certificates ON.
 #
 # NOTE: Device tokens are per-origin in browser; accessing via https://<machine>.ts.net requires one-time pairing.
+#
+# CAUTION - the 443 "/" mount is per-node and shared: `tailscale serve` and `tailscale funnel` write the same
+# config, so a sibling app (e.g. aki-mcp-sv's Funnel) can already hold it. The app itself now touches only its
+# own handler; the `off` line below does NOT - it clears the node's whole 443 handler set, killing any sibling
+# endpoint too. Check who owns it first: scripts/check-tailscale-mount.sh. Why: docs/research/remote-ingress-tailscale-conflict.md F1.
 set -euo pipefail
 
 # Proxy https://<machine>.<tailnet>.ts.net/ -> http://127.0.0.1:1421 in background (fallback: --https=443).

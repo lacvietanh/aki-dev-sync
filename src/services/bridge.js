@@ -53,7 +53,7 @@ const INVOKE_TIMEOUT_MS_BY_CMD = {
   check_for_updates: 120000,
   get_git_info: 120000,
   open_remote_subprocess: 120000,
-  install_akiclaudedoc: 120000,
+  install_akidevrule: 120000,
   install_ssh_terminal_color: 120000,
   run_git_command: 0,
   resolve_report_html: 0,
@@ -92,6 +92,19 @@ export function clearDeviceToken() {
   } catch {
     /* storage unavailable — nothing to clear */
   }
+}
+
+const PAIR_LINK_PARAM = 'pair'
+
+// Reads `?pair=<token>` once and rewrites the address bar without it, so the pairing secret is not left in history, a shared screenshot, or a bookmark.
+function takePairLinkToken() {
+  if (isHost) return ''
+  const url = new URL(window.location.href)
+  const token = url.searchParams.get(PAIR_LINK_PARAM) || ''
+  if (!token) return ''
+  url.searchParams.delete(PAIR_LINK_PARAM)
+  window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+  return token
 }
 
 // Process-local host secret required for role=host (prevents proxied loopback peers from hijacking host role).
@@ -273,6 +286,17 @@ export function connect() {
 
   connectionState.value = 'connecting'
 
+  // A link-carried token is the phone's only credential, so it is redeemed before the first dial; pairDevice() calls connect() again once the device token is stored.
+  const linkToken = takePairLinkToken()
+  if (linkToken) {
+    pairDevice(linkToken).catch((e) => {
+      // Dial on anyway: a stale link must not cost a device its already-valid stored token; the server decides.
+      console.warn('[bridge] pair link rejected', e && e.message ? e.message : e)
+      connect()
+    })
+    return
+  }
+
   // Host fetches relay token via IPC on first connect; subsequent reconnects reuse cached token.
   if (isHost && !hostRelayToken) {
     fetchHostRelayToken().then(() => {
@@ -334,13 +358,13 @@ function openSocket() {
   })
 }
 
-/** Companion pairing (§7.1): exchange 6-digit code for persistent token, store, and connect. */
-export async function pairDevice(code) {
+/** Companion pairing (§7.1): exchange the 6-digit code or a link token for a persistent token, store, and connect. */
+export async function pairDevice(secret) {
   // Origin-relative endpoint works over both HTTP and TLS-terminated reverse proxy.
   const res = await fetch(`${window.location.origin}/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code: secret }),
   })
   if (!res.ok) {
     throw new Error(res.status === 401 ? 'Invalid pairing code' : `Pairing failed (${res.status})`)

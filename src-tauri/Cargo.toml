@@ -29,7 +29,6 @@ base64 = "0.22.1"
 # Remote Control relay (docs/plan/done/remote-control.md §7) — new deps, this feature only.
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["net", "sync", "macros", "time"] }
-tower-http = { version = "0.5", features = ["cors"] }
 if-addrs = "0.13"
 getrandom = "0.2"
 # §7.2 (PORT-1) dev-mode reverse proxy to Vite. TLS stripped — every request it makes is to

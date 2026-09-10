@@ -107,46 +107,29 @@
                 </div>
                 <div v-else class="remote-hint">Open a URL on your phone → enter the code.</div>
 
-                <div
-                  v-if="remoteHttpsAvailable"
-                  class="remote-code-row remote-https-row"
-                  :title="remoteHttpsEnabled ? 'HTTPS is ON over Tailscale — the phone can Install this as a standalone app (PWA). Click the https URL to copy.' : 'Turn ON to serve over HTTPS via Tailscale so the phone can Install as a standalone app (PWA). Needs HTTPS certs enabled once in the Tailscale admin console.'">
-                  <span class="remote-code-label"><i class="fa-solid fa-lock"></i> HTTPS (PWA)</span>
-                  <label class="remember-view remote-toggle" :class="{ on: remoteHttpsEnabled }">
-                    <input type="checkbox" :checked="remoteHttpsEnabled" :disabled="remoteHttpsBusy" @change="onToggleRemoteHttps" />
-                    {{ remoteHttpsEnabled ? 'On' : 'Off' }}
-                  </label>
-                </div>
-                <a
-                  v-if="remoteHttpsEnabled && remoteHttpsUrl"
-                  href="#"
-                  @click.prevent="copyRemoteUrl(remoteHttpsUrl)"
-                  class="icon-dropdown-item remote-url-item"
-                  :title="'Open on the phone → Install as app (standalone PWA) — click to copy: ' + remoteHttpsUrl">
-                  <i class="fa-solid fa-lock"></i>
-                  <span class="remote-url-kind">https</span>
-                  <span class="remote-url">{{ remoteHttpsUrl }}</span>
-                  <i class="fa-regular fa-copy remote-copy-ic"></i>
+                <a href="#" @click.prevent="showRemoteSettingsModal = true" class="icon-dropdown-item remote-url-item" title="Remote Settings - ingress mode (Tailscale or your own public origin), HTTPS for PWA install, pairing link, and paired devices">
+                  <i class="fa-solid fa-sliders"></i>
+                  <span class="remote-url">Remote Settings…</span>
                 </a>
               </template>
               <div v-if="remoteError" class="remote-hint remote-hint-warn" :title="remoteError">{{ remoteError }}</div>
             </template>
             <div class="icon-dropdown-separator"></div>
             <div class="icon-dropdown-ac-section">
-              <span class="ac-title"><i class="fa-solid fa-book"></i> AkiClaudeDoc:</span>
+              <span class="ac-title"><i class="fa-solid fa-book"></i> AkiDevRule:</span>
               <div class="icon-dropdown-preset-row ac-row">
                 <button
                   type="button"
                   class="icon-dropdown-preset-btn"
-                  @click="openLink(AKICLAUDEDOC_REPO_URL)"
-                  title="AkiClaudeDoc Repository">
+                  @click="openLink(AKIDEVRULE_REPO_URL)"
+                  title="AkiDevRule Repository">
                   <i class="fa-brands fa-github"></i> Repo
                 </button>
                 <button
                   type="button"
                   class="icon-dropdown-preset-btn"
-                  @click="installAkiClaudeDoc"
-                  title="Install AkiClaudeDoc">
+                  @click="installAkiDevRule"
+                  title="Install AkiDevRule">
                   <i class="fa-solid fa-download"></i> Install
                 </button>
               </div>
@@ -292,6 +275,7 @@
         <GeminiAllowlistModal :show="showAllowlistModal" @close="showAllowlistModal = false" />
         <KeyboardShortcutsModal :show="showShortcutsModal" @close="showShortcutsModal = false" />
         <DonateModal :show="showDonateModal" @close="showDonateModal = false" />
+        <RemoteSettingsModal :show="showRemoteSettingsModal" @close="showRemoteSettingsModal = false" />
 
         <!-- Custom Traffic Lights: native-window only. -->
         <template v-if="nativeWindow">
@@ -340,11 +324,12 @@ import ClaudeCleanupModal from './modals/ClaudeCleanupModal.vue';
 import GeminiAllowlistModal from './modals/GeminiAllowlistModal.vue';
 import KeyboardShortcutsModal from './modals/KeyboardShortcutsModal.vue';
 import DonateModal from './modals/DonateModal.vue';
+import RemoteSettingsModal from './modals/RemoteSettingsModal.vue';
 import TaskCountBadges from './tasks/TaskCountBadges.vue';
 
 const REPO_URL = 'https://github.com/lacvietanh/aki-dev-sync';
 const RELEASE_URL = 'https://github.com/lacvietanh/aki-dev-sync/releases/latest';
-const AKICLAUDEDOC_REPO_URL = 'https://github.com/lacvietanh/AkiClaudeDoc';
+const AKIDEVRULE_REPO_URL = 'https://github.com/lacvietanh/akidevrule';
 const UPDATE_DISMISS_KEY = 'aki-devsync-update-dismissed';
 
 const appVersion = __APP_VERSION__;
@@ -358,6 +343,7 @@ const showCleanupModal = ref(false);
 const showAllowlistModal = ref(false);
 const showShortcutsModal = ref(false);
 const showDonateModal = ref(false);
+const showRemoteSettingsModal = ref(false);
 const isDev = import.meta.env.DEV;
 const newVersionAvailable = ref(null);
 const isCheckingUpdates = ref(false);
@@ -407,11 +393,6 @@ const {
   error: remoteError,
   start: startRemote,
   stop: stopRemote,
-  httpsAvailable: remoteHttpsAvailable,
-  httpsEnabled: remoteHttpsEnabled,
-  httpsUrl: remoteHttpsUrl,
-  httpsBusy: remoteHttpsBusy,
-  toggleHttps: toggleRemoteHttps,
 } = useRemoteControl();
 
 // Plain HTTP warning indicator for unencrypted LAN remote control (docs/plan/done/1.20.1-flow-audit-fixes.md §4).
@@ -426,11 +407,6 @@ async function toggleRemote(e) {
   e.target.checked = remoteRunning.value;
 }
 
-async function onToggleRemoteHttps(e) {
-  await toggleRemoteHttps();
-  // Sync DOM checkbox with actual state in case HTTPS toggle failed.
-  e.target.checked = remoteHttpsEnabled.value;
-}
 
 async function copyRemoteUrl(url) {
   // Warn on unencrypted plain HTTP address copy; success toast on HTTPS/Tailscale.
@@ -559,11 +535,11 @@ async function enableSshTerminalColor() {
   }
 }
 
-async function installAkiClaudeDoc() {
+async function installAkiDevRule() {
   try {
-    await invoke('install_akiclaudedoc');
+    await invoke('install_akidevrule');
   } catch (e) {
-    Toast.fire({ icon: 'error', title: 'AkiClaudeDoc not found on this machine', text: String(e) });
+    Toast.fire({ icon: 'error', title: 'AkiDevRule not found on this machine', text: String(e) });
   }
 }
 

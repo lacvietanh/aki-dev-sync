@@ -67,6 +67,7 @@ pub fn run() {
             // projects
             projects::load_projects,
             projects::save_projects,
+            projects::reload_project_icons,
             // ssh
             ssh::get_ssh_hosts,
             ssh::read_ssh_config,
@@ -89,7 +90,7 @@ pub fn run() {
             agent_usage::get_agent_usage,
             system::macos_open,
             system::install_ssh_terminal_color,
-            system::install_akiclaudedoc,
+            system::install_akidevrule,
             system::open_local_terminal,
             system::open_remote_subprocess,
             system::build_remote_ssh_command,
@@ -131,6 +132,8 @@ pub fn run() {
             web_server::get_companion_status,
             web_server::get_tailscale_https,
             web_server::set_tailscale_https,
+            web_server::get_remote_ingress,
+            web_server::set_remote_ingress,
             web_server::list_paired_devices,
             web_server::revoke_device,
             web_server::get_project_icons_map,
@@ -147,6 +150,8 @@ pub fn run() {
             // Multi-tab surface: enumerate the backend's tabs (scrollback replay + host re-adoption after a frontend reload) and close exactly one of them.
             pty::pty_list_tabs,
             pty::pty_close_tab,
+            pty::pty_rename_tab,
+            pty::pty_set_tab_pinned,
         ])
         // `build` + `run(closure)` rather than `run(context)` purely so there is somewhere to hang the exit hook below — the two are otherwise equivalent.
         .build(tauri::generate_context!())
