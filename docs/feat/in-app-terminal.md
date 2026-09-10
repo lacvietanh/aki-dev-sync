@@ -1,6 +1,6 @@
 # In-app terminal — feature
 
-> updated 2026-08-20 · v1.28.0
+> updated 2026-09-09 · v1.28.1
 
 A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/arch/remote-views-roadmap.md` § Terminal View.
 
@@ -8,7 +8,7 @@ A real interactive shell inside the app, on a `TERMINAL` tab next to the event l
 
 ## Why it exists
 
-Not "because VS Code has one". The app opened `Terminal.app` windows for DEV, BUILD, SSH and the AkiClaudeDoc installer — and a phone on the other end of Remote Control could see none of them. The goal is **drive a real shell on the Mac from the phone**. Every scope decision below follows from that, not from feature parity with an editor. DEV/BUILD have since moved into this terminal (`docs/plan/done/dev-build-in-app-launch.md`) and are visible from a phone as of that change; SSH now has an in-app option too (see "SSH into a remote host" below), alongside its original external-window path. The AkiClaudeDoc installer still opens an external window.
+Not "because VS Code has one". The app opened `Terminal.app` windows for DEV, BUILD, SSH and the AkiDevRule installer — and a phone on the other end of Remote Control could see none of them. The goal is **drive a real shell on the Mac from the phone**. Every scope decision below follows from that, not from feature parity with an editor. DEV/BUILD have since moved into this terminal (`docs/plan/done/dev-build-in-app-launch.md`) and are visible from a phone as of that change; SSH now has an in-app option too (see "SSH into a remote host" below), alongside its original external-window path. The AkiDevRule installer still opens an external window.
 
 It is a real PTY, not a piped command runner: that is what makes `Ctrl+C` on a runaway build, shell history recall, interactive `y/n` prompts and full-screen programs like `vim` work at all.
 

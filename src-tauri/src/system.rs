@@ -23,6 +23,7 @@ pub struct IdeAvailability {
     pub vscode: bool,
     pub vscode_insiders: bool,
     pub antigravity: bool,
+    pub cursor: bool,
 }
 
 /// The single answer in this app to "is this string safe to hand to `ssh`/`rsync` as a host".
@@ -485,26 +486,27 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Resolves the local AkiClaudeDoc checkout by trying well-known candidate paths first (same conservative pattern as the CLAUDE_BIN resolver - a file-existence check has no dependency on where any given machine happens to keep its dev tree), so it's never a guess. Its exact location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to pointing the user at the GitHub repo to clone it.
-fn find_akiclaudedoc_install_script(home: &str) -> Option<String> {
+/// Resolves the local AkiDevRule checkout by trying well-known candidate paths first (same conservative pattern as the CLAUDE_BIN resolver - a file-existence check has no dependency on where any given machine happens to keep its dev tree), so it's never a guess. Its exact location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to pointing the user at the GitHub repo to clone it.
+fn find_akidevrule_install_script(home: &str) -> Option<String> {
     let candidates = [
-        "/Volumes/DEV/AkiClaudeDoc/install.sh".to_string(),
-        format!("{}/AkiClaudeDoc/install.sh", home),
-        format!("{}/dev/AkiClaudeDoc/install.sh", home),
-        format!("{}/Developer/AkiClaudeDoc/install.sh", home),
-        format!("{}/Documents/AkiClaudeDoc/install.sh", home),
+        "/Volumes/DEV/AkiDevRule/install.sh".to_string(),
+        format!("{}/aki/AkiDevRule/install.sh", home),
+        format!("{}/AkiDevRule/install.sh", home),
+        format!("{}/dev/AkiDevRule/install.sh", home),
+        format!("{}/Developer/AkiDevRule/install.sh", home),
+        format!("{}/Documents/AkiDevRule/install.sh", home),
     ];
     candidates.into_iter().find(|c| std::path::Path::new(c).exists())
 }
 
-/// Runs the local AkiClaudeDoc `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
+/// Runs the local AkiDevRule `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
 ///
 /// `async fn` + `spawn_blocking`: `open_terminal_with_command` reads AppleScript stdout via `.output()` which blocks (stack-tauri A1).
 #[tauri::command]
-pub async fn install_akiclaudedoc() -> Result<(), String> {
+pub async fn install_akidevrule() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
         let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-        match find_akiclaudedoc_install_script(&home) {
+        match find_akidevrule_install_script(&home) {
             #[cfg(target_os = "macos")]
             Some(script) => {
                 let shell_cmd = format!("bash {}", shell_quote(&script));
@@ -514,7 +516,7 @@ pub async fn install_akiclaudedoc() -> Result<(), String> {
             #[cfg(not(target_os = "macos"))]
             Some(_) => Ok(()),
             None => Err(
-                "Không tìm thấy AkiClaudeDoc trên máy này. Clone repo trước: https://github.com/lacvietanh/AkiClaudeDoc"
+                "AkiDevRule not found on this machine. Clone the repo first: https://github.com/lacvietanh/akidevrule"
                     .to_string(),
             ),
         }
@@ -548,6 +550,8 @@ pub fn load_and_cache_project_icons(projects: &[SyncProject]) {
         let is_tauri = path.join("src-tauri/tauri.conf.json").exists();
         let is_web = !is_nuxt && !is_tauri && (path.join("package.json").exists() || path.join("index.html").exists());
 
+        // The PROJECT ICON help text in `src/components/modals/ProjectConfigModal.vue` states these
+        // lists, the smallest-wins rule and the 250 KB cap to the user; change both together.
         let candidates = if is_tauri {
             vec![
                 "src-tauri/icons/32x32.png",
@@ -617,6 +621,7 @@ pub fn check_ide_availability() -> IdeAvailability {
             .exists(),
             antigravity: std::path::Path::new("/Applications/Antigravity IDE.app").exists()
                 || std::path::Path::new("/Applications/Antigravity.app").exists(),
+            cursor: std::path::Path::new("/Applications/Cursor.app").exists(),
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -624,6 +629,7 @@ pub fn check_ide_availability() -> IdeAvailability {
         vscode: false,
         vscode_insiders: false,
         antigravity: false,
+        cursor: false,
     }
 }
 

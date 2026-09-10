@@ -160,6 +160,9 @@
                      <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
                        <i class="fa-solid fa-file-lines"></i> REPORT
                      </button>
+                     <button v-if="p.production_url" class="popup-copy-btn" @click.stop="openSearchConsole(p)" title="Open Google Search Console for this domain">
+                       <i class="fa-solid fa-magnifying-glass"></i> GSC
+                     </button>
                    </div>
                    <div class="popup-columns">
                      <!-- LOCAL -->
@@ -189,6 +192,9 @@
                        </div>
                        <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
                          <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'cursor') }" :title="localTitle(p)" @click="openIdeLocal('cursor', p.local_path)">
+                         <i class="fa-solid fa-code popup-item-icon"></i> Cursor
                        </div>
                        <!-- DEV/BUILD buttons always rendered, disabled when command unconfigured. -->
                        <div class="popup-run-row">
@@ -225,6 +231,9 @@
                        </div>
                        <div class="popup-item" :class="{ 'popup-disabled': ideMissing('antigravity') }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
                          <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('cursor') }" @click="openIdeRemote('cursor', p.remote_host, p.remote_path)">
+                         <i class="fa-solid fa-code popup-item-icon"></i> Cursor (Remote SSH)
                        </div>
                        <div class="popup-item"
                             :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing || !syncCheckEnabled }"
@@ -478,6 +487,7 @@ const IDE_LOCAL_ARGS = {
   vscode: p => ['-a', 'Visual Studio Code', p],
   vscode_insiders: p => ['-a', 'Visual Studio Code - Insiders', p],
   antigravity: p => ['-a', 'Antigravity IDE', p],
+  cursor: p => ['-a', 'Cursor', p],
 }
 
 async function openIdeLocal(ideName, path, projectId) {
@@ -572,13 +582,19 @@ async function openProjectRemoteTerminal(project) {
   }
 }
 
+// URI-scheme remote openers share one shape: `<scheme>://vscode-remote/ssh-remote+<host><path>` via `open`.
+const REMOTE_URI_SCHEME = {
+  vscode: 'vscode',
+  vscode_insiders: 'vscode-insiders',
+  cursor: 'cursor',
+}
+
 async function openIdeRemote(ideName, host, path, projectId) {
   try {
     const remotePath = await resolveRemoteFullPath(host, path);
-    if (ideName === 'vscode') {
-      await invoke('macos_open', { args: [`vscode://vscode-remote/ssh-remote+${host}${remotePath}`] })
-    } else if (ideName === 'vscode_insiders') {
-      await invoke('macos_open', { args: [`vscode-insiders://vscode-remote/ssh-remote+${host}${remotePath}`] })
+    const scheme = REMOTE_URI_SCHEME[ideName];
+    if (scheme) {
+      await invoke('macos_open', { args: [`${scheme}://vscode-remote/ssh-remote+${host}${remotePath}`] })
     } else {
       await invoke('open_remote_subprocess', { ideName, host, path: remotePath, owner: projectId ?? null })
       if (ideName === 'terminal') scheduleExternalTermRescan();
@@ -591,6 +607,14 @@ async function openIdeRemote(ideName, host, path, projectId) {
 
 async function openUrl(url) {
   try { await invoke('macos_open', { args: [url] }); } catch (e) { console.error(e); }
+}
+
+// Search Console addresses a Domain property as `sc-domain:<registrable host>` - no scheme, no `www.`.
+function openSearchConsole(p) {
+  try {
+    const host = new URL(p.production_url).hostname.replace(/^www\./, '')
+    openUrl(`https://search.google.com/search-console/inspect?resource_id=${encodeURIComponent('sc-domain:' + host)}`)
+  } catch (e) { console.error(e) }
 }
 
 // Read DEV command with fallback to detected stack info.
