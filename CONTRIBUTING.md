@@ -43,10 +43,10 @@ sudo apt install -y \
 ```bash
 npm install
 npm run tauri dev    # dev (first run compiles Rust, ~5-10 min)
-npm run build:app    # production build + post-build artifact rename
+./scripts/install-desktop.sh # owner-local arm64 .app → /Applications, stable identity
 ```
 
-Use `npm run build:app`, **not** raw `tauri build` - see "Post-build artifact rename" below.
+For the owner-local app, use `./scripts/install-desktop.sh`; its produce step calls `npm run build:app`. For artifacts, use the package scripts, **not** raw `tauri build` - see "Post-build artifact rename" below.
 
 ## Tauri gotchas & conventions
 
@@ -95,5 +95,5 @@ Variables declared **outside** a `#[cfg(target_os = "macos")]` block but only us
 ## Project conventions
 
 - Follow **SRP, SOLID, DRY**.
-- Shared engineering rules live under `~/.aki/claudedoc/` (see [`CLAUDE.md`](CLAUDE.md)).
+- Shared engineering rules live under `~/.aki/akidevrule/` (see [`CLAUDE.md`](CLAUDE.md)).
 - Documentation lives under `docs/` - start at [`docs/index.md`](docs/index.md).

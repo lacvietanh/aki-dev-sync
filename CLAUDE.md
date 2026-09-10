@@ -35,6 +35,8 @@ into any new Tauri project's `CLAUDE.md`.
 
 **Ships macOS-only** - the only bundle produced is a `.dmg` (`npm run build:rmud`). Treat mac as the sole runtime target when writing user-facing text or platform-specific code: print `⌘` in shortcut labels (no OS-detection branch), assume macOS paths first, and add a Windows/Linux branch only when a build for that platform actually ships. The Linux path in "Runtime log location" below is for running the dev build on the remote dev box, not a shipped target.
 
+**Desktop Aki-Tauri law (SSoT):** `/Volumes/DEV/Frameworks/Tauri/AkiTauri`.
+
 ### UI Principle - Extreme Narrow (ABSOLUTE, Never Violate)
 
 This app optimizes space with extreme aggression. Every pixel counts.
@@ -58,6 +60,8 @@ Root cause of the 1.9.3 regression that deleted the entire Antigravity multi-acc
 - **Feature changed?** Check `README.md` and `src/components/modals/IntroModal.vue` in the same task. English, terse.
 - **Titlebar height**: 42px (`var(--titlebar-h)`). Ref: `docs/ref/titlebar-sacred-boundary.md`
 - **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/post-build.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X.BUILD-arch.dmg` (e.g. `Aki-DevSync-v1.20.0.2346-uni.dmg`) - `BUILD` is `HHMM` at build time, or `$BUILD_NUM` if set. The `v` here is part of a *filename*, not a stored version value, so it does not conflict with the bare-semver rule above.
+- **Owner-local `build:app`**: run `./scripts/install-desktop.sh` (produce + sign + `/Applications`), identity `Aki Dev Sync Dev`, bundle id `aki.devsync`. `npm run build:app` is the produce step inside that script.
+- **Testing a change**: `npm run tauri dev` (`npm run dev:debug` for `AKI_DEBUG` logs). It compiles Rust, so it is also the compile check - a release build is for shipping, never for verifying.
 - **Release build command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg) - not `build:app`/`build:rmad` - unless the user asks for a different bundle.
 - **Release and tag via CLI**: check remote tags (`git ls-remote --tags origin | sort -V | tail -5`) and follow convention (`git tag X.Y.Z`), push (`git push && git push --tags`), then create GitHub release with DMG asset (`gh release create X.Y.Z <dmg_path> --title "X.Y.Z" --notes "<notes>"`).
 - **async fn + blocking subprocess history**: `run_sync` v1.1.1 hit the UI-freeze pitfall (see GLOBAL TAURI STACK) - already fixed, kept here as the concrete precedent.
