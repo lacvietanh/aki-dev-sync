@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-### [Unreleased]
+### [1.29.1] - 2026-09-11
 
 #### Fixed
 - **In-app terminal copy works again.** 1.29.0's unverified select-to-copy swallowed every left mousedown and replayed a synthetic event whose `detail` is 0, so xterm never started a selection; Option-drag and `⌘C` both had nothing to copy. The mouse is xterm's again. `⌘C` plus the selection stash from 1.28.1 are restored. OSC 52 stays (remote tools can still write the Mac clipboard; that path does not take the mouse). **Preserved**: the per-tab stash, redundant mouse-protocol re-arm suppression, and OSC 52 handler. **Unverified at runtime** until Option-drag then `⌘C` is confirmed on a Mac under `claude` over SSH.

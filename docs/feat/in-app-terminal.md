@@ -1,6 +1,6 @@
 # In-app terminal — feature
 
-> updated 2026-09-11 · v1.29.0
+> updated 2026-09-11 · v1.29.1
 
 A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/arch/remote-views-roadmap.md` § Terminal View.
 
