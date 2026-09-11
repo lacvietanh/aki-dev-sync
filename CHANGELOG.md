@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Fixed
+- **In-app terminal copy works again.** 1.29.0's unverified select-to-copy swallowed every left mousedown and replayed a synthetic event whose `detail` is 0, so xterm never started a selection; Option-drag and `⌘C` both had nothing to copy. The mouse is xterm's again. `⌘C` plus the selection stash from 1.28.1 are restored. OSC 52 stays (remote tools can still write the Mac clipboard; that path does not take the mouse). **Preserved**: the per-tab stash, redundant mouse-protocol re-arm suppression, and OSC 52 handler. **Unverified at runtime** until Option-drag then `⌘C` is confirmed on a Mac under `claude` over SSH.
+
 ### [1.29.0] - 2026-09-10
 
 #### Changed
@@ -23,7 +28,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **One-tap pairing link.** Alongside the 6-digit code, the host now mints a long secret (`pairLinkToken`) that `/pair` accepts, so the settings modal can show a link the phone opens directly. The token lives only in the running process - it is never persisted, and it is cleared when Remote Control stops. The receiving page strips `?pair=` from the URL via `history.replaceState` after consuming it.
 - **Paired devices are now visible and revocable from the app.** The `list_paired_devices` / `revoke_device` commands already existed and were registered, but nothing in the UI ever called them - the only way to drop one device was to edit `companion-devices.json` by hand. The settings modal now lists each device with its pairing date and a per-device revoke.
 - `scripts/check-tailscale-mount.sh` - read-only, reports who currently owns `<magicdns>:443/` and whether Funnel is on.
-- **Terminal select-to-copy without holding Option, plus OSC 52.** A plain left-drag over a mouse-mode TUI (`claude`, `htop`, `tmux`, `vim` over SSH) now selects text and copies it to the clipboard on release, the same way Option-drag already did — a click still reaches the TUI unchanged. Remote tools can also write the Mac clipboard directly via `ESC ] 52` (`useTerminalCopy.js`). Code-complete, **unverified on real hardware** — see `docs/plan/terminal-select-to-copy-final.md` for the mechanism and the Mac+SSH test matrix still outstanding.
+- **Terminal select-to-copy without holding Option, plus OSC 52.** A plain left-drag over a mouse-mode TUI (`claude`, `htop`, `tmux`, `vim` over SSH) now selects text and copies it to the clipboard on release, the same way Option-drag already did — a click still reaches the TUI unchanged. Remote tools can also write the Mac clipboard directly via `ESC ] 52` (`useTerminalCopy.js`). Code-complete, **unverified on real hardware** — see `docs/plan/done/terminal-select-to-copy-final.md` for the mechanism and the Mac+SSH test matrix still outstanding.
 - **Task Notes text limits unified.** `src/constants/taskLimits.js` is now the single source for every text-length cap (`TASK_TITLE_MAX`, `TASK_DETAIL_MAX`, `NOTES_MAX`, `GLOBAL_NOTE_MAX`), replacing five scattered literals across `NotesField.vue`, `TaskListPanel.vue`, `ProjectTasksModal.vue`, `GlobalNoteModal.vue`. Detail text and project/global notes grew room (1500 → 3000 and 1500 → 5000) since they were the tightest in practice; title and the global-note cap are unchanged.
 - **AGY pre-allow list grows to 100 entries.** Adds every script path the akiflow/akidevsync-notes skills invoke (`council-cost.sh`, `council-read.sh`, `council-verify.sh`, `scythe.sh`, `notes_cli.py`) plus the read-only commands `aki-mcp-sv`'s own shell allowlist already treats as safe (`pwd`, `tree`, `whoami`, `uniq`, `cut`, `top`, `nproc`, `lsblk`, `ip addr`, and the read-only `git` subcommands `describe`/`ls-remote`/`merge-base`/`shortlog`) that this app's seed list was missing.
 

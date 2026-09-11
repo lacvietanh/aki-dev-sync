@@ -2,6 +2,8 @@
 
 **Start time:** 2026-08-21
 
+**Status:** amended 2026-09-11
+
 ## Initial purpose
 
 In the in-app terminal of Aki-Dev-Sync (Tauri v2 / WKWebView / @xterm/xterm on macOS), running full-screen interactive TUIs (such as `claude` CLI, `htop`, `tmux`, `vim`) over SSH presents severe UX friction when copying text:
@@ -108,9 +110,13 @@ flowchart TD
 
 ## Decision
 
-**Action** → Implement comprehensive terminal select-to-copy in `docs/plan/terminal-select-to-copy-final.md`.
+**Action** → Implement comprehensive terminal select-to-copy in `docs/plan/done/terminal-select-to-copy-final.md`.
 
 **Cross-references:**
 - `docs/research/terminal-copy-selection-root-cause.md` — initial investigation into WKWebView copy event absence and protocol re-arm.
 - `docs/plan/done/terminal-copy-selection.md` — 1.28.1 implementation of stash and ⌘C capture.
 - `docs/feat/in-app-terminal.md` — feature specification for in-app terminal.
+
+## Amendments
+
+- 2026-09-11 · Decision/Action: the mouse-hijack half (document-capture mousedown, synthetic replay, copy-on-select) shipped unverified in 1.29.0 and erased the 1.28.1 `⌘C` path. Synthetic `MouseEvent.detail` defaults to 0 so xterm never starts a selection; swallowing real mousedown also killed Option-drag. Reverted. OSC 52 kept.

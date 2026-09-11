@@ -1,6 +1,6 @@
 # In-app terminal — feature
 
-> updated 2026-09-09 · v1.28.1
+> updated 2026-09-11 · v1.29.0
 
 A real interactive shell inside the app, on a `TERMINAL` tab next to the event log, mirrored to any paired phone. Design and the decisions behind it: `docs/plan/done/1.20.0-terminal-and-remote-sync.md` §4. The original sketch it grew from: `docs/arch/remote-views-roadmap.md` § Terminal View.
 
@@ -130,10 +130,11 @@ The research chain remains the root-cause record, now four rounds deep:
 
 `⌘C` copies the selection. It had never done so before 1.28.1 — not under a full-screen program, not at a plain shell prompt — because xterm's only copy route is a native browser `copy` event fed from a real DOM selection, and it builds one only on Linux (primary-selection emulation); in this app's webview the event therefore never had anything to fire on. The terminal now claims the key itself and writes through the same clipboard path as every COPY button in the app (`src/composables/useTerminalCopy.js`).
 
-Two things follow from that, both deliberate:
+These follow, all deliberate:
 
 - **`⌘C` copies the last text you selected in this tab**, not only a selection still highlighted right now. A program that tracks the mouse (`claude`, `agy`, anything full-screen) makes xterm drop the highlight almost immediately — the text is stashed the moment it is selected, so the key still copies what you meant. With nothing ever selected in that tab, `⌘C` does nothing at all, exactly as before.
-- **Selecting text under such a program still needs `⌥`** held while dragging, unchanged: the program owns the mouse, and Option is xterm's escape hatch out of it (`macOptionClickForcesSelection`, 1.23). The app additionally swallows a redundant re-arm of the program's mouse mode, which is the most likely reason the highlight used to vanish on release — see `docs/research/terminal-copy-selection-root-cause.md`.
+- **Selecting text under such a program still needs `⌥`** held while dragging: the program owns the mouse, and Option is xterm's escape hatch out of it (`macOptionClickForcesSelection`, 1.23). The app does not intercept mousedown. It still swallows a redundant re-arm of the program's mouse mode — see `docs/research/terminal-copy-selection-root-cause.md`.
+- **Remote tools can write the Mac clipboard** via OSC 52 (`ESC ] 52`). That path does not take the mouse.
 
 ## Panel size and font zoom (1.22.0)
 
