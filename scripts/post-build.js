@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
+import { injectFileIntoDmg } from './inject-dmg-file.js'
 
 const BRAND_SLUG = 'Aki-DevSync'
 
@@ -32,6 +33,8 @@ function renameNative(dmgDir, nativeName, arch) {
   const to = path.join(dmgDir, `${BRAND_SLUG}-v${version}.${buildNum}-${arch}.dmg`)
   fs.renameSync(from, to)
   console.log(`Renamed: ${from} → ${to}`)
+  injectFileIntoDmg(to, path.join(appRoot, 'scripts/Install (double-click + password).command'))
+  console.log('Injected: install helper')
   reveal(to)
   return true
 }

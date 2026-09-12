@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [1.30.0] - 2026-09-12
+
+#### Added
+- **The DMG now carries a double-click install helper.** Tauri's macOS DMG bundler has no "extra files" option, so `scripts/inject-dmg-file.js` converts the built DMG to read-write, copies `Install (double-click + password).command` into it alongside the app and the `Applications` shortcut, then reseals it (`hdiutil convert`/`attach`/`detach`) - `scripts/post-build.js` runs this for every native-arch DMG it renames. The script itself tries a plain `cp -R` to `/Applications` first (the default `admin`-group permissions on that folder already allow it without elevation) and only falls back to an `osascript … with administrator privileges` password prompt if that fails; `xattr -cr` and `codesign --force --deep -s -` never need elevation and always run unconditionally, followed by `open`. README's install steps now point at this file instead of the old manual drag + right-click-Open + `xattr` ritual.
+
 ### [1.29.1] - 2026-09-11
 
 #### Fixed

@@ -93,8 +93,7 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 ## 📦 Install (macOS)
 
 1. Download the latest `.dmg` from the [**Releases**](https://github.com/lacvietanh/aki-dev-sync/releases) page (`Aki-DevSync-vX.X.X-arm.dmg` for Apple Silicon, `-universal.dmg` for Intel + Apple Silicon).
-2. Open the `.dmg` and drag the app to `Applications`.
-3. The build is unsigned - on first launch macOS Gatekeeper will block it. **Right-click the app → Open**, then confirm. (Or run `xattr -dr com.apple.quarantine "/Applications/Aki Dev Sync.app"`.)
+2. Open the `.dmg` and double-click **`Install (double-click + password).command`** in the middle of the window - it copies the app to `Applications`, strips quarantine, ad-hoc signs it, and launches it. It asks for your password only if plain copy isn't allowed on your account.
 
 **Requirements:** `rsync` and `ssh` available on your `PATH` (preinstalled on macOS), plus an SSH host you can reach.
 
