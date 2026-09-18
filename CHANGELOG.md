@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Added
+- **Project paths copy directly from their local/cloud icons.** Clicking either icon copies the complete path and briefly swaps it to a check mark, without adding another control to the project row.
+- **The OPEN popup's In-App Terminal action always creates a fresh project tab.** The project-row terminal button keeps its existing focus/reuse behavior, so the two entry points now match their distinct purposes.
+
+#### Changed
+- **A project's background polling toggle now sits beside its name in the project table.** It persists through the existing project-list writer, disables only background sync/git checks, and leaves every other project's state and all manual actions untouched.
+- **The backlog now contains only open work.** Completed, rejected, and superseded entries were removed; remaining notes are grouped by readiness and ranked easiest-first.
+
 ### [1.30.0] - 2026-09-12
 
 #### Added

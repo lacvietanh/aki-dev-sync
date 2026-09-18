@@ -91,15 +91,19 @@
               <div class="project-text-col">
                 <div class="project-name">
                   <span class="project-name-label">{{ p.name }}</span>
+                  <label class="switch switch-sm" :title="p.disabled ? 'Enable background sync/git checks' : 'Disable background sync/git checks'" @click.stop>
+                    <input type="checkbox" :checked="!p.disabled" :disabled="projectRuntime[p.id]?.syncing" @change="setProjectDisabled(p.id, !$event.target.checked)" />
+                    <span class="slider"></span>
+                  </label>
                   <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" class="project-prod-link">
                     <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i>
                   </a>
                 </div>
                 <div class="project-paths">
                   <!-- u-select-text: allow manual copying of project paths. -->
-                  <span class="path-local u-select-text" :title="p.local_path"><i class="fa-solid fa-laptop-code text-cyan mr-1"></i> {{ p.local_path }}</span>
+                  <span class="path-local u-select-text" :title="p.local_path"><i class="fa-solid text-cyan mr-1" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-laptop-code'" :title="copiedPathKey === `local-${p.id}` ? 'Copied' : 'Copy local path'" @click.stop="copyLocalPath(p)"></i> {{ p.local_path }}</span>
                   <span v-if="p.remote_host" class="path-remote" :title="`${p.remote_host}:${p.remote_path}`">
-                    <i class="fa-solid fa-cloud text-amber mr-1"></i><select
+                    <i class="fa-solid text-amber mr-1" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-cloud'" :title="copiedPathKey === `remote-${p.id}` ? 'Copied' : 'Copy remote path'" @click.stop="copyRemotePath(p)"></i><select
                       class="host-select-mini host-select-mini--wide"
                       :value="p.remote_host"
                       @change="setRemoteHost(p.id, $event.target.value)"
@@ -178,7 +182,7 @@
                          <i class="fa-solid fa-folder-open popup-item-icon popup-icon-amber"></i> Finder
                        </div>
                        <!-- In-app terminal option first for phone companion support. -->
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openProjectTerminal(p)">
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openNewProjectTerminal(p)">
                          <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> In-App Terminal
                        </div>
                        <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('terminal', p.local_path, p.id)">
@@ -361,10 +365,10 @@ import TaskCell from './TaskCell.vue';
 import TerminalScopeButton from './TerminalScopeButton.vue';
 import CountBadgeWrap from './CountBadgeWrap.vue';
 
-const { projects, projectRuntime, anySyncing, isReloading, openConfig, openGitModal, createNewProject } = useProjects();
+const { projects, projectRuntime, anySyncing, isReloading, setProjectDisabled, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
-const { openProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openRunCommand } = useTerminalTabs();
+const { openNewProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openRunCommand } = useTerminalTabs();
 
 // `false` on a companion — see openReportHtml.
 const { nativeWindow } = useAppWindow();

@@ -218,6 +218,13 @@ export async function saveProjectsList() {
   }
 }
 
+export async function setProjectDisabled(id, disabled) {
+  const project = projects.value.find(p => p.id === id)
+  if (!project || project.disabled === disabled) return
+  project.disabled = disabled
+  await saveProjectsList()
+}
+
 export function openConfig(project) {
   const p = {
     ...project,

@@ -274,6 +274,17 @@ export function useTerminalTabs() {
     openScopeTerminal(project.id, { title: project.name, cwd: project.local_path, expandStack: true })
   }
 
+  /** Opens a fresh tab in the project scope, even when that scope already has an active tab. */
+  function openNewProjectTerminal(project) {
+    if (!project) return
+    openScopeTerminal(project.id, {
+      title: project.name,
+      cwd: project.local_path,
+      reuse: false,
+      expandStack: true,
+    })
+  }
+
   /** Header terminal-icon entry point — the GLOBAL_SCOPE mirror of openProjectTerminal. */
   function openGlobalTerminal() {
     openScopeTerminal(GLOBAL_SCOPE, { title: 'Shell', expandStack: true })
@@ -348,7 +359,8 @@ export function useTerminalTabs() {
     scope, scopeProject,   // stack header identity
     activeTab, activeTabId, setActiveTab,
     newTab, closeTab, cycleTab,
-    openProjectTerminal,   // scope-aware
+    openProjectTerminal,   // scope-aware, reuses/focuses existing tab
+    openNewProjectTerminal, // scope-aware, always creates a fresh tab
     openProjectRemoteTerminal,
     openGlobalTerminal,
     openRunCommand,

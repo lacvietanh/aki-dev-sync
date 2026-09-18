@@ -6,7 +6,7 @@ import {
 } from './useGit'
 import {
   showConfigModal, editingProject,
-  loadData, saveProjectsList, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
+  loadData, saveProjectsList, setProjectDisabled, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
 } from './useProjectConfig'
 import {
   startSync, openSelectDialog,
@@ -22,7 +22,7 @@ export {
   isGitLoading, runGitFetch, runGitPush, runGitPull, runGitCommit, projectChangelogText,
   // config
   showConfigModal, editingProject,
-  loadData, saveProjectsList, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
+  loadData, saveProjectsList, setProjectDisabled, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
   // sync
   startSync, openSelectDialog,
   // sync status + refresh controller
@@ -37,7 +37,7 @@ export function useProjects() {
     showGitModal, gitProject, gitStatusText, fetchGitStatus, openGitModal, closeGitModal,
     isGitLoading, runGitFetch, runGitPush, runGitPull, runGitCommit, projectChangelogText,
     showConfigModal, editingProject,
-    loadData, saveProjectsList, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
+    loadData, saveProjectsList, setProjectDisabled, openConfig, closeConfig, saveConfig, createNewProject, confirmRemove,
     startSync, openSelectDialog,
     checkProjectSyncStatus, checkAllSyncStatus,
     startBackgroundRefresh, refreshProject, refreshAllProjects,
