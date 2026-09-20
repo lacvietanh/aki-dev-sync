@@ -1,5 +1,5 @@
 // Pure selection of which terminal tabs carry FULL scrollback history on a companion
-// reconnect/resync (docs/plan/companion-replay-bound.md). Extracted from
+// reconnect/resync (docs/plan/done/companion-replay-bound.md). Extracted from
 // ptyBridge.pushScrollbacks so the burst-bounding invariant can be reasserted by a real
 // N-tab test without dragging the Tauri/WS transport into the test runner.
 //

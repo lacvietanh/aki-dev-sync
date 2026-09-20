@@ -1,6 +1,6 @@
 # Remote Control (companion) — feature
 
-> updated 2026-09-09 · v1.28.1
+> updated 2026-09-20 · v1.30.0
 
 Control the Mac app from a phone (or any browser) on the same LAN, over Tailscale, or through a public HTTPS origin the owner runs. The Mac webview stays the single source of truth; the phone is a thin mirror that shows the same state and sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`; how a request reaches the Mac at all (edges, the shared 443 mount, the pairing boundary): `docs/arch/remote-ingress.md`.
 

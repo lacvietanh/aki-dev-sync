@@ -2,12 +2,6 @@
 
 Snapshot từ `.akidevsync/notes.json` ngày 2026-09-19. Chỉ giữ việc còn mở; việc đã làm nằm trong `docs/plan/done/`, kết quả điều tra nằm trong `docs/research/`.
 
-## Làm trước — phạm vi nhỏ, yêu cầu rõ
-
-| # | Việc | Note | Bước kế tiếp |
-|---|---|---|---|
-| 1 | Bỏ giới hạn 5 terminal tab | `task-1789578868582` | Rà `MAX_TABS_PER_SCOPE`; giữ horizontal scroll đã có, chốt giới hạn an toàn mới hoặc bỏ giới hạn theo scope |
-
 ## Sửa lỗi — điều tra trước khi đổi
 
 | # | Việc | Note | Bước kế tiếp |
