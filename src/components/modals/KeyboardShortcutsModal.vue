@@ -85,7 +85,7 @@ const GROUPS = [
   font-weight: 700;
   color: var(--cyan-200);
   background: var(--surface-deep);
-  border: 1px solid rgba(0, 210, 255, 0.35);
+  border: 1px solid var(--accent-cyan-edge);
   border-radius: 4px;
 }
 

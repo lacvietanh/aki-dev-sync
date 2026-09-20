@@ -120,14 +120,14 @@ async function seedAllowlist() {
   gap: 4px;
   font-size: 10px;
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   padding: 2px 5px;
   cursor: pointer;
 }
 
-.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
+.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: var(--brand-wash); }
 
 .no-remotes { width: 100%; font-size: 10px; }
 
@@ -142,8 +142,8 @@ async function seedAllowlist() {
   border-radius: 5px;
 }
 
-.result-row.ok { background: rgba(16, 185, 129, 0.08); color: var(--emerald-400); }
-.result-row.err { background: rgba(239, 68, 68, 0.08); color: var(--red-400); }
+.result-row.ok { background: var(--accent-green-wash); color: var(--emerald-400); }
+.result-row.err { background: var(--accent-red-wash); color: var(--red-400); }
 .result-host { font-weight: 700; flex-shrink: 0; }
 .result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -161,28 +161,28 @@ async function seedAllowlist() {
 .status-msg i { margin-top: 1px; flex-shrink: 0; }
 
 .status-msg.ok {
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--accent-green-wash);
   color: var(--emerald-400);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid var(--accent-green-edge);
 }
 
 .status-msg.err {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-red-wash);
   color: var(--red-400);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 1px solid var(--accent-red-edge);
 }
 
 .modal-footer {
   display: flex;
   gap: 8px;
   padding: 10px 16px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 .btn-apply {
   flex: 1;
-  background: rgba(217, 119, 87, 0.15);
+  background: var(--brand-wash);
   border-color: rgba(217, 119, 87, 0.45);
   color: var(--brand);
 }

@@ -179,29 +179,43 @@ Runtime/visual ledger sau khi mọi batch UI hoàn tất: mở app một lần �
 - Không commit, push, release hoặc thay đổi git state trong audit.
 - Không tự phân loại/ghi đè các hunk đang có của owner.
 
-## Trạng thái bàn giao — 2026-09-20 (đo lại trên HEAD `d73d0e7`, cây sạch)
+## Trạng thái bàn giao — 2026-09-20 (cuối phiên)
 
-Đo bằng `npm run audit:ui`: **583 hit** = 524 màu literal trong Vue/CSS + 34 hex trong JS + 22 inline style + 3 khác; `npm run build` xanh; `npm run test:ui-audit` 4/4.
+Đo bằng `npm run audit:ui`: **391 hit** = 332 màu literal trong Vue/CSS (kể cả định nghĩa trong `:root` và fallback `var(--x, #hex)`) + 34 hex trong JS + 22 inline style + 3 khác. Trước đợt này là 583. `npm run build` xanh; `npm run test:ui-audit` 4/4.
 
-### Đã xong (kèm commit)
+### Đã xong
 
-| Finding | Kết quả | Commit |
+| Finding | Kết quả |
+|---|---|
+| 6 — business backbone | `docs/biz/backbone.md`, đã vào `docs/index.md` |
+| 4, 5 — comment | English hoá `scripts/test/monitor-ag-proxy.js`; `pty.rs:39` và `useTerminalChrome.js:3` rút gọn |
+| 2 — màu | Hex có token 1:1 → `var()` trong 27 SFC + `main.css`. `rgba()` → thang vai trò (bên dưới) |
+| 1 — inline style | Detector bỏ qua `:style`/`@style` (79 → 22); style tĩnh của 6 modal + `DialogHost` thành class; pattern dùng chung ở `main.css` (`.modal-title-*`, `.row-gap-8`) |
+| P2.1, P2.2 — guard | `scripts/audit-ui-architecture.mjs` (đếm shared/SFC, exception cần owner+reason, duplicate selector/token) + fixture + test |
+
+### Thang token `rgba()` — đã chốt (quyết định tự chủ, /akirule `ui.A2/A4/A7`)
+
+Theo vai trò của thuộc tính, không theo giá trị; mỗi bậc snap giá trị gần nhất trong một khoảng hẹp (lệch tối đa ~0.1 alpha), giá trị ngoài khoảng giữ literal thay vì mint token mới (`ui.A4`: không mint token cho từng giá trị lẻ); chỉ mint token khi dùng ≥2 lần.
+
+| Vai trò | Token | Snap |
 |---|---|---|
-| 6 — business backbone | `docs/biz/backbone.md`, đã vào `docs/index.md` | `e7d0a93` |
-| 4, 5 — comment | English hoá `scripts/test/monitor-ag-proxy.js`; `pty.rs:39` và `useTerminalChrome.js:3` rút gọn | `0e908cf` |
-| 2 (một phần) — màu | ~30 primitive vào `:root` của `main.css`; mọi hex có token 1:1 trong `<style>` của 27 SFC và `main.css` đã thành `var()` | `0e908cf` |
-| 1 — inline style | detector bỏ qua `:style`/`@style` (79 → 22); style tĩnh của 6 modal và `DialogHost` thành class; pattern dùng chung `.modal-title-row/-icon/-glyph`, `.row-gap-8` ở `main.css` | `0e908cf`, `d73d0e7` |
-| P2.1, P2.2 — guard | `scripts/audit-ui-architecture.mjs` (đếm dòng shared/SFC, exception cần owner+reason, duplicate selector/token) + fixture + test | `0e908cf` |
+| Viền trắng | `--border-color` (.08, có sẵn), `--border-strong` (.18) | .05–.13 → color; .14–.25 → strong |
+| Nền trắng | `--surface-faint` (.03), `--bg-tertiary` (.05, có sẵn), `--surface-hover` (.08) | <.045 → faint; .045–.065 → tertiary; .065–.11 → hover |
+| Bóng đen | `--shadow-ink` (.5) | .35–.6 |
+| Accent (cyan/red/green/amber/blue/brand…) | `--<accent>-wash` (.12, nền), `--<accent>-edge` (.25, viền), `--<accent>-glow` (.35, bóng) | nền .06–.18; viền .12–.35; bóng .22–.45 |
+
+Mỗi token alpha nằm trong `:root` của `main.css` kèm ghi chú rằng nó phản chiếu màu gốc: đổi màu gốc thì đổi cả token dẫn xuất.
+
+Đổi render nhẹ do snap; đó là phần cần mắt người trong visual ledger.
 
 ### Còn lại — theo thứ tự làm
 
-1. **Chốt vocab alpha (cần owner, chặn bước 2).** 524 hit còn lại gần như toàn `rgba()`; 10 giá trị đầu chiếm phần lớn: `rgba(255,255,255,.1)` ×24, `.08` ×19, `.05` ×12, `rgba(0,0,0,.5)` ×12, `.07` ×11, `.04` ×11, `.06` ×10, `.2` ×7, `.02` ×7, `rgba(0,210,255,.3)` ×7, `.15` ×7. `ui.A2` cấm đặt tên theo giá trị (`--white-a10`) và `ui.A4` yêu cầu snap về bậc gần nhất: đề xuất một thang theo vai trò (ví dụ `--overlay-faint/subtle/soft/strong`, `--scrim`, `--accent-cyan-soft/-strong`) gộp `.04/.05/.06/.07/.08` thành 2–3 bậc. Snap làm đổi render nhẹ, nên chỉ làm sau khi owner duyệt thang.
-2. **Migrate rgba → token theo cụm** (shell/controls → modal → project/terminal/task → usage → pairing/remote), mỗi cụm chạy `npm run build` + `npm run audit:ui`. Chỉ đụng `<style>`/CSS; không đụng literal màu trong JS.
-3. **34 hex trong JS** (xterm theme, `statuslineColors.js`, `useSync.js`, `remoteActions.js`, `projectStore.js`, `UsageCircle`, `TerminalView`): là contract riêng (`var()` không chạy trong xterm/canvas). Ghi từng nhóm vào `scripts/ui-audit.config.json` `exceptions` (file, rule, owner, reason); không allowlist cả thư mục.
-4. **Finding 3 — cần owner chốt.** `<style scoped>` co-location (Vue idiom, token layer + utility dùng chung thỏa `ui.C1`) hay ép chuyển nghĩa đen ~5.6k dòng SFC CSS vào shared (rủi ro cao, giá trị thấp). Khuyến nghị: chấp nhận diễn giải; sau đó điền `sfcResidents` cho 37 SFC trong `scripts/ui-audit.config.json` để gate hết đỏ. Nếu chưa chốt, không điền.
-5. **22 inline style còn lại là hợp lệ, cần ghi exception:** HTML sinh lúc chạy (bảng ANSI `GitModal:127-133`, span màu `ClaudeSettingModal:795-907`), prop `container-style` của `BaseModal` (6 modal — API prop, cân nhắc đổi sang prop `width`), `anchor-name` của `TerminalChromeMenu`, fixture dương tính.
-6. **Sửa detector cho khớp thực tế (P2.1 chưa trọn):** báo nhầm `.logo-section h1` trong `@media` và keyframe `0%/50%` là selector trùng — cần bỏ qua khi nằm trong `@media`/`@keyframes`.
-7. **Visual ledger (bắt buộc trước khi đóng plan)**: mở app một lần ở trạng thái cuối và duyệt modal family (đặc biệt `ProjectConfigModal`, `GitModal`, `ChangelogModal`, `UpdateModal`, `RefreshSettingsModal`, `SshConfigModal` — vừa đổi từ inline sang class), màu terminal/ANSI, bảng project, usage/status, pairing/remote. Xong thì chuyển plan này sang `done/`.
+1. **Phần đuôi `rgba()` chưa có token** (ngoài khoảng snap hoặc dùng 1 lần): nền kính tối `rgba(5,7,12,.6/.95)`, `rgba(15,20,30,.6)`, `rgba(10,15,22,.95)`, bóng đen `.8`, trắng `.35/.8` cho chữ, glow `.5`. Xử lý theo cụm khi chạm component đó; nếu một giá trị xuất hiện ≥3 lần trong cùng vai trò thì thêm token vai trò (ví dụ `--scrim`, `--glass-*`).
+2. **34 hex trong JS** (xterm theme, `statuslineColors.js`, `useSync.js`, `remoteActions.js`, `projectStore.js`, `UsageCircle`, `TerminalView`): contract riêng (`var()` không chạy trong xterm/canvas). Ghi từng nhóm vào `scripts/ui-audit.config.json` `exceptions` (file, rule, owner, reason); không allowlist cả thư mục.
+3. **Finding 3.** Quyết định: giữ `<style scoped>` (Vue idiom; `ui.C1` thỏa bằng token layer + utility dùng chung). Điền `sfcResidents` cho 37 SFC trong `scripts/ui-audit.config.json`, reason "component-local scoped CSS (docs/plan/audit-akirule-2026-09-18.md finding 3)", để gate hết đỏ.
+4. **22 inline style hợp lệ, cần ghi exception:** HTML sinh lúc chạy (`GitModal:127-133` bảng ANSI, `ClaudeSettingModal:795-907`), prop `container-style` của `BaseModal` (6 modal — cân nhắc đổi sang prop `width`), `anchor-name` của `TerminalChromeMenu`, fixture dương tính.
+5. **Sửa detector:** báo nhầm `.logo-section h1` trong `@media` và keyframe `0%/50%` là selector trùng — bỏ qua khi nằm trong `@media`/`@keyframes`; và đừng đếm định nghĩa trong `:root`/fallback `var(--x, #hex)` là literal.
+6. **Visual ledger (bắt buộc trước khi đóng plan):** danh sách ở `docs/plan/backlog.md` § Runtime ledger. Xong thì chuyển plan này sang `done/`.
 
 ### Cổng đóng
 

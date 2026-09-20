@@ -60,7 +60,7 @@ watch(() => bodyRef.value, (el) => {
   color: var(--accent-cyan);
   margin: 20px 0 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(0, 210, 255, 0.15);
+  border-bottom: 1px solid var(--accent-cyan-edge);
 }
 .changelog-body :deep(h4) {
   font-size: 12px;
@@ -83,7 +83,7 @@ watch(() => bodyRef.value, (el) => {
   font-weight: 700;
 }
 .changelog-body :deep(code) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   border-radius: 3px;
   padding: 1px 4px;
   font-family: monospace;
@@ -92,7 +92,7 @@ watch(() => bodyRef.value, (el) => {
 }
 .changelog-body :deep(hr) {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
   margin: 20px 0;
 }
 .changelog-body :deep(a) {

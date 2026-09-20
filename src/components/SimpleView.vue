@@ -270,7 +270,7 @@ defineExpose({
   gap: 2px;
   padding: 2px 4px;
   border-top: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-faint);
   flex-shrink: 0;
 }
 
@@ -306,7 +306,7 @@ defineExpose({
   gap: 4px;
   padding: 4px 8px;
   border-top: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-faint);
   flex-shrink: 0;
 }
 

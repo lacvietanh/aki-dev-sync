@@ -214,8 +214,8 @@ watch(
   font-size: 9px;
   font-weight: 700;
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 2px 6px;
   letter-spacing: 0.3px;
@@ -244,7 +244,7 @@ watch(
 }
 
 .group {
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -255,12 +255,12 @@ watch(
   gap: 8px;
   padding: 7px 9px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-faint);
   transition: background 0.15s;
 }
 
 .group-head:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-tertiary);
 }
 
 .pick {
@@ -268,7 +268,7 @@ watch(
   height: 15px;
   flex-shrink: 0;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-strong);
   background: transparent;
   color: transparent;
   font-size: 8px;
@@ -304,7 +304,7 @@ watch(
 
 /* Memory group holds agent-authored content, distinct from cache state. */
 .group.warn {
-  border-color: rgba(245, 158, 11, 0.35);
+  border-color: var(--amber-500-edge);
 }
 
 .group.warn .group-hint {
@@ -362,7 +362,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 1px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-color);
 }
 
 .entries:not(.pickable) {
@@ -384,7 +384,7 @@ watch(
 }
 
 .entries.pickable .entry:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-faint);
 }
 
 .entry.on {
@@ -427,39 +427,39 @@ watch(
 }
 
 .status-msg.ok {
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--accent-green-wash);
   color: var(--emerald-400);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid var(--accent-green-edge);
 }
 
 .status-msg.err {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-red-wash);
   color: var(--red-400);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 1px solid var(--accent-red-edge);
 }
 
 .modal-footer {
   display: flex;
   gap: 8px;
   padding: 10px 16px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
 }
 
 .btn-rescan {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--surface-faint);
+  border-color: var(--border-color);
   color: var(--slate-500);
 }
 
 .btn-rescan:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   color: var(--slate-400);
 }
 
 .btn-cleanup-delete {
   flex: 1;
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--accent-red-wash);
+  border-color: var(--accent-red-edge);
   color: var(--red-400);
 }
 

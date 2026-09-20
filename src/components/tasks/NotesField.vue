@@ -53,7 +53,7 @@ function handleChange() {
 
 <style scoped>
 .project-notes-section {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--surface-faint);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 12px;
@@ -91,6 +91,6 @@ function handleChange() {
 }
 
 .project-notes-textarea:focus {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+  border-bottom-color: var(--border-color);
 }
 </style>

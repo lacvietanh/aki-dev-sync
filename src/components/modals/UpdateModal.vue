@@ -79,7 +79,7 @@ async function download() {
   color: var(--accent-cyan);
   margin: 16px 0 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(0, 210, 255, 0.15);
+  border-bottom: 1px solid var(--accent-cyan-edge);
 }
 .update-body-content :deep(h4) {
   font-size: 12px;
@@ -102,7 +102,7 @@ async function download() {
   font-weight: 700;
 }
 .update-body-content :deep(code) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   border-radius: 3px;
   padding: 1px 4px;
   font-family: monospace;
@@ -131,7 +131,7 @@ async function download() {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
 }
 
 /* Narrow mode (SSoT 700px, main.css). `.update-body` / `.update-footer` are scoped names, so the

@@ -78,6 +78,27 @@
   /* brand terracotta */
   --brand: #d97757;
   --brand-light: #fba97a;
+  /* Role alphas: wash = tinted surface, edge = tinted border, glow = tinted shadow; white/black overlays snap to the nearest step (ui.A4). Each mirrors the base color of the token named in it - change both together. */
+  --accent-amber-edge: rgba(255, 140, 0, 0.25);
+  --accent-amber-glow: rgba(255, 140, 0, 0.35);
+  --accent-amber-wash: rgba(255, 140, 0, 0.12);
+  --accent-blue-wash: rgba(0, 136, 255, 0.12);
+  --accent-cyan-edge: rgba(0, 210, 255, 0.25);
+  --accent-cyan-glow: rgba(0, 210, 255, 0.35);
+  --accent-cyan-wash: rgba(0, 210, 255, 0.12);
+  --accent-green-edge: rgba(16, 185, 129, 0.25);
+  --accent-green-wash: rgba(16, 185, 129, 0.12);
+  --accent-red-edge: rgba(239, 68, 68, 0.25);
+  --accent-red-glow: rgba(239, 68, 68, 0.35);
+  --accent-red-wash: rgba(239, 68, 68, 0.12);
+  --amber-500-edge: rgba(245, 158, 11, 0.25);
+  --blue-400-edge: rgba(96, 165, 250, 0.25);
+  --blue-400-wash: rgba(96, 165, 250, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --brand-wash: rgba(217, 119, 87, 0.12);
+  --shadow-ink: rgba(0, 0, 0, 0.5);
+  --surface-faint: rgba(255, 255, 255, 0.03);
+  --surface-hover: rgba(255, 255, 255, 0.08);
 }
 
 body {
@@ -85,7 +106,7 @@ body {
   padding: 0;
   background-color: var(--bg-primary);
   background-image:
-    radial-gradient(ellipse at 50% -20%, rgba(0, 136, 255, 0.15) 0%, transparent 70%),
+    radial-gradient(ellipse at 50% -20%, var(--accent-blue-wash) 0%, transparent 70%),
     url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.02' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='1'/%3E%3Ccircle cx='13' cy='13' r='1'/%3E%3C/g%3E%3C/svg%3E");
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--text-light);
@@ -209,8 +230,8 @@ a {
   min-height: 0;
   background: rgba(5, 7, 12, 0.95);
   transition: height var(--dock-ease);
-  border-top: 1px solid rgba(0, 210, 255, 0.2);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  border-top: 1px solid var(--accent-cyan-edge);
+  box-shadow: 0 -4px 20px var(--shadow-ink);
 }
 
 /* Right-dock mode: TerminalStack fills the full column height since useDockLayout's inline flex was computed for the narrow two-stack layout. */
@@ -230,8 +251,8 @@ a {
   height: auto;
   min-width: 0;
   border-top: none;
-  border-left: 1px solid rgba(0, 210, 255, 0.2);
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+  border-left: 1px solid var(--accent-cyan-edge);
+  box-shadow: -4px 0 20px var(--shadow-ink);
 }
 
 /* In right-dock mode, the TerminalStack fills a column — the vertical splitter (ns-resize) has no meaningful drag target, so hide it to avoid confusion. */
@@ -346,7 +367,7 @@ a {
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-strong);
   object-fit: cover;
 }
 
@@ -372,9 +393,9 @@ a {
 }
 
 .titlebar-button:hover {
-  background-color: rgba(0, 210, 255, 0.15);
+  background-color: var(--accent-cyan-wash);
   color: var(--text-light);
-  box-shadow: inset 0 0 8px rgba(0, 210, 255, 0.3);
+  box-shadow: inset 0 0 8px var(--accent-cyan-glow);
 }
 
 .close-btn:hover {
@@ -398,7 +419,7 @@ a {
   box-sizing: border-box;
   border-radius: var(--radius-control);
   background: rgba(15, 20, 30, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   color: var(--white);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -423,19 +444,19 @@ a {
 }
 
 .btn-tech-primary:hover:not(:disabled) {
-  background: rgba(0, 210, 255, 0.15);
-  box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+  background: var(--accent-cyan-wash);
+  box-shadow: 0 0 10px var(--accent-cyan-glow);
   border-color: var(--accent-cyan);
 }
 
 .btn-tech-secondary {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--border-strong);
   color: var(--text-muted);
 }
 
 .btn-tech-secondary:hover:not(:disabled) {
   color: var(--white);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
   border-color: rgba(255, 255, 255, 0.4);
 }
 
@@ -526,7 +547,7 @@ a {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-hover);
   border-radius: 12px;
   transition: .3s;
 }
@@ -572,7 +593,7 @@ input:checked+.slider:before {
 
 .dry-group.is-safe {
   background: rgba(16, 185, 129, 0.05);
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: var(--accent-green-edge);
   box-shadow: inset 0 0 10px rgba(16, 185, 129, 0.05);
 }
 
@@ -637,12 +658,12 @@ input:checked+.slider:before {
   border: 1px solid var(--black);
   color: var(--text-light);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 5px var(--shadow-ink);
 }
 
 .btn-tech-pull:hover:not(:disabled) {
   background-color: #1a9cff;
-  box-shadow: 0 0 10px rgba(0, 136, 255, 0.6), 0 2px 5px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 10px rgba(0, 136, 255, 0.6), 0 2px 5px var(--shadow-ink);
   transform: translateY(-1px);
 }
 
@@ -659,7 +680,7 @@ input:checked+.slider:before {
 }
 
 .btn-tech-pull.btn-sync-clean:hover:not(:disabled) {
-  background-color: rgba(0, 136, 255, 0.12);
+  background-color: var(--accent-blue-wash);
   border-color: var(--accent-blue);
   color: var(--accent-blue);
   box-shadow: 0 0 8px rgba(0, 136, 255, 0.3);
@@ -679,12 +700,12 @@ input:checked+.slider:before {
   border: 1px solid var(--black);
   color: var(--text-light);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 5px var(--shadow-ink);
 }
 
 .btn-tech-push:hover:not(:disabled) {
   background-color: #FFA500;
-  box-shadow: 0 0 10px rgba(255, 140, 0, 0.6), 0 2px 5px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 10px rgba(255, 140, 0, 0.6), 0 2px 5px var(--shadow-ink);
   transform: translateY(-1px);
 }
 
@@ -701,16 +722,16 @@ input:checked+.slider:before {
 }
 
 .btn-tech-push.btn-sync-clean:hover:not(:disabled) {
-  background-color: rgba(255, 140, 0, 0.12);
+  background-color: var(--accent-amber-wash);
   border-color: var(--accent-amber);
   color: var(--accent-amber);
-  box-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
+  box-shadow: 0 0 8px var(--accent-amber-glow);
   transform: translateY(-1px);
 }
 
 .btn-tech-push.btn-sync-checking {
   background-color: transparent;
-  border-color: rgba(255, 140, 0, 0.2);
+  border-color: var(--accent-amber-edge);
   color: rgba(255, 140, 0, 0.35);
   text-shadow: none;
   box-shadow: none;
@@ -727,7 +748,7 @@ input:checked+.slider:before {
   height: var(--control-h);
   box-sizing: border-box;
   border-radius: var(--radius-control);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-strong);
   background: rgba(15, 20, 30, 0.6);
   color: var(--text-muted);
   font-size: 13px;
@@ -738,8 +759,8 @@ input:checked+.slider:before {
 .btn-cell-trigger:hover {
   color: var(--accent-cyan);
   border-color: rgba(0, 210, 255, 0.5);
-  background: rgba(0, 210, 255, 0.1);
-  box-shadow: 0 0 10px rgba(0, 210, 255, 0.25);
+  background: var(--accent-cyan-wash);
+  box-shadow: 0 0 10px var(--accent-cyan-glow);
 }
 
 .btn-cell-trigger:disabled {
@@ -763,21 +784,21 @@ input:checked+.slider:before {
 .btn-cell-trigger.is-muted {
   color: var(--text-muted);
   border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-strong);
   opacity: 0.6;
 }
 
 .btn-cell-trigger.is-attention:hover {
   color: var(--accent-amber);
-  background: rgba(255, 140, 0, 0.12);
+  background: var(--accent-amber-wash);
   border-color: rgba(255, 140, 0, 0.5);
-  box-shadow: 0 0 10px rgba(255, 140, 0, 0.25);
+  box-shadow: 0 0 10px var(--accent-amber-glow);
 }
 
 /* Git trigger: colour/icon-size modifier on .btn-cell-trigger — box/radius/height are the shared base, only presentation differs here. */
 .btn-action-git {
   background: linear-gradient(135deg, #FF007A, #7928CA);
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: var(--border-strong);
   color: var(--white);
   font-size: 18px;
   box-shadow: 0 2px 5px rgba(121, 40, 202, 0.3);
@@ -881,7 +902,7 @@ input:checked+.slider:before {
   z-index: 80;
   background: rgba(22, 30, 44, 0.98);
   color: inherit;
-  border: 1px solid rgba(0, 210, 255, 0.25);
+  border: 1px solid var(--accent-cyan-edge);
   border-radius: 8px;
   padding: 8px 0 6px 0;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
@@ -917,7 +938,7 @@ input:checked+.slider:before {
 }
 
 .popup-item:hover {
-  background: rgba(0, 210, 255, 0.08);
+  background: var(--accent-cyan-wash);
   color: var(--white);
 }
 
@@ -930,7 +951,7 @@ input:checked+.slider:before {
 .popup-run-row {
   display: flex;
   gap: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-color);
   margin-top: 2px;
   padding-top: 2px;
 }
@@ -1025,7 +1046,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 40px var(--shadow-ink);
 }
 
 .modal-header {
@@ -1081,7 +1102,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   transition: color 0.15s ease, background 0.15s ease;
 }
 .src-power:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
 }
 .src-power.is-on {
   color: var(--green-500);
@@ -1124,14 +1145,14 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .btn-secondary {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-strong);
   color: var(--text-muted);
   font-weight: 700;
 }
 
 .btn-secondary:hover {
   color: var(--white);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
   border-color: rgba(255, 255, 255, 0.4);
 }
 
@@ -1146,8 +1167,8 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .btn-save:hover:not(:disabled) {
-  background: rgba(0, 210, 255, 0.15);
-  box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+  background: var(--accent-cyan-wash);
+  box-shadow: 0 0 10px var(--accent-cyan-glow);
   border-color: var(--accent-cyan);
 }
 
@@ -1164,8 +1185,8 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .btn-delete:hover {
-  background: rgba(239, 68, 68, 0.15);
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+  background: var(--accent-red-wash);
+  box-shadow: 0 0 10px var(--accent-red-glow);
   border-color: var(--accent-red);
 }
 
@@ -1215,7 +1236,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 .form-group input,
 .form-group select {
   background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 6px 8px;
   color: var(--white);
@@ -1233,7 +1254,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 
 .large-textarea {
   background: #050508;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   padding: 8px 10px;
   color: var(--white);
@@ -1252,7 +1273,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   background: rgba(0, 0, 0, 0.15);
   padding: 8px 12px;
   border-radius: 6px;
-  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border: 1px dashed var(--border-color);
 }
 
 .checkbox-group {
@@ -1370,25 +1391,25 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   line-height: 1.5;
   padding: 16px;
   background: rgba(5, 7, 12, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   color: var(--cyan-200);
   border-radius: 6px;
   resize: none;
   outline: none;
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 2px 10px var(--shadow-ink);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .code-editor:focus {
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 10px rgba(0, 210, 255, 0.2), inset 0 2px 10px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.2), inset 0 2px 10px var(--shadow-ink);
 }
 
 /* Compact inline host picker (shared by AgentUsageSlot.vue and ProjectTable.vue; --wide for project hosts). */
 .host-select-mini {
   background-color: var(--bg-tertiary);
   color: var(--text-light);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-control);
   padding: 1px 2px;
   height: 19px;
@@ -1401,8 +1422,8 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .host-select-mini:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background-color: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
 .host-select-mini:disabled {

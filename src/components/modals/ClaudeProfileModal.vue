@@ -119,8 +119,8 @@ async function applyMode(mode) {
   font-size: 9px;
   font-weight: 700;
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 2px 6px;
   letter-spacing: 0.3px;
@@ -147,8 +147,8 @@ async function applyMode(mode) {
 
 .field-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 7px 10px;
   font-size: 11px;
@@ -180,7 +180,7 @@ async function applyMode(mode) {
 
 .btn-eye {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--slate-500);
   cursor: pointer;
@@ -191,7 +191,7 @@ async function applyMode(mode) {
 
 .btn-eye:hover {
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-hover);
 }
 
 .status-msg {
@@ -212,22 +212,22 @@ async function applyMode(mode) {
 }
 
 .status-msg.ok {
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--accent-green-wash);
   color: var(--emerald-400);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid var(--accent-green-edge);
 }
 
 .status-msg.err {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-red-wash);
   color: var(--red-400);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 1px solid var(--accent-red-edge);
 }
 
 .modal-footer {
   display: flex;
   gap: 8px;
   padding: 10px 16px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
 }
 
 .btn-native,
@@ -236,18 +236,18 @@ async function applyMode(mode) {
 }
 
 .btn-native {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--surface-faint);
+  border-color: var(--border-color);
   color: var(--slate-500);
 }
 
 .btn-native:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   color: var(--slate-400);
 }
 
 .btn-proxy {
-  background: rgba(217, 119, 87, 0.15);
+  background: var(--brand-wash);
   border-color: rgba(217, 119, 87, 0.45);
   color: var(--brand);
 }

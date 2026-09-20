@@ -52,7 +52,7 @@ const sectionHeight = computed(() => {
 
 /* Row separator: a border on the row that follows one, not a node of its own. */
 .tier-row-container + .tier-row-container {
-  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  border-top: 1px dashed var(--border-color);
   padding-top: 6px;
 }
 
@@ -61,7 +61,7 @@ const sectionHeight = computed(() => {
   width: 4px;
 }
 .agent-usage-section::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
   border-radius: 4px;
 }
 .agent-usage-section::-webkit-scrollbar-thumb:hover {
@@ -76,7 +76,7 @@ const sectionHeight = computed(() => {
 
 /* Column separator: border on sibling slots without divider nodes. */
 .usage-split-layout > * + * {
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-left: 1px solid var(--border-color);
   padding-left: 8px;
 }
 

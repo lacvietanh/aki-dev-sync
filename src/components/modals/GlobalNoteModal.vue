@@ -98,7 +98,7 @@ const collection = useGlobalTaskCollection()
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
 }
 
 .save-status {

@@ -361,11 +361,11 @@ export default {
   left: 0;
   transform: translateY(-4px);
   background: rgba(18, 18, 22, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 6px 8px;
   width: 130px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 12px var(--shadow-ink);
   z-index: 50;
   pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
@@ -404,7 +404,7 @@ html.fx-glass .usage-circle-container:hover .premium-tooltip {
   color: var(--text-light);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-color);
   padding-bottom: 3px;
 }
 

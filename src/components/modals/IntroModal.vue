@@ -254,7 +254,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
   padding: 14px;
   border-radius: 6px;
   background: rgba(5, 7, 12, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
 }
 .alert-box.info {
   background: rgba(59, 130, 246, 0.05);
@@ -296,14 +296,14 @@ const { showIntroModal, closeIntroModal } = useIntro();
   padding: 10px 12px;
   border-radius: 6px;
   background: rgba(5, 7, 12, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
 }
 .model-node.local {
   border-color: rgba(34, 211, 238, 0.25);
   background: rgba(34, 211, 238, 0.04);
 }
 .model-node.remote {
-  border-color: rgba(245, 158, 11, 0.25);
+  border-color: var(--amber-500-edge);
   background: rgba(245, 158, 11, 0.04);
 }
 .model-role {
@@ -368,7 +368,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
   background: rgba(5, 7, 12, 0.6);
   padding: 10px 12px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
 }
 .feature-icon {
   font-size: 16px;

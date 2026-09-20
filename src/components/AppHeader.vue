@@ -595,7 +595,7 @@ function onViewShortcut(e) {
 }
 
 .app-icon-menu:hover {
-  background: rgba(0, 210, 255, 0.08);
+  background: var(--accent-cyan-wash);
 }
 
 .menu-affordance {
@@ -606,8 +606,8 @@ function onViewShortcut(e) {
   height: 24px;
   font-size: 12px;
   color: var(--cyan-200);
-  background: rgba(0, 210, 255, 0.08);
-  border: 1px solid rgba(0, 210, 255, 0.25);
+  background: var(--accent-cyan-wash);
+  border: 1px solid var(--accent-cyan-edge);
   border-radius: 6px;
   transition: color 0.15s, background 0.15s, box-shadow 0.15s;
 }
@@ -615,7 +615,7 @@ function onViewShortcut(e) {
 .app-icon-menu:hover .menu-affordance {
   color: var(--white);
   background: rgba(0, 210, 255, 0.2);
-  box-shadow: inset 0 0 8px rgba(0, 210, 255, 0.3);
+  box-shadow: inset 0 0 8px var(--accent-cyan-glow);
 }
 
 .icon-dropdown {
@@ -626,9 +626,9 @@ function onViewShortcut(e) {
   /* z-index 500: below modal layer (starts at 1000). */
   z-index: 500;
   background: #1a1d23;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-color);
   border-radius: 7px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: 0 8px 24px var(--shadow-ink), 0 0 0 1px rgba(255, 255, 255, 0.04);
   min-width: 180px;
   padding: 4px;
   white-space: nowrap;
@@ -668,7 +668,7 @@ function onViewShortcut(e) {
 }
 
 .icon-dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-hover);
   color: var(--slate-200);
 }
 
@@ -782,8 +782,8 @@ function onViewShortcut(e) {
   font-size: 11px;
   font-family: inherit;
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
   border-radius: 5px;
   cursor: pointer;
   outline: none;
@@ -792,9 +792,9 @@ function onViewShortcut(e) {
 
 .tier-slot-select:hover,
 .tier-slot-select:focus {
-  background: rgba(0, 210, 255, 0.1);
+  background: var(--accent-cyan-wash);
   color: var(--slate-200);
-  border-color: rgba(0, 210, 255, 0.3);
+  border-color: var(--accent-cyan-edge);
 }
 
 /* Explicit dark background for native select options on macOS. */
@@ -805,7 +805,7 @@ function onViewShortcut(e) {
 
 .icon-dropdown-separator {
   height: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   margin: 4px 6px;
 }
 
@@ -829,8 +829,8 @@ function onViewShortcut(e) {
   font-size: 11px;
   font-family: inherit;
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
   border-radius: 5px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
@@ -838,9 +838,9 @@ function onViewShortcut(e) {
 }
 
 .icon-dropdown-preset-btn:hover {
-  background: rgba(0, 210, 255, 0.1);
+  background: var(--accent-cyan-wash);
   color: var(--slate-200);
-  border-color: rgba(0, 210, 255, 0.3);
+  border-color: var(--accent-cyan-edge);
 }
 
 .icon-dropdown-preset-btn i {
@@ -860,7 +860,7 @@ function onViewShortcut(e) {
 }
 
 .icon-dropdown-preset-btn.is-active {
-  background: rgba(0, 210, 255, 0.14);
+  background: var(--accent-cyan-wash);
   border-color: rgba(0, 210, 255, 0.45);
 }
 
@@ -1102,7 +1102,7 @@ function onViewShortcut(e) {
 }
 
 .dev-tag {
-  background-color: rgba(239, 68, 68, 0.15);
+  background-color: var(--accent-red-wash);
   color: var(--red-400);
   border: 1px solid rgba(239, 68, 68, 0.4);
   font-size: 10px;
@@ -1125,9 +1125,9 @@ function onViewShortcut(e) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(16, 185, 129, 0.15);
+  background: var(--accent-green-wash);
   color: var(--accent-green, var(--accent-green));
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid var(--accent-green-edge);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 9px;
@@ -1144,8 +1144,8 @@ function onViewShortcut(e) {
 
 .pin-btn.active {
   color: var(--accent-red);
-  background-color: rgba(239, 68, 68, 0.15);
-  box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.4);
+  background-color: var(--accent-red-wash);
+  box-shadow: inset 0 0 8px var(--accent-red-glow);
 }
 
 .pin-btn.active i {

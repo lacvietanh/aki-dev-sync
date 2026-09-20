@@ -231,7 +231,7 @@ function commitRename(t, value) {
 }
 .tab.is-active {
   opacity: 1;
-  background: rgba(96, 165, 250, 0.16);
+  background: var(--blue-400-wash);
   color: var(--gray-200);
   border-color: rgba(96, 165, 250, 0.55);
 }

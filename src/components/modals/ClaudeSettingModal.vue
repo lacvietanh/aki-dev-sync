@@ -921,7 +921,7 @@ const previewHtml = computed(() => {
 
 .preview-box {
   background: var(--black);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 10px;
   /* Prevents modal widening on narrow windows with unbroken preview blocks. */
@@ -993,8 +993,8 @@ const previewHtml = computed(() => {
   gap: 6px;
   padding: 5px 6px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
   position: relative;
 }
 
@@ -1113,7 +1113,7 @@ const previewHtml = computed(() => {
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   font-size: 9px;
   color: var(--slate-500);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-faint);
   border-radius: 3px;
   padding: 1px 4px;
   white-space: nowrap;
@@ -1135,8 +1135,8 @@ const previewHtml = computed(() => {
 }
 
 .ctl-seg.tight {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 2px 7px;
   gap: 5px;
@@ -1157,7 +1157,7 @@ const previewHtml = computed(() => {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--border-strong);
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
@@ -1182,7 +1182,7 @@ const previewHtml = computed(() => {
   grid-auto-flow: column;
   gap: 4px;
   background: var(--slate-900);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 6px;
   z-index: 20;
@@ -1304,8 +1304,8 @@ const previewHtml = computed(() => {
 
 .ladder-cell input[type="number"] {
   width: 30px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   color: var(--slate-400);
   font-size: 10px;
@@ -1339,14 +1339,14 @@ const previewHtml = computed(() => {
   gap: 4px;
   font-size: 10px;
   color: var(--slate-400);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   padding: 2px 5px;
   cursor: pointer;
 }
 
-.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
+.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: var(--brand-wash); }
 
 /* Per-CLI state inside chip: lit = renders line, hollow amber = unwired, distinct from swatch. */
 .cli-tag {
@@ -1374,8 +1374,8 @@ const previewHtml = computed(() => {
   border-radius: 5px;
 }
 
-.result-row.ok { background: rgba(16, 185, 129, 0.08); color: var(--emerald-400); }
-.result-row.err { background: rgba(239, 68, 68, 0.08); color: var(--red-400); }
+.result-row.ok { background: var(--accent-green-wash); color: var(--emerald-400); }
+.result-row.err { background: var(--accent-red-wash); color: var(--red-400); }
 .result-host { font-weight: 700; flex-shrink: 0; }
 .result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1392,36 +1392,36 @@ const previewHtml = computed(() => {
 .status-msg i { margin-top: 1px; flex-shrink: 0; }
 
 .status-msg.ok {
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--accent-green-wash);
   color: var(--emerald-400);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid var(--accent-green-edge);
 }
 
 .status-msg.err {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-red-wash);
   color: var(--red-400);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 1px solid var(--accent-red-edge);
 }
 
 .modal-footer {
   display: flex;
   gap: 8px;
   padding: 10px 16px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 .btn-reset {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--surface-faint);
+  border-color: var(--border-color);
   color: var(--slate-500);
 }
 
-.btn-reset:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: var(--slate-400); }
+.btn-reset:hover:not(:disabled) { background: var(--surface-hover); color: var(--slate-400); }
 
 .btn-apply {
   flex: 1;
-  background: rgba(217, 119, 87, 0.15);
+  background: var(--brand-wash);
   border-color: rgba(217, 119, 87, 0.45);
   color: var(--brand);
 }

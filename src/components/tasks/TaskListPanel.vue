@@ -233,19 +233,19 @@ watch(
   font-weight: 700;
 }
 .stat.s-doing {
-  background: rgba(255, 140, 0, 0.15);
+  background: var(--accent-amber-wash);
   color: var(--accent-amber);
-  border: 1px solid rgba(255, 140, 0, 0.3);
+  border: 1px solid var(--accent-amber-edge);
 }
 .stat.s-todo {
-  background: rgba(0, 210, 255, 0.15);
+  background: var(--accent-cyan-wash);
   color: var(--accent-cyan);
-  border: 1px solid rgba(0, 210, 255, 0.3);
+  border: 1px solid var(--accent-cyan-edge);
 }
 .stat.s-done {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
 }
 
 .task-add-row {
@@ -256,7 +256,7 @@ watch(
 .task-add-input {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-faint);
   border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-light);
@@ -267,7 +267,7 @@ watch(
 
 .task-add-input:focus {
   border-color: var(--accent-cyan);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-tertiary);
 }
 
 .task-add-btn {
@@ -315,14 +315,14 @@ watch(
   align-items: center;
   gap: 10px;
   padding: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-faint);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   transition: background 0.2s, opacity 0.2s, filter 0.2s, transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .task-item-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-faint);
 }
 
 .task-item-row.is-done {
@@ -357,7 +357,7 @@ watch(
 }
 
 .task-state-icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   opacity: 0.8;
   color: var(--text-light);
 }
@@ -399,7 +399,7 @@ watch(
 }
 
 .task-title-input:focus:not(:disabled) {
-  border-bottom-color: rgba(255, 255, 255, 0.15);
+  border-bottom-color: var(--border-strong);
 }
 
 .is-done .task-title-input {
@@ -424,7 +424,7 @@ watch(
 }
 
 .task-detail-textarea:focus:not(:disabled) {
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+  border-bottom-color: var(--border-color);
   color: var(--text-light);
 }
 
@@ -482,7 +482,7 @@ watch(
 
 .task-copy-btn:hover {
   color: var(--accent-cyan);
-  background: rgba(0, 210, 255, 0.1);
+  background: var(--accent-cyan-wash);
 }
 
 .task-del-btn {
@@ -501,7 +501,7 @@ watch(
 
 .task-del-btn:hover {
   color: var(--accent-red);
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-red-wash);
 }
 
 /* Narrow mode (700px): tighter gaps and padding preserve ~60px for title without hiding state controls. */

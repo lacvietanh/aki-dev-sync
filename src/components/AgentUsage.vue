@@ -830,7 +830,7 @@ async function handleIconClick() {
   background: #1a1d23; /* solid - --bg-tertiary is near-transparent and would show through */
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 18px var(--shadow-ink);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -907,10 +907,10 @@ async function handleIconClick() {
   transition: background 0.12s ease;
 }
 .ag-account-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-tertiary);
 }
 .ag-account-item.is-current {
-  background: rgba(0, 210, 255, 0.1);
+  background: var(--accent-cyan-wash);
   color: var(--accent-cyan);
 }
 
@@ -1004,7 +1004,7 @@ async function handleIconClick() {
 }
 
 .agent-plan-badge.claude {
-  background: rgba(217, 119, 87, 0.1);
+  background: var(--brand-wash);
   color: var(--brand);
 }
 
@@ -1079,7 +1079,7 @@ async function handleIconClick() {
 /* fieldset for grouping Antigravity */
 .zone-fieldset {
   flex: 1;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border: 1px dashed var(--border-strong);
   /* Brighter dashed line */
   border-radius: 6px;
   padding: 4px 2px 4px 2px;
@@ -1091,7 +1091,7 @@ async function handleIconClick() {
 }
 
 .zone-fieldset.zone-gemini {
-  border-color: rgba(96, 165, 250, 0.35);
+  border-color: var(--blue-400-edge);
 }
 
 .zone-fieldset.zone-gemini:hover {
@@ -1155,13 +1155,13 @@ async function handleIconClick() {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
 .skeleton-text {
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
@@ -1195,7 +1195,7 @@ async function handleIconClick() {
 .usage-error {
   font-size: 11px;
   color: var(--accent-red);
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-red-wash);
   padding: 8px;
   border-radius: 4px;
   width: 100%;
@@ -1274,7 +1274,7 @@ async function handleIconClick() {
 
 .cc-progress-track {
   height: 5px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-hover);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1298,7 +1298,7 @@ async function handleIconClick() {
 }
 
 .cc-progress-fill.color-na {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
 }
 
 .cc-progress-fill.color-muted {
@@ -1334,7 +1334,7 @@ async function handleIconClick() {
   height: 10px;
   width: 50px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
@@ -1342,7 +1342,7 @@ async function handleIconClick() {
   height: 5px;
   width: 100%;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
@@ -1350,7 +1350,7 @@ async function handleIconClick() {
   height: 9px;
   width: 130px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
@@ -1359,11 +1359,11 @@ async function handleIconClick() {
   position: relative;
   overflow: visible;
   border-radius: 50% !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid var(--border-color) !important;
 }
 
 .btn-reload:hover {
-  border-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: var(--border-strong) !important;
 }
 
 

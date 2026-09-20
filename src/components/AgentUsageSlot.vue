@@ -216,7 +216,7 @@ const slotAccountInfo = computed(() => {
   justify-content: space-between;
   align-items: center;
   padding-bottom: 4px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+  border-bottom: 1px dashed var(--border-color);
 }
 
 .tab-group {
@@ -247,9 +247,9 @@ const slotAccountInfo = computed(() => {
 }
 .tab.is-active {
   opacity: 1;
-  background: rgba(96, 165, 250, 0.16);
+  background: var(--blue-400-wash);
   color: var(--gray-200);
-  border-color: rgba(96, 165, 250, 0.35);
+  border-color: var(--blue-400-edge);
 }
 
 /* Contract C-3: circuit breaker halted power icon indicator (amber). */

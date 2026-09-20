@@ -308,11 +308,11 @@ function applyPreset(stack) {
    the native tooltip on the input and on the disabled Save button (UI Extreme Narrow). */
 .input-invalid {
   border-color: var(--accent-red) !important;
-  background: rgba(239, 68, 68, 0.06);
+  background: var(--accent-red-wash);
 }
 
 .commands-group {
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid var(--accent-green-edge);
   background: rgba(16, 185, 129, 0.04);
   padding: 12px;
   border-radius: 8px;
@@ -330,9 +330,9 @@ function applyPreset(stack) {
 .local-badge {
   font-size: 10px;
   font-weight: 700;
-  background: rgba(16, 185, 129, 0.15);
+  background: var(--accent-green-wash);
   color: var(--emerald-300);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid var(--accent-green-edge);
   padding: 1px 6px;
   border-radius: 4px;
   letter-spacing: 0.3px;
@@ -383,7 +383,7 @@ function applyPreset(stack) {
 
 .code-input {
   background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 6px 8px;
   color: #a7f3d0;

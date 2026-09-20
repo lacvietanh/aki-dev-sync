@@ -717,7 +717,7 @@ html.fx-glass .grid-header {
 }
 
 .grid-row:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-faint);
 }
 
 .row-syncing {
@@ -761,7 +761,7 @@ html.fx-glass .grid-header {
   height: 24px;
   padding: 0 10px;
   font-size: 10px;
-  box-shadow: 0 0 6px rgba(0, 210, 255, 0.25);
+  box-shadow: 0 0 6px var(--accent-cyan-glow);
 }
 
 .btn-new-project-inline:hover:not(:disabled) {
@@ -942,7 +942,7 @@ fieldset:disabled .switch {
   font-weight: 700;
   color: var(--gray-200);
   padding: 0 12px 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-color);
   margin-bottom: 6px;
   white-space: nowrap;
   overflow: hidden;
@@ -1236,7 +1236,7 @@ fieldset:disabled .switch {
 .popup-col-remote {
   flex: 1;
   min-width: 180px;
-  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 1px solid var(--border-color);
   padding-left: 4px;
 }
 .popup-item-icon {

@@ -190,7 +190,7 @@ async function handleCommit() {
   width: 100%;
   padding: 8px 12px;
   background: rgba(5, 7, 12, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
   color: var(--text-light, var(--text-light));
   border-radius: 4px;
   outline: none;

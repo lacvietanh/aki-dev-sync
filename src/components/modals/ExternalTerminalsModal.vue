@@ -109,7 +109,7 @@ function shortDir(p) {
   padding: 8px 10px;
   border: 1px solid var(--accent-red);
   border-radius: 4px;
-  background: rgba(239, 68, 68, 0.08);
+  background: var(--accent-red-wash);
   color: var(--accent-red);
   font-size: 12px;
 }

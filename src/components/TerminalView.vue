@@ -409,7 +409,7 @@ defineExpose({
   border-radius: 6px;
   color: var(--bg-primary);
   cursor: pointer;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 2px 12px var(--shadow-ink);
 }
 
 .pty-resize-owner-pill:hover {
@@ -447,7 +447,7 @@ defineExpose({
   gap: 2px;
   padding: 2px 4px;
   border-top: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-faint);
   flex-shrink: 0;
 }
 
@@ -493,7 +493,7 @@ defineExpose({
   gap: 4px;
   padding: 4px 8px;
   border-top: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-faint);
   flex-shrink: 0;
 }
 
