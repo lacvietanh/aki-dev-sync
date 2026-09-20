@@ -545,8 +545,7 @@ async function installAkiDevRule() {
 
 // Refresh all: reload disk config (projects.json, SSH hosts) from disk, then refresh every project's status.
 function handleRefresh() {
-  // Routed via Seam A requestReloadConfig so config edits apply without an app restart; loadData runs on the
-  // host and ends with refreshAllProjects(). A companion click forwards to the host, which owns disk access.
+  // Reload-then-refresh runs on the host via Seam A; a companion click forwards there.
   requestReloadConfig();
 }
 

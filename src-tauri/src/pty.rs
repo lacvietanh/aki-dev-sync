@@ -1163,8 +1163,7 @@ mod tests {
     fn late_write_after_close_does_not_resurrect_tab() {
         const TAB: TabId = 15;
         let state = pty_state();
-        // Explicit clean slate — overrides any floor left by a previous run in the
-        // same process (unique tab id, but defensive).
+        // Explicit clean slate: overrides any floor left by a previous run in this process.
         state.sessions.lock().unwrap().remove(&TAB);
         state.scrollbacks.lock().unwrap().remove(&TAB);
         state.min_accepted.lock().unwrap().insert(TAB, 0);

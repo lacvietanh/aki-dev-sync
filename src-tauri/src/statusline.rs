@@ -1652,7 +1652,7 @@ mod tests {
 
     // ---- P0-2: no shared predictable /tmp dump -----------------------------------------------
 
-    /// An already-installed older script on the dev machine can legitimately keep writing that path while tests run, so the assertion is on this test's own payload rather than on the file's existence.
+    /// An older installed script may still write this path during tests, so assert on this test's own payload, not on file existence.
     fn dump_has_sentinel(dump: &std::path::Path) -> bool {
         std::fs::read_to_string(dump).is_ok_and(|c| c.contains("sentinel"))
     }

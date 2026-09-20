@@ -114,9 +114,7 @@ export const requestRefreshAll = action('remoteActions.requestRefreshAll', () =>
   refreshAllProjects()
 })
 
-// Reloads projects.json + SSH hosts from disk on the host so config edits apply WITHOUT an app restart
-// (task-1787801054655). loadData is guarded by isReloading and ends with refreshAllProjects(), so this is a
-// superset of requestRefreshAll. Routed via Seam A: a companion click forwards to the host, which owns disk access.
+// Superset of requestRefreshAll: reloads projects.json + SSH hosts on the host (docs/arch/refresh-controller.md), so config edits need no restart.
 export const requestReloadConfig = action('remoteActions.requestReloadConfig', () => {
   return loadData(sshHosts, true)
 })

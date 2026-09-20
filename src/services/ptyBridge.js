@@ -40,8 +40,7 @@ async function pushScrollbacks(to) {
     try {
       const snapshot = await invoke('pty_get_scrollback', { tabId })
       const { cols, rows, alive } = snapshot
-      // Only hydrated tabs carry history; every other tab still gets an authoritative empty reset so
-      // cold tabs have correct existence, dimensions, and liveness on the companion.
+      // Only hydrated tabs carry history; cold tabs still get an authoritative empty reset (existence, size, liveness).
       const data = hydrated.has(tabId) ? snapshot.data || '' : ''
       if (!send({ t: FRAME_PTY_OUTPUT, tab_id: tabId, data, reset: true, cols, rows, alive, to: to ?? undefined })) {
         allSent = false
@@ -54,8 +53,7 @@ async function pushScrollbacks(to) {
   return allSent
 }
 
-// A resync request is emitted by the relay as companion-connected and includes
-// the affected connection key, so replay stays scoped to that companion.
+// A resync request carries the affected connection key, so replay stays scoped to that companion.
 function scheduleResync(to) {
   if (resyncTimer) return
   resyncTimer = setTimeout(async () => {
