@@ -14,6 +14,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Antigravity missing-tool notice re-arms every 5 minutes** instead of firing once per app run, so a host that gains or loses the tool is re-probed in long-lived sessions.
 
 #### Changed
+- **Refresh all now reloads `projects.json` and the SSH host list from disk first**, then refreshes every project, so config edits apply without restarting the app. A companion click forwards to the host, which owns disk access. Antigravity's binary-cache TTL is not covered by this.
 - **Terminal tabs are no longer capped.** `MAX_TABS`/`MAX_TABS_PER_SCOPE` are gone from the tab store and composable; the strip keeps its horizontal scroll.
 - **A phone reconnect no longer replays every tab's full history.** On connect or resync the host sends full scrollback for at most 4 tabs (active, then pinned, then list order) and an authoritative empty `reset` (size, liveness, existence) for the rest, so the burst stays under the companion outbox budget at any tab count. A tab's history still arrives when it is opened on the phone (the terminal view fetches `pty_get_scrollback` on mount). Guarded by `npm run test:replay`.
 - **A project's background polling toggle now sits beside its name in the project table.** It persists through the existing project-list writer, disables only background sync/git checks, and leaves every other project's state and all manual actions untouched.

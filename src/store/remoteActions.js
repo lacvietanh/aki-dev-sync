@@ -25,7 +25,7 @@ import { appendGlobalLogLines } from './logStore'
 import { askConfirm } from './dialogStore'
 import { startSync, openSelectDialog } from '../composables/useSync'
 import { refreshProject, refreshAllProjects } from '../composables/useBackgroundRefresh'
-import { saveProjectsList } from '../composables/useProjectConfig'
+import { saveProjectsList, loadData } from '../composables/useProjectConfig'
 
 function byId(id) {
   return projects.value.find((p) => p.id === id) || null
@@ -112,6 +112,13 @@ export const requestRefresh = action('remoteActions.requestRefresh', (id) => {
 // Refreshes all projects (global header refresh).
 export const requestRefreshAll = action('remoteActions.requestRefreshAll', () => {
   refreshAllProjects()
+})
+
+// Reloads projects.json + SSH hosts from disk on the host so config edits apply WITHOUT an app restart
+// (task-1787801054655). loadData is guarded by isReloading and ends with refreshAllProjects(), so this is a
+// superset of requestRefreshAll. Routed via Seam A: a companion click forwards to the host, which owns disk access.
+export const requestReloadConfig = action('remoteActions.requestReloadConfig', () => {
+  return loadData(sshHosts, true)
 })
 
 // Applies task/notes patch to ONE project by id, writing to `<local_path>/.akidevsync/notes.json` on host.

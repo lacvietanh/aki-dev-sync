@@ -313,7 +313,7 @@ import { WINDOW_FUNCTION_KEYS } from '../constants/windowShortcuts';
 import { STATUSLINE_COLORS } from '../utils/statuslineColors';
 import { copyText } from '../utils/clipboard';
 import { tierCount, setTierCount, rowsToSlots, slotsToRows, TIER_ROW_OPTIONS } from '../store/usageTierStore';
-import { requestRefreshAll } from '../store/remoteActions';
+import { requestReloadConfig } from '../store/remoteActions';
 import RefreshSettingsModal from './modals/RefreshSettingsModal.vue';
 import ChangelogModal from './modals/ChangelogModal.vue';
 import UpdateModal from './modals/UpdateModal.vue';
@@ -543,10 +543,11 @@ async function installAkiDevRule() {
   }
 }
 
-// Refresh all project statuses and usage monitors without reloading disk config.
+// Refresh all: reload disk config (projects.json, SSH hosts) from disk, then refresh every project's status.
 function handleRefresh() {
-  // Routed via seam-A requestRefreshAll for host and companion compatibility.
-  requestRefreshAll();
+  // Routed via Seam A requestReloadConfig so config edits apply without an app restart; loadData runs on the
+  // host and ends with refreshAllProjects(). A companion click forwards to the host, which owns disk access.
+  requestReloadConfig();
 }
 
 // Slot picker computed translation between slots and stored rows (see usageTierStore).
@@ -604,7 +605,7 @@ function onViewShortcut(e) {
   width: 24px;
   height: 24px;
   font-size: 12px;
-  color: #a5f3fc;
+  color: var(--cyan-200);
   background: rgba(0, 210, 255, 0.08);
   border: 1px solid rgba(0, 210, 255, 0.25);
   border-radius: 6px;
@@ -612,7 +613,7 @@ function onViewShortcut(e) {
 }
 
 .app-icon-menu:hover .menu-affordance {
-  color: #fff;
+  color: var(--white);
   background: rgba(0, 210, 255, 0.2);
   box-shadow: inset 0 0 8px rgba(0, 210, 255, 0.3);
 }
@@ -660,7 +661,7 @@ function onViewShortcut(e) {
   gap: 8px;
   padding: 7px 10px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--slate-400);
   text-decoration: none;
   border-radius: 5px;
   transition: background 0.12s, color 0.12s;
@@ -668,17 +669,17 @@ function onViewShortcut(e) {
 
 .icon-dropdown-item:hover {
   background: rgba(255, 255, 255, 0.07);
-  color: #e2e8f0;
+  color: var(--slate-200);
 }
 
 .icon-dropdown-item i {
   width: 14px;
   text-align: center;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .icon-dropdown-item:hover i {
-  color: #94a3b8;
+  color: var(--slate-400);
 }
 
 .statusline-menu-item {
@@ -724,12 +725,12 @@ function onViewShortcut(e) {
 }
 
 .icon-dropdown-item-ssh-color i {
-  color: #f87171;
+  color: var(--red-400);
 }
 
 .icon-dropdown-item-ssh-color:hover {
   background: #2a1414;
-  color: #fecaca;
+  color: var(--red-200);
 }
 
 .icon-dropdown-item-ssh-color:hover i {
@@ -739,7 +740,7 @@ function onViewShortcut(e) {
 .icon-dropdown-header-info {
   padding: 4px 8px 6px 8px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--slate-500);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -764,7 +765,7 @@ function onViewShortcut(e) {
 .ac-title {
   font-size: 11px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--slate-400);
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -780,7 +781,7 @@ function onViewShortcut(e) {
   padding: 6px 8px;
   font-size: 11px;
   font-family: inherit;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
@@ -792,14 +793,14 @@ function onViewShortcut(e) {
 .tier-slot-select:hover,
 .tier-slot-select:focus {
   background: rgba(0, 210, 255, 0.1);
-  color: #e2e8f0;
+  color: var(--slate-200);
   border-color: rgba(0, 210, 255, 0.3);
 }
 
 /* Explicit dark background for native select options on macOS. */
 .tier-slot-select option {
   background: #16161a;
-  color: #cbd5e1;
+  color: var(--slate-300);
 }
 
 .icon-dropdown-separator {
@@ -827,7 +828,7 @@ function onViewShortcut(e) {
   padding: 6px 8px;
   font-size: 11px;
   font-family: inherit;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
@@ -838,24 +839,24 @@ function onViewShortcut(e) {
 
 .icon-dropdown-preset-btn:hover {
   background: rgba(0, 210, 255, 0.1);
-  color: #e2e8f0;
+  color: var(--slate-200);
   border-color: rgba(0, 210, 255, 0.3);
 }
 
 .icon-dropdown-preset-btn i {
   width: 12px;
   text-align: center;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .icon-dropdown-preset-btn:hover i {
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 
 /* The AppWindow preset remembered for next launch. */
 .icon-dropdown-preset-btn.is-active,
 .icon-dropdown-preset-btn.is-active i {
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 
 .icon-dropdown-preset-btn.is-active {
@@ -868,13 +869,13 @@ function onViewShortcut(e) {
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  color: #64748b;
+  color: var(--slate-500);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .remember-view.on {
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 
 /* Custom checkbox box styling for dark theme. */
@@ -892,8 +893,8 @@ function onViewShortcut(e) {
 }
 
 .remember-view input:checked {
-  background: #00d2ff;
-  border-color: #00d2ff;
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
 }
 
 .remember-view input:checked::after {
@@ -903,29 +904,29 @@ function onViewShortcut(e) {
   top: 0;
   width: 3px;
   height: 6px;
-  border: solid #0f172a;
+  border: solid var(--slate-900);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }
 
 /* Remote Control — reuses the .remember-view toggle look; the extra rows only appear while ON. */
 .remote-toggle.on {
-  color: #34d399;
+  color: var(--emerald-400);
 }
 
 .remote-toggle.on input:checked {
-  background: #34d399;
-  border-color: #34d399;
+  background: var(--emerald-400);
+  border-color: var(--emerald-400);
 }
 
 /* Amber indicator for unencrypted HTTP connection. */
 .remote-toggle.on.plain-http {
-  color: #f59e0b;
+  color: var(--amber-500);
 }
 
 .remote-toggle.on.plain-http input:checked {
-  background: #f59e0b;
-  border-color: #f59e0b;
+  background: var(--amber-500);
+  border-color: var(--amber-500);
 }
 
 .remote-code-row {
@@ -941,11 +942,11 @@ function onViewShortcut(e) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .remote-code-label i {
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .remote-code {
@@ -953,7 +954,7 @@ function onViewShortcut(e) {
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 3px;
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 
 .remote-url-item {
@@ -966,13 +967,13 @@ function onViewShortcut(e) {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  color: #64748b;
+  color: var(--slate-500);
   min-width: 62px;
 }
 
 .remote-url {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #cbd5e1;
+  color: var(--slate-300);
 }
 
 .remote-copy-ic {
@@ -988,11 +989,11 @@ function onViewShortcut(e) {
 .remote-hint {
   padding: 2px 10px 4px;
   font-size: 10px;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .remote-hint-warn {
-  color: #fbbf24;
+  color: var(--amber-400);
 }
 
 .btn-intro {
@@ -1011,7 +1012,7 @@ function onViewShortcut(e) {
 
 .btn-donate {
   margin-left: 6px;
-  color: #f87171;
+  color: var(--red-400);
 }
 
 .btn-donate:hover:not(:disabled) {
@@ -1026,9 +1027,9 @@ function onViewShortcut(e) {
   right: -2px;
   width: 10px;
   height: 10px;
-  background-color: #ef4444;
+  background-color: var(--accent-red);
   border-radius: 50%;
-  border: 2px solid #131317;
+  border: 2px solid var(--surface-raise);
   animation: pulse-red 2s;
 }
 
@@ -1078,7 +1079,7 @@ function onViewShortcut(e) {
   align-items: center;
   gap: 6px;
   font-size: 10px;
-  color: #64748b;
+  color: var(--slate-500);
   margin-left: 8px;
   margin-right: auto;
   vertical-align: middle;
@@ -1102,7 +1103,7 @@ function onViewShortcut(e) {
 
 .dev-tag {
   background-color: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  color: var(--red-400);
   border: 1px solid rgba(239, 68, 68, 0.4);
   font-size: 10px;
   font-weight: bold;
@@ -1125,7 +1126,7 @@ function onViewShortcut(e) {
   align-items: center;
   gap: 4px;
   background: rgba(16, 185, 129, 0.15);
-  color: var(--accent-green, #10b981);
+  color: var(--accent-green, var(--accent-green));
   border: 1px solid rgba(16, 185, 129, 0.3);
   padding: 1px 5px;
   border-radius: 3px;
@@ -1138,7 +1139,7 @@ function onViewShortcut(e) {
 
 .update-badge:hover {
   background: rgba(16, 185, 129, 0.25);
-  color: #fff;
+  color: var(--white);
 }
 
 .pin-btn.active {
@@ -1183,7 +1184,7 @@ function onViewShortcut(e) {
   /* Build info in narrow title block position. */
   .build-narrow {
     font-size: 6px;
-    color: #f87171;
+    color: var(--red-400);
     font-weight: 600;
     letter-spacing: 0.5px;
     line-height: 1.3;
