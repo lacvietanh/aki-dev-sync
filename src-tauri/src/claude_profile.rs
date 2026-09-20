@@ -73,14 +73,16 @@ const PROXY_ENV_KEYS: &[&str] = &[
 #[tauri::command]
 pub fn set_claude_profile(
     mode: String,
-    endpoint:     Option<String>,
-    api_key:      Option<String>,
-    model_opus:   Option<String>,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    model_opus: Option<String>,
     model_sonnet: Option<String>,
-    model_haiku:  Option<String>,
+    model_haiku: Option<String>,
 ) -> Result<(), String> {
     let mut settings = read_settings();
-    let obj = settings.as_object_mut().ok_or("settings.json root is not an object")?;
+    let obj = settings
+        .as_object_mut()
+        .ok_or("settings.json root is not an object")?;
 
     let env_obj = obj
         .entry("env")
@@ -88,18 +90,22 @@ pub fn set_claude_profile(
         .as_object_mut()
         .ok_or("settings.json's env is not an object")?;
 
-    for key in PROXY_ENV_KEYS { env_obj.remove(*key); }
+    for key in PROXY_ENV_KEYS {
+        env_obj.remove(*key);
+    }
 
     if mode == "proxy" {
         let fields: &[(&str, Option<String>)] = &[
-            ("ANTHROPIC_BASE_URL",             endpoint),
-            ("ANTHROPIC_AUTH_TOKEN",           api_key),
-            ("ANTHROPIC_DEFAULT_OPUS_MODEL",   model_opus),
+            ("ANTHROPIC_BASE_URL", endpoint),
+            ("ANTHROPIC_AUTH_TOKEN", api_key),
+            ("ANTHROPIC_DEFAULT_OPUS_MODEL", model_opus),
             ("ANTHROPIC_DEFAULT_SONNET_MODEL", model_sonnet),
-            ("ANTHROPIC_DEFAULT_HAIKU_MODEL",  model_haiku),
+            ("ANTHROPIC_DEFAULT_HAIKU_MODEL", model_haiku),
         ];
         for (key, val) in fields {
-            if let Some(v) = val { env_obj.insert(key.to_string(), v.clone().into()); }
+            if let Some(v) = val {
+                env_obj.insert(key.to_string(), v.clone().into());
+            }
         }
     }
 

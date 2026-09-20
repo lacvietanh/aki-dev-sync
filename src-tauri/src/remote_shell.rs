@@ -47,8 +47,13 @@ pub(crate) fn run_remote_shell(
     let _host_guard = host_mutex.lock().unwrap_or_else(|e| e.into_inner());
 
     let local = is_local_host(host);
-    let mut child = spawn_shell(shell, host, local)
-        .map_err(|e| format!("Failed to spawn {}: {}", if local { "local process" } else { "SSH" }, e))?;
+    let mut child = spawn_shell(shell, host, local).map_err(|e| {
+        format!(
+            "Failed to spawn {}: {}",
+            if local { "local process" } else { "SSH" },
+            e
+        )
+    })?;
 
     let mut out_pipe = child.stdout.take().ok_or("stdout pipe missing")?;
     let mut err_pipe = child.stderr.take().ok_or("stderr pipe missing")?;
@@ -95,7 +100,11 @@ pub(crate) fn run_remote_shell(
 
     let stdout = out_handle.join().unwrap_or_default();
     let stderr = err_handle.join().unwrap_or_default();
-    Ok(Output { status, stdout, stderr })
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn spawn_shell(shell: Shell, host: &str, local: bool) -> std::io::Result<std::process::Child> {
@@ -131,10 +140,14 @@ pub(crate) fn is_local_host(host: &str) -> bool {
 pub(crate) fn polling_ssh(host: &str, remote_cmd: &str) -> Command {
     let mut c = Command::new("ssh");
     c.args([
-        "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=10",
-        "-o", "ServerAliveInterval=5",
-        "-o", "ServerAliveCountMax=3",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=5",
+        "-o",
+        "ServerAliveCountMax=3",
         host,
         remote_cmd,
     ]);

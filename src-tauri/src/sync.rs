@@ -1,12 +1,12 @@
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::time::UNIX_EPOCH;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
+use std::time::UNIX_EPOCH;
 use tauri::{Emitter, Manager, Window};
 
 use crate::projects::{validate_path_segment, validate_project, SyncProject};
@@ -91,7 +91,11 @@ fn version_triple(v: &str) -> (u32, u32, u32) {
             .parse::<u32>()
             .unwrap_or(0)
     });
-    (parts.next().unwrap_or(0), parts.next().unwrap_or(0), parts.next().unwrap_or(0))
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    )
 }
 
 /// True when rsync >= 3.2.4 (auto-protects remote path args). Unrecognized version strings (e.g. macOS stock openrsync) fail closed as unprotected.
@@ -100,7 +104,11 @@ fn rsync_protects_remote_args(version_line: &str) -> bool {
     if !line.starts_with("rsync") {
         return false;
     }
-    match line.split_whitespace().skip_while(|t| *t != "version").nth(1) {
+    match line
+        .split_whitespace()
+        .skip_while(|t| *t != "version")
+        .nth(1)
+    {
         Some(v) => version_triple(v) >= (3, 2, 4),
         None => false,
     }
@@ -108,12 +116,21 @@ fn rsync_protects_remote_args(version_line: &str) -> bool {
 
 /// First line of the local `rsync --version`, cached for the process (same map the sync log reads).
 fn local_rsync_version_line() -> String {
-    let mut map = get_rsync_versions().lock().unwrap_or_else(|e| e.into_inner());
+    let mut map = get_rsync_versions()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some(v) = map.get("local") {
         return v.clone();
     }
-    let v = if let Ok(out) = crate::system::create_command("rsync").arg("--version").output() {
-        String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("unknown").to_string()
+    let v = if let Ok(out) = crate::system::create_command("rsync")
+        .arg("--version")
+        .output()
+    {
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .next()
+            .unwrap_or("unknown")
+            .to_string()
     } else {
         "unknown".to_string()
     };
@@ -171,7 +188,10 @@ impl SyncSlot {
 
 impl Drop for SyncSlot {
     fn drop(&mut self) {
-        sync_inflight().lock().unwrap_or_else(|e| e.into_inner()).remove(&self.0);
+        sync_inflight()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
     }
 }
 
@@ -208,11 +228,17 @@ fn take_all_children() -> Vec<u32> {
 }
 
 fn mark_cancelled(project_id: &str) {
-    cancelled_ids().lock().unwrap_or_else(|e| e.into_inner()).insert(project_id.to_string());
+    cancelled_ids()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(project_id.to_string());
 }
 
 fn consume_cancelled(project_id: &str) -> bool {
-    cancelled_ids().lock().unwrap_or_else(|e| e.into_inner()).remove(project_id)
+    cancelled_ids()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(project_id)
 }
 
 /// Signals the child process group (SIGTERM then SIGKILL escalation with signal-0 polling) to terminate rsync, spawned ssh, and remote transfers cleanly.
@@ -293,7 +319,13 @@ struct LogPayload {
 }
 
 fn emit_log(window: &Window, project_id: &str, line: String) {
-    let _ = window.emit("sync-log", LogPayload { project_id: project_id.to_string(), line });
+    let _ = window.emit(
+        "sync-log",
+        LogPayload {
+            project_id: project_id.to_string(),
+            line,
+        },
+    );
 }
 
 fn stream_reader<R: std::io::Read + Send + 'static>(
@@ -349,8 +381,14 @@ fn spawn_and_stream(
     let pid = child.id();
     register_child(project_id, pid);
 
-    let stdout = child.stdout.take().ok_or_else(|| format!("Failed to capture {} stdout", label))?;
-    let stderr = child.stderr.take().ok_or_else(|| format!("Failed to capture {} stderr", label))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("Failed to capture {} stdout", label))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("Failed to capture {} stderr", label))?;
 
     let t_out = stream_reader(stdout, window.clone(), project_id.to_string(), "");
     let t_err = stream_reader(stderr, window.clone(), project_id.to_string(), "[ERR] ");
@@ -361,7 +399,11 @@ fn spawn_and_stream(
     unregister_child(project_id, pid);
     let status = wait_result.map_err(|e| format!("Error waiting for {}: {}", label, e))?;
     if !status.success() {
-        return Err(format!("{} exited with code: {}", label, status.code().unwrap_or(-1)));
+        return Err(format!(
+            "{} exited with code: {}",
+            label,
+            status.code().unwrap_or(-1)
+        ));
     }
     Ok(())
 }
@@ -372,7 +414,11 @@ fn execute_hook(
     cmd: &str,
     dry_prefix: &str,
 ) -> Result<(), String> {
-    emit_log(window, &project.id, format!("\n>>> {}Executing hook: {}\n", dry_prefix, cmd));
+    emit_log(
+        window,
+        &project.id,
+        format!("\n>>> {}Executing hook: {}\n", dry_prefix, cmd),
+    );
     let mut command = if project.hooks.run_hooks_on_remote {
         let mut c = sync_ssh(&project.remote_host);
         c.arg(cmd);
@@ -394,14 +440,22 @@ fn run_hook_phase(
     phase_name: &str,
 ) -> Result<(), String> {
     if dry_run {
-        emit_log(window, &project.id, format!("\n>>> {}Skipping {} hook\n", dry_prefix, phase_name));
+        emit_log(
+            window,
+            &project.id,
+            format!("\n>>> {}Skipping {} hook\n", dry_prefix, phase_name),
+        );
         return Ok(());
     }
     if let Some(c) = cmd {
         if !c.trim().is_empty() {
             if let Err(e) = execute_hook(window, project, c, dry_prefix) {
                 if project.hooks.ignore_hook_errors {
-                    emit_log(window, &project.id, format!("[WARN] {} hook failed (ignored): {}\n", phase_name, e));
+                    emit_log(
+                        window,
+                        &project.id,
+                        format!("[WARN] {} hook failed (ignored): {}\n", phase_name, e),
+                    );
                 } else {
                     return Err(e);
                 }
@@ -475,7 +529,11 @@ fn direction_excludes(project: &SyncProject, is_push: bool) -> &Vec<String> {
 fn union_excludes(project: &SyncProject) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for e in project.push_excludes.iter().chain(project.pull_excludes.iter()) {
+    for e in project
+        .push_excludes
+        .iter()
+        .chain(project.pull_excludes.iter())
+    {
         let key = e.trim().to_string();
         if key.is_empty() || !seen.insert(key) {
             continue;
@@ -507,7 +565,9 @@ fn collect_local_files_with_mtime(
         if path.is_dir() {
             collect_local_files_with_mtime(base, &path, dir_excludes, out);
         } else {
-            let mtime = path.metadata().ok()
+            let mtime = path
+                .metadata()
+                .ok()
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
@@ -517,21 +577,22 @@ fn collect_local_files_with_mtime(
     }
 }
 
-fn write_baseline(local_path: &str, project_id: &str, dir_excludes: &[String]) -> Result<(), String> {
+fn write_baseline(
+    local_path: &str,
+    project_id: &str,
+    dir_excludes: &[String],
+) -> Result<(), String> {
     let base = std::path::Path::new(local_path);
     let mut files: HashMap<String, u64> = HashMap::new();
     collect_local_files_with_mtime(base, base, dir_excludes, &mut files);
 
-    let json = serde_json::to_string(&files)
-        .map_err(|e| format!("baseline serialize: {}", e))?;
+    let json = serde_json::to_string(&files).map_err(|e| format!("baseline serialize: {}", e))?;
 
     let path = baseline_path(project_id);
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("baseline mkdir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("baseline mkdir: {}", e))?;
     }
-    std::fs::write(&path, json)
-        .map_err(|e| format!("baseline write: {}", e))?;
+    std::fs::write(&path, json).map_err(|e| format!("baseline write: {}", e))?;
     Ok(())
 }
 
@@ -670,9 +731,20 @@ fn run_sync_blocking(
     let dry_prefix = if dry_run { "[DRY RUN] " } else { "" };
 
     // First log line emits before SSH work to close the latency gap between UI click and rsync output.
-    emit_log(&window, &project.id, format!(">>> {}Connecting to {}...\n", dry_prefix, project.remote_host));
+    emit_log(
+        &window,
+        &project.id,
+        format!(
+            ">>> {}Connecting to {}...\n",
+            dry_prefix, project.remote_host
+        ),
+    );
 
-    let pre_cmd = if is_push { &project.hooks.pre_push_cmd } else { &project.hooks.pre_pull_cmd };
+    let pre_cmd = if is_push {
+        &project.hooks.pre_push_cmd
+    } else {
+        &project.hooks.pre_pull_cmd
+    };
     run_hook_phase(&window, &project, pre_cmd, dry_run, dry_prefix, "pre-sync")?;
 
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
@@ -680,15 +752,27 @@ fn run_sync_blocking(
     // Refused here, before the remote mkdir and before rsync spawns, if this rsync cannot protect the path from the remote shell.
     let remote_full = format!("{}/", remote_rsync_arg(&project.remote_host, remote)?);
 
-    let (src, dest) = if is_push { (&local, &remote_full) } else { (&remote_full, &local) };
+    let (src, dest) = if is_push {
+        (&local, &remote_full)
+    } else {
+        (&remote_full, &local)
+    };
 
     if is_push {
         if !dry_run {
             // Remote path is quoted via quote_remote_path with leading `~` expanded as $HOME so remote shell space parsing cannot split directories.
             let mkdir_out = sync_ssh(&project.remote_host)
-                .arg(format!("mkdir -p {}", quote_remote_path(&project.remote_path)))
+                .arg(format!(
+                    "mkdir -p {}",
+                    quote_remote_path(&project.remote_path)
+                ))
                 .output()
-                .map_err(|e| format!("Failed to create remote directory '{}': {}", project.remote_path, e))?;
+                .map_err(|e| {
+                    format!(
+                        "Failed to create remote directory '{}': {}",
+                        project.remote_path, e
+                    )
+                })?;
             if !mkdir_out.status.success() {
                 return Err(format!(
                     "Remote mkdir failed for '{}': {}",
@@ -714,8 +798,15 @@ fn run_sync_blocking(
         if let Some(v) = map.get(&project.remote_host) {
             v.clone()
         } else {
-            let v = if let Ok(out) = sync_ssh(&project.remote_host).args(["rsync", "--version"]).output() {
-                String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("unknown").to_string()
+            let v = if let Ok(out) = sync_ssh(&project.remote_host)
+                .args(["rsync", "--version"])
+                .output()
+            {
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("unknown")
+                    .to_string()
             } else {
                 "unknown".to_string()
             };
@@ -726,14 +817,21 @@ fn run_sync_blocking(
 
     let log_str = format!(
         ">>> {}Local Rsync: {}\n>>> {}Remote Rsync: {}\n",
-        dry_prefix, local_v_str.trim(), dry_prefix, remote_v_str.trim()
+        dry_prefix,
+        local_v_str.trim(),
+        dry_prefix,
+        remote_v_str.trim()
     );
     emit_log(&window, &project.id, log_str);
 
     emit_log(
         &window,
         &project.id,
-        format!(">>> {}Executing command: rsync {}\n", dry_prefix, args.join(" ")),
+        format!(
+            ">>> {}Executing command: rsync {}\n",
+            dry_prefix,
+            args.join(" ")
+        ),
     );
 
     let mut command = crate::system::create_command("rsync");
@@ -750,19 +848,43 @@ fn run_sync_blocking(
         let project_id = project.id.clone();
         let dir_excludes = union_excludes(&project);
         if let Err(e) = write_baseline(&local_path, &project_id, &dir_excludes) {
-            emit_log(&window, &project.id, format!("[WARN] Baseline write failed (non-fatal): {}\n", e));
+            emit_log(
+                &window,
+                &project.id,
+                format!("[WARN] Baseline write failed (non-fatal): {}\n", e),
+            );
         }
     }
 
-    let post_cmd = if is_push { &project.hooks.post_push_cmd } else { &project.hooks.post_pull_cmd };
-    run_hook_phase(&window, &project, post_cmd, dry_run, dry_prefix, "post-sync")?;
+    let post_cmd = if is_push {
+        &project.hooks.post_push_cmd
+    } else {
+        &project.hooks.post_pull_cmd
+    };
+    run_hook_phase(
+        &window,
+        &project,
+        post_cmd,
+        dry_run,
+        dry_prefix,
+        "post-sync",
+    )?;
 
-    emit_log(&window, &project.id, format!("\n>>> SYNC COMPLETED SUCCESSFULLY{}! <<<\n", dry_prefix));
+    emit_log(
+        &window,
+        &project.id,
+        format!("\n>>> SYNC COMPLETED SUCCESSFULLY{}! <<<\n", dry_prefix),
+    );
     Ok(())
 }
 
 /// Pulls a single named file (e.g. REPORT.html) via rsync without invoking full push/pull pipeline; guards remote path against shell injection.
-pub fn rsync_pull_file(host: &str, remote_dir: &str, filename: &str, local_dir: &str) -> Result<(), String> {
+pub fn rsync_pull_file(
+    host: &str,
+    remote_dir: &str,
+    filename: &str,
+    local_dir: &str,
+) -> Result<(), String> {
     // Directory and filename are one remote-shell word each - guard the joined path, since the filename reaches the same shell the directory does.
     let remote_src = remote_rsync_arg(
         host,
@@ -778,7 +900,10 @@ pub fn rsync_pull_file(host: &str, remote_dir: &str, filename: &str, local_dir: 
         .output()
         .map_err(|e| format!("Failed to run rsync: {}", e))?;
     if !out.status.success() {
-        return Err(format!("rsync failed: {}", String::from_utf8_lossy(&out.stderr)));
+        return Err(format!(
+            "rsync failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
     }
     Ok(())
 }
@@ -807,7 +932,10 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
     let remote = format!(
         "{}/",
-        remote_rsync_arg(&project.remote_host, project.remote_path.trim_end_matches('/'))?
+        remote_rsync_arg(
+            &project.remote_host,
+            project.remote_path.trim_end_matches('/')
+        )?
     );
     let (src, dest) = if is_push {
         (local.as_str(), remote.as_str())
@@ -876,14 +1004,15 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
     let baseline = read_baseline(&project.id);
 
     // PULL side: Mac deleted file since last sync → should push the deletion, not pull
-    let (reclassified_to_push, real_pull): (Vec<_>, Vec<_>) = pull_files.into_iter().partition(|f| {
-        if let Some(ref bl) = baseline {
-            let local_full = std::path::Path::new(&project.local_path).join(f);
-            bl.contains_key(f) && !local_full.exists()
-        } else {
-            false
-        }
-    });
+    let (reclassified_to_push, real_pull): (Vec<_>, Vec<_>) =
+        pull_files.into_iter().partition(|f| {
+            if let Some(ref bl) = baseline {
+                let local_full = std::path::Path::new(&project.local_path).join(f);
+                bl.contains_key(f) && !local_full.exists()
+            } else {
+                false
+            }
+        });
 
     // PUSH side: suppress only when local mtime matches baseline mtime, meaning the file was NOT modified locally since last sync → remote deleted it (not a local edit).
     let (_, real_push): (Vec<_>, Vec<_>) = push_files.into_iter().partition(|f| {
@@ -893,7 +1022,9 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
                     return false; // Old-format entry - conservative: don't suppress
                 }
                 let local_full = std::path::Path::new(&project.local_path).join(f);
-                let current_mtime = local_full.metadata().ok()
+                let current_mtime = local_full
+                    .metadata()
+                    .ok()
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                     .map(|d| d.as_secs())
@@ -914,7 +1045,10 @@ fn compute_sync_counts(project: &SyncProject) -> Result<(u32, u32), String> {
 }
 
 #[tauri::command]
-pub async fn check_sync_status(app: tauri::AppHandle, project: SyncProject) -> Result<SyncStatusResult, String> {
+pub async fn check_sync_status(
+    app: tauri::AppHandle,
+    project: SyncProject,
+) -> Result<SyncStatusResult, String> {
     validate_project(&project)?;
     ensure_app_data_dir(&app);
     tauri::async_runtime::spawn_blocking(move || {
@@ -946,7 +1080,10 @@ pub async fn get_sync_delete_preview(
         let local = format!("{}/", project.local_path.trim_end_matches('/'));
         let remote = format!(
             "{}/",
-            remote_rsync_arg(&project.remote_host, project.remote_path.trim_end_matches('/'))?
+            remote_rsync_arg(
+                &project.remote_host,
+                project.remote_path.trim_end_matches('/')
+            )?
         );
         let (src, dest) = if is_push {
             (local.as_str(), remote.as_str())
@@ -1144,7 +1281,15 @@ mod tests {
     fn union_excludes_push_entries_precede_pull_entries() {
         let project = make_test_project(vec!["a/", "b/"], vec!["c/", "d/"]);
         let result = union_excludes(&project);
-        assert_eq!(result, vec!["a/".to_string(), "b/".to_string(), "c/".to_string(), "d/".to_string()]);
+        assert_eq!(
+            result,
+            vec![
+                "a/".to_string(),
+                "b/".to_string(),
+                "c/".to_string(),
+                "d/".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -1227,7 +1372,11 @@ mod tests {
             let q = shell_single_quote(raw);
             assert!(q.starts_with('\'') && q.ends_with('\''), "not quoted: {q}");
             // Nothing but the escape sequence may ever end the quoting early.
-            assert_eq!(q.matches('\'').count(), 2 + raw.matches('\'').count() * 2, "{q}");
+            assert_eq!(
+                q.matches('\'').count(),
+                2 + raw.matches('\'').count() * 2,
+                "{q}"
+            );
         }
     }
 
@@ -1261,23 +1410,44 @@ mod tests {
     #[test]
     fn first_shell_active_char_leaves_ordinary_paths_alone() {
         // Non-ASCII is not shell-active, and `~` / wildcards mean the same thing on old and new rsync - flagging any of these would refuse a config that works today for no gain.
-        for raw in ["/var/www/app", "~", "~/app", "~/a/~/b", "~user/app", "/srv/tàiliệu", "/srv/日本語", "/srv/app*", "/srv/log[0-9]", "/srv/a?b"] {
+        for raw in [
+            "/var/www/app",
+            "~",
+            "~/app",
+            "~/a/~/b",
+            "~user/app",
+            "/srv/tàiliệu",
+            "/srv/日本語",
+            "/srv/app*",
+            "/srv/log[0-9]",
+            "/srv/a?b",
+        ] {
             assert_eq!(first_shell_active_char(raw), None, "{raw}");
         }
     }
 
     #[test]
     fn rsync_protects_remote_args_only_from_3_2_4() {
-        assert!(rsync_protects_remote_args("rsync  version 3.4.1  protocol version 32"));
-        assert!(rsync_protects_remote_args("rsync  version 3.2.4  protocol version 31"));
-        assert!(!rsync_protects_remote_args("rsync  version 3.2.3  protocol version 31"));
-        assert!(!rsync_protects_remote_args("rsync  version 2.6.9  protocol version 29"));
+        assert!(rsync_protects_remote_args(
+            "rsync  version 3.4.1  protocol version 32"
+        ));
+        assert!(rsync_protects_remote_args(
+            "rsync  version 3.2.4  protocol version 31"
+        ));
+        assert!(!rsync_protects_remote_args(
+            "rsync  version 3.2.3  protocol version 31"
+        ));
+        assert!(!rsync_protects_remote_args(
+            "rsync  version 2.6.9  protocol version 29"
+        ));
     }
 
     #[test]
     fn rsync_protects_remote_args_fails_closed_on_an_unknown_banner() {
         // macOS's stock /usr/bin/rsync is openrsync; its first line carries a "version 29" token that must never be read as a version number.
-        assert!(!rsync_protects_remote_args("openrsync: protocol version 29"));
+        assert!(!rsync_protects_remote_args(
+            "openrsync: protocol version 29"
+        ));
         assert!(!rsync_protects_remote_args("unknown"));
         assert!(!rsync_protects_remote_args(""));
     }
@@ -1285,10 +1455,16 @@ mod tests {
     #[test]
     fn remote_rsync_arg_passes_an_ordinary_path_through_unchanged() {
         // Paths without shell-active characters remain byte-identical to previous releases; leading `~` expands unquoted on remote shell.
-        assert_eq!(remote_rsync_arg("host", "/var/www/app").unwrap(), "host:/var/www/app");
+        assert_eq!(
+            remote_rsync_arg("host", "/var/www/app").unwrap(),
+            "host:/var/www/app"
+        );
         assert_eq!(remote_rsync_arg("host", "~/app").unwrap(), "host:~/app");
         assert_eq!(remote_rsync_arg("host", "~").unwrap(), "host:~");
-        assert_eq!(remote_rsync_arg("host", "/srv/日本語").unwrap(), "host:/srv/日本語");
+        assert_eq!(
+            remote_rsync_arg("host", "/srv/日本語").unwrap(),
+            "host:/srv/日本語"
+        );
     }
 
     // ─── §3.7 transport timeouts ──────────────────────────────────────────────
@@ -1298,7 +1474,10 @@ mod tests {
         let project = make_test_project(vec![], vec![]);
         let args = build_rsync_args(&project, true, false, &[], "/local/", "host:/remote/");
         assert!(args.contains(&"--timeout=120".to_string()), "{args:?}");
-        let e = args.iter().position(|a| a == "-e").expect("no -e in {args:?}");
+        let e = args
+            .iter()
+            .position(|a| a == "-e")
+            .expect("no -e in {args:?}");
         assert_eq!(args[e + 1], "ssh -o ConnectTimeout=10");
     }
 
@@ -1350,7 +1529,10 @@ mod tests {
         let project = make_test_project(vec![], vec![]);
         let args = build_rsync_args(&project, true, false, &[], "/local/", "host:/remote/");
         assert!(!args.contains(&"--delete".to_string()), "{args:?}");
-        assert!(!args.contains(&NOTES_PROTECT_FILTER.to_string()), "{args:?}");
+        assert!(
+            !args.contains(&NOTES_PROTECT_FILTER.to_string()),
+            "{args:?}"
+        );
     }
 
     // ─── §3.22 missing local path ─────────────────────────────────────────────
@@ -1358,7 +1540,10 @@ mod tests {
     #[test]
     fn ensure_local_path_present_rejects_a_missing_directory() {
         let err = ensure_local_path_present("/Volumes/definitely-not-mounted-xyz/app").unwrap_err();
-        assert!(err.contains("/Volumes/definitely-not-mounted-xyz/app"), "{err}");
+        assert!(
+            err.contains("/Volumes/definitely-not-mounted-xyz/app"),
+            "{err}"
+        );
         // The message must point at the real cause, not read as a validation rejection.
         assert!(err.to_lowercase().contains("mount"), "{err}");
     }

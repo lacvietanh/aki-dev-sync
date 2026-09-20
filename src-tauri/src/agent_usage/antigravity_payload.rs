@@ -3,7 +3,10 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 
 /// Parses raw framed output from `get-antigravity-usage.sh` and assembles the unified AG snapshot payload.
-pub(crate) fn parse_antigravity_frames(raw_output: &str, now: i64) -> Result<Option<AgentUsageResponse>, String> {
+pub(crate) fn parse_antigravity_frames(
+    raw_output: &str,
+    now: i64,
+) -> Result<Option<AgentUsageResponse>, String> {
     let raw_output = raw_output.trim();
     if raw_output.is_empty() {
         return Ok(None);
@@ -41,9 +44,9 @@ pub(crate) fn parse_antigravity_frames(raw_output: &str, now: i64) -> Result<Opt
             None
         };
 
-        let quota_summary = raw_summary.as_ref().and_then(|s| {
-            s.get("response").cloned().or_else(|| Some(s.clone()))
-        });
+        let quota_summary = raw_summary
+            .as_ref()
+            .and_then(|s| s.get("response").cloned().or_else(|| Some(s.clone())));
 
         let mut snapshot = build_local_quota_snapshot(user_status, quota_summary, now);
         let source_type = if proc_info.proc_type.is_empty() {
@@ -161,8 +164,15 @@ fn parse_frame_chunk(chunk: &str) -> ParsedFrameChunk {
     }
 }
 
-fn build_local_quota_snapshot(user_status: &Value, quota_summary: Option<Value>, now: i64) -> Value {
-    let email = user_status.get("email").and_then(|v| v.as_str()).unwrap_or("");
+fn build_local_quota_snapshot(
+    user_status: &Value,
+    quota_summary: Option<Value>,
+    now: i64,
+) -> Value {
+    let email = user_status
+        .get("email")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let user_tier = user_status.get("userTier").cloned().unwrap_or(Value::Null);
 
     let extracted_quota_models = extract_quota_models(user_status, now);
@@ -185,7 +195,9 @@ fn build_local_quota_snapshot(user_status: &Value, quota_summary: Option<Value>,
 
 fn extract_quota_models(data: &Value, now: i64) -> Vec<Value> {
     let cascade_data = data.get("cascadeModelConfigData");
-    let client_model_configs = cascade_data.and_then(|c| c.get("clientModelConfigs")).and_then(|v| v.as_array());
+    let client_model_configs = cascade_data
+        .and_then(|c| c.get("clientModelConfigs"))
+        .and_then(|v| v.as_array());
 
     let mut models = Vec::new();
     if let Some(configs) = client_model_configs {
@@ -198,8 +210,12 @@ fn extract_quota_models(data: &Value, now: i64) -> Vec<Value> {
 
             let label = m.get("label").and_then(|v| v.as_str());
             let quota_info = m.get("quotaInfo");
-            let remaining_fraction = quota_info.and_then(|q| q.get("remainingFraction")).and_then(|v| v.as_f64());
-            let reset_time = quota_info.and_then(|q| q.get("resetTime")).and_then(|v| v.as_str());
+            let remaining_fraction = quota_info
+                .and_then(|q| q.get("remainingFraction"))
+                .and_then(|v| v.as_f64());
+            let reset_time = quota_info
+                .and_then(|q| q.get("resetTime"))
+                .and_then(|v| v.as_str());
 
             let used_percentage = remaining_fraction.map(|rf| 1.0 - rf);
             let time_until_reset_ms = reset_time.and_then(|rt| parse_iso_reset_time(rt, now));
@@ -226,26 +242,34 @@ fn extract_quota_models(data: &Value, now: i64) -> Vec<Value> {
 }
 
 fn parse_model_quota(model: &Value, now: i64) -> Value {
-    let model_id = model.get("modelId").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let model_id = model
+        .get("modelId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     let label_str = model.get("label").and_then(|v| v.as_str());
     let display_str = model.get("displayName").and_then(|v| v.as_str());
 
-    let label = label_str
-        .or(display_str)
-        .unwrap_or(model_id);
+    let label = label_str.or(display_str).unwrap_or(model_id);
 
     let quota = model.get("quota");
-    let remaining_percentage = quota.and_then(|q| q.get("remainingPercentage")).and_then(|v| v.as_f64());
-    let reset_time = quota.and_then(|q| q.get("resetTime")).and_then(|v| v.as_str());
+    let remaining_percentage = quota
+        .and_then(|q| q.get("remainingPercentage"))
+        .and_then(|v| v.as_f64());
+    let reset_time = quota
+        .and_then(|q| q.get("resetTime"))
+        .and_then(|v| v.as_str());
     let time_until_reset_ms = reset_time.and_then(|rt| parse_iso_reset_time(rt, now));
 
-    let is_exhausted = model.get("isExhausted")
+    let is_exhausted = model
+        .get("isExhausted")
         .and_then(|v| v.as_bool())
         .unwrap_or_else(|| remaining_percentage.map(|r| r == 0.0).unwrap_or(false));
 
     let is_autocomplete_only = model_id.contains("gemini-2.5")
         || label.contains("Gemini 2.5")
-        || display_str.map(|d| d.contains("Gemini 2.5")).unwrap_or(false);
+        || display_str
+            .map(|d| d.contains("Gemini 2.5"))
+            .unwrap_or(false);
 
     json!({
         "label": label,
@@ -296,7 +320,10 @@ fn format_iso_timestamp(now_secs: i64) -> String {
     let hour = rem / 3600;
     let min = (rem % 3600) / 60;
     let sec = rem % 60;
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.000Z", year, month, day, hour, min, sec)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.000Z",
+        year, month, day, hour, min, sec
+    )
 }
 
 fn civil_from_days(z: i64) -> (i64, i64, i64) {

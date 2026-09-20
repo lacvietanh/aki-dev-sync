@@ -12,8 +12,8 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
@@ -30,7 +30,9 @@ const CHECK_EVERY_BYTES: u64 = 65_536;
 
 pub fn init(_handle: &tauri::AppHandle) {
     let debug = std::env::args().any(|a| a == "--debug")
-        || std::env::var("AKI_DEBUG").map(|v| !v.is_empty()).unwrap_or(false);
+        || std::env::var("AKI_DEBUG")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
     DEBUG_MODE.store(debug, Ordering::Relaxed);
 
     let path = crate::app_paths::app_data_dir()
@@ -47,7 +49,11 @@ pub fn init(_handle: &tauri::AppHandle) {
 
     // STARTUP is always written to file as a session boundary marker. stderr only in debug mode (end users don't see stderr in production).
     let ts = now_human();
-    let msg = format!("aki-dev-sync started debug={} log={}", debug, path.display());
+    let msg = format!(
+        "aki-dev-sync started debug={} log={}",
+        debug,
+        path.display()
+    );
     let line = format!("[{}][STARTUP] {}\n", ts, msg);
     append_line(&path, &line);
     if debug {
@@ -84,7 +90,7 @@ fn tally(counter: &AtomicU64, added: u64) -> bool {
 /// Trim the log file to the most recent 512 KB when it exceeds 1 MB.
 /// Finds a clean newline boundary so no partial lines are left.
 fn maybe_truncate_log(path: &PathBuf) {
-    const MAX_BYTES: u64 = 1_048_576;  // 1 MB
+    const MAX_BYTES: u64 = 1_048_576; // 1 MB
     const KEEP_BYTES: usize = 524_288; // keep newest 512 KB
     truncate_to_tail(path, MAX_BYTES, KEEP_BYTES);
 }
@@ -118,7 +124,10 @@ pub fn is_debug() -> bool {
 }
 
 fn log_path() -> PathBuf {
-    LOG_PATH.get().cloned().unwrap_or_else(|| PathBuf::from("usage.log"))
+    LOG_PATH
+        .get()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("usage.log"))
 }
 
 /// Format UTC datetime as `YYYYMMDD.HHMMSS.mmm` (compact, optimised for high-volume log lines).
@@ -137,20 +146,40 @@ fn now_human() -> String {
     let mut year = 1970u64;
     loop {
         let dy = if is_leap(year) { 366 } else { 365 };
-        if days < dy { break; }
+        if days < dy {
+            break;
+        }
         days -= dy;
         year += 1;
     }
-    let month_len: [u64; 12] = [31, if is_leap(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let month_len: [u64; 12] = [
+        31,
+        if is_leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 1u64;
     for &md in &month_len {
-        if days < md { break; }
+        if days < md {
+            break;
+        }
         days -= md;
         month += 1;
     }
     let day = days + 1;
 
-    format!("{:04}{:02}{:02}.{:02}{:02}{:02}.{:03}", year, month, day, h, m, s, ms)
+    format!(
+        "{:04}{:02}{:02}.{:02}{:02}{:02}.{:03}",
+        year, month, day, h, m, s, ms
+    )
 }
 
 fn is_leap(y: u64) -> bool {
@@ -200,8 +229,8 @@ pub fn get_log_path() -> String {
 pub fn log_frontend(level: String, tag: String, msg: String) {
     match level.as_str() {
         "error" => error(&tag, &msg),
-        "info"  => info(&tag, &msg),
-        _       => debug(&tag, &msg),
+        "info" => info(&tag, &msg),
+        _ => debug(&tag, &msg),
     }
 }
 
@@ -210,7 +239,11 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("aki-logger-test-{}-{}.log", std::process::id(), name));
+        let p = std::env::temp_dir().join(format!(
+            "aki-logger-test-{}-{}.log",
+            std::process::id(),
+            name
+        ));
         let _ = std::fs::remove_file(&p);
         p
     }
@@ -219,7 +252,10 @@ mod tests {
     #[test]
     fn size_check_fires_once_per_threshold_then_resets() {
         let c = AtomicU64::new(0);
-        assert!(!tally(&c, CHECK_EVERY_BYTES - 1), "fired before the threshold");
+        assert!(
+            !tally(&c, CHECK_EVERY_BYTES - 1),
+            "fired before the threshold"
+        );
         assert!(tally(&c, 1), "did not fire on reaching the threshold");
         assert!(!tally(&c, 1), "counter was not reset after firing");
     }
@@ -227,15 +263,28 @@ mod tests {
     #[test]
     fn rotation_keeps_the_tail_and_cuts_on_a_line_boundary() {
         let path = scratch("rotate");
-        let body: String = (0..500).map(|i| format!("line-{:04} padding padding padding\n", i)).collect();
+        let body: String = (0..500)
+            .map(|i| format!("line-{:04} padding padding padding\n", i))
+            .collect();
         std::fs::write(&path, &body).unwrap();
 
         truncate_to_tail(&path, 1_000, 2_000);
         let after = std::fs::read_to_string(&path).unwrap();
-        assert!(after.len() <= 2_000, "kept more than requested: {}", after.len());
+        assert!(
+            after.len() <= 2_000,
+            "kept more than requested: {}",
+            after.len()
+        );
         assert!(!after.is_empty(), "everything was thrown away");
-        assert!(after.starts_with("line-"), "cut mid-line: {:?}", &after[..20.min(after.len())]);
-        assert!(after.ends_with("line-0499 padding padding padding\n"), "the newest line was lost");
+        assert!(
+            after.starts_with("line-"),
+            "cut mid-line: {:?}",
+            &after[..20.min(after.len())]
+        );
+        assert!(
+            after.ends_with("line-0499 padding padding padding\n"),
+            "the newest line was lost"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -258,7 +307,11 @@ mod tests {
         }
         let size = std::fs::metadata(&path).unwrap().len();
         // 2 MB was written; anything near that means rotation never ran. The ceiling plus one check window is the honest bound.
-        assert!(size < 1_048_576 + CHECK_EVERY_BYTES, "log grew unchecked: {} bytes", size);
+        assert!(
+            size < 1_048_576 + CHECK_EVERY_BYTES,
+            "log grew unchecked: {} bytes",
+            size
+        );
         let _ = std::fs::remove_file(&path);
     }
 }

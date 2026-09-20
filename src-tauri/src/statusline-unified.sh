@@ -21,10 +21,6 @@ case "$0" in
   *)           CLI="CC" ;;
 esac
 
-# Raw payload dump, BEFORE the rlcache merge - a post-merge dump always looks like it had
-# .rate_limits even on turns where the CLI did not send it.
-echo "$input" > /tmp/statusline_stdin_dump.json 2>/dev/null
-
 # aki-rlcache v4 - persist rate_limits across calls that omit it. Claude Code only: AGY carries
 # its quota in .quota on every turn and has no .rate_limits to persist, so an AGY run must not
 # read or write Claude Code's cache file.

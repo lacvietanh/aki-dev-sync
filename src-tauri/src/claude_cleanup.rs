@@ -36,45 +36,195 @@ const GROUP_CACHE: &str = "cache";
 /// Every deletable path, and the only source of truth for what this feature may touch.
 const CATALOG: &[CatalogEntry] = &[
     // -- Account & auth: deleting these signs the CLI out. ---------------------------------------
-    CatalogEntry { group: GROUP_ACCOUNT, key: "claude-json",         rel: ".claude.json",                     kind: Kind::File, label: "OAuth token & account" },
-    CatalogEntry { group: GROUP_ACCOUNT, key: "credentials",         rel: ".claude/.credentials.json",        kind: Kind::File, label: "Legacy credentials" },
-    CatalogEntry { group: GROUP_ACCOUNT, key: "auth-cache",          rel: ".claude/auth-cache.json",          kind: Kind::File, label: "Auth / plan cache" },
-    CatalogEntry { group: GROUP_ACCOUNT, key: "stats-cache",         rel: ".claude/stats-cache.json",         kind: Kind::File, label: "Usage stats cache" },
-    CatalogEntry { group: GROUP_ACCOUNT, key: "rate-limits-cache",   rel: ".claude/rate-limits-cache.json",   kind: Kind::File, label: "Rate limit cache" },
-    CatalogEntry { group: GROUP_ACCOUNT, key: "daemon-auth-status",  rel: ".claude/daemon-auth-status.json",  kind: Kind::File, label: "Daemon auth status" },
-    CatalogEntry { group: GROUP_ACCOUNT, key: "daemon-auth-cooldown",rel: ".claude/daemon-auth-cooldown",     kind: Kind::File, label: "Daemon auth cooldown" },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "claude-json",
+        rel: ".claude.json",
+        kind: Kind::File,
+        label: "OAuth token & account",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "credentials",
+        rel: ".claude/.credentials.json",
+        kind: Kind::File,
+        label: "Legacy credentials",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "auth-cache",
+        rel: ".claude/auth-cache.json",
+        kind: Kind::File,
+        label: "Auth / plan cache",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "stats-cache",
+        rel: ".claude/stats-cache.json",
+        kind: Kind::File,
+        label: "Usage stats cache",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "rate-limits-cache",
+        rel: ".claude/rate-limits-cache.json",
+        kind: Kind::File,
+        label: "Rate limit cache",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "daemon-auth-status",
+        rel: ".claude/daemon-auth-status.json",
+        kind: Kind::File,
+        label: "Daemon auth status",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
+        key: "daemon-auth-cooldown",
+        rel: ".claude/daemon-auth-cooldown",
+        kind: Kind::File,
+        label: "Daemon auth cooldown",
+    },
     // -- Session data: history, transcripts, undo snapshots. -------------------------------------
-    CatalogEntry { group: GROUP_DATA,    key: "projects",            rel: ".claude/projects",                 kind: Kind::ProjectsDir, label: "Chat transcripts (keeps memory/)" },
-    CatalogEntry { group: GROUP_DATA,    key: "history",             rel: ".claude/history.jsonl",            kind: Kind::File, label: "Prompt history" },
-    CatalogEntry { group: GROUP_DATA,    key: "file-history",        rel: ".claude/file-history",             kind: Kind::Dir,  label: "File undo snapshots" },
-    CatalogEntry { group: GROUP_DATA,    key: "sessions",            rel: ".claude/sessions",                 kind: Kind::Dir,  label: "Session records" },
-    CatalogEntry { group: GROUP_DATA,    key: "paste-cache",         rel: ".claude/paste-cache",              kind: Kind::Dir,  label: "Pasted text cache" },
-    CatalogEntry { group: GROUP_DATA,    key: "plans",               rel: ".claude/plans",                    kind: Kind::Dir,  label: "Saved plan files" },
-    CatalogEntry { group: GROUP_DATA,    key: "session-env",         rel: ".claude/session-env",              kind: Kind::Dir,  label: "Per-session env" },
-    CatalogEntry { group: GROUP_DATA,    key: "tasks",               rel: ".claude/tasks",                    kind: Kind::Dir,  label: "Background task output" },
-    CatalogEntry { group: GROUP_DATA,    key: "shell-snapshots",     rel: ".claude/shell-snapshots",          kind: Kind::Dir,  label: "Shell snapshots" },
-    CatalogEntry { group: GROUP_DATA,    key: "downloads",           rel: ".claude/downloads",                kind: Kind::Dir,  label: "Downloaded files" },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "projects",
+        rel: ".claude/projects",
+        kind: Kind::ProjectsDir,
+        label: "Chat transcripts (keeps memory/)",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "history",
+        rel: ".claude/history.jsonl",
+        kind: Kind::File,
+        label: "Prompt history",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "file-history",
+        rel: ".claude/file-history",
+        kind: Kind::Dir,
+        label: "File undo snapshots",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "sessions",
+        rel: ".claude/sessions",
+        kind: Kind::Dir,
+        label: "Session records",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "paste-cache",
+        rel: ".claude/paste-cache",
+        kind: Kind::Dir,
+        label: "Pasted text cache",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "plans",
+        rel: ".claude/plans",
+        kind: Kind::Dir,
+        label: "Saved plan files",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "session-env",
+        rel: ".claude/session-env",
+        kind: Kind::Dir,
+        label: "Per-session env",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "tasks",
+        rel: ".claude/tasks",
+        kind: Kind::Dir,
+        label: "Background task output",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "shell-snapshots",
+        rel: ".claude/shell-snapshots",
+        kind: Kind::Dir,
+        label: "Shell snapshots",
+    },
+    CatalogEntry {
+        group: GROUP_DATA,
+        key: "downloads",
+        rel: ".claude/downloads",
+        kind: Kind::Dir,
+        label: "Downloaded files",
+    },
     // -- Agent memory: deletable, but alone in its own group so "select all of Data" cannot reach it.
-    CatalogEntry { group: GROUP_MEMORY,  key: "agent-memory",        rel: ".claude/projects",                 kind: Kind::MemoryDirs, label: "Agent memory (all projects)" },
+    CatalogEntry {
+        group: GROUP_MEMORY,
+        key: "agent-memory",
+        rel: ".claude/projects",
+        kind: Kind::MemoryDirs,
+        label: "Agent memory (all projects)",
+    },
     // -- Caches: safe, regenerated on demand. ----------------------------------------------------
-    CatalogEntry { group: GROUP_CACHE,   key: "cache",               rel: ".claude/cache",                    kind: Kind::Dir,  label: "App cache" },
-    CatalogEntry { group: GROUP_CACHE,   key: "backups",             rel: ".claude/backups",                  kind: Kind::Dir,  label: "Auto backups" },
-    CatalogEntry { group: GROUP_CACHE,   key: "plugins",             rel: ".claude/plugins",                  kind: Kind::Dir,  label: "Plugin binaries" },
-    CatalogEntry { group: GROUP_CACHE,   key: "telemetry",           rel: ".claude/telemetry",                kind: Kind::Dir,  label: "Telemetry logs" },
-    CatalogEntry { group: GROUP_CACHE,   key: "debug",               rel: ".claude/debug",                    kind: Kind::Dir,  label: "Debug logs" },
-    CatalogEntry { group: GROUP_CACHE,   key: "daemon-log",          rel: ".claude/daemon.log",               kind: Kind::File, label: "Daemon log" },
-    CatalogEntry { group: GROUP_CACHE,   key: "os-cache",            rel: "Library/Caches/claude-code",       kind: Kind::Dir,  label: "macOS cache" },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "cache",
+        rel: ".claude/cache",
+        kind: Kind::Dir,
+        label: "App cache",
+    },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "backups",
+        rel: ".claude/backups",
+        kind: Kind::Dir,
+        label: "Auto backups",
+    },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "plugins",
+        rel: ".claude/plugins",
+        kind: Kind::Dir,
+        label: "Plugin binaries",
+    },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "telemetry",
+        rel: ".claude/telemetry",
+        kind: Kind::Dir,
+        label: "Telemetry logs",
+    },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "debug",
+        rel: ".claude/debug",
+        kind: Kind::Dir,
+        label: "Debug logs",
+    },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "daemon-log",
+        rel: ".claude/daemon.log",
+        kind: Kind::File,
+        label: "Daemon log",
+    },
+    CatalogEntry {
+        group: GROUP_CACHE,
+        key: "os-cache",
+        rel: "Library/Caches/claude-code",
+        kind: Kind::Dir,
+        label: "macOS cache",
+    },
 ];
 
 /// Shown in modal's read-only "Kept" group for visibility. Deletion is gated strictly by CATALOG membership alone.
 const KEPT: &[(&str, &str)] = &[
-    (".claude/settings.json",         "Settings & permissions"),
-    (".claude/settings.local.json",   "Local settings"),
-    (".claude/config.json",           "CLI config"),
-    (".claude/CLAUDE.md",             "Global rules"),
-    (".claude/CLAUDE.local.md",       "Machine-local rules"),
-    (".claude/skills",                "Skills"),
-    (".claude/hooks",                 "Hooks"),
+    (".claude/settings.json", "Settings & permissions"),
+    (".claude/settings.local.json", "Local settings"),
+    (".claude/config.json", "CLI config"),
+    (".claude/CLAUDE.md", "Global rules"),
+    (".claude/CLAUDE.local.md", "Machine-local rules"),
+    (".claude/skills", "Skills"),
+    (".claude/hooks", "Hooks"),
     (".claude/statusline-command.sh", "Statusline script"),
 ];
 
@@ -125,7 +275,9 @@ pub struct CleanupReport {
 
 /// Apparent size of path without following symlinks (prevents traversing outside ~/.claude or inflating size).
 fn path_size(path: &Path) -> u64 {
-    let Ok(meta) = fs::symlink_metadata(path) else { return 0 };
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
     if meta.is_symlink() {
         return meta.len();
     }
@@ -135,13 +287,17 @@ fn path_size(path: &Path) -> u64 {
     if !meta.is_dir() {
         return 0;
     }
-    let Ok(entries) = fs::read_dir(path) else { return 0 };
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
     entries.flatten().map(|e| path_size(&e.path())).sum()
 }
 
 /// `projects/` minus every `<slug>/memory/` - what the Data group actually reclaims.
 fn projects_size_excluding_memory(root: &Path) -> u64 {
-    let Ok(slugs) = fs::read_dir(root) else { return 0 };
+    let Ok(slugs) = fs::read_dir(root) else {
+        return 0;
+    };
     slugs
         .flatten()
         .map(|slug| {
@@ -149,7 +305,9 @@ fn projects_size_excluding_memory(root: &Path) -> u64 {
             if !p.is_dir() {
                 return path_size(&p);
             }
-            let Ok(inner) = fs::read_dir(&p) else { return 0 };
+            let Ok(inner) = fs::read_dir(&p) else {
+                return 0;
+            };
             inner
                 .flatten()
                 .filter(|e| e.file_name() != "memory")
@@ -172,8 +330,26 @@ fn memory_dirs(root: &Path) -> (u64, usize) {
         .unwrap_or((0, 0))
 }
 
-fn entry_size(home: &Path, e: &CatalogEntry) -> u64 {
-    let path = home.join(e.rel);
+/// Resolves a catalog entry to its actual filesystem path using the selected profile's config dir.
+/// Entries under `.claude/` resolve relative to `claude_dir` (`$CLAUDE_CONFIG_DIR` when set, else
+/// `home/.claude`). Home-relative entries (`.claude.json`, `Library/`) stay under `home`.
+fn entry_path(home: &Path, claude_dir: &Path, e: &CatalogEntry) -> std::path::PathBuf {
+    if let Some(sub) = e.rel.strip_prefix(".claude/") {
+        claude_dir.join(sub)
+    } else {
+        home.join(e.rel)
+    }
+}
+
+/// Derives the active Claude config directory: `$CLAUDE_CONFIG_DIR` when set, else `home/.claude`.
+fn claude_config_dir(home: &Path) -> std::path::PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".claude"))
+}
+
+fn entry_size(home: &Path, claude_dir: &Path, e: &CatalogEntry) -> u64 {
+    let path = entry_path(home, claude_dir, e);
     match e.kind {
         Kind::ProjectsDir => projects_size_excluding_memory(&path),
         Kind::MemoryDirs => memory_dirs(&path).0,
@@ -181,10 +357,10 @@ fn entry_size(home: &Path, e: &CatalogEntry) -> u64 {
     }
 }
 
-fn entry_exists(home: &Path, e: &CatalogEntry) -> bool {
+fn entry_exists(home: &Path, claude_dir: &Path, e: &CatalogEntry) -> bool {
     match e.kind {
-        Kind::MemoryDirs => memory_dirs(&home.join(e.rel)).1 > 0,
-        _ => fs::symlink_metadata(home.join(e.rel)).is_ok(),
+        Kind::MemoryDirs => memory_dirs(&entry_path(home, claude_dir, e)).1 > 0,
+        _ => fs::symlink_metadata(entry_path(home, claude_dir, e)).is_ok(),
     }
 }
 
@@ -200,7 +376,7 @@ fn entry_display_path(e: &CatalogEntry) -> String {
 // Scan
 // ---------------------------------------------------------------------------------------------
 
-fn build_group(home: &Path, id: &str, label: &str) -> CleanupGroup {
+fn build_group(home: &Path, claude_dir: &Path, id: &str, label: &str) -> CleanupGroup {
     let entries: Vec<CleanupEntry> = CATALOG
         .iter()
         .filter(|e| e.group == id)
@@ -208,8 +384,8 @@ fn build_group(home: &Path, id: &str, label: &str) -> CleanupGroup {
             key: e.key.to_string(),
             label: e.label.to_string(),
             path: entry_display_path(e),
-            bytes: entry_size(home, e),
-            exists: entry_exists(home, e),
+            bytes: entry_size(home, claude_dir, e),
+            exists: entry_exists(home, claude_dir, e),
         })
         .collect();
     CleanupGroup {
@@ -222,11 +398,15 @@ fn build_group(home: &Path, id: &str, label: &str) -> CleanupGroup {
 }
 
 /// Read-only group: protected paths plus Unlisted aggregate for non-catalog items (deny-by-default undeletable space).
-fn build_kept_group(home: &Path) -> CleanupGroup {
+fn build_kept_group(home: &Path, claude_dir: &Path) -> CleanupGroup {
     let mut entries: Vec<CleanupEntry> = KEPT
         .iter()
         .map(|(rel, label)| {
-            let path = home.join(rel);
+            let path = if let Some(sub) = rel.strip_prefix(".claude/") {
+                claude_dir.join(sub)
+            } else {
+                home.join(rel)
+            };
             CleanupEntry {
                 key: String::new(),
                 label: label.to_string(),
@@ -237,11 +417,13 @@ fn build_kept_group(home: &Path) -> CleanupGroup {
         })
         .collect();
 
-    let (unlisted_bytes, unlisted_count) = fs::read_dir(home.join(".claude"))
+    let (unlisted_bytes, unlisted_count) = fs::read_dir(claude_dir)
         .map(|it| {
             it.flatten()
                 .filter(|e| !is_accounted_for(&e.file_name().to_string_lossy()))
-                .fold((0u64, 0usize), |(b, n), e| (b + path_size(&e.path()), n + 1))
+                .fold((0u64, 0usize), |(b, n), e| {
+                    (b + path_size(&e.path()), n + 1)
+                })
         })
         .unwrap_or((0, 0));
     entries.push(CleanupEntry {
@@ -261,13 +443,13 @@ fn build_kept_group(home: &Path) -> CleanupGroup {
     }
 }
 
-fn scan(home: &Path) -> Vec<CleanupGroup> {
+fn scan(home: &Path, claude_dir: &Path) -> Vec<CleanupGroup> {
     vec![
-        build_group(home, GROUP_ACCOUNT, "Account"),
-        build_group(home, GROUP_DATA, "Data"),
-        build_group(home, GROUP_MEMORY, "Agent memory"),
-        build_group(home, GROUP_CACHE, "Cache"),
-        build_kept_group(home),
+        build_group(home, claude_dir, GROUP_ACCOUNT, "Account"),
+        build_group(home, claude_dir, GROUP_DATA, "Data"),
+        build_group(home, claude_dir, GROUP_MEMORY, "Agent memory"),
+        build_group(home, claude_dir, GROUP_CACHE, "Cache"),
+        build_kept_group(home, claude_dir),
     ]
 }
 
@@ -276,7 +458,8 @@ fn scan(home: &Path) -> Vec<CleanupGroup> {
 pub async fn scan_claude_cleanup() -> Result<Vec<CleanupGroup>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs::home_dir().ok_or("Cannot resolve home dir")?;
-        Ok(scan(&home))
+        let claude_dir = claude_config_dir(&home);
+        Ok(scan(&home, &claude_dir))
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
@@ -361,8 +544,8 @@ fn remove_memory_dirs(root: &Path) -> Result<(), String> {
     }
 }
 
-fn remove_entry(home: &Path, e: &CatalogEntry) -> Result<(), String> {
-    let path = home.join(e.rel);
+fn remove_entry(home: &Path, claude_dir: &Path, e: &CatalogEntry) -> Result<(), String> {
+    let path = entry_path(home, claude_dir, e);
     if fs::symlink_metadata(&path).is_err() {
         return Ok(()); // already gone
     }
@@ -380,17 +563,27 @@ fn remove_entry(home: &Path, e: &CatalogEntry) -> Result<(), String> {
 pub async fn run_claude_cleanup(keys: Vec<String>) -> Result<CleanupReport, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs::home_dir().ok_or("Cannot resolve home dir")?;
-        let mut report = CleanupReport { freed_bytes: 0, removed: vec![], errors: vec![] };
+        let claude_dir = claude_config_dir(&home);
+        let mut report = CleanupReport {
+            freed_bytes: 0,
+            removed: vec![],
+            errors: vec![],
+        };
 
         for key in &keys {
             let Some(entry) = resolve(key) else {
-                report.errors.push(format!("unknown cleanup key \"{}\"", key));
-                crate::logger::error("claude_cleanup", &format!("refused unknown key \"{}\"", key));
+                report
+                    .errors
+                    .push(format!("unknown cleanup key \"{}\"", key));
+                crate::logger::error(
+                    "claude_cleanup",
+                    &format!("refused unknown key \"{}\"", key),
+                );
                 continue;
             };
             // Measured before deleting: afterwards there is nothing left to measure.
-            let before = entry_size(&home, entry);
-            match remove_entry(&home, entry) {
+            let before = entry_size(&home, &claude_dir, entry);
+            match remove_entry(&home, &claude_dir, entry) {
                 Ok(()) => {
                     report.freed_bytes += before;
                     report.removed.push(entry.key.to_string());
@@ -464,7 +657,9 @@ mod tests {
         let memory = resolve("agent-memory").expect("memory must be deletable");
         assert_eq!(memory.group, GROUP_MEMORY);
         assert!(
-            !CATALOG.iter().any(|e| e.group == GROUP_DATA && e.kind == Kind::MemoryDirs),
+            !CATALOG
+                .iter()
+                .any(|e| e.group == GROUP_DATA && e.kind == Kind::MemoryDirs),
             "no Data entry may delete memory"
         );
         assert_eq!(
@@ -500,11 +695,17 @@ mod tests {
         fs::write(slug.join("subdir/x.json"), "drop me too").unwrap();
 
         // Size must exclude memory/ or the modal would promise space it never frees.
-        assert_eq!(projects_size_excluding_memory(&root), "drop me".len() as u64 + "drop me too".len() as u64);
+        assert_eq!(
+            projects_size_excluding_memory(&root),
+            "drop me".len() as u64 + "drop me too".len() as u64
+        );
 
         remove_projects_except_memory(&root).unwrap();
 
-        assert!(slug.join("memory/MEMORY.md").exists(), "memory was destroyed");
+        assert!(
+            slug.join("memory/MEMORY.md").exists(),
+            "memory was destroyed"
+        );
         assert!(!slug.join("transcript.jsonl").exists());
         assert!(!slug.join("subdir").exists());
         assert!(slug.exists(), "slug dir with surviving memory must be kept");
@@ -514,7 +715,10 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(bytes, "keep me".len() as u64);
         remove_memory_dirs(&root).unwrap();
-        assert!(!slug.exists(), "an emptied slug dir must not be left behind");
+        assert!(
+            !slug.exists(),
+            "an emptied slug dir must not be left behind"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
@@ -537,9 +741,80 @@ mod tests {
         remove_memory_dirs(&root).unwrap();
 
         assert!(!slug.join("memory").exists());
-        assert!(slug.join("transcript.jsonl").exists(), "transcripts must survive");
+        assert!(
+            slug.join("transcript.jsonl").exists(),
+            "transcripts must survive"
+        );
 
         fs::remove_dir_all(&root).ok();
     }
-}
 
+    // ── P1-3: Profile-scoped path resolution ─────────────────────────────────────────────────
+
+    /// P1-3 acceptance: auth-cache, credentials and rate-limits resolve under claude_dir
+    /// when a non-default profile is selected — not under home/.claude.
+    #[test]
+    fn auth_cache_resolves_under_selected_profile_dir() {
+        let home = std::path::Path::new("/home/test");
+        let claude_dir = std::path::Path::new("/home/test/.alt-claude");
+
+        let auth_cache = resolve("auth-cache").expect("auth-cache must exist in catalog");
+        let creds = resolve("credentials").expect("credentials must exist in catalog");
+        let rate_limits = resolve("rate-limits-cache").expect("rate-limits-cache must exist in catalog");
+
+        assert_eq!(
+            entry_path(home, claude_dir, auth_cache),
+            claude_dir.join("auth-cache.json"),
+            "auth-cache must resolve under claude_dir"
+        );
+        assert_eq!(
+            entry_path(home, claude_dir, creds),
+            claude_dir.join(".credentials.json"),
+            "credentials must resolve under claude_dir"
+        );
+        assert_eq!(
+            entry_path(home, claude_dir, rate_limits),
+            claude_dir.join("rate-limits-cache.json"),
+            "rate-limits-cache must resolve under claude_dir"
+        );
+    }
+
+    /// P1-3 acceptance: home-relative entries (.claude.json, Library/Caches) stay under home
+    /// regardless of which claude_dir is active — changing the profile must not shift them.
+    #[test]
+    fn home_relative_entries_stay_at_home() {
+        let home = std::path::Path::new("/home/test");
+        let claude_dir = std::path::Path::new("/home/test/.alt-claude");
+
+        let claude_json = resolve("claude-json").expect("claude-json must exist in catalog");
+        let os_cache = resolve("os-cache").expect("os-cache must exist in catalog");
+
+        assert_eq!(
+            entry_path(home, claude_dir, claude_json),
+            home.join(".claude.json"),
+            ".claude.json must stay at home root"
+        );
+        assert_eq!(
+            entry_path(home, claude_dir, os_cache),
+            home.join("Library/Caches/claude-code"),
+            "macOS cache must stay under home"
+        );
+    }
+
+    /// P1-3 acceptance: when claude_dir equals home/.claude (default install), every entry_path
+    /// matches the pre-P1-3 home.join(rel) behavior — no regression for default users.
+    #[test]
+    fn default_profile_resolves_identically_to_home_dot_claude() {
+        let home = std::path::Path::new("/home/test");
+        let claude_dir = home.join(".claude");
+
+        for e in CATALOG {
+            assert_eq!(
+                entry_path(home, &claude_dir, e),
+                home.join(e.rel),
+                "default profile must preserve existing path for {}",
+                e.key
+            );
+        }
+    }
+}

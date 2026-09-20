@@ -23,7 +23,11 @@ fn swap_ssh_state(from: &Path, to: &Path) -> Result<String, String> {
     }
     let config = ssh_config_path()?;
     // unwrap_or_default is intentional: a missing SSH config is equivalent to an empty one
-    let current = if config.exists() { fs::read_to_string(&config).unwrap_or_default() } else { String::new() };
+    let current = if config.exists() {
+        fs::read_to_string(&config).unwrap_or_default()
+    } else {
+        String::new()
+    };
     let restore = fs::read_to_string(from).map_err(|e| format!("Failed to read state: {}", e))?;
     fs::write(to, &current).map_err(|e| format!("Failed to write state: {}", e))?;
     fs::write(&config, &restore).map_err(|e| format!("Failed to restore SSH config: {}", e))?;
@@ -74,12 +78,18 @@ pub fn get_ssh_history_status(app: AppHandle) -> Result<SshHistoryStatus, String
 #[tauri::command]
 pub fn save_ssh_config(app: AppHandle, content: String) -> Result<(), String> {
     let config = ssh_config_path()?;
-    let ssh_dir = config.parent().ok_or("~/.ssh config path has no parent directory")?;
+    let ssh_dir = config
+        .parent()
+        .ok_or("~/.ssh config path has no parent directory")?;
     if !ssh_dir.exists() {
         fs::create_dir_all(ssh_dir).map_err(|e| format!("Failed to create .ssh dir: {}", e))?;
     }
 
-    let current = if config.exists() { fs::read_to_string(&config).unwrap_or_default() } else { String::new() };
+    let current = if config.exists() {
+        fs::read_to_string(&config).unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let app_dir = get_app_data_dir(&app)?;
     let undo_path = app_dir.join("ssh_undo_state.txt");
@@ -93,11 +103,17 @@ pub fn save_ssh_config(app: AppHandle, content: String) -> Result<(), String> {
 #[tauri::command]
 pub fn undo_ssh_config(app: AppHandle) -> Result<String, String> {
     let app_dir = get_app_data_dir(&app)?;
-    swap_ssh_state(&app_dir.join("ssh_undo_state.txt"), &app_dir.join("ssh_redo_state.txt"))
+    swap_ssh_state(
+        &app_dir.join("ssh_undo_state.txt"),
+        &app_dir.join("ssh_redo_state.txt"),
+    )
 }
 
 #[tauri::command]
 pub fn redo_ssh_config(app: AppHandle) -> Result<String, String> {
     let app_dir = get_app_data_dir(&app)?;
-    swap_ssh_state(&app_dir.join("ssh_redo_state.txt"), &app_dir.join("ssh_undo_state.txt"))
+    swap_ssh_state(
+        &app_dir.join("ssh_redo_state.txt"),
+        &app_dir.join("ssh_undo_state.txt"),
+    )
 }

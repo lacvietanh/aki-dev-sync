@@ -9,6 +9,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Project paths copy directly from their local/cloud icons.** Clicking either icon copies the complete path and briefly swaps it to a check mark, without adding another control to the project row.
 - **The OPEN popup's In-App Terminal action always creates a fresh project tab.** The project-row terminal button keeps its existing focus/reuse behavior, so the two entry points now match their distinct purposes.
 
+#### Fixed
+- **Hardening after the terminal-stack audit.** `resolve_remote_path` now validates the host and enforces a connect/exec deadline; the statusline no longer dumps raw payloads (email, cwd, usage) to a shared `/tmp` path; statusline install patches `settings.json` first with same-directory temp files and stops on any failure, leaving script and settings untouched; remote-control secrets fail closed when OS entropy is unavailable instead of falling back to time/PID state; disabling remote control now guarantees an empty companion registry (no in-flight handshake can insert afterwards); Claude usage polling and cleanup resolve every cache from the selected `CLAUDE_CONFIG_DIR`, so identity and quota never mix across profiles; closing a PTY tab can no longer be resurrected by late output, and `kill_session` no longer holds the session map while waiting on the process. **Preserved**: default `$HOME/.claude` installs, other tabs' sessions/scrollback, and paired devices' credentials.
+- **Antigravity missing-tool notice re-arms every 5 minutes** instead of firing once per app run, so a host that gains or loses the tool is re-probed in long-lived sessions.
+
 #### Changed
 - **A project's background polling toggle now sits beside its name in the project table.** It persists through the existing project-list writer, disables only background sync/git checks, and leaves every other project's state and all manual actions untouched.
 - **The backlog now contains only open work.** Completed, rejected, and superseded entries were removed; remaining notes are grouped by readiness and ranked easiest-first.

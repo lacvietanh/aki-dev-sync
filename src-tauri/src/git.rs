@@ -1,6 +1,6 @@
+use crate::system::create_command;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use crate::system::create_command;
 
 #[derive(Serialize)]
 pub struct GitInfo {
@@ -24,7 +24,11 @@ pub struct FileConflictInfo {
 
 /// Runs a git command in `path` and returns trimmed stdout, or None on failure.
 fn git_capture(path: &Path, args: &[&str]) -> Option<String> {
-    let out = create_command("git").current_dir(path).args(args).output().ok()?;
+    let out = create_command("git")
+        .current_dir(path)
+        .args(args)
+        .output()
+        .ok()?;
     if out.status.success() {
         Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
@@ -33,7 +37,9 @@ fn git_capture(path: &Path, args: &[&str]) -> Option<String> {
 }
 
 fn fmt_epoch(secs: i64) -> String {
-    if secs <= 0 { return " - ".to_string() }
+    if secs <= 0 {
+        return " - ".to_string();
+    }
     // Simple UTC formatting: seconds since epoch → "YYYY-MM-DD HH:MM"
     let secs = secs as u64;
     let s_in_day = secs % 86400;
@@ -50,19 +56,23 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     loop {
         let leap = (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400);
         let dy = if leap { 366 } else { 365 };
-        if days < dy { break }
+        if days < dy {
+            break;
+        }
         days -= dy;
         y += 1;
     }
     let leap = (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400);
     let months = if leap {
-        [31u64,29,31,30,31,30,31,31,30,31,30,31]
+        [31u64, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
-        [31u64,28,31,30,31,30,31,31,30,31,30,31]
+        [31u64, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
     let mut mo = 1u64;
     for dm in &months {
-        if days < *dm { break }
+        if days < *dm {
+            break;
+        }
         days -= dm;
         mo += 1;
     }
@@ -138,11 +148,21 @@ pub async fn run_git_command(local_path: String, args: Vec<String>) -> Result<St
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
 
         if out.status.success() {
-            Ok(if stdout.trim().is_empty() { stderr } else { stdout })
+            Ok(if stdout.trim().is_empty() {
+                stderr
+            } else {
+                stdout
+            })
         } else {
-            Err(if stderr.trim().is_empty() { stdout } else { stderr })
+            Err(if stderr.trim().is_empty() {
+                stdout
+            } else {
+                stderr
+            })
         }
-    }).await.map_err(|e| format!("Task error: {}", e))?
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?
 }
 
 /// Folds remote stat stdout into `results`. Fail-closed: unparseable mtime or missing reply errors out so unknown never collapses into `remote_exists: false` (safe to overwrite/delete).
@@ -157,7 +177,10 @@ fn apply_remote_stat_output(
         if let Some(rest) = line.strip_prefix("STAT ") {
             // rest = "{mtime} {rel_path}"
             let (mtime_str, rel) = rest.split_once(' ').ok_or_else(|| {
-                format!("Unreadable reply from '{}' while checking remote files: {}", remote_host, line)
+                format!(
+                    "Unreadable reply from '{}' while checking remote files: {}",
+                    remote_host, line
+                )
             })?;
             let mtime = mtime_str.trim().parse::<i64>().map_err(|_| {
                 format!(
@@ -179,7 +202,10 @@ fn apply_remote_stat_output(
         }
     }
 
-    if let Some(missing) = results.iter().find(|e| !answered.contains(&e.rel_path.as_str())) {
+    if let Some(missing) = results
+        .iter()
+        .find(|e| !answered.contains(&e.rel_path.as_str()))
+    {
         return Err(format!(
             "'{}' gave no answer for '{}' while checking remote files. Refusing to continue without knowing what is on the remote.",
             remote_host, missing.rel_path
@@ -326,7 +352,10 @@ mod tests {
     fn stat_output_errors_when_a_file_is_unanswered() {
         let mut r = entries(&["a.txt", "b.txt"]);
         let err = apply_remote_stat_output("STAT 5 a.txt\n", "vps01", &mut r).unwrap_err();
-        assert!(err.contains("b.txt"), "error must name the unanswered file: {err}");
+        assert!(
+            err.contains("b.txt"),
+            "error must name the unanswered file: {err}"
+        );
     }
 
     #[test]

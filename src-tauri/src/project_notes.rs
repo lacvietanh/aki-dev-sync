@@ -57,16 +57,32 @@ pub struct ProjectNotesRead {
 
 impl ProjectNotesRead {
     fn ok(file: ProjectNotesFile) -> Self {
-        Self { status: ProjectNotesStatus::Ok, file: Some(file), error: None }
+        Self {
+            status: ProjectNotesStatus::Ok,
+            file: Some(file),
+            error: None,
+        }
     }
     fn missing() -> Self {
-        Self { status: ProjectNotesStatus::Missing, file: None, error: None }
+        Self {
+            status: ProjectNotesStatus::Missing,
+            file: None,
+            error: None,
+        }
     }
     fn unavailable(e: impl std::fmt::Display) -> Self {
-        Self { status: ProjectNotesStatus::Unavailable, file: None, error: Some(e.to_string()) }
+        Self {
+            status: ProjectNotesStatus::Unavailable,
+            file: None,
+            error: Some(e.to_string()),
+        }
     }
     fn corrupt(e: impl std::fmt::Display) -> Self {
-        Self { status: ProjectNotesStatus::Corrupt, file: None, error: Some(e.to_string()) }
+        Self {
+            status: ProjectNotesStatus::Corrupt,
+            file: None,
+            error: Some(e.to_string()),
+        }
     }
 }
 
@@ -143,7 +159,10 @@ pub async fn read_project_notes_map(
     targets: Vec<ProjectNotesTarget>,
 ) -> Result<HashMap<String, ProjectNotesRead>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        targets.into_iter().map(|t| (t.id, read_blocking(&t.local_path))).collect()
+        targets
+            .into_iter()
+            .map(|t| (t.id, read_blocking(&t.local_path)))
+            .collect()
     })
     .await
     .map_err(|e| format!("read_project_notes_map task join error: {}", e))
@@ -178,7 +197,10 @@ fn write_blocking(
     check_path(local_path)?;
     // Refuse if not dir: prevents creating folders in empty mount stubs where notes would vanish on volume remount.
     if !Path::new(local_path).is_dir() {
-        return Err(format!("'{}' is not a readable directory right now", local_path));
+        return Err(format!(
+            "'{}' is not a readable directory right now",
+            local_path
+        ));
     }
 
     let path = notes_path(local_path);
@@ -236,7 +258,8 @@ mod tests {
     struct Scratch(PathBuf);
     impl Scratch {
         fn new(tag: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("aki-notes-test-{}-{}", tag, std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("aki-notes-test-{}-{}", tag, std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
             Scratch(dir)
@@ -309,8 +332,13 @@ mod tests {
     #[test]
     fn write_preserves_the_field_it_was_not_given() {
         let d = Scratch::new("preserve");
-        write_sync(&d.path(), Some("hello".into()), Some(vec![serde_json::json!({"id":"a"})]), None)
-            .unwrap();
+        write_sync(
+            &d.path(),
+            Some("hello".into()),
+            Some(vec![serde_json::json!({"id":"a"})]),
+            None,
+        )
+        .unwrap();
         // A notes-only edit must leave `tasks` exactly as it was — `None` means "leave it alone", never "clear it".
         let w = write_sync(&d.path(), Some("changed".into()), None, None).unwrap();
         assert_eq!(w.file.notes, "changed");
@@ -336,10 +364,25 @@ mod tests {
         let d = Scratch::new("clobber");
         let first = write_sync(&d.path(), Some("v1".into()), None, None).unwrap();
         // Caller read v1, then someone else (a git pull, the other screen) wrote v2.
-        write_raw(&d, &format!(r#"{{"notes":"v2","updated_at":{}}}"#, first.file.updated_at + 5000));
-        let w = write_sync(&d.path(), Some("v3".into()), None, Some(first.file.updated_at)).unwrap();
+        write_raw(
+            &d,
+            &format!(
+                r#"{{"notes":"v2","updated_at":{}}}"#,
+                first.file.updated_at + 5000
+            ),
+        );
+        let w = write_sync(
+            &d.path(),
+            Some("v3".into()),
+            None,
+            Some(first.file.updated_at),
+        )
+        .unwrap();
         assert!(w.clobbered, "a write over newer content must say so");
-        assert_eq!(w.file.notes, "v3", "last-write-wins is the chosen policy, not refusal");
+        assert_eq!(
+            w.file.notes, "v3",
+            "last-write-wins is the chosen policy, not refusal"
+        );
 
         // A caller whose base IS current is not clobbering anything.
         let w2 = write_sync(&d.path(), Some("v4".into()), None, Some(w.file.updated_at)).unwrap();
@@ -359,12 +402,21 @@ mod tests {
     #[test]
     fn write_refuses_a_directory_that_is_not_there() {
         // Creating it would materialise the notes inside an empty mount stub, where they vanish the moment the real volume comes back.
-        assert!(write_sync("/definitely/not/a/real/mount/point", Some("x".into()), None, None).is_err());
+        assert!(write_sync(
+            "/definitely/not/a/real/mount/point",
+            Some("x".into()),
+            None,
+            None
+        )
+        .is_err());
     }
 
     #[test]
     fn traversal_in_local_path_is_refused_on_both_paths() {
-        assert_eq!(read_blocking("/tmp/../etc").status, ProjectNotesStatus::Unavailable);
+        assert_eq!(
+            read_blocking("/tmp/../etc").status,
+            ProjectNotesStatus::Unavailable
+        );
         assert!(write_sync("/tmp/../etc", Some("x".into()), None, None).is_err());
     }
 }

@@ -2,7 +2,7 @@
 # Settling test for ITEM-2 (#1) of 2026.07.30 terminal/usage/UI council: "terminal resize must sync both remote browser and app".
 # Run on macOS paired with companion (CLAUDE.local.md: dev box cannot build/run Tauri).
 # Council finding: docs/plan/done/backlog-jul27.md (akiflow 2026.07.30-0213-terminal-usage-ui-backlog, checklist.md ITEM-2).
-# Invariants verified: host is sole resize authority (src-tauri/src/pty.rs TIOCSWINSZ); FRAME_PTY_RESIZE protected (src/services/hostInvoke.js COMPANION_ALLOWED_COMMANDS, src-tauri/src/web_server.rs, pushAllScrollbacks snapshot).
+# Invariants verified: host is sole resize authority (src-tauri/src/pty.rs TIOCSWINSZ); FRAME_PTY_RESIZE protected (src/services/hostInvoke.js COMPANION_ALLOWED_COMMANDS, src-tauri/src/web_server.rs, pushScrollbacks snapshot).
 # Purpose: verifies companion font-zoom repaint behavior (manual test protocol printing numbered steps).
 set -euo pipefail
 

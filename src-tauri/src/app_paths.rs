@@ -50,7 +50,9 @@ fn migrate_tree(src: &Path, dest: &Path, tally: &mut Tally) {
         for entry in entries.flatten() {
             migrate_tree(&entry.path(), &dest.join(entry.file_name()), tally);
         }
-        let now_empty = fs::read_dir(src).map(|mut it| it.next().is_none()).unwrap_or(false);
+        let now_empty = fs::read_dir(src)
+            .map(|mut it| it.next().is_none())
+            .unwrap_or(false);
         if now_empty {
             let _ = fs::remove_dir(src);
         }
@@ -68,14 +70,37 @@ fn migrate_tree(src: &Path, dest: &Path, tally: &mut Tally) {
 }
 
 /// A mixed or failed artifact reports its counts under `failed`, so a partial directory never reads like a clean one in the log.
-fn record(name: &str, tally: Tally, moved: &mut Vec<String>, skipped: &mut Vec<String>, failed: &mut Vec<String>) {
+fn record(
+    name: &str,
+    tally: Tally,
+    moved: &mut Vec<String>,
+    skipped: &mut Vec<String>,
+    failed: &mut Vec<String>,
+) {
     match tally {
-        Tally { moved: m, skipped: 0, failed: 0 } if m > 0 => moved.push(name.to_string()),
-        Tally { moved: 0, skipped: s, failed: 0 } if s > 0 => skipped.push(name.to_string()),
-        Tally { moved: 0, skipped: 0, failed: 0 } => {}
-        Tally { moved: m, skipped: s, failed: f } => {
-            failed.push(format!("{} (partial: moved={} skipped={} failed={})", name, m, s, f))
-        }
+        Tally {
+            moved: m,
+            skipped: 0,
+            failed: 0,
+        } if m > 0 => moved.push(name.to_string()),
+        Tally {
+            moved: 0,
+            skipped: s,
+            failed: 0,
+        } if s > 0 => skipped.push(name.to_string()),
+        Tally {
+            moved: 0,
+            skipped: 0,
+            failed: 0,
+        } => {}
+        Tally {
+            moved: m,
+            skipped: s,
+            failed: f,
+        } => failed.push(format!(
+            "{} (partial: moved={} skipped={} failed={})",
+            name, m, s, f
+        )),
     }
 }
 
@@ -110,7 +135,9 @@ pub fn migrate_legacy_app_data(app: &tauri::AppHandle) -> String {
         record(name, tally, &mut moved, &mut skipped, &mut failed);
     }
 
-    let legacy_now_empty = fs::read_dir(&legacy_dir).map(|mut it| it.next().is_none()).unwrap_or(false);
+    let legacy_now_empty = fs::read_dir(&legacy_dir)
+        .map(|mut it| it.next().is_none())
+        .unwrap_or(false);
     if legacy_now_empty {
         let _ = fs::remove_dir_all(&legacy_dir);
     }

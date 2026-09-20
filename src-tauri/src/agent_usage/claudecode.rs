@@ -1,5 +1,7 @@
 use crate::agent_usage::probe_log::{ab, log_shell_stderr, preview};
-use crate::agent_usage::probe_result::{host_answered, now_secs, AgentUsageResponse, AgentUsageResult};
+use crate::agent_usage::probe_result::{
+    host_answered, now_secs, AgentUsageResponse, AgentUsageResult,
+};
 use crate::logger;
 use crate::remote_shell::{run_remote_script, run_remote_shell, Shell, REMOTE_SCRIPT_TIMEOUT_SECS};
 use std::collections::HashSet;
@@ -47,13 +49,20 @@ pub(crate) fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result
 
     if agent_name != "claudecode" {
         logger::debug("PROVISION", &format!("skip {}", ab(agent_name)));
-        return if agent_name == "antigravity" { Ok(true) } else { Err("Unknown agent".into()) };
+        return if agent_name == "antigravity" {
+            Ok(true)
+        } else {
+            Err("Unknown agent".into())
+        };
     }
 
     const SCRIPT: &str = include_str!("../../../scripts/provision-claudecode.sh");
     let output = run_remote_script(host, SCRIPT)?;
     let ok = output.status.success();
-    logger::info("PROVISION", &format!("exit={} ok={}", output.status.code().unwrap_or(-1), ok));
+    logger::info(
+        "PROVISION",
+        &format!("exit={} ok={}", output.status.code().unwrap_or(-1), ok),
+    );
     let err = String::from_utf8_lossy(&output.stderr);
     if !ok {
         let err_preview = preview(&err, 200);
@@ -61,7 +70,10 @@ pub(crate) fn provision_agent_usage_sync(agent_name: &str, host: &str) -> Result
         return Err(format!("Provision failed: {}", err));
     }
     if !err.trim().is_empty() {
-        logger::error("PROVISION", &format!("stderr (non-fatal)={}", preview(&err, 200)));
+        logger::error(
+            "PROVISION",
+            &format!("stderr (non-fatal)={}", preview(&err, 200)),
+        );
     }
     Ok(true)
 }
@@ -73,17 +85,28 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
     let force_auth = cc_auth_force_needed(host);
     let script_owned;
     let script: &str = if force_auth {
-        logger::info("GET_USAGE", "first check this session - forcing auth refresh (bypass cache TTL)");
+        logger::info(
+            "GET_USAGE",
+            "first check this session - forcing auth refresh (bypass cache TTL)",
+        );
         script_owned = format!("AKI_FORCE_AUTH_REFRESH=1\n{}", SCRIPT);
         &script_owned
     } else {
         SCRIPT
     };
 
-    let preamble = CLAUDE_BIN_RESOLVER_PREAMBLE
-        .replace("__CLAUDE_CALL_TIMEOUT__", &CLAUDE_CALL_TIMEOUT_SECS.to_string());
+    let preamble = CLAUDE_BIN_RESOLVER_PREAMBLE.replace(
+        "__CLAUDE_CALL_TIMEOUT__",
+        &CLAUDE_CALL_TIMEOUT_SECS.to_string(),
+    );
 
-    let output = match run_remote_shell(host, Shell::Plain, &preamble, script, REMOTE_SCRIPT_TIMEOUT_SECS) {
+    let output = match run_remote_shell(
+        host,
+        Shell::Plain,
+        &preamble,
+        script,
+        REMOTE_SCRIPT_TIMEOUT_SECS,
+    ) {
         Ok(o) => o,
         Err(e) => {
             logger::debug("GET_USAGE", &format!("soft-miss (spawn/timeout): {}", e));
@@ -95,20 +118,34 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    logger::debug("GET_USAGE", &format!(
-        "exit={} stdout_b={} stderr_b={}",
-        exit_code, stdout.len(), stderr.len()
-    ));
+    logger::debug(
+        "GET_USAGE",
+        &format!(
+            "exit={} stdout_b={} stderr_b={}",
+            exit_code,
+            stdout.len(),
+            stderr.len()
+        ),
+    );
 
     log_shell_stderr("GET_USAGE", &stderr);
 
     if !output.status.success() {
         if !host_answered(host, exit_code) {
-            logger::error("GET_USAGE", &format!("host unreachable (ssh exit={})", exit_code));
-            return Ok(AgentUsageResult::unreachable(format!("ssh could not reach {} (exit 255)", host)));
+            logger::error(
+                "GET_USAGE",
+                &format!("host unreachable (ssh exit={})", exit_code),
+            );
+            return Ok(AgentUsageResult::unreachable(format!(
+                "ssh could not reach {} (exit 255)",
+                host
+            )));
         }
         logger::error("GET_USAGE", &format!("shell exit={}", exit_code));
-        return Ok(AgentUsageResult::miss(format!("probe exited {}", exit_code)));
+        return Ok(AgentUsageResult::miss(format!(
+            "probe exited {}",
+            exit_code
+        )));
     }
 
     if stdout.trim().is_empty() {
@@ -127,7 +164,9 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
     logger::debug("GET_USAGE", &format!("mtime_parts={}", parts.len()));
     if parts.len() != 2 {
         logger::error("GET_USAGE", "no MTIME delimiter");
-        return Ok(AgentUsageResult::miss("malformed probe output (no MTIME delimiter)"));
+        return Ok(AgentUsageResult::miss(
+            "malformed probe output (no MTIME delimiter)",
+        ));
     }
 
     let content_raw = parts[0].trim();
@@ -135,17 +174,30 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
 
     let mtime_split: Vec<&str> = after_mtime.split("|||SUBTYPE|||").collect();
     let mtime_sec = mtime_split[0].trim().parse::<i64>().unwrap_or(0);
-    logger::debug("GET_USAGE", &format!("mtime={} subtype_parts={}", mtime_sec, mtime_split.len()));
+    logger::debug(
+        "GET_USAGE",
+        &format!("mtime={} subtype_parts={}", mtime_sec, mtime_split.len()),
+    );
 
     let (sub_type, tier, auth_json) = if mtime_split.len() > 1 {
         let sub_split: Vec<&str> = mtime_split[1].split("|||TIER|||").collect();
         let st = sub_split[0].trim();
-        logger::debug("GET_USAGE", &format!("subtype='{}' tier_parts={}", st, sub_split.len()));
+        logger::debug(
+            "GET_USAGE",
+            &format!("subtype='{}' tier_parts={}", st, sub_split.len()),
+        );
         let (t, auth) = if sub_split.len() > 1 {
             let tier_split: Vec<&str> = sub_split[1].split("|||AUTHINFO|||").collect();
             let tier_val = tier_split[0].trim();
-            let auth_val = if tier_split.len() > 1 { tier_split[1].trim() } else { "{}" };
-            logger::debug("GET_USAGE", &format!("tier='{}' authinfo_b={}", tier_val, auth_val.len()));
+            let auth_val = if tier_split.len() > 1 {
+                tier_split[1].trim()
+            } else {
+                "{}"
+            };
+            logger::debug(
+                "GET_USAGE",
+                &format!("tier='{}' authinfo_b={}", tier_val, auth_val.len()),
+            );
             (tier_val, auth_val)
         } else {
             logger::debug("GET_USAGE", "no TIER delimiter");
@@ -164,8 +216,13 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
             val
         }
         Err(e) => {
-            logger::error("GET_USAGE", &format!("json_parse err={} b={}", e, content_len));
-            return Ok(AgentUsageResult::miss("malformed probe output (cache JSON did not parse)"));
+            logger::error(
+                "GET_USAGE",
+                &format!("json_parse err={} b={}", e, content_len),
+            );
+            return Ok(AgentUsageResult::miss(
+                "malformed probe output (cache JSON did not parse)",
+            ));
         }
     };
 
@@ -179,34 +236,61 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
         match serde_json::from_str::<serde_json::Value>(auth_json) {
             Ok(auth) => {
                 let email = auth.get("email").and_then(|v| v.as_str()).unwrap_or("");
-                let org   = auth.get("orgName").and_then(|v| v.as_str()).unwrap_or("");
-                logger::debug("GET_USAGE", &format!("auth email='{}' org='{}'", email, org));
-                if !email.is_empty() { obj.insert("email".to_string(), serde_json::json!(email)); }
-                if !org.is_empty()   { obj.insert("orgName".to_string(), serde_json::json!(org)); }
+                let org = auth.get("orgName").and_then(|v| v.as_str()).unwrap_or("");
+                logger::debug(
+                    "GET_USAGE",
+                    &format!("auth email='{}' org='{}'", email, org),
+                );
+                if !email.is_empty() {
+                    obj.insert("email".to_string(), serde_json::json!(email));
+                }
+                if !org.is_empty() {
+                    obj.insert("orgName".to_string(), serde_json::json!(org));
+                }
             }
             Err(e) => {
-                logger::error("GET_USAGE", &format!("auth_parse err={} preview={}", e, preview(auth_json, 100)));
+                logger::error(
+                    "GET_USAGE",
+                    &format!("auth_parse err={} preview={}", e, preview(auth_json, 100)),
+                );
             }
         }
     }
 
     if let Some(obj) = v.as_object() {
         let now = now_secs();
-        let summary = obj.get("rate_limits")
+        let summary = obj
+            .get("rate_limits")
             .and_then(|r| r.as_object())
             .map(|rl| {
-                if rl.is_empty() { return "EMPTY".to_string(); }
+                if rl.is_empty() {
+                    return "EMPTY".to_string();
+                }
                 let mut keys: Vec<&String> = rl.keys().collect();
                 keys.sort();
                 keys.iter()
                     .map(|k| {
                         let b = &rl[*k];
-                        let pct    = b.get("used_percentage").and_then(|v| v.as_i64()).unwrap_or(-1);
+                        let pct = b
+                            .get("used_percentage")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(-1);
                         let resets = b.get("resets_at").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let state  = if resets == 0 { "no_reset" }
-                                     else if now - resets > 0 { "PAST" } else { "future" };
-                        format!("{}=[pct={} resets_at={} overdue_s={} state={}]",
-                                k, pct, resets, now - resets, state)
+                        let state = if resets == 0 {
+                            "no_reset"
+                        } else if now - resets > 0 {
+                            "PAST"
+                        } else {
+                            "future"
+                        };
+                        format!(
+                            "{}=[pct={} resets_at={} overdue_s={} state={}]",
+                            k,
+                            pct,
+                            resets,
+                            now - resets,
+                            state
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join(" ")
@@ -216,7 +300,10 @@ pub(crate) fn get_claudecode_usage(host: &str) -> Result<AgentUsageResult, Strin
     }
 
     let content = serde_json::to_string(&v).unwrap_or_default();
-    logger::debug("GET_USAGE", &format!("done mtime={} b={}", mtime_sec, content.len()));
+    logger::debug(
+        "GET_USAGE",
+        &format!("done mtime={} b={}", mtime_sec, content.len()),
+    );
     Ok(AgentUsageResult::hit(AgentUsageResponse {
         content,
         fetched_at: now_secs().to_string(),

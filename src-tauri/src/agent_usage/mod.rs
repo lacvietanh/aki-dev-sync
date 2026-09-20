@@ -20,10 +20,7 @@ pub async fn provision_agent_usage(agent_name: String, host: String) -> Result<b
 }
 
 #[tauri::command]
-pub async fn get_agent_usage(
-    agent_name: String,
-    host: String,
-) -> Result<AgentUsageResult, String> {
+pub async fn get_agent_usage(agent_name: String, host: String) -> Result<AgentUsageResult, String> {
     crate::system::validate_remote_host(&host)?;
     tauri::async_runtime::spawn_blocking(move || {
         if agent_name == "claudecode" {

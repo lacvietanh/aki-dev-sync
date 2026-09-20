@@ -1,7 +1,23 @@
 # @docs docs/arch/usage-claudecode.md
 set -e
-FILE="$HOME/.claude/rate-limits-cache.json"
-CREDS="$HOME/.claude/.credentials.json"
+
+# docs/ref/multiple-account-config-dir.md: this probe has no profile parameter, so any
+# CLAUDE_CONFIG_DIR seen here is inherited ambiently. If it points at a dir with no
+# authenticated identity (e.g. the agent-mode proxy scaffold ~/.claude-prx), fall back to the
+# real default $HOME/.claude so usage never silently blanks; a genuine profile dir (one with
+# an oauthAccount) is kept, preserving intentional multi-account launches.
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    _cc_has_identity=$(CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" python3 -c 'import json, os
+p = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], ".claude.json")
+try:
+    a = json.load(open(p)).get("oauthAccount") or {}
+    print("yes" if (a.get("accountUuid") or a.get("emailAddress")) else "no")
+except Exception:
+    print("no")' 2>/dev/null || echo no)
+    [ "$_cc_has_identity" = "yes" ] || unset CLAUDE_CONFIG_DIR
+fi
+FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/rate-limits-cache.json"
+CREDS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
 NOW=$(date +%s)
 
 _log() {
@@ -15,7 +31,7 @@ _log "start: cache_file=$FILE exists=$FILE_EXISTS creds_exists=$CREDS_EXISTS now
 
 # ── 5. Auth info (docs/ref/multiple-account-config-dir.md) ─────────────
 # Run `claude auth status` live every poll without TTL to prevent multi-process CLAUDE_CONFIG_DIR clobber races.
-AUTH_CACHE="$HOME/.claude/auth-cache.json"
+AUTH_CACHE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/auth-cache.json"
 AUTH_CACHE_EXISTS=$([ -f "$AUTH_CACHE" ] && echo yes || echo no)
 _log "auth: running live claude auth status (cache_exists=$AUTH_CACHE_EXISTS, used only as fallback if this call fails)"
 AUTH_INFO=$(bash -lc "$AKI_CLAUDE_TMO'$CLAUDE_BIN' auth status 2>/dev/null" 2>/dev/null || echo '{}')

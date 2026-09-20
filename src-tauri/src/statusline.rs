@@ -192,7 +192,9 @@ fn config_block(config: &StatuslineConfig) -> String {
     let (green, yellow, orange, red) = sanitized_thresholds(&config.thresholds);
     let mut s = String::new();
 
-    s.push_str("# Enable flags, already dependency-resolved (see DEPENDS in ClaudeSettingModal.vue).\n");
+    s.push_str(
+        "# Enable flags, already dependency-resolved (see DEPENDS in ClaudeSettingModal.vue).\n",
+    );
     for key in EN_KEYS {
         s.push_str(&format!(
             "EN_{}={}\n",
@@ -298,8 +300,13 @@ const TARGETS: &[Target] = &[
                  FILE=\"$HOME/.claude/statusline-command.sh\"\n\
                  SETTINGS=\"$HOME/.claude/settings.json\"\n\
                  [ -f \"$SETTINGS\" ] || echo '{{}}' > \"$SETTINGS\"\n\
-                 tmp=$(mktemp)\n\
-                 jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS\"\n\
+                 _sdir=$(dirname \"$SETTINGS\")\n\
+                 tmp=$(mktemp \"$_sdir/.settings.aki-tmp.XXXXXX\")\n\
+                 if jq '.statusLine.type = \"command\" | .statusLine.command = \"~/.claude/statusline-command.sh\"' \"$SETTINGS\" > \"$tmp\"; then\n\
+                   mv \"$tmp\" \"$SETTINGS\" || {{ rm -f \"$tmp\"; exit 1; }}\n\
+                 else\n\
+                   rm -f \"$tmp\"; exit 1\n\
+                 fi\n\
                  if [ -f \"$FILE\" ]; then cp \"$FILE\" \"$FILE.aki-bak-$(date +%s)\"; fi\n\
                  tmpf=$(mktemp \"$HOME/.claude/.statusline.aki-tmp.XXXXXX\")\n\
                  cat > \"$tmpf\" <<'AKI_STATUSLINE_CLAUDE_EOF'\n{body}\nAKI_STATUSLINE_CLAUDE_EOF\n\
@@ -319,8 +326,13 @@ const TARGETS: &[Target] = &[
                  FILE_AGY=\"$HOME/.gemini/antigravity-cli/statusline.sh\"\n\
                  SETTINGS_AGY=\"$HOME/.gemini/antigravity-cli/settings.json\"\n\
                  [ -f \"$SETTINGS_AGY\" ] || echo '{{}}' > \"$SETTINGS_AGY\"\n\
-                 tmp=$(mktemp)\n\
-                 jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\" && mv \"$tmp\" \"$SETTINGS_AGY\"\n\
+                 _sdir=$(dirname \"$SETTINGS_AGY\")\n\
+                 tmp=$(mktemp \"$_sdir/.settings.aki-tmp.XXXXXX\")\n\
+                 if jq --arg cmd \"$FILE_AGY\" '.statusLine.type = \"command\" | .statusLine.command = $cmd | .statusLine.enabled = true' \"$SETTINGS_AGY\" > \"$tmp\"; then\n\
+                   mv \"$tmp\" \"$SETTINGS_AGY\" || {{ rm -f \"$tmp\"; exit 1; }}\n\
+                 else\n\
+                   rm -f \"$tmp\"; exit 1\n\
+                 fi\n\
                  if [ -f \"$FILE_AGY\" ]; then cp \"$FILE_AGY\" \"$FILE_AGY.aki-bak-$(date +%s)\"; fi\n\
                  tmpf=$(mktemp \"$HOME/.gemini/antigravity-cli/.statusline.aki-tmp.XXXXXX\")\n\
                  cat > \"$tmpf\" <<'AKI_STATUSLINE_AGY_EOF'\n{body}\nAKI_STATUSLINE_AGY_EOF\n\
@@ -368,7 +380,13 @@ pub struct StatuslineHostStatus {
 
 impl StatuslineHostStatus {
     fn unreachable(host: String) -> Self {
-        Self { host, cc_present: false, cc_configured: false, ag_present: false, ag_configured: false }
+        Self {
+            host,
+            cc_present: false,
+            cc_configured: false,
+            ag_present: false,
+            ag_configured: false,
+        }
     }
 }
 
@@ -413,7 +431,10 @@ pub async fn check_statusline_status(hosts: Vec<String>) -> Vec<StatuslineHostSt
             .collect();
         handles
             .into_iter()
-            .map(|(host, h)| h.join().unwrap_or_else(|_| StatuslineHostStatus::unreachable(host)))
+            .map(|(host, h)| {
+                h.join()
+                    .unwrap_or_else(|_| StatuslineHostStatus::unreachable(host))
+            })
             .collect()
     })
     .await
@@ -448,7 +469,8 @@ pub async fn apply_statusline_config(
                         match run_remote_script_bounded(&host_for_thread, script) {
                             Ok(output) if output.status.success() => applied.push(label),
                             Ok(output) => {
-                                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                                let stderr =
+                                    String::from_utf8_lossy(&output.stderr).trim().to_string();
                                 let why = if stderr.is_empty() {
                                     format!("exit {}", output.status.code().unwrap_or(-1))
                                 } else {
@@ -466,7 +488,12 @@ pub async fn apply_statusline_config(
                     };
                     crate::logger::info(
                         "STATUSLINE",
-                        &format!("apply host={} ok={} msg={}", result.host, result.ok, preview(&result.message, 200)),
+                        &format!(
+                            "apply host={} ok={} msg={}",
+                            result.host,
+                            result.ok,
+                            preview(&result.message, 200)
+                        ),
                     );
                     result
                 });
@@ -496,7 +523,11 @@ fn apply_message(applied: &[&str], failed: &[String]) -> String {
     if applied.is_empty() {
         return failed.join(" | ");
     }
-    format!("Applied: {} | Failed - {}", applied.join(", "), failed.join(" | "))
+    format!(
+        "Applied: {} | Failed - {}",
+        applied.join(", "),
+        failed.join(" | ")
+    )
 }
 
 fn preview(s: &str, max: usize) -> String {
@@ -546,8 +577,19 @@ mod tests {
                 f("git_branch", true, "magenta"),
                 f("ram", true, "grey"),
             ],
-            thresholds: StatuslineThresholds { green: 20, yellow: 51, orange: 75, red: 90 },
-            trunc: StatuslineTrunc { account: 4, user: 5, host: 6, cwd: 12, branch: 10 },
+            thresholds: StatuslineThresholds {
+                green: 20,
+                yellow: 51,
+                orange: 75,
+                red: 90,
+            },
+            trunc: StatuslineTrunc {
+                account: 4,
+                user: 5,
+                host: 6,
+                cwd: 12,
+                branch: 10,
+            },
             zebra: StatuslineZebra { a: 16, b: 235 },
             separate: true,
         }
@@ -611,9 +653,18 @@ mod tests {
                 .spawn()
                 .expect("spawn bash");
             use std::io::Write;
-            child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+            child
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(script.as_bytes())
+                .unwrap();
             let out = child.wait_with_output().unwrap();
-            assert!(out.status.success(), "bash -n failed:\n{}", String::from_utf8_lossy(&out.stderr));
+            assert!(
+                out.status.success(),
+                "bash -n failed:\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         }
     }
 
@@ -665,7 +716,10 @@ mod tests {
         let script = gen(&cfg);
         // The children keep their own stored state (non-destructive gate) but must arrive as 0.
         assert!(script.contains("EN_cache=0"));
-        assert!(script.contains("EN_cache_pct=0"), "cache_pct survived its parent being off");
+        assert!(
+            script.contains("EN_cache_pct=0"),
+            "cache_pct survived its parent being off"
+        );
         assert!(
             cfg.fields.iter().any(|f| f.key == "cache_pct" && f.enabled),
             "the config itself must not be mutated - the gate is non-destructive"
@@ -681,7 +735,9 @@ mod tests {
         cfg.fields.insert(0, ram);
         let script = gen(&cfg);
         assert!(
-            script.contains(r#"BLOCK_ORDER="ram identity cwd model context cache quota session git_branch""#),
+            script.contains(
+                r#"BLOCK_ORDER="ram identity cwd model context cache quota session git_branch""#
+            ),
             "BLOCK_ORDER did not follow the row order"
         );
     }
@@ -690,9 +746,17 @@ mod tests {
     fn out_of_range_values_are_clamped_not_defaulted() {
         let mut cfg = test_config();
         cfg.zebra = StatuslineZebra { a: 100, b: 255 };
-        cfg.thresholds = StatuslineThresholds { green: 90, yellow: 20, orange: 75, red: 51 };
+        cfg.thresholds = StatuslineThresholds {
+            green: 90,
+            yellow: 20,
+            orange: 75,
+            red: 51,
+        };
         let script = gen(&cfg);
-        assert!(script.contains("BG_ZEBRA_A=232"), "a shade outside the neutral ramp was not clamped");
+        assert!(
+            script.contains("BG_ZEBRA_A=232"),
+            "a shade outside the neutral ramp was not clamped"
+        );
         assert!(script.contains("BG_ZEBRA_B=255"));
         // Sorted ascending, so the ladder can never come out inverted.
         assert!(script.contains("THRESH_GREEN=20") && script.contains("THRESH_RED=90"));
@@ -705,7 +769,11 @@ mod tests {
         println!("RENDERED>>>{}<<<", line);
         let p = plain(&line);
         assert!(p.contains("Sonnet5med"), "model+effort not glued: {}", p);
-        assert!(p.contains("42%") && p.contains("92%"), "quota missing: {}", p);
+        assert!(
+            p.contains("42%") && p.contains("92%"),
+            "quota missing: {}",
+            p
+        );
         assert!(p.contains("master"), "branch missing: {}", p);
     }
 
@@ -713,13 +781,26 @@ mod tests {
     fn agy_renders_a_line() {
         // $0 decides the CLI, so the AGY case is the same script under a ~/.gemini/ path.
         let payload = r#"{"cwd":"/tmp/demo","account":{"email":"user-a@example.com"},"model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.25},"gemini-weekly":{"remaining_fraction":0.5}}}"#;
-        let (line, _) = run_script(".gemini/antigravity-cli/statusline.sh", &gen(&test_config()), payload, &[]);
+        let (line, _) = run_script(
+            ".gemini/antigravity-cli/statusline.sh",
+            &gen(&test_config()),
+            payload,
+            &[],
+        );
         println!("AGY RENDERED>>>{}<<<", line);
         let p = plain(&line);
-        assert!(p.starts_with("AG"), "AGY path did not identify as AG: {}", p);
+        assert!(
+            p.starts_with("AG"),
+            "AGY path did not identify as AG: {}",
+            p
+        );
         assert!(p.contains("user"), "account not rendered: {}", p);
         // A remaining fraction of 0.25 is 75% used - never -2400%.
-        assert!(!has_negative_percent(&p), "negative percentage in agy line: {}", p);
+        assert!(
+            !has_negative_percent(&p),
+            "negative percentage in agy line: {}",
+            p
+        );
         assert!(p.contains("75%"), "5h used% wrong (want 75%): {}", p);
         assert!(p.contains("50%"), "7d used% wrong (want 50%): {}", p);
     }
@@ -738,7 +819,13 @@ mod tests {
             let payload = format!(r#"{{"cwd":"/tmp/demo","model":"{}"}}"#, raw);
             let (line, _) = run_script("model.sh", &gen(&test_config()), &payload, &[]);
             let p = plain(&line);
-            assert!(p.contains(want), "{:?} should render as {:?}: {}", raw, want, p);
+            assert!(
+                p.contains(want),
+                "{:?} should render as {:?}: {}",
+                raw,
+                want,
+                p
+            );
             assert!(
                 !p.contains(&format!("-{}", want)) && !p.contains(&format!("{}-", want)),
                 "{:?} rendered with a leftover separator: {}",
@@ -751,7 +838,8 @@ mod tests {
     #[test]
     fn agy_never_touches_the_claude_rate_limit_cache() {
         let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.25}}}"#;
-        let cache = r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0}}}"#;
+        let cache =
+            r#"{"account":"","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":0}}}"#;
         // The assertion below is a bare "did any 42% reach the line" check, kept deliberately broad so it catches a leak no matter which field renders it. That only works if no OTHER field can put a percentage on the line by coincidence - and `ram` does exactly that, from the real machine's memory use, so this test failed on any host that happened to be sitting at 42% RAM. The value under test is planted, the RAM figure is not, so the RAM field is what gives way here.
         let mut cfg = test_config();
         for field in &mut cfg.fields {
@@ -765,7 +853,11 @@ mod tests {
             payload,
             &[(".claude/rate-limits-cache.json", cache)],
         );
-        assert!(!plain(&line).contains("42%"), "AGY read Claude Code's rate-limit cache: {}", plain(&line));
+        assert!(
+            !plain(&line).contains("42%"),
+            "AGY read Claude Code's rate-limit cache: {}",
+            plain(&line)
+        );
         let after = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
         assert_eq!(after, cache, "AGY rewrote Claude Code's rate-limit cache");
     }
@@ -775,8 +867,14 @@ mod tests {
     /// Runs a generated script against a payload inside a private $HOME, so tests that exercise the on-disk fallbacks (~/.claude.json, the rlcache) never read or write the real home dir.
     /// `name` doubles as the path the script is invoked by, which is what decides CC vs AG.
     /// `files` are (path-relative-to-HOME, contents) written before the run.
-    fn run_script(name: &str, script: &str, payload: &str, files: &[(&str, &str)]) -> (String, std::path::PathBuf) {
-        let home = std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")));
+    fn run_script(
+        name: &str,
+        script: &str,
+        payload: &str,
+        files: &[(&str, &str)],
+    ) -> (String, std::path::PathBuf) {
+        let home =
+            std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
         for (rel, contents) in files {
@@ -811,20 +909,31 @@ mod tests {
     // ---- behavioural tests, per docs/plan/done/1.18.0-statusline-apply-correctness.md §P2-4 ------
 
     #[test]
-    fn cc_account_falls_back_to_claude_json() {
+    fn cc_account_reads_the_fresh_auth_cache() {
         // Payload deliberately carries no email - Claude Code never sends one.
         let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#;
         let (line, _) = run_script(
             "cc_account.sh",
             &gen(&test_config()),
             payload,
-            &[(".claude.json", r#"{"oauthAccount":{"emailAddress":"disk-user@example.com"}}"#)],
+            &[(
+                ".claude/auth-cache.json",
+                r#"{"email":"disk-user@example.com"}"#,
+            )],
         );
         println!("CC ACCOUNT>>>{}<<<", line);
         // Truncated to TRUNC_ACCOUNT after the domain is dropped: "disk-user@..." -> "disk".
         let p = plain(&line);
-        assert!(p.contains("disk"), "account fallback to ~/.claude.json did not render: {}", p);
-        assert!(!p.contains("example.com"), "the domain was printed instead of stripped: {}", p);
+        assert!(
+            p.contains("disk"),
+            "account from the fresh auth cache did not render: {}",
+            p
+        );
+        assert!(
+            !p.contains("example.com"),
+            "the domain was printed instead of stripped: {}",
+            p
+        );
     }
 
     #[test]
@@ -859,7 +968,11 @@ mod tests {
         assert!(p.contains("10%"), "fresh 5h value not used: {}", p);
         assert!(p.contains("92%"), "cached 7d lost on merge: {}", p);
         let written = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
-        assert!(written.contains("seven_day"), "rewritten cache dropped seven_day: {}", written);
+        assert!(
+            written.contains("seven_day"),
+            "rewritten cache dropped seven_day: {}",
+            written
+        );
     }
 
     fn now_epoch() -> u64 {
@@ -893,7 +1006,11 @@ mod tests {
         assert!(p.contains("50%"), "live 5h lost: {}", p);
         assert!(!p.contains("45%"), "expired 7d still rendered: {}", p);
         let written = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
-        assert!(!written.contains("seven_day"), "expired entry kept in cache: {}", written);
+        assert!(
+            !written.contains("seven_day"),
+            "expired entry kept in cache: {}",
+            written
+        );
     }
 
     #[test]
@@ -908,13 +1025,20 @@ mod tests {
             &gen(&test_config()),
             r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#,
             &[
-                (".claude.json", r#"{"oauthAccount":{"emailAddress":"me@example.com"}}"#),
+                (
+                    ".claude.json",
+                    r#"{"oauthAccount":{"emailAddress":"me@example.com"}}"#,
+                ),
                 (".claude/rate-limits-cache.json", cache.as_str()),
             ],
         );
         println!("CC RLFOREIGN>>>{}<<<", line);
         let p = plain(&line);
-        assert!(!p.contains("45%"), "another account's cached quota leaked into this line: {}", p);
+        assert!(
+            !p.contains("45%"),
+            "another account's cached quota leaked into this line: {}",
+            p
+        );
         assert!(p.contains("Sonnet5"), "rest of the line lost: {}", p);
     }
 
@@ -928,8 +1052,15 @@ mod tests {
             &[(".claude/rate-limits-cache.json", "{not json at all")],
         );
         println!("CC RLCORRUPT>>>{}<<<", line);
-        assert!(!line.trim().is_empty(), "corrupt cache blanked the whole statusline");
-        assert!(plain(&line).contains("Sonnet5"), "corrupt cache lost the rest of the line: {}", plain(&line));
+        assert!(
+            !line.trim().is_empty(),
+            "corrupt cache blanked the whole statusline"
+        );
+        assert!(
+            plain(&line).contains("Sonnet5"),
+            "corrupt cache lost the rest of the line: {}",
+            plain(&line)
+        );
     }
 
     #[test]
@@ -945,16 +1076,29 @@ mod tests {
             )],
         );
         println!("AGY ACCOUNT>>>{}<<<", line);
-        assert!(plain(&line).contains("agy-"), "agy account fallback did not render: {}", plain(&line));
+        assert!(
+            plain(&line).contains("agy-"),
+            "agy account fallback did not render: {}",
+            plain(&line)
+        );
     }
 
     #[test]
     fn agy_reset_eta_includes_minutes() {
         // 5400s = 1h30m - the old `printf '%dh%dm' "$h"` printed 1h0m.
         let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.4,"reset_in_seconds":5400}}}"#;
-        let (line, _) = run_script(".gemini/antigravity-cli/agy_eta.sh", &gen(&test_config()), payload, &[]);
+        let (line, _) = run_script(
+            ".gemini/antigravity-cli/agy_eta.sh",
+            &gen(&test_config()),
+            payload,
+            &[],
+        );
         println!("AGY ETA>>>{}<<<", line);
-        assert!(plain(&line).contains("1h30m"), "reset ETA lost its minutes: {}", plain(&line));
+        assert!(
+            plain(&line).contains("1h30m"),
+            "reset ETA lost its minutes: {}",
+            plain(&line)
+        );
     }
 
     #[test]
@@ -966,10 +1110,23 @@ mod tests {
             }
         }
         let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","quota":{"gemini-5h":{"remaining_fraction":0.4,"reset_in_seconds":5400}}}"#;
-        let (line, _) = run_script(".gemini/antigravity-cli/agy_noeta.sh", &gen(&cfg), payload, &[]);
+        let (line, _) = run_script(
+            ".gemini/antigravity-cli/agy_noeta.sh",
+            &gen(&cfg),
+            payload,
+            &[],
+        );
         let p = plain(&line);
-        assert!(p.contains("60%"), "the 5h reading itself disappeared: {}", p);
-        assert!(!p.contains("1h30m"), "reset ETA rendered while switched off: {}", p);
+        assert!(
+            p.contains("60%"),
+            "the 5h reading itself disappeared: {}",
+            p
+        );
+        assert!(
+            !p.contains("1h30m"),
+            "reset ETA rendered while switched off: {}",
+            p
+        );
     }
 
     // ---- the Vue payload, deserialized exactly as the IPC call delivers it ------------------
@@ -1028,8 +1185,10 @@ mod tests {
     #[test]
     fn a_missing_section_is_rejected_rather_than_silently_defaulted() {
         // The deliberate absence of #[serde(default)] - see the comment on StatuslineConfig. A half-written payload must fail the Apply, not produce a script from values nobody chose.
-        let without_trunc = VUE_DEFAULT_JSON
-            .replace(r#""trunc": {"account":4,"user":5,"host":6,"cwd":12,"branch":10},"#, "");
+        let without_trunc = VUE_DEFAULT_JSON.replace(
+            r#""trunc": {"account":4,"user":5,"host":6,"cwd":12,"branch":10},"#,
+            "",
+        );
         assert!(
             serde_json::from_str::<StatuslineConfig>(&without_trunc).is_err(),
             "a payload with no trunc section was accepted"
@@ -1056,8 +1215,8 @@ mod tests {
         );
         let payload = payload.as_str();
         let files = [(
-            ".claude.json",
-            r#"{"oauthAccount":{"emailAddress":"ntu-gen@example.com"}}"#,
+            ".claude/auth-cache.json",
+            r#"{"email":"ntu-gen@example.com"}"#,
         )];
         // The host half of the identity block is whatever this machine is called, cut to TRUNC_HOST.
         let host = String::from_utf8(
@@ -1112,14 +1271,21 @@ mod tests {
                     f.enabled = !*on_by_default;
                 }
             }
-            let (line, _) = run_script(&format!("flip_{}.sh", key), &gen(&flipped), payload, &files);
+            let (line, _) =
+                run_script(&format!("flip_{}.sh", key), &gen(&flipped), payload, &files);
             let line = plain(&line);
             let (with, without) = if *on_by_default {
                 (&base, &line)
             } else {
                 (&line, &base)
             };
-            assert!(with.contains(marker), "{} is on but {:?} is missing: {}", key, marker, with);
+            assert!(
+                with.contains(marker),
+                "{} is on but {:?} is missing: {}",
+                key,
+                marker,
+                with
+            );
             assert!(
                 !without.contains(marker),
                 "{} is off but {:?} is still rendered: {}",
@@ -1141,8 +1307,16 @@ mod tests {
         cfg.trunc.branch = 3;
         let (line, _) = run_script("trunc.sh", &gen(&cfg), payload, &[]);
         let p = plain(&line);
-        assert!(p.contains("Aki-") && !p.contains("Aki-Dev"), "cwd not cut to 4: {}", p);
-        assert!(p.contains("mas") && !p.contains("master"), "branch not cut to 3: {}", p);
+        assert!(
+            p.contains("Aki-") && !p.contains("Aki-Dev"),
+            "cwd not cut to 4: {}",
+            p
+        );
+        assert!(
+            p.contains("mas") && !p.contains("master"),
+            "branch not cut to 3: {}",
+            p
+        );
 
         let mut cfg = from_json(VUE_DEFAULT_JSON);
         for f in cfg.fields.iter_mut() {
@@ -1174,12 +1348,30 @@ mod tests {
 
         // A tighter ladder must repaint the same reading - here 19% goes from the calm tier to red. The calm tier's code is xterm 86 (aquamarine), not the old bold blue 01;34 - the ladder's five codes live in STATUSLINE_TIERS (src/utils/statuslineColors.js) and are mirrored into the template's BOLD_* block.
         let quota = r#"{"cwd":"/tmp/demo","rate_limits":{"five_hour":{"used_percentage":19,"resets_at":0}}}"#;
-        let (calm, _) = run_script("ladder_calm.sh", &gen(&from_json(VUE_DEFAULT_JSON)), quota, &[]);
-        assert!(calm.contains("\u{1b}[01;38;5;86m19%"), "19% should be the calm tier: {:?}", calm);
+        let (calm, _) = run_script(
+            "ladder_calm.sh",
+            &gen(&from_json(VUE_DEFAULT_JSON)),
+            quota,
+            &[],
+        );
+        assert!(
+            calm.contains("\u{1b}[01;38;5;86m19%"),
+            "19% should be the calm tier: {:?}",
+            calm
+        );
         let mut cfg = from_json(VUE_DEFAULT_JSON);
-        cfg.thresholds = StatuslineThresholds { green: 5, yellow: 10, orange: 15, red: 18 };
+        cfg.thresholds = StatuslineThresholds {
+            green: 5,
+            yellow: 10,
+            orange: 15,
+            red: 18,
+        };
         let (hot, _) = run_script("ladder_hot.sh", &gen(&cfg), quota, &[]);
-        assert!(hot.contains("\u{1b}[01;31m19%"), "19% should be red now: {:?}", hot);
+        assert!(
+            hot.contains("\u{1b}[01;31m19%"),
+            "19% should be red now: {:?}",
+            hot
+        );
     }
 
     /// Dragging a row in the UI is just a reorder of `fields`; the printed order must follow it.
@@ -1207,35 +1399,66 @@ mod tests {
 
     /// Every ticked target's script as one blob - for assertions about what an Apply touches overall, as opposed to how it is split.
     fn joined(aliases: &[&str]) -> String {
-        scripts(aliases).into_iter().map(|(_, s)| s).collect::<Vec<_>>().join("\n")
+        scripts(aliases)
+            .into_iter()
+            .map(|(_, s)| s)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
     fn no_target_selected_is_an_error_not_a_silent_agy_write() {
         let err = build_installer_scripts(&test_config(), &[]).unwrap_err();
-        assert!(err.to_lowercase().contains("target"), "unexpected error text: {}", err);
+        assert!(
+            err.to_lowercase().contains("target"),
+            "unexpected error text: {}",
+            err
+        );
         let cc = joined(&["cc"]);
         assert!(cc.contains("AKI_STATUSLINE_CLAUDE_EOF"));
-        assert!(!cc.contains("AKI_STATUSLINE_AGY_EOF"), "cc-only apply wrote the AGY file too");
+        assert!(
+            !cc.contains("AKI_STATUSLINE_AGY_EOF"),
+            "cc-only apply wrote the AGY file too"
+        );
         let both = joined(&["cc", "ag"]);
-        assert!(both.contains("AKI_STATUSLINE_CLAUDE_EOF") && both.contains("AKI_STATUSLINE_AGY_EOF"));
+        assert!(
+            both.contains("AKI_STATUSLINE_CLAUDE_EOF") && both.contains("AKI_STATUSLINE_AGY_EOF")
+        );
     }
 
     /// §3.19(a). The two targets must be two scripts, each independently runnable: concatenated under one `set -e`, a Claude Code failure aborted before the AGY half was attempted and the user was never told AGY had not been written at all.
     #[test]
     fn each_target_is_its_own_independent_script() {
         let both = scripts(&["cc", "ag"]);
-        assert_eq!(both.len(), 2, "the two targets were not split into two scripts");
+        assert_eq!(
+            both.len(),
+            2,
+            "the two targets were not split into two scripts"
+        );
         for (label, s) in &both {
-            assert!(s.starts_with("set -e\n"), "{} script does not fail fast on its own", label);
+            assert!(
+                s.starts_with("set -e\n"),
+                "{} script does not fail fast on its own",
+                label
+            );
         }
         // Compared with the shared body removed - the body legitimately names both CLIs (it is one script that self-identifies from `$0`); what must not cross over is the INSTALLER's own commands, since that is what makes one target's failure unable to decide anything about the other.
         let body = gen(&test_config());
         let steps = |label: &str| -> String {
-            both.iter().find(|(l, _)| *l == label).unwrap().1.replace(body.as_str(), "")
+            both.iter()
+                .find(|(l, _)| *l == label)
+                .unwrap()
+                .1
+                .replace(body.as_str(), "")
         };
-        assert!(!steps("Claude Code").contains("antigravity-cli"), "the CC installer touches AGY's files");
-        assert!(!steps("AGY").contains(".claude/"), "the AGY installer touches Claude Code's files");
+        assert!(
+            !steps("Claude Code").contains("antigravity-cli"),
+            "the CC installer touches AGY's files"
+        );
+        assert!(
+            !steps("AGY").contains(".claude/"),
+            "the AGY installer touches Claude Code's files"
+        );
     }
 
     /// §3.19(b). The settings patch is the step that can fail on a host without `jq`; running it first means such a host ends up unchanged rather than holding a statusline script that nothing points at.
@@ -1245,7 +1468,11 @@ mod tests {
             let s = joined(&[alias]);
             let patch = s.find("jq ").expect("no jq patch");
             let write = s.find("cat > ").expect("no script write");
-            assert!(patch < write, "{}: script is written before the settings patch", alias);
+            assert!(
+                patch < write,
+                "{}: script is written before the settings patch",
+                alias
+            );
             assert!(
                 s.contains("command -v jq"),
                 "{}: missing jq precondition - a missing jq must fail before anything is touched",
@@ -1271,7 +1498,11 @@ mod tests {
             );
             let backup = s.find(".aki-bak-").expect("no backup");
             let write = s.find("cat > ").expect("no script write");
-            assert!(backup < write, "{}: backup taken after the file was overwritten", alias);
+            assert!(
+                backup < write,
+                "{}: backup taken after the file was overwritten",
+                alias
+            );
         }
     }
 
@@ -1286,7 +1517,12 @@ mod tests {
                 .spawn()
                 .expect("spawn sh");
             use std::io::Write;
-            child.stdin.as_mut().unwrap().write_all(script.as_bytes()).unwrap();
+            child
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(script.as_bytes())
+                .unwrap();
             let out = child.wait_with_output().unwrap();
             assert!(
                 out.status.success(),
@@ -1300,9 +1536,16 @@ mod tests {
     /// A partial apply must read as partial: naming only the failure would hide that the other CLI really was rewritten, which is what the user needs to know before retrying.
     #[test]
     fn apply_message_names_what_landed_and_what_did_not() {
-        assert_eq!(apply_message(&["Claude Code", "AGY"], &[]), "Applied: Claude Code, AGY");
+        assert_eq!(
+            apply_message(&["Claude Code", "AGY"], &[]),
+            "Applied: Claude Code, AGY"
+        );
         let partial = apply_message(&["AGY"], &["Claude Code: jq not found".to_string()]);
-        assert!(partial.contains("AGY") && partial.contains("Claude Code: jq not found"), "{}", partial);
+        assert!(
+            partial.contains("AGY") && partial.contains("Claude Code: jq not found"),
+            "{}",
+            partial
+        );
         assert_eq!(apply_message(&[], &["AGY: boom".to_string()]), "AGY: boom");
     }
 
@@ -1310,7 +1553,11 @@ mod tests {
     #[test]
     fn each_target_registers_its_script_in_the_cli_settings() {
         for (alias, settings, script) in [
-            ("cc", ".claude/settings.json", ".claude/statusline-command.sh"),
+            (
+                "cc",
+                ".claude/settings.json",
+                ".claude/statusline-command.sh",
+            ),
             (
                 "ag",
                 ".gemini/antigravity-cli/settings.json",
@@ -1318,7 +1565,12 @@ mod tests {
             ),
         ] {
             let sh = joined(&[alias]);
-            assert!(sh.contains(settings), "{} never touches {}", alias, settings);
+            assert!(
+                sh.contains(settings),
+                "{} never touches {}",
+                alias,
+                settings
+            );
             assert!(
                 sh.contains(r#".statusLine.type = "command""#),
                 "{} does not set statusLine.type",
@@ -1329,7 +1581,11 @@ mod tests {
                 "{} does not set statusLine.command",
                 alias
             );
-            assert!(sh.contains(script), "{} does not name its script path", alias);
+            assert!(
+                sh.contains(script),
+                "{} does not name its script path",
+                alias
+            );
         }
     }
 
@@ -1358,14 +1614,26 @@ mod tests {
             ),
             (
                 "cc_full",
-                &[(cc_sh, "#!/bin/bash"), (cc_json, r#"{"statusLine":{"command":"statusline-command.sh"}}"#)],
+                &[
+                    (cc_sh, "#!/bin/bash"),
+                    (
+                        cc_json,
+                        r#"{"statusLine":{"command":"statusline-command.sh"}}"#,
+                    ),
+                ],
                 &["CC_PRESENT=1", "CC_SL=1", "AG_SL=0"],
             ),
         ];
         for (name, files, want) in cases {
             let (out, _) = run_script(&format!("probe_{}.sh", name), PROBE, "", files);
             for token in *want {
-                assert!(out.contains(token), "{}: probe did not report {}: {}", name, token, out);
+                assert!(
+                    out.contains(token),
+                    "{}: probe did not report {}: {}",
+                    name,
+                    token,
+                    out
+                );
             }
         }
     }
@@ -1375,6 +1643,225 @@ mod tests {
         // One physical script, installed at two paths - if these ever differ, the "$0 decides the CLI" contract is broken and each CLI is back to having its own dialect.
         let both = joined(&["cc", "ag"]);
         let body = gen(&test_config());
-        assert_eq!(both.matches(body.as_str()).count(), 2, "the two targets got different bodies");
+        assert_eq!(
+            both.matches(body.as_str()).count(),
+            2,
+            "the two targets got different bodies"
+        );
+    }
+
+    // ---- P0-2: no shared predictable /tmp dump -----------------------------------------------
+
+    /// §P0-2. Running either execution path with a payload that contains a sentinel email/path
+    /// must not create /tmp/statusline_stdin_dump.json.
+    #[test]
+    fn no_tmp_dump_on_any_execution_path() {
+        let dump = std::path::Path::new("/tmp/statusline_stdin_dump.json");
+        let _ = std::fs::remove_file(dump);
+        run_script(
+            "no_dump_cc.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/sentinel/path","model":{"display_name":"Sonnet 5"}}"#,
+            &[(".claude/auth-cache.json", r#"{"email":"sentinel@example.com"}"#)],
+        );
+        assert!(!dump.exists(), "/tmp/statusline_stdin_dump.json was written on the CC path");
+        run_script(
+            ".gemini/antigravity-cli/no_dump_ag.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/sentinel/path","model":"gemini-2.5-flash"}"#,
+            &[],
+        );
+        assert!(!dump.exists(), "/tmp/statusline_stdin_dump.json was written on the AGY path");
+    }
+
+    /// §P0-2. A pre-planted symlink at the legacy /tmp path must not be followed: the script
+    /// must not write through it to its target.
+    #[test]
+    fn legacy_tmp_symlink_is_not_followed() {
+        let dump = std::path::Path::new("/tmp/statusline_stdin_dump.json");
+        let target = std::env::temp_dir().join("aki-symlinktest-sentinel");
+        let _ = std::fs::remove_file(dump);
+        let _ = std::fs::remove_file(&target);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, dump).ok();
+        run_script(
+            "sym_test.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#,
+            &[],
+        );
+        assert!(
+            !target.exists(),
+            "the script followed the legacy /tmp symlink and wrote through it"
+        );
+        let _ = std::fs::remove_file(dump);
+    }
+
+    // ---- P0-3: transactional installer -------------------------------------------------------
+
+    /// Runs an installer script in a private temp home; returns (exit_success, home_path).
+    fn run_installer(label: &str, script: &str, files: &[(&str, &str)]) -> (bool, std::path::PathBuf) {
+        let home = std::env::temp_dir()
+            .join(format!("aki-installer-test/{}", label.replace('/', "_")));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        for (rel, contents) in files {
+            let p = home.join(rel);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&p, contents).unwrap();
+        }
+        let script_path = home.join("installer.sh");
+        std::fs::write(&script_path, script).unwrap();
+        let status = std::process::Command::new("sh")
+            .arg(&script_path)
+            .env("HOME", &home)
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .output()
+            .unwrap()
+            .status;
+        (status.success(), home)
+    }
+
+    fn jq_present() -> bool {
+        std::process::Command::new("sh")
+            .args(["-c", "command -v jq >/dev/null 2>&1"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// §P0-3 static. The settings mktemp must use a directory derived from the settings
+    /// file's own path — not the bare system /tmp — so the final mv is an atomic same-fs rename.
+    #[test]
+    fn settings_tmp_is_same_directory_as_settings_file() {
+        for alias in ["cc", "ag"] {
+            let s = joined(&[alias]);
+            assert!(
+                !s.contains("tmp=$(mktemp)\n"),
+                "{}: bare tmp=$(mktemp) without a directory argument still present (would land in /tmp)",
+                alias
+            );
+            assert!(
+                s.contains("dirname"),
+                "{}: settings temp file location does not derive from dirname of settings path",
+                alias
+            );
+        }
+    }
+
+    /// §P0-3 behavioral. Malformed settings JSON: installer must exit non-zero and leave
+    /// both the settings file and any pre-existing script file unchanged.
+    #[test]
+    fn installer_rejects_malformed_settings_and_leaves_state_intact() {
+        for (alias, settings_rel, script_rel) in [
+            ("cc", ".claude/settings.json", ".claude/statusline-command.sh"),
+            (
+                "ag",
+                ".gemini/antigravity-cli/settings.json",
+                ".gemini/antigravity-cli/statusline.sh",
+            ),
+        ] {
+            let original_script = "#!/bin/sh\necho original";
+            let (ok, home) = run_installer(
+                &format!("malformed_{}", alias),
+                &joined(&[alias]),
+                &[
+                    (settings_rel, "{not valid json"),
+                    (script_rel, original_script),
+                ],
+            );
+            assert!(!ok, "{}: installer should have failed on malformed settings JSON", alias);
+            let settings_after = std::fs::read_to_string(home.join(settings_rel)).unwrap();
+            assert_eq!(
+                settings_after, "{not valid json",
+                "{}: malformed settings was overwritten on failure",
+                alias
+            );
+            let script_after = std::fs::read_to_string(home.join(script_rel)).unwrap();
+            assert!(
+                script_after.contains("original"),
+                "{}: script was overwritten despite settings patch failure",
+                alias
+            );
+        }
+    }
+
+    /// §P0-3 behavioral. After a jq failure, no orphaned .settings.aki-tmp.* files must
+    /// remain in the settings directory.
+    #[test]
+    fn installer_cleans_up_settings_tmp_on_failure() {
+        if !jq_present() {
+            return;
+        }
+        for (alias, settings_rel, settings_dir) in [
+            ("cc", ".claude/settings.json", ".claude"),
+            (
+                "ag",
+                ".gemini/antigravity-cli/settings.json",
+                ".gemini/antigravity-cli",
+            ),
+        ] {
+            let (_, home) = run_installer(
+                &format!("cleanup_{}", alias),
+                &joined(&[alias]),
+                &[(settings_rel, "{not valid json")],
+            );
+            let dir = home.join(settings_dir);
+            if dir.exists() {
+                let orphans: Vec<_> = std::fs::read_dir(&dir)
+                    .unwrap()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_name()
+                            .to_string_lossy()
+                            .contains(".settings.aki-tmp.")
+                    })
+                    .collect();
+                assert!(
+                    orphans.is_empty(),
+                    "{}: orphaned settings temp file left after failure: {:?}",
+                    alias,
+                    orphans.iter().map(|e| e.path()).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    /// §P0-3 behavioral. A successful install must patch settings AND write the script for
+    /// both targets — writing only one half is the bug this transaction exists to prevent.
+    #[test]
+    fn installer_succeeds_and_writes_both_halves() {
+        if !jq_present() {
+            return;
+        }
+        for (alias, settings_rel, script_rel) in [
+            ("cc", ".claude/settings.json", ".claude/statusline-command.sh"),
+            (
+                "ag",
+                ".gemini/antigravity-cli/settings.json",
+                ".gemini/antigravity-cli/statusline.sh",
+            ),
+        ] {
+            let (ok, home) = run_installer(
+                &format!("success_{}", alias),
+                &joined(&[alias]),
+                &[],
+            );
+            assert!(ok, "{}: installer failed on a clean home", alias);
+            let settings = std::fs::read_to_string(home.join(settings_rel)).unwrap_or_default();
+            assert!(
+                settings.contains("statusLine"),
+                "{}: settings.json does not contain statusLine after install: {}",
+                alias,
+                settings
+            );
+            assert!(
+                home.join(script_rel).exists(),
+                "{}: script file not written after install",
+                alias
+            );
+        }
     }
 }

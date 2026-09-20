@@ -65,7 +65,8 @@ pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "write".to_string())
     ));
-    std::fs::write(&tmp, contents).map_err(|e| format!("Failed to write '{}': {}", tmp.display(), e))?;
+    std::fs::write(&tmp, contents)
+        .map_err(|e| format!("Failed to write '{}': {}", tmp.display(), e))?;
     std::fs::rename(&tmp, path).map_err(|e| {
         // Leaving the temp file behind after a failed rename only adds a second broken thing to explain; the target is still intact, which is the property that matters.
         let _ = std::fs::remove_file(&tmp);
@@ -84,7 +85,9 @@ pub const BACKUP_KEEP: usize = 5;
 ///
 /// Best-effort throughout: failing to prune must never be reported as failing to back up.
 pub fn prune_timestamped_backups(dir: &std::path::Path, prefix: &str, keep: usize) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
 
     let mut backups: Vec<(u64, std::path::PathBuf)> = entries
         .flatten()
@@ -134,7 +137,10 @@ pub fn shell_quote_remote_path(path: &str) -> String {
     if path == "~" || path == "$HOME" {
         return "\"$HOME\"".to_string();
     }
-    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("$HOME/")) {
+    if let Some(rest) = path
+        .strip_prefix("~/")
+        .or_else(|| path.strip_prefix("$HOME/"))
+    {
         return format!("\"$HOME\"/{}", shell_quote(rest));
     }
     shell_quote(path)
@@ -401,7 +407,8 @@ pub async fn open_remote_subprocess(
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-const SSH_COLOR_MARKER_BEGIN: &str = "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
+const SSH_COLOR_MARKER_BEGIN: &str =
+    "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
 const SSH_COLOR_MARKER_END: &str = "# --- Aki SSH remote color END ---";
 
 /// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is active, then resets on exit - the same OSC 11/111 background-swap trick the user already hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running strips any previously-installed block (between the markers) before writing a fresh one, so repeated installs never duplicate.
@@ -472,8 +479,7 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let backup_path =
-                std::path::Path::new(&home).join(format!(".zshrc.aki-bak-{}", stamp));
+            let backup_path = std::path::Path::new(&home).join(format!(".zshrc.aki-bak-{}", stamp));
             std::fs::copy(&zshrc_path, &backup_path).map_err(|e| e.to_string())?;
             // Bounded after the copy succeeds - see `prune_timestamped_backups`. A `.zshrc` is often where a user keeps export-ed tokens, so the pile is not innocuous either.
             prune_timestamped_backups(std::path::Path::new(&home), ".zshrc.aki-bak-", BACKUP_KEEP);
@@ -496,7 +502,9 @@ fn find_akidevrule_install_script(home: &str) -> Option<String> {
         format!("{}/Developer/AkiDevRule/install.sh", home),
         format!("{}/Documents/AkiDevRule/install.sh", home),
     ];
-    candidates.into_iter().find(|c| std::path::Path::new(c).exists())
+    candidates
+        .into_iter()
+        .find(|c| std::path::Path::new(c).exists())
 }
 
 /// Runs the local AkiDevRule `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
@@ -525,9 +533,9 @@ pub async fn install_akidevrule() -> Result<(), String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-use std::sync::{Arc, Mutex, OnceLock};
-use std::collections::HashMap;
 use crate::projects::SyncProject;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub struct IconData {
     pub bytes: Vec<u8>,
@@ -548,7 +556,9 @@ pub fn load_and_cache_project_icons(projects: &[SyncProject]) {
         let path = std::path::Path::new(&project.local_path);
         let is_nuxt = path.join("nuxt.config.ts").exists() || path.join("nuxt.config.js").exists();
         let is_tauri = path.join("src-tauri/tauri.conf.json").exists();
-        let is_web = !is_nuxt && !is_tauri && (path.join("package.json").exists() || path.join("index.html").exists());
+        let is_web = !is_nuxt
+            && !is_tauri
+            && (path.join("package.json").exists() || path.join("index.html").exists());
 
         // The PROJECT ICON help text in `src/components/modals/ProjectConfigModal.vue` states these
         // lists, the smallest-wins rule and the 250 KB cap to the user; change both together.
@@ -633,11 +643,17 @@ pub fn check_ide_availability() -> IdeAvailability {
     }
 }
 
+/// Connect deadline for the `resolve_remote_path` SSH call; matches `sync.rs`'s `SSH_CONNECT_TIMEOUT`
+/// so the single-host latency budget is consistent across all SSH calls in the app.
+const RESOLVE_CONNECT_TIMEOUT_SECS: u32 = 10;
+
 #[tauri::command]
 pub async fn resolve_remote_path(host: String, path: String) -> Result<String, String> {
     if !path.starts_with("~/") && path != "~" && !path.contains("$HOME") {
         return Ok(path);
     }
+
+    validate_remote_host(&host)?;
 
     // The SSH round-trip is blocking IO. This command used to be a plain `pub fn`, so Tauri ran it on the main thread and the whole UI froze for the duration of the network call. Move it onto the blocking pool (CLAUDE.md "async fn + blocking subprocess" pitfall) so the UI stays responsive while the resolve is in flight.
     tauri::async_runtime::spawn_blocking(move || {
@@ -650,7 +666,7 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
         //   3. one argv item to ssh, so ssh forwards it intact instead of splitting on spaces.
         let echo_cmd = format!("echo {}", shell_quote_remote_path(&path));
         let script = format!("bash -c {}", shell_quote(&echo_cmd));
-        command.args([&host, &script]);
+        command.args(["-o", &format!("ConnectTimeout={RESOLVE_CONNECT_TIMEOUT_SECS}"), &host, &script]);
 
         let output = command
             .output()
@@ -659,7 +675,10 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
         } else {
-            Err(format!("SSH error resolving path: {}", String::from_utf8_lossy(&output.stderr)))
+            Err(format!(
+                "SSH error resolving path: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
         }
     })
     .await
@@ -678,7 +697,9 @@ pub async fn resolve_report_html(
     let host = remote_host.unwrap_or_default();
     let rpath = remote_path.unwrap_or_default();
 
-    let local_exists = std::path::Path::new(&local_path).join("REPORT.html").exists();
+    let local_exists = std::path::Path::new(&local_path)
+        .join("REPORT.html")
+        .exists();
 
     let mut remote_exists = false;
     let mut remote_mtime = 0i64;
@@ -711,7 +732,10 @@ pub async fn resolve_report_html(
         .await
         .map_err(|e| format!("resolve_report_html pull task join error: {}", e))??;
     }
-    Ok(std::path::Path::new(&local_path).join("REPORT.html").to_string_lossy().to_string())
+    Ok(std::path::Path::new(&local_path)
+        .join("REPORT.html")
+        .to_string_lossy()
+        .to_string())
 }
 
 /// Looks for `filename` in `~/Downloads` so the update modal can offer to open an already-downloaded installer instead of re-triggering a browser download. `file_name()` strips any directory components from the (externally-sourced, GitHub API) filename to prevent escaping the Downloads directory.
@@ -721,8 +745,14 @@ pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
         .file_name()
         .ok_or_else(|| "Invalid filename".to_string())?;
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let path = std::path::Path::new(&home).join("Downloads").join(safe_name);
-    Ok(if path.exists() { Some(path.to_string_lossy().to_string()) } else { None })
+    let path = std::path::Path::new(&home)
+        .join("Downloads")
+        .join(safe_name);
+    Ok(if path.exists() {
+        Some(path.to_string_lossy().to_string())
+    } else {
+        None
+    })
 }
 
 /// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates"  - `curl`'s blocking network wait must never sit on the command-dispatch thread (a slow or dead network would freeze the whole app on launch). `spawn_blocking` per CLAUDE.md's blocking-UI rule.
@@ -733,10 +763,13 @@ pub async fn check_for_updates() -> Result<String, String> {
             .args([
                 "-s",
                 // Bounded timeouts prevent hanging captive-portals from pinning OS worker threads indefinitely on app launches.
-                "--connect-timeout", "5",
-                "--max-time", "15",
-                "-H", "User-Agent: aki-dev-sync",
-                "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest"
+                "--connect-timeout",
+                "5",
+                "--max-time",
+                "15",
+                "-H",
+                "User-Agent: aki-dev-sync",
+                "https://api.github.com/repos/lacvietanh/aki-dev-sync/releases/latest",
             ])
             .output()
             .map_err(|e| format!("Failed to check for updates: {}", e))?;
@@ -746,13 +779,16 @@ pub async fn check_for_updates() -> Result<String, String> {
             Ok(stdout)
         } else {
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            Err(if stderr.trim().is_empty() { "Network error checking for updates".to_string() } else { stderr })
+            Err(if stderr.trim().is_empty() {
+                "Network error checking for updates".to_string()
+            } else {
+                stderr
+            })
         }
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
-
 
 #[derive(serde::Serialize, Default)]
 pub struct ProjectStackInfo {
@@ -767,7 +803,9 @@ pub struct ProjectStackInfo {
 
 /// True when `path` looks like a Nuxt project (config file or generated `.nuxt` dir present).
 fn is_nuxt_project(path: &std::path::Path) -> bool {
-    path.join("nuxt.config.js").exists() || path.join("nuxt.config.ts").exists() || path.join(".nuxt").exists()
+    path.join("nuxt.config.js").exists()
+        || path.join("nuxt.config.ts").exists()
+        || path.join(".nuxt").exists()
 }
 
 /// Probes project stack characteristics (`exists()` checks run off the dispatch thread in `spawn_blocking` per stack-tauri A1).
@@ -782,7 +820,8 @@ pub async fn check_project_stack(local_path: String) -> ProjectStackInfo {
 fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
     let path = std::path::Path::new(local_path);
     let is_node = path.join("package.json").exists();
-    let is_tauri = path.join("src-tauri").exists() || path.join("src-tauri/tauri.conf.json").exists();
+    let is_tauri =
+        path.join("src-tauri").exists() || path.join("src-tauri/tauri.conf.json").exists();
     let is_nuxt = is_nuxt_project(path);
 
     let mut pm = "npm";
@@ -799,10 +838,16 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
     }
 
     let (dev_cmd, build_cmd) = if is_tauri {
-        (format!("{pm} {run_prefix}tauri dev"), format!("{pm} {run_prefix}build:app"))
+        (
+            format!("{pm} {run_prefix}tauri dev"),
+            format!("{pm} {run_prefix}build:app"),
+        )
     } else if is_nuxt || is_node {
         // Nuxt and plain Node share dev/build commands; `is_nuxt` is still reported separately for UI stack labelling.
-        (format!("{pm} {run_prefix}dev"), format!("{pm} {run_prefix}build"))
+        (
+            format!("{pm} {run_prefix}dev"),
+            format!("{pm} {run_prefix}build"),
+        )
     } else {
         ("".to_string(), "".to_string())
     };
@@ -844,7 +889,9 @@ pub struct TerminalOwnership {
 
 /// Normalizes tty name across AppleScript (`/dev/ttysNNN`) and `ps -axo tty=` (`sNNN` / `??`) so launch tags match scan lookups.
 fn normalize_tty(raw: &str) -> String {
-    raw.strip_prefix("/dev/tty").map(str::to_string).unwrap_or_else(|| raw.to_string())
+    raw.strip_prefix("/dev/tty")
+        .map(str::to_string)
+        .unwrap_or_else(|| raw.to_string())
 }
 
 fn record_terminal_owner(state: &TerminalOwnership, tty: &str, owner: String) {
@@ -853,7 +900,12 @@ fn record_terminal_owner(state: &TerminalOwnership, tty: &str, owner: String) {
 }
 
 fn owner_of(state: &TerminalOwnership, tty: &str) -> Option<String> {
-    state.by_tty.lock().unwrap().get(&normalize_tty(tty)).map(|s| s.owner.clone())
+    state
+        .by_tty
+        .lock()
+        .unwrap()
+        .get(&normalize_tty(tty))
+        .map(|s| s.owner.clone())
 }
 
 /// Single funnel for both launch commands; empty tty/owner is a silent no-op, not an error - see docs/plan/done/terminal-ownership-model.md §3-4.
@@ -870,8 +922,11 @@ fn reconcile_terminal_owners(state: &TerminalOwnership, row_of: &HashMap<u32, Ps
     let mut map = state.by_tty.lock().unwrap();
     let mut dead: Vec<String> = Vec::new();
     for (tty, session) in map.iter_mut() {
-        let live_pids: Vec<u32> =
-            row_of.values().filter(|r| normalize_tty(&r.tty) == *tty).map(|r| r.pid).collect();
+        let live_pids: Vec<u32> = row_of
+            .values()
+            .filter(|r| normalize_tty(&r.tty) == *tty)
+            .map(|r| r.pid)
+            .collect();
         if live_pids.is_empty() {
             dead.push(tty.clone());
             continue;
@@ -998,7 +1053,9 @@ const MAX_SCANNED_PIDS: usize = 200;
 
 /// True if `pid` is the ROOT of its cwd subtree (parent cwd differs or is unknown) - represents one window/tab (S1, `docs/plan/done/terminal-ownership-model.md` §10).
 fn is_subtree_root(tree: &TerminalTree, pid: u32) -> bool {
-    let Some(cwd) = tree.cwd_of.get(&pid) else { return false };
+    let Some(cwd) = tree.cwd_of.get(&pid) else {
+        return false;
+    };
     let parent_same_cwd = tree
         .ppid_of
         .get(&pid)
@@ -1092,7 +1149,9 @@ pub async fn describe_terminal_sessions(
         let canonical = canonicalize_all(&paths);
         let mut project_of: HashMap<&str, &str> = HashMap::new();
         for (orig, canon) in paths.iter().zip(canonical.iter()) {
-            project_of.entry(normalize_dir(canon)).or_insert(orig.as_str());
+            project_of
+                .entry(normalize_dir(canon))
+                .or_insert(orig.as_str());
         }
 
         let mut sessions: Vec<ExternalTerminalSession> = Vec::new();
@@ -1100,7 +1159,9 @@ pub async fn describe_terminal_sessions(
             if !is_subtree_root(&tree, *pid) {
                 continue;
             }
-            let Some(root_row) = tree.row_of.get(pid) else { continue };
+            let Some(root_row) = tree.row_of.get(pid) else {
+                continue;
+            };
             // Promotes past macOS `login -pf <user>` wrapper which shares cwd with the child shell.
             let row = promote_past_login(&tree, root_row);
             let running: Vec<PsRow> = descendants_of(&tree.ppid_of, &[row.pid])
@@ -1230,7 +1291,11 @@ fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTr
             .map(|r| (r.pid, r))
             .collect();
 
-        let pid_list = kids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+        let pid_list = kids
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         // `lsof` non-zero exit from dead pids is ignored; stdout is parsed for whatever resolved.
         let lsof = create_command("lsof")
             .args(["-a", "-d", "cwd", "-p", &pid_list, "-F", "pn"])
@@ -1239,7 +1304,11 @@ fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTr
         let cwd_of = parse_lsof_cwds(&String::from_utf8_lossy(&lsof.stdout));
 
         reconcile_terminal_owners(ownership, &row_of);
-        Ok(Some(TerminalTree { ppid_of, cwd_of, row_of }))
+        Ok(Some(TerminalTree {
+            ppid_of,
+            cwd_of,
+            row_of,
+        }))
     }
 }
 
@@ -1248,12 +1317,19 @@ fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTr
 pub async fn read_project_changelog(local_path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = std::path::Path::new(&local_path);
-        let names = ["CHANGELOG.md", "changelog.md", "CHANGELOG.txt", "changelog.txt", "CHANGELOG", "changelog"];
+        let names = [
+            "CHANGELOG.md",
+            "changelog.md",
+            "CHANGELOG.txt",
+            "changelog.txt",
+            "CHANGELOG",
+            "changelog",
+        ];
         for name in names {
             let file_path = path.join(name);
             if file_path.exists() {
-                let bytes = std::fs::read(file_path)
-                    .map_err(|e| format!("Failed to read file: {}", e))?;
+                let bytes =
+                    std::fs::read(file_path).map_err(|e| format!("Failed to read file: {}", e))?;
                 return Ok(String::from_utf8_lossy(&bytes).into_owned());
             }
         }
@@ -1387,8 +1463,14 @@ mod tests {
 
     #[test]
     fn shell_quote_remote_path_keeps_tilde_prefix_expandable() {
-        assert_eq!(shell_quote_remote_path("~/www/site"), "\"$HOME\"/'www/site'");
-        assert_eq!(shell_quote_remote_path("$HOME/www/site"), "\"$HOME\"/'www/site'");
+        assert_eq!(
+            shell_quote_remote_path("~/www/site"),
+            "\"$HOME\"/'www/site'"
+        );
+        assert_eq!(
+            shell_quote_remote_path("$HOME/www/site"),
+            "\"$HOME\"/'www/site'"
+        );
     }
 
     #[test]
@@ -1432,14 +1514,21 @@ mod tests {
 
         // And the ordinary path replaces the whole file, leaving no temp file behind.
         write_atomic(&target, "{\"keep\":false}").unwrap();
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"keep\":false}");
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "{\"keep\":false}"
+        );
         let leftovers: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|e| e.ok())
             .map(|e| e.file_name().to_string_lossy().to_string())
             .filter(|n| n.contains("aki-tmp"))
             .collect();
-        assert!(leftovers.is_empty(), "temp file left behind: {:?}", leftovers);
+        assert!(
+            leftovers.is_empty(),
+            "temp file left behind: {:?}",
+            leftovers
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1517,7 +1606,8 @@ mod tests {
 
     /// Scratch path under OS temp dir (rewrite tests must never touch real `~/.zshrc`).
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("aki-devsync-test-{}-{}", std::process::id(), name));
+        let dir =
+            std::env::temp_dir().join(format!("aki-devsync-test-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create scratch dir");
         dir
@@ -1545,7 +1635,11 @@ mod tests {
         // A directory is a portable, root-proof way to produce a read error that is NOT NotFound - the exact case `unwrap_or_default()` used to flatten into "" before overwriting the file.
         let dir = scratch("isdir");
         let err = read_for_rewrite(&dir).unwrap_err();
-        assert!(err.contains("Nothing was written"), "error must say no write happened: {}", err);
+        assert!(
+            err.contains("Nothing was written"),
+            "error must say no write happened: {}",
+            err
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1560,10 +1654,20 @@ mod tests {
             cwd_of.insert(*pid, cwd.to_string());
             row_of.insert(
                 *pid,
-                PsRow { pid: *pid, ppid: *ppid, tty: "s004".to_string(), etime: "00:01".to_string(), command: "-zsh".to_string() },
+                PsRow {
+                    pid: *pid,
+                    ppid: *ppid,
+                    tty: "s004".to_string(),
+                    etime: "00:01".to_string(),
+                    command: "-zsh".to_string(),
+                },
             );
         }
-        TerminalTree { ppid_of, cwd_of, row_of }
+        TerminalTree {
+            ppid_of,
+            cwd_of,
+            row_of,
+        }
     }
 
     #[test]
@@ -1606,14 +1710,21 @@ mod tests {
     }
 
     fn ps_row(pid: u32, tty: &str) -> PsRow {
-        PsRow { pid, ppid: 1, tty: tty.to_string(), etime: "00:01".to_string(), command: "-zsh".to_string() }
+        PsRow {
+            pid,
+            ppid: 1,
+            tty: tty.to_string(),
+            etime: "00:01".to_string(),
+            command: "-zsh".to_string(),
+        }
     }
 
     #[test]
     fn reconcile_pins_the_lowest_pid_on_first_sight() {
         let ownership = TerminalOwnership::default();
         record_terminal_owner(&ownership, "/dev/ttys004", "proj-a".to_string());
-        let rows: HashMap<u32, PsRow> = [(500, ps_row(500, "s004")), (300, ps_row(300, "s004"))].into();
+        let rows: HashMap<u32, PsRow> =
+            [(500, ps_row(500, "s004")), (300, ps_row(300, "s004"))].into();
         reconcile_terminal_owners(&ownership, &rows);
         let map = ownership.by_tty.lock().unwrap();
         assert_eq!(map.get("s004").unwrap().pid, Some(300));
@@ -1633,7 +1744,7 @@ mod tests {
         record_terminal_owner(&ownership, "/dev/ttys004", "proj-a".to_string());
         let rows: HashMap<u32, PsRow> = [(300, ps_row(300, "s004"))].into();
         reconcile_terminal_owners(&ownership, &rows); // pins pid 300
-        // The tab closed and a NEW one was assigned the same recycled tty number.
+                                                      // The tab closed and a NEW one was assigned the same recycled tty number.
         let rows: HashMap<u32, PsRow> = [(900, ps_row(900, "s004"))].into();
         reconcile_terminal_owners(&ownership, &rows);
         assert!(ownership.by_tty.lock().unwrap().is_empty());
@@ -1669,7 +1780,10 @@ mod tests {
     fn tag_terminal_launch_records_when_both_are_present() {
         let ownership = TerminalOwnership::default();
         tag_terminal_launch(&ownership, "/dev/ttys004", Some("proj-a".to_string()));
-        assert_eq!(owner_of(&ownership, "/dev/ttys004"), Some("proj-a".to_string()));
+        assert_eq!(
+            owner_of(&ownership, "/dev/ttys004"),
+            Some("proj-a".to_string())
+        );
     }
 
     #[cfg(unix)]
@@ -1686,5 +1800,63 @@ mod tests {
         }
         let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── P0-1 / A12: resolve_remote_path SSH boundary ─────────────────────────────────────────
+
+    #[test]
+    fn remote_host_rejects_control_characters() {
+        assert!(validate_remote_host("host\x01").is_err());
+        assert!(validate_remote_host("host\n").is_err());
+        assert!(validate_remote_host("host\t").is_err());
+    }
+
+    #[tokio::test]
+    async fn resolve_remote_path_rejects_proxy_command_option_before_spawn() {
+        let result = resolve_remote_path(
+            "-oProxyCommand=touch /tmp/pwned".to_string(),
+            "~/projects".to_string(),
+        )
+        .await;
+        assert!(result.is_err(), "option-shaped host must be rejected before spawn");
+    }
+
+    #[tokio::test]
+    async fn resolve_remote_path_rejects_login_option_before_spawn() {
+        let result = resolve_remote_path("-lroot".to_string(), "~/projects".to_string()).await;
+        assert!(result.is_err(), "option-shaped host must be rejected before spawn");
+    }
+
+    #[tokio::test]
+    async fn resolve_remote_path_rejects_whitespace_in_host_before_spawn() {
+        let result =
+            resolve_remote_path("my server".to_string(), "~/projects".to_string()).await;
+        assert!(result.is_err(), "host with whitespace must be rejected before spawn");
+    }
+
+    #[tokio::test]
+    async fn resolve_remote_path_rejects_control_chars_in_host_before_spawn() {
+        let result =
+            resolve_remote_path("host\x01evil".to_string(), "~/projects".to_string()).await;
+        assert!(result.is_err(), "host with control characters must be rejected before spawn");
+    }
+
+    #[test]
+    fn resolve_remote_path_connect_timeout_is_bounded() {
+        assert!(RESOLVE_CONNECT_TIMEOUT_SECS > 0);
+    }
+
+    #[tokio::test]
+    async fn resolve_remote_path_returns_absolute_path_unchanged() {
+        let path = "/srv/data/project".to_string();
+        let result = resolve_remote_path("myhost".to_string(), path.clone()).await;
+        assert_eq!(result.unwrap(), path);
+    }
+
+    #[tokio::test]
+    async fn resolve_remote_path_returns_non_tilde_path_without_network() {
+        let path = "/usr/local/share".to_string();
+        let result = resolve_remote_path("192.168.1.100".to_string(), path.clone()).await;
+        assert_eq!(result.unwrap(), path);
     }
 }

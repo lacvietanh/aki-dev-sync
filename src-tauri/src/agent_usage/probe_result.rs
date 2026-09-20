@@ -65,11 +65,23 @@ mod tests {
 
     #[test]
     fn ssh_255_is_the_only_unreachable_signal() {
-        assert!(!host_answered("hostB", 255), "ssh 255 = never reached the host");
+        assert!(
+            !host_answered("hostB", 255),
+            "ssh 255 = never reached the host"
+        );
         assert!(host_answered("hostB", 0));
-        assert!(host_answered("hostB", 1), "remote script's own failure - the host answered");
-        assert!(host_answered("hostB", 127), "node missing on the remote - the host answered");
-        assert!(host_answered("hostB", -1), "no code (signalled) - not a connection failure");
+        assert!(
+            host_answered("hostB", 1),
+            "remote script's own failure - the host answered"
+        );
+        assert!(
+            host_answered("hostB", 127),
+            "node missing on the remote - the host answered"
+        );
+        assert!(
+            host_answered("hostB", -1),
+            "no code (signalled) - not a connection failure"
+        );
     }
 
     #[test]

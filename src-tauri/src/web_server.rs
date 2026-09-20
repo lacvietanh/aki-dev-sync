@@ -72,13 +72,12 @@ const CLOSE_HOST_ROLE_REJECTED: u16 = 4003;
 // Policy: Coalesce then re-hydrate. When an outbox blows `COMPANION_QUEUE_LIMIT_BYTES`, drop re-derivable `pty_output` frames and flag for resync. When the queue drains, re-issue `companion-connected` to trigger fresh `init` and `reset:true` scrollback replay.
 // Blocking the producer is unacceptable (would stall host loop and all clients), while dropping arbitrary frames causes visual corruption in xterm.
 
-/// Per-companion outbound budget derived from terminal caps (asserted in `invariant_r_holds_for_a_full_scrollback_replay`).
+/// Per-companion outbound budget (asserted in tests below).
 ///
-/// Sizing: `MAX_TABS` (16) * replay frame size (174,892 B at 128 KiB cap) = 2.67 MiB for one full replay.
+/// Sizing: one tab's replay is ~175 KB (128 KiB scrollback × base64 4/3 + ~128 B envelope). The budget holds at least 2× one tab's replay so a single-tab resync never triggers another coalesce. With unbounded tabs the total replay may exceed the budget; `coalesce` handles that gracefully: first overflow schedules a resync, a second overflow with no scrollback delivered since the last resync stops scheduling resyncs and keeps the connection alive for live output (avoiding an endless coalesce/resync loop).
 ///
 /// INVARIANT R:
-/// - **R1**: `MAX_TABS * replay_frame_bytes(SCROLLBACK_CAP) <= COMPANION_QUEUE_LIMIT_BYTES / 2` (2,798,272 <= 4,194,304). Ensures recovery replay fits with 50% budget reserved for undroppable state frames. Address is per-connection so multiple tabs on one device do not multiply this load.
-/// - **R2**: `2 * MAX_TABS * replay_frame_bytes(SCROLLBACK_CAP) <= COMPANION_QUEUE_LIMIT_BYTES` (5,596,544 <= 8,388,608). Prevents coalesce when an addressed replay overlaps with a broadcast congestion replay.
+/// - **R1**: `replay_frame_bytes(SCROLLBACK_CAP) <= COMPANION_QUEUE_LIMIT_BYTES / 2` (~175 KB <= 4 MiB). Ensures a single-tab recovery replay always fits with headroom for undroppable state frames. Budget is per-connection so multiple tabs on one device have isolated queues.
 const COMPANION_QUEUE_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 
 /// Frame tag of the ONE coalescible kind (mirrors `FRAME_PTY_OUTPUT` in `src/constants/protocol.js`).
@@ -94,6 +93,9 @@ struct Outbox {
     bytes: usize,
     /// Set when a coalesce dropped frames; consumed when queue drains to request re-hydrate.
     resync_pending: bool,
+    /// Set after the first resync is requested; prevents a second overflow from looping forever.
+    /// Cleared when a non-resync batch drains successfully (connection is making progress again).
+    resync_suppressed: bool,
     /// Set when connection teardown begins (Close frame queued); ignores subsequent pushes.
     closed: bool,
 }
@@ -104,7 +106,13 @@ type CompanionOutbox = Arc<(StdMutex<Outbox>, Notify)>;
 
 impl Outbox {
     fn new() -> Self {
-        Outbox { queue: VecDeque::new(), bytes: 0, resync_pending: false, closed: false }
+        Outbox {
+            queue: VecDeque::new(),
+            bytes: 0,
+            resync_pending: false,
+            resync_suppressed: false,
+            closed: false,
+        }
     }
 
     /// Queue one frame and enforce the budget. THE WHOLE POLICY LIVES HERE, not in the caller, so
@@ -128,11 +136,19 @@ impl Outbox {
     /// the budget is already blown, so the JSON parsing it does is off the hot path entirely: after
     /// a collapse the queue is near-empty, so the next one cannot happen until another whole budget
     /// has accumulated.
+    ///
+    /// A second overflow after a resync was already requested (resync_suppressed) does not schedule
+    /// another resync — that would loop forever when the total replay exceeds the budget. Instead,
+    /// live output continues to flow and the connection stays open until it makes enough progress
+    /// (a non-resync drain) to clear the suppression.
     fn coalesce(&mut self) {
         let before = self.queue.len();
         self.queue.retain(|m| !is_coalescible(m));
         if self.queue.len() != before {
-            self.resync_pending = true;
+            if !self.resync_suppressed {
+                self.resync_pending = true;
+                self.resync_suppressed = true;
+            }
             self.bytes = self.queue.iter().map(frame_bytes).sum();
         }
     }
@@ -144,17 +160,22 @@ impl Outbox {
         self.resync_pending = false;
         self.queue.push_back(Message::Close(Some(CloseFrame {
             code: CLOSE_TOO_FAR_BEHIND,
-            reason: "this device fell too far behind the host — reconnect for a fresh snapshot".into(),
+            reason: "this device fell too far behind the host — reconnect for a fresh snapshot"
+                .into(),
         })));
         self.closed = true;
     }
 
     /// Hands backlog to socket writer; returns `(batch, wants_resync)` where resync is true only if coalesce occurred and queue is now empty.
+    /// A non-resync delivery clears resync suppression so a future overflow may retry.
     fn take(&mut self) -> (Vec<Message>, bool) {
         let batch: Vec<Message> = self.queue.drain(..).collect();
         self.bytes = 0;
         let resync = self.resync_pending;
         self.resync_pending = false;
+        if !resync && !batch.is_empty() {
+            self.resync_suppressed = false;
+        }
         (batch, resync)
     }
 }
@@ -170,7 +191,8 @@ fn frame_bytes(msg: &Message) -> usize {
 
 /// DROP-SAFETY CHECK (routing is handled by `addressed_to` and `stamp_from`).
 ///
-/// COALESCIBLE (re-derivable from host scrollback): `pty_output` chunks and replays.
+/// COALESCIBLE (re-derivable from host scrollback): non-reset `pty_output` chunks.
+/// Reset frames are authoritative state transitions and must never be dropped.
 ///
 /// NEVER DROPPED (default-deny for unrecognized/binary):
 /// - `init` / `delta`: mirrored app state (including confirmation dialogs).
@@ -178,25 +200,33 @@ fn frame_bytes(msg: &Message) -> usize {
 /// - `pty_exit`, `pty_resize`: terminal liveness and dimension edges.
 /// - `ping` / `pong`: connection health.
 fn is_coalescible(msg: &Message) -> bool {
-    let Message::Text(text) = msg else { return false };
+    let Message::Text(text) = msg else {
+        return false;
+    };
     #[derive(Deserialize)]
     struct FrameTag {
         t: Option<String>,
+        #[serde(default)]
+        reset: bool,
     }
     match serde_json::from_str::<FrameTag>(text) {
-        Ok(tag) => tag.t.as_deref() == Some(FRAME_PTY_OUTPUT),
+        Ok(tag) => tag.t.as_deref() == Some(FRAME_PTY_OUTPUT) && !tag.reset,
         Err(_) => false,
     }
 }
 
 /// Reads optional top-level `to` naming recipient connection key (`c<conn_id>`). Absent or invalid returns `None` (broadcast). Parsed once per host frame in `dispatch`.
 fn addressed_to(msg: &Message) -> Option<String> {
-    let Message::Text(text) = msg else { return None };
+    let Message::Text(text) = msg else {
+        return None;
+    };
     #[derive(Deserialize)]
     struct FrameAddress {
         to: Option<String>,
     }
-    serde_json::from_str::<FrameAddress>(text).ok().and_then(|f| f.to)
+    serde_json::from_str::<FrameAddress>(text)
+        .ok()
+        .and_then(|f| f.to)
 }
 
 /// Stamps sending connection key `c<conn_id>` unconditionally onto inbound companion JSON frames for host reply routing.
@@ -204,7 +234,10 @@ fn stamp_from(msg: Message, conn_key: &str) -> Message {
     let Message::Text(text) = msg else { return msg };
     match serde_json::from_str::<serde_json::Value>(&text) {
         Ok(serde_json::Value::Object(mut map)) => {
-            map.insert("from".to_string(), serde_json::Value::String(conn_key.to_string()));
+            map.insert(
+                "from".to_string(),
+                serde_json::Value::String(conn_key.to_string()),
+            );
             Message::Text(serde_json::Value::Object(map).to_string())
         }
         _ => Message::Text(text),
@@ -214,7 +247,9 @@ fn stamp_from(msg: Message, conn_key: &str) -> Message {
 /// Queues a frame into companion outbox without blocking the host loop.
 fn enqueue(outbox: &CompanionOutbox, msg: Message) {
     let (lock, notify) = &**outbox;
-    lock.lock().unwrap_or_else(|e| e.into_inner()).push_within_budget(msg);
+    lock.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push_within_budget(msg);
     // `notify_one` stores a permit when nobody is waiting so notifications are not lost while awaiting send.
     notify.notify_one();
 }
@@ -241,6 +276,9 @@ struct RelayState {
     host_token: String,
     /// Gate controlling whether remote control accepts connections/pairing.
     enabled: AtomicBool,
+    /// Incremented on every disable so in-flight companion handshakes that passed auth before the
+    /// disable can detect the race and refuse registration (P1-2).
+    connection_epoch: AtomicU64,
     /// Long-form pairing secret accepted in place of the 6-digit code on an origin the whole internet can also type into. Minted with the code, never persisted.
     pair_link_token: StdMutex<String>,
     /// Strike records and the cooling lock they trigger; in memory only.
@@ -296,10 +334,16 @@ impl PairGate {
 
     /// Drops records that are neither locked nor recently active, then trims the least recently seen until the map is back inside its cap.
     fn prune(&mut self, now: u64) {
-        self.per_ip
-            .retain(|_, a| a.locked_until > now || now.saturating_sub(a.last_seen) < PAIR_RECORD_TTL_SECS);
+        self.per_ip.retain(|_, a| {
+            a.locked_until > now || now.saturating_sub(a.last_seen) < PAIR_RECORD_TTL_SECS
+        });
         while self.per_ip.len() > MAX_PAIR_IP_RECORDS {
-            let Some(oldest) = self.per_ip.iter().min_by_key(|(_, a)| a.last_seen).map(|(ip, _)| *ip) else {
+            let Some(oldest) = self
+                .per_ip
+                .iter()
+                .min_by_key(|(_, a)| a.last_seen)
+                .map(|(ip, _)| *ip)
+            else {
                 break;
             };
             self.per_ip.remove(&oldest);
@@ -325,14 +369,24 @@ struct IngressSetting {
 
 impl Default for IngressSetting {
     fn default() -> Self {
-        IngressSetting { mode: INGRESS_TAILSCALE.to_string(), origin: String::new() }
+        IngressSetting {
+            mode: INGRESS_TAILSCALE.to_string(),
+            origin: String::new(),
+        }
     }
 }
 
 /// Anything that is not a mode this build knows falls back to `tailscale`, so a newer or hand-edited file cannot leave the app in a mode it cannot serve.
 fn normalize_ingress(mode: &str, origin: &str) -> IngressSetting {
-    let mode = if mode == INGRESS_PUBLIC { INGRESS_PUBLIC } else { INGRESS_TAILSCALE };
-    IngressSetting { mode: mode.to_string(), origin: trim_origin(origin) }
+    let mode = if mode == INGRESS_PUBLIC {
+        INGRESS_PUBLIC
+    } else {
+        INGRESS_TAILSCALE
+    };
+    IngressSetting {
+        mode: mode.to_string(),
+        origin: trim_origin(origin),
+    }
 }
 
 /// Stored origins carry no trailing slash, so every consumer can append a path unconditionally.
@@ -350,8 +404,9 @@ impl RelayState {
             devices: StdMutex::new(Vec::new()),
             devices_path: StdMutex::new(None),
             server_state_path: StdMutex::new(None),
-            host_token: generate_token(),
+            host_token: generate_token().expect("OS entropy unavailable: cannot mint host token"),
             enabled: AtomicBool::new(false),
+            connection_epoch: AtomicU64::new(0),
             pair_link_token: StdMutex::new(String::new()),
             pair_gate: StdMutex::new(PairGate::default()),
             ingress: StdMutex::new(IngressSetting::default()),
@@ -397,7 +452,11 @@ impl RelayState {
             .unwrap_or_else(|e| e.into_inner())
             .clone()
             .ok_or_else(|| "companion-devices.json path not initialized".to_string())?;
-        let devices = self.devices.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let devices = self
+            .devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let content = serde_json::to_string_pretty(&devices).map_err(|e| e.to_string())?;
         std::fs::write(&path, content).map_err(|e| e.to_string())
     }
@@ -408,10 +467,19 @@ impl RelayState {
     /// runtime must route it through `spawn_blocking`. Best-effort by design — failing to write
     /// this preference must never fail the toggle the user just asked for.
     fn persist_server_state(&self) {
-        let Some(path) = self.server_state_path.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        let Some(path) = self
+            .server_state_path
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        else {
             return;
         };
-        let ingress = self.ingress.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let ingress = self
+            .ingress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let persisted = PersistedServerState {
             enabled: self.enabled.load(Ordering::SeqCst),
             ingress_mode: ingress.mode,
@@ -420,10 +488,16 @@ impl RelayState {
         match serde_json::to_string(&persisted) {
             Ok(content) => {
                 if let Err(e) = std::fs::write(&path, content) {
-                    eprintln!("[web_server] could not persist the remote-control state: {}", e);
+                    eprintln!(
+                        "[web_server] could not persist the remote-control state: {}",
+                        e
+                    );
                 }
             }
-            Err(e) => eprintln!("[web_server] could not serialize the remote-control state: {}", e),
+            Err(e) => eprintln!(
+                "[web_server] could not serialize the remote-control state: {}",
+                e
+            ),
         }
     }
 
@@ -446,8 +520,16 @@ impl RelayState {
             return PairVerdict::Locked(retry_after);
         }
         let offered = code.trim();
-        let expected = self.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let link = self.pair_link_token.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let expected = self
+            .pairing_code
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let link = self
+            .pair_link_token
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         if (expected.is_empty() || offered != expected) && (link.is_empty() || offered != link) {
             gate.record_failure(ip, now);
             return match gate.retry_after(ip, now) {
@@ -459,12 +541,45 @@ impl RelayState {
         PairVerdict::Accepted
     }
 
-    /// Mints the 6-digit code and its long-form twin together, so no path can hand out one without the other.
-    fn mint_pairing_secrets(&self) -> String {
-        let code = generate_pairing_code();
+    /// Mints the 6-digit code and its long-form twin together, so no path can hand out one without
+    /// the other. Both values are generated before any state is written, so a failure leaves the
+    /// existing state unchanged — no partially-written pair of secrets.
+    fn mint_pairing_secrets(&self) -> Result<String, String> {
+        let code = generate_pairing_code()?;
+        let link = generate_token()?;
         *self.pairing_code.lock().unwrap_or_else(|e| e.into_inner()) = code.clone();
-        *self.pair_link_token.lock().unwrap_or_else(|e| e.into_inner()) = generate_token();
-        code
+        *self
+            .pair_link_token
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = link;
+        Ok(code)
+    }
+
+    /// Attempts to register a companion connection under the companions lock. Returns false if the
+    /// server was disabled or the epoch advanced (a disable raced past auth — P1-2 invariant).
+    fn try_register_companion(
+        &self,
+        conn_id: u64,
+        device_id: String,
+        conn_key: String,
+        outbox: CompanionOutbox,
+        epoch_at_auth: u64,
+    ) -> bool {
+        let mut companions = self.companions.lock().unwrap_or_else(|e| e.into_inner());
+        if !self.enabled.load(Ordering::SeqCst)
+            || self.connection_epoch.load(Ordering::SeqCst) != epoch_at_auth
+        {
+            return false;
+        }
+        companions.insert(
+            conn_id,
+            CompanionHandle {
+                device_id,
+                conn_key,
+                outbox,
+            },
+        );
+        true
     }
 }
 
@@ -487,7 +602,11 @@ fn default_ingress_mode() -> String {
 
 impl Default for PersistedServerState {
     fn default() -> Self {
-        PersistedServerState { enabled: false, ingress_mode: default_ingress_mode(), ingress_origin: String::new() }
+        PersistedServerState {
+            enabled: false,
+            ingress_mode: default_ingress_mode(),
+            ingress_origin: String::new(),
+        }
     }
 }
 
@@ -521,26 +640,36 @@ pub struct PairedDeviceView {
 
 impl From<&PairedDevice> for PairedDeviceView {
     fn from(d: &PairedDevice) -> Self {
-        PairedDeviceView { id: d.id.clone(), label: d.label.clone(), paired_at: d.paired_at }
+        PairedDeviceView {
+            id: d.id.clone(),
+            label: d.label.clone(),
+            paired_at: d.paired_at,
+        }
     }
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
-/// Fills `buf` with OS-sourced random bytes. `getrandom` failing at all is exceedingly rare
-/// (no OS entropy source); falls back to a time-seeded buffer rather than panicking — a
-/// Generates OS-sourced random bytes with fallback to time-seeded PRNG if OS entropy fails.
-fn random_bytes<const N: usize>() -> [u8; N] {
-    let mut buf = [0u8; N];
-    if getrandom::getrandom(&mut buf).is_err() {
-        let seed = now_secs() as u128 ^ (std::process::id() as u128) << 32;
-        for (i, b) in buf.iter_mut().enumerate() {
-            *b = (seed.wrapping_add(i as u128 * 2654435761)) as u8;
-        }
+/// Fails closed: returns an error if OS entropy is unavailable. No secret may be produced
+/// from predictable state. A `cfg(test)` thread-local flag enables deterministic failure tests.
+#[cfg(test)]
+thread_local! {
+    static FAIL_ENTROPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
+    #[cfg(test)]
+    if FAIL_ENTROPY.with(|f| f.get()) {
+        return Err("simulated entropy failure".to_string());
     }
-    buf
+    let mut buf = [0u8; N];
+    getrandom::getrandom(&mut buf).map_err(|e| format!("OS entropy unavailable: {}", e))?;
+    Ok(buf)
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -548,19 +677,19 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 /// §13.1: "a random 128-bit hex string".
-fn generate_token() -> String {
-    hex_encode(&random_bytes::<16>())
+fn generate_token() -> Result<String, String> {
+    Ok(hex_encode(&random_bytes::<16>()?))
 }
 
 /// Device id — shorter, only needs to be unique among paired devices, never sent as a secret.
-fn generate_id() -> String {
-    hex_encode(&random_bytes::<8>())
+fn generate_id() -> Result<String, String> {
+    Ok(hex_encode(&random_bytes::<8>()?))
 }
 
 /// §7.1: "Mac shows a 6-digit code".
-fn generate_pairing_code() -> String {
-    let n = u32::from_be_bytes(random_bytes::<4>()) % 1_000_000;
-    format!("{:06}", n)
+fn generate_pairing_code() -> Result<String, String> {
+    let n = u32::from_be_bytes(random_bytes::<4>()?) % 1_000_000;
+    Ok(format!("{:06}", n))
 }
 
 // ── Public init, called once from `lib.rs`'s `setup()` ───────────────────────────────────────
@@ -573,8 +702,13 @@ pub fn init(app_handle: &AppHandle) {
             let path = dir.join("companion-devices.json");
             if let Ok(content) = std::fs::read_to_string(&path) {
                 match serde_json::from_str::<Vec<PairedDevice>>(&content) {
-                    Ok(devices) => *state.devices.lock().unwrap_or_else(|e| e.into_inner()) = devices,
-                    Err(e) => eprintln!("[web_server] companion-devices.json is corrupt, starting empty: {}", e),
+                    Ok(devices) => {
+                        *state.devices.lock().unwrap_or_else(|e| e.into_inner()) = devices
+                    }
+                    Err(e) => eprintln!(
+                        "[web_server] companion-devices.json is corrupt, starting empty: {}",
+                        e
+                    ),
                 }
             }
             *state.devices_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
@@ -584,16 +718,27 @@ pub fn init(app_handle: &AppHandle) {
                 .ok()
                 .and_then(|c| serde_json::from_str::<PersistedServerState>(&c).ok())
                 .unwrap_or_default();
-            *state.server_state_path.lock().unwrap_or_else(|e| e.into_inner()) = Some(server_state_path);
+            *state
+                .server_state_path
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(server_state_path);
             *state.ingress.lock().unwrap_or_else(|e| e.into_inner()) =
                 normalize_ingress(&restored.ingress_mode, &restored.ingress_origin);
             if restored.enabled {
-                state.mint_pairing_secrets();
-                state.enabled.store(true, Ordering::SeqCst);
+                match state.mint_pairing_secrets() {
+                    Ok(_) => state.enabled.store(true, Ordering::SeqCst),
+                    Err(e) => eprintln!(
+                        "[web_server] OS entropy unavailable at startup — remote control not restored: {}",
+                        e
+                    ),
+                }
             }
         }
         Err(e) => {
-            eprintln!("[web_server] could not resolve app data dir, pairing will not persist: {}", e);
+            eprintln!(
+                "[web_server] could not resolve app data dir, pairing will not persist: {}",
+                e
+            );
         }
     }
 
@@ -609,7 +754,10 @@ async fn serve_forever(app: AppHandle) {
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[web_server] failed to bind {}: {} — companion server will not start", addr, e);
+            eprintln!(
+                "[web_server] failed to bind {}: {} — companion server will not start",
+                addr, e
+            );
             return;
         }
     };
@@ -630,7 +778,10 @@ fn build_router(app: &AppHandle) -> Router {
 
     if cfg!(debug_assertions) {
         let vite_origin = resolve_vite_origin(app);
-        eprintln!("[web_server] dev mode: proxying non-relay requests to vite on {}", vite_origin);
+        eprintln!(
+            "[web_server] dev mode: proxying non-relay requests to vite on {}",
+            vite_origin
+        );
 
         return router.fallback(move |req: Request| {
             let origin = vite_origin.clone();
@@ -689,7 +840,10 @@ async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
         return resp;
     }
     if req.headers().contains_key(header::UPGRADE) {
-        return (StatusCode::NOT_IMPLEMENTED, "websocket upgrades are not proxied in dev (see docs/plan/done/remote-control.md §7.2)")
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            "websocket upgrades are not proxied in dev (see docs/plan/done/remote-control.md §7.2)",
+        )
             .into_response();
     }
 
@@ -698,11 +852,19 @@ async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
     let body_bytes = match axum::body::to_bytes(body, usize::MAX).await {
         Ok(b) => b,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, format!("failed to read request body: {e}")).into_response()
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("failed to read request body: {e}"),
+            )
+                .into_response()
         }
     };
 
-    let path_and_query = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let path_and_query = parts
+        .uri
+        .path_and_query()
+        .map(|p| p.as_str())
+        .unwrap_or("/");
     let target = format!("{}{}", vite_origin, path_and_query);
 
     let client = dev_proxy_client();
@@ -717,7 +879,10 @@ async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
     let upstream = match builder.body(body_bytes.to_vec()).send().await {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("[web_server] dev proxy: vite at {} unreachable: {}", vite_origin, e);
+            eprintln!(
+                "[web_server] dev proxy: vite at {} unreachable: {}",
+                vite_origin, e
+            );
             return (
                 StatusCode::BAD_GATEWAY,
                 format!("vite dev server unreachable at {vite_origin}: {e}"),
@@ -726,7 +891,8 @@ async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
         }
     };
 
-    let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let status =
+        StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let mut out = Response::builder().status(status);
     for (name, value) in upstream.headers().iter() {
         if is_hop_by_hop_header(name.as_str()) {
@@ -739,7 +905,11 @@ async fn dev_proxy_handler(vite_origin: String, req: Request) -> Response {
         Ok(bytes) => out
             .body(Body::from(bytes))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("failed reading vite response body: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            format!("failed reading vite response body: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -755,7 +925,11 @@ async fn release_asset_handler(app: AppHandle, req: Request) -> Response {
         return resp;
     }
     let raw_path = req.uri().path().trim_start_matches('/');
-    let path = if raw_path.is_empty() { "index.html" } else { raw_path };
+    let path = if raw_path.is_empty() {
+        "index.html"
+    } else {
+        raw_path
+    };
 
     let resolver = app.asset_resolver();
     let asset = resolver
@@ -813,20 +987,29 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
             let state = relay();
             // Validates companion connection against enabled state and paired device tokens.
             if !state.enabled.load(Ordering::SeqCst) {
-                close_with_code(socket, CLOSE_SERVER_DISABLED, "remote control is disabled on the host").await;
+                close_with_code(
+                    socket,
+                    CLOSE_SERVER_DISABLED,
+                    "remote control is disabled on the host",
+                )
+                .await;
                 return;
             }
+            let epoch_at_auth = state.connection_epoch.load(Ordering::SeqCst);
             let token = q.token.clone().unwrap_or_default();
             let device_id = {
                 let devices = state.devices.lock().unwrap_or_else(|e| e.into_inner());
-                devices.iter().find(|d| d.token == token).map(|d| d.id.clone())
+                devices
+                    .iter()
+                    .find(|d| d.token == token)
+                    .map(|d| d.id.clone())
             };
             let Some(device_id) = device_id else {
                 close_with_code(socket, CLOSE_UNPAIRED, "invalid or unpaired token").await;
                 return;
             };
             let conn_id = state.next_id.fetch_add(1, Ordering::SeqCst);
-            handle_companion_socket(socket, conn_id, device_id).await;
+            handle_companion_socket(socket, conn_id, device_id, epoch_at_auth).await;
         }
         _ => {
             close_with_code(socket, CLOSE_UNPAIRED, "role must be 'host' or 'companion'").await;
@@ -836,7 +1019,10 @@ async fn handle_socket(socket: WebSocket, addr: SocketAddr, q: WsQuery) {
 
 async fn close_with_code(mut socket: WebSocket, code: u16, reason: &'static str) {
     let _ = socket
-        .send(Message::Close(Some(CloseFrame { code, reason: reason.into() })))
+        .send(Message::Close(Some(CloseFrame {
+            code,
+            reason: reason.into(),
+        })))
         .await;
 }
 
@@ -872,14 +1058,30 @@ async fn handle_host_socket(mut socket: WebSocket) {
 }
 
 /// Manages companion WebSocket connection, outbox draining, and resync signaling.
-async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id: String) {
+async fn handle_companion_socket(
+    mut socket: WebSocket,
+    conn_id: u64,
+    device_id: String,
+    epoch_at_auth: u64,
+) {
     let state = relay();
     let conn_key = format!("c{}", conn_id);
     let outbox: CompanionOutbox = Arc::new((StdMutex::new(Outbox::new()), Notify::new()));
-    state.companions.lock().unwrap_or_else(|e| e.into_inner()).insert(
+    if !state.try_register_companion(
         conn_id,
-        CompanionHandle { device_id, conn_key: conn_key.clone(), outbox: Arc::clone(&outbox) },
-    );
+        device_id,
+        conn_key.clone(),
+        Arc::clone(&outbox),
+        epoch_at_auth,
+    ) {
+        close_with_code(
+            socket,
+            CLOSE_SERVER_DISABLED,
+            "remote control was disabled before registration completed",
+        )
+        .await;
+        return;
+    }
     state.notify_host_companion_connected(&conn_key);
 
     let (lock, notify) = &*outbox;
@@ -915,7 +1117,11 @@ async fn handle_companion_socket(mut socket: WebSocket, conn_id: u64, device_id:
         }
     }
 
-    state.companions.lock().unwrap_or_else(|e| e.into_inner()).remove(&conn_id);
+    state
+        .companions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&conn_id);
 }
 
 // ── /pair (§13.1) ──────────────────────────────────────────────────────────────────────────
@@ -965,9 +1171,39 @@ async fn pair_handler(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Companion device".to_string());
 
-    let device = PairedDevice { id: generate_id(), token: generate_token(), label, paired_at: now_secs() };
-    let token = device.token.clone();
-    state.devices.lock().unwrap_or_else(|e| e.into_inner()).push(device);
+    let id = match generate_id() {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("[web_server] entropy failure during pairing: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "server error" })),
+            )
+                .into_response();
+        }
+    };
+    let token = match generate_token() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[web_server] entropy failure during pairing: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "server error" })),
+            )
+                .into_response();
+        }
+    };
+    let device = PairedDevice {
+        id,
+        token: token.clone(),
+        label,
+        paired_at: now_secs(),
+    };
+    state
+        .devices
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(device);
 
     let write_result = tauri::async_runtime::spawn_blocking(|| relay().persist_devices())
         .await
@@ -976,7 +1212,11 @@ async fn pair_handler(
 
     if let Err(e) = write_result {
         // Rolls back in-memory device if disk write fails to prevent orphaned tokens.
-        state.devices.lock().unwrap_or_else(|e| e.into_inner()).retain(|d| d.token != token);
+        state
+            .devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|d| d.token != token);
         eprintln!("[web_server] failed to persist paired device: {}", e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1014,10 +1254,13 @@ pub struct CompanionUrl {
 pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<CompanionServerInfo, String> {
         let state = relay();
-        let code = state.mint_pairing_secrets();
+        let code = state.mint_pairing_secrets()?;
         *state.pair_gate.lock().unwrap_or_else(|e| e.into_inner()) = PairGate::default();
         state.set_enabled(true);
-        Ok(CompanionServerInfo { pairing_code: code, port: PORT })
+        Ok(CompanionServerInfo {
+            pairing_code: code,
+            port: PORT,
+        })
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
@@ -1029,6 +1272,7 @@ pub async fn stop_companion_server() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<(), String> {
         let state = relay();
         state.set_enabled(false);
+        state.connection_epoch.fetch_add(1, Ordering::SeqCst);
         let mut companions = state.companions.lock().unwrap_or_else(|e| e.into_inner());
         for (_, handle) in companions.drain() {
             enqueue(
@@ -1071,10 +1315,18 @@ pub async fn get_companion_status() -> Result<CompanionStatus, String> {
         let state = relay();
         Ok(CompanionStatus {
             enabled: state.enabled.load(Ordering::SeqCst),
-            pairing_code: state.pairing_code.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            pairing_code: state
+                .pairing_code
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             port: PORT,
             host_token: state.host_token.clone(),
-            pair_link_token: state.pair_link_token.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            pair_link_token: state
+                .pair_link_token
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
         })
     })
     .await
@@ -1086,7 +1338,8 @@ pub async fn get_companion_status() -> Result<CompanionStatus, String> {
 pub async fn get_companion_url() -> Result<Vec<CompanionUrl>, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let mut out = Vec::new();
-        let interfaces = if_addrs::get_if_addrs().map_err(|e| format!("failed to enumerate interfaces: {}", e))?;
+        let interfaces = if_addrs::get_if_addrs()
+            .map_err(|e| format!("failed to enumerate interfaces: {}", e))?;
         for iface in interfaces {
             if iface.is_loopback() {
                 continue;
@@ -1094,17 +1347,30 @@ pub async fn get_companion_url() -> Result<Vec<CompanionUrl>, String> {
             match iface.addr {
                 if_addrs::IfAddr::V4(v4) => {
                     if is_lan_v4(&v4.ip) {
-                        out.push(CompanionUrl { kind: "lan", url: format!("http://{}:{}", v4.ip, PORT) });
+                        out.push(CompanionUrl {
+                            kind: "lan",
+                            url: format!("http://{}:{}", v4.ip, PORT),
+                        });
                     } else if is_tailscale_v4(&v4.ip) {
-                        out.push(CompanionUrl { kind: "tailscale", url: format!("http://{}:{}", v4.ip, PORT) });
+                        out.push(CompanionUrl {
+                            kind: "tailscale",
+                            url: format!("http://{}:{}", v4.ip, PORT),
+                        });
                     }
                 }
                 if_addrs::IfAddr::V6(_) => {}
             }
         }
-        let ingress = relay().ingress.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let ingress = relay()
+            .ingress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         if ingress.mode == INGRESS_PUBLIC && !ingress.origin.is_empty() {
-            out.push(CompanionUrl { kind: "public", url: ingress.origin });
+            out.push(CompanionUrl {
+                kind: "public",
+                url: ingress.origin,
+            });
         }
         Ok(out)
     })
@@ -1143,7 +1409,11 @@ fn tailscale_https_url() -> Option<String> {
         return None;
     }
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    let dns = json.get("Self")?.get("DNSName")?.as_str()?.trim_end_matches('.');
+    let dns = json
+        .get("Self")?
+        .get("DNSName")?
+        .as_str()?
+        .trim_end_matches('.');
     if dns.is_empty() {
         None
     } else {
@@ -1177,11 +1447,18 @@ fn parse_mount_owner(status_json: &str, target: &str) -> MountOwner {
         let Some(handler) = server.get("Handlers").and_then(|h| h.get("/")) else {
             continue;
         };
-        let proxy = handler.get("Proxy").and_then(|p| p.as_str()).unwrap_or_default();
+        let proxy = handler
+            .get("Proxy")
+            .and_then(|p| p.as_str())
+            .unwrap_or_default();
         if proxy.contains(target) {
             return MountOwner::Ours;
         }
-        return MountOwner::Foreign(if proxy.is_empty() { handler.to_string() } else { proxy.to_string() });
+        return MountOwner::Foreign(if proxy.is_empty() {
+            handler.to_string()
+        } else {
+            proxy.to_string()
+        });
     }
     MountOwner::Vacant
 }
@@ -1192,7 +1469,9 @@ fn parse_mount_owner(status_json: &str, target: &str) -> MountOwner {
 fn mount_owner() -> MountOwner {
     let target = format!("127.0.0.1:{}", PORT);
     match run_tailscale(&["serve", "status", "--json"]) {
-        Ok(out) if out.status.success() => parse_mount_owner(&String::from_utf8_lossy(&out.stdout), &target),
+        Ok(out) if out.status.success() => {
+            parse_mount_owner(&String::from_utf8_lossy(&out.stdout), &target)
+        }
         _ => MountOwner::Vacant,
     }
 }
@@ -1213,22 +1492,40 @@ pub struct TailscaleHttps {
 /// Reads the live Tailscale state around one already-determined mount owner.
 fn https_state(owner: MountOwner) -> TailscaleHttps {
     let url = tailscale_https_url();
-    let available = url.is_some() || run_tailscale(&["version"]).map(|o| o.status.success()).unwrap_or(false);
+    let available = url.is_some()
+        || run_tailscale(&["version"])
+            .map(|o| o.status.success())
+            .unwrap_or(false);
     let (enabled, foreign_target) = match owner {
         MountOwner::Ours => (true, None),
         MountOwner::Foreign(target) => (false, Some(target)),
         MountOwner::Vacant => (false, None),
     };
-    TailscaleHttps { available, enabled, url, foreign_target }
+    TailscaleHttps {
+        available,
+        enabled,
+        url,
+        foreign_target,
+    }
 }
 
 /// In `public` mode the edge is the owner's, so the app reports Tailscale as none of its business rather than probing it (docs/plan/remote-ingress-rework.md §5).
 fn tailscale_unmanaged() -> TailscaleHttps {
-    TailscaleHttps { available: false, enabled: false, url: None, foreign_target: None }
+    TailscaleHttps {
+        available: false,
+        enabled: false,
+        url: None,
+        foreign_target: None,
+    }
 }
 
 fn ingress_mode() -> String {
-    relay().ingress.lock().unwrap_or_else(|e| e.into_inner()).mode.clone()
+    relay()
+        .ingress
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .mode
+        .clone()
 }
 
 /// Checks Tailscale HTTPS status and MagicDNS URL.
@@ -1300,7 +1597,10 @@ pub struct RemoteIngress {
 /// `~/.aki/mcpsv/ingress.json`. Every failure — no file, no permission, an unexpected shape — is
 /// `None`: Dev Sync must never need that file to work.
 fn suggested_public_origin() -> Option<String> {
-    let path = dirs::home_dir()?.join(".aki").join("mcpsv").join("ingress.json");
+    let path = dirs::home_dir()?
+        .join(".aki")
+        .join("mcpsv")
+        .join("ingress.json");
     let content = std::fs::read_to_string(path).ok()?;
     let config: serde_json::Value = serde_json::from_str(&content).ok()?;
     sibling_origin(config.get("origin")?.as_str()?, "devsync")
@@ -1322,32 +1622,54 @@ fn sibling_origin(origin: &str, label: &str) -> Option<String> {
 }
 
 fn remote_ingress_view() -> RemoteIngress {
-    let ingress = relay().ingress.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    RemoteIngress { mode: ingress.mode, origin: ingress.origin, suggested_origin: suggested_public_origin() }
+    let ingress = relay()
+        .ingress
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    RemoteIngress {
+        mode: ingress.mode,
+        origin: ingress.origin,
+        suggested_origin: suggested_public_origin(),
+    }
 }
 
 #[tauri::command]
 pub async fn get_remote_ingress() -> Result<RemoteIngress, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<RemoteIngress, String> { Ok(remote_ingress_view()) })
-        .await
-        .map_err(|e| format!("spawn_blocking panicked: {}", e))?
+    tauri::async_runtime::spawn_blocking(|| -> Result<RemoteIngress, String> {
+        Ok(remote_ingress_view())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
 /// Stores the ingress decision. `origin: None` leaves the stored origin as it is, so switching mode
 /// back and forth does not cost the owner the hostname they typed.
 #[tauri::command]
-pub async fn set_remote_ingress(mode: String, origin: Option<String>) -> Result<RemoteIngress, String> {
+pub async fn set_remote_ingress(
+    mode: String,
+    origin: Option<String>,
+) -> Result<RemoteIngress, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<RemoteIngress, String> {
         if mode != INGRESS_TAILSCALE && mode != INGRESS_PUBLIC {
-            return Err(format!("unknown ingress mode '{}' — expected '{}' or '{}'", mode, INGRESS_TAILSCALE, INGRESS_PUBLIC));
+            return Err(format!(
+                "unknown ingress mode '{}' — expected '{}' or '{}'",
+                mode, INGRESS_TAILSCALE, INGRESS_PUBLIC
+            ));
         }
         let state = relay();
         {
             let mut ingress = state.ingress.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(origin) = origin {
                 let origin = trim_origin(&origin);
-                if !origin.is_empty() && !origin.starts_with("https://") && !origin.starts_with("http://") {
-                    return Err(format!("'{}' is not a full origin — it must start with https:// or http://", origin));
+                if !origin.is_empty()
+                    && !origin.starts_with("https://")
+                    && !origin.starts_with("http://")
+                {
+                    return Err(format!(
+                        "'{}' is not a full origin — it must start with https:// or http://",
+                        origin
+                    ));
                 }
                 ingress.origin = origin;
             }
@@ -1410,15 +1732,23 @@ pub async fn revoke_device(id: String) -> Result<(), String> {
 
 /// Returns map of project id to base64 icon data URI or null (ICON-1).
 #[tauri::command]
-pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Option<String>>, String> {
+pub async fn get_project_icons_map(
+    app: AppHandle,
+) -> Result<HashMap<String, Option<String>>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let projects = crate::projects::load_projects_blocking(app)?;
-        let cache = crate::system::get_project_icons().lock().unwrap_or_else(|e| e.into_inner());
+        let cache = crate::system::get_project_icons()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut map = HashMap::with_capacity(projects.len());
         for p in &projects {
-            let uri = cache
-                .get(&p.id)
-                .map(|icon| format!("data:{};base64,{}", icon.mime_type, STANDARD.encode(&icon.bytes)));
+            let uri = cache.get(&p.id).map(|icon| {
+                format!(
+                    "data:{};base64,{}",
+                    icon.mime_type,
+                    STANDARD.encode(&icon.bytes)
+                )
+            });
             map.insert(p.id.clone(), uri);
         }
         Ok(map)
@@ -1432,7 +1762,8 @@ pub async fn get_project_icons_map(app: AppHandle) -> Result<HashMap<String, Opt
 pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let projects = crate::projects::load_projects_blocking(app)?;
-        let requested = std::fs::canonicalize(&path).map_err(|e| format!("path not found: {}", e))?;
+        let requested =
+            std::fs::canonicalize(&path).map_err(|e| format!("path not found: {}", e))?;
 
         let allowed = projects.iter().any(|p| {
             std::fs::canonicalize(&p.local_path)
@@ -1468,7 +1799,11 @@ mod tests {
     /// arrive as the same number again. A future edit that collapses them fails here.
     #[test]
     fn close_codes_are_distinct() {
-        let codes = [CLOSE_UNPAIRED, CLOSE_SERVER_DISABLED, CLOSE_HOST_ROLE_REJECTED];
+        let codes = [
+            CLOSE_UNPAIRED,
+            CLOSE_SERVER_DISABLED,
+            CLOSE_HOST_ROLE_REJECTED,
+        ];
         for (i, a) in codes.iter().enumerate() {
             for b in codes.iter().skip(i + 1) {
                 assert_ne!(a, b, "close codes must stay distinguishable on the wire");
@@ -1502,17 +1837,53 @@ mod tests {
     /// this test exists to protect.
     #[test]
     fn only_terminal_output_may_be_coalesced() {
-        assert!(is_coalescible(&text("pty_output", 8)), "terminal bytes are re-derivable from the host's scrollback");
+        assert!(
+            is_coalescible(&text("pty_output", 8)),
+            "terminal bytes are re-derivable from the host's scrollback"
+        );
 
-        for kind in ["init", "delta", "invoke_result", "pty_exit", "pty_resize", "ping", "pong", "companion-connected", "intent"] {
-            assert!(!is_coalescible(&text(kind, 8)), "`{}` is not re-derivable and must never be dropped", kind);
+        assert!(
+            !is_coalescible(&Message::Text(
+                serde_json::json!({ "t": "pty_output", "data": "", "reset": true }).to_string()
+            )),
+            "an authoritative reset must survive coalescing"
+        );
+
+        for kind in [
+            "init",
+            "delta",
+            "invoke_result",
+            "pty_exit",
+            "pty_resize",
+            "ping",
+            "pong",
+            "companion-connected",
+            "intent",
+        ] {
+            assert!(
+                !is_coalescible(&text(kind, 8)),
+                "`{}` is not re-derivable and must never be dropped",
+                kind
+            );
         }
 
         // Default-deny for anything this function was not taught about.
-        assert!(!is_coalescible(&text("some-future-frame", 8)), "an unknown frame kind must be kept, not guessed at");
-        assert!(!is_coalescible(&Message::Text("not json at all".into())), "an unparseable frame must be kept");
-        assert!(!is_coalescible(&Message::Text("{}".into())), "a frame with no `t` must be kept");
-        assert!(!is_coalescible(&Message::Binary(vec![1, 2, 3])), "binary frames are not classified and must be kept");
+        assert!(
+            !is_coalescible(&text("some-future-frame", 8)),
+            "an unknown frame kind must be kept, not guessed at"
+        );
+        assert!(
+            !is_coalescible(&Message::Text("not json at all".into())),
+            "an unparseable frame must be kept"
+        );
+        assert!(
+            !is_coalescible(&Message::Text("{}".into())),
+            "a frame with no `t` must be kept"
+        );
+        assert!(
+            !is_coalescible(&Message::Binary(vec![1, 2, 3])),
+            "binary frames are not classified and must be kept"
+        );
     }
 
     /// The core of the fix: over budget, the terminal backlog collapses and everything else survives
@@ -1533,10 +1904,20 @@ mod tests {
             }
         }
 
-        assert!(ob.bytes <= COMPANION_QUEUE_LIMIT_BYTES, "coalescing must bring the queue back inside its budget");
-        assert!(ob.resync_pending, "dropping output must flag the connection for a re-hydrate");
+        assert!(
+            ob.bytes <= COMPANION_QUEUE_LIMIT_BYTES,
+            "coalescing must bring the queue back inside its budget"
+        );
+        assert!(
+            ob.resync_pending,
+            "dropping output must flag the connection for a re-hydrate"
+        );
         let kinds: Vec<bool> = ob.queue.iter().map(is_coalescible).collect();
-        assert_eq!(kinds, vec![false, false], "exactly the two undroppable frames survive");
+        assert_eq!(
+            kinds,
+            vec![false, false],
+            "exactly the two undroppable frames survive"
+        );
         assert!(
             matches!(&ob.queue[0], Message::Text(s) if s.contains("delta")),
             "and they survive in their original order — the delta was queued first"
@@ -1548,7 +1929,10 @@ mod tests {
         assert!(wants_resync);
         assert_eq!(ob.bytes, 0);
         let (_, again) = ob.take();
-        assert!(!again, "one coalesce must produce exactly one resync request, not one per drain");
+        assert!(
+            !again,
+            "one coalesce must produce exactly one resync request, not one per drain"
+        );
     }
 
     /// A phone so wedged that even undroppable frames blow the budget is cut loose rather than
@@ -1563,15 +1947,26 @@ mod tests {
 
         assert_eq!(ob.bytes, 0);
         assert!(ob.closed);
-        assert_eq!(ob.queue.len(), 1, "the whole backlog is discarded — only the close survives");
-        assert!(!ob.resync_pending, "a closing connection must not also ask the host for a snapshot");
+        assert_eq!(
+            ob.queue.len(),
+            1,
+            "the whole backlog is discarded — only the close survives"
+        );
+        assert!(
+            !ob.resync_pending,
+            "a closing connection must not also ask the host for a snapshot"
+        );
         assert!(
             matches!(ob.queue.front(), Some(Message::Close(Some(f))) if f.code == CLOSE_TOO_FAR_BEHIND),
             "the queue must end in a close the companion can reconnect from"
         );
 
         // 1013 is not an app close code: the companion must reconnect, not treat itself as revoked.
-        for app_code in [CLOSE_UNPAIRED, CLOSE_SERVER_DISABLED, CLOSE_HOST_ROLE_REJECTED] {
+        for app_code in [
+            CLOSE_UNPAIRED,
+            CLOSE_SERVER_DISABLED,
+            CLOSE_HOST_ROLE_REJECTED,
+        ] {
             assert_ne!(CLOSE_TOO_FAR_BEHIND, app_code);
         }
     }
@@ -1606,12 +2001,18 @@ mod tests {
         let b = register(&state, 2, "device-b");
 
         state.dispatch(text("delta", 8));
-        state.dispatch(Message::Text(r#"{"t":"pty_output","tab_id":0,"data":"x"}"#.into()));
+        state.dispatch(Message::Text(
+            r#"{"t":"pty_output","tab_id":0,"data":"x"}"#.into(),
+        ));
         // Not addressable and not parseable — must still go everywhere rather than nowhere.
         state.dispatch(Message::Text("not json at all".into()));
         state.dispatch(Message::Binary(vec![1, 2, 3]));
 
-        assert_eq!(queued(&a), 4, "an unaddressed frame is a broadcast, as it always was");
+        assert_eq!(
+            queued(&a),
+            4,
+            "an unaddressed frame is a broadcast, as it always was"
+        );
         assert_eq!(queued(&b), 4);
     }
 
@@ -1622,17 +2023,27 @@ mod tests {
         let a = register(&state, 1, "device-a");
         let b = register(&state, 2, "device-b");
 
-        state.dispatch(Message::Text(r#"{"t":"invoke_result","id":1,"ok":true,"to":"c2"}"#.into()));
+        state.dispatch(Message::Text(
+            r#"{"t":"invoke_result","id":1,"ok":true,"to":"c2"}"#.into(),
+        ));
         assert_eq!(queued(&a), 0, "no other socket may see this reply");
         assert_eq!(queued(&b), 1);
 
         // Bug 1: a joining phone's scrollback replay must not reset a phone that is mid-command.
-        state.dispatch(Message::Text(r#"{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"c1"}"#.into()));
+        state.dispatch(Message::Text(
+            r#"{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"c1"}"#.into(),
+        ));
         assert_eq!(queued(&a), 1);
-        assert_eq!(queued(&b), 1, "a replay addressed elsewhere must not clear this phone's screen");
+        assert_eq!(
+            queued(&b),
+            1,
+            "a replay addressed elsewhere must not clear this phone's screen"
+        );
 
         // An address nobody answers to is delivered to nobody, not to everybody.
-        state.dispatch(Message::Text(r#"{"t":"invoke_result","id":2,"to":"c99"}"#.into()));
+        state.dispatch(Message::Text(
+            r#"{"t":"invoke_result","id":2,"to":"c99"}"#.into(),
+        ));
         assert_eq!(queued(&a), 1);
         assert_eq!(queued(&b), 1);
     }
@@ -1645,82 +2056,100 @@ mod tests {
         let tab2 = register(&state, 2, "device-a");
 
         // Both pages issued their first invoke, so both are waiting on id 1.
-        state.dispatch(Message::Text(r#"{"t":"invoke_result","id":1,"ok":"answer-for-tab2","to":"c2"}"#.into()));
-        assert_eq!(queued(&tab1), 0, "tab 1 must not resolve its own id-1 call with tab 2's answer");
+        state.dispatch(Message::Text(
+            r#"{"t":"invoke_result","id":1,"ok":"answer-for-tab2","to":"c2"}"#.into(),
+        ));
+        assert_eq!(
+            queued(&tab1),
+            0,
+            "tab 1 must not resolve its own id-1 call with tab 2's answer"
+        );
         assert_eq!(queued(&tab2), 1);
 
         // One full scrollback replay per JOIN, and a join is per connection.
-        state.dispatch(Message::Text(r#"{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"c2"}"#.into()));
-        assert_eq!(queued(&tab1), 0, "one outbox must never receive a second connection's replay");
+        state.dispatch(Message::Text(
+            r#"{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"c2"}"#.into(),
+        ));
+        assert_eq!(
+            queued(&tab1),
+            0,
+            "one outbox must never receive a second connection's replay"
+        );
         assert_eq!(queued(&tab2), 2);
 
         // The device id is still what `revoke_device` groups on — connection addressing did not remove device grouping, it just stopped using it as the wire address.
         let companions = state.companions.lock().unwrap();
-        assert_eq!(companions.values().filter(|h| h.device_id == "device-a").count(), 2);
+        assert_eq!(
+            companions
+                .values()
+                .filter(|h| h.device_id == "device-a")
+                .count(),
+            2
+        );
     }
 
     /// `from` sender stamp is minted by relay and cannot be forged by companion.
     #[test]
     fn the_sender_stamp_cannot_be_forged_by_the_companion() {
-        let stamped = stamp_from(Message::Text(r#"{"t":"invoke","id":1,"from":"c99"}"#.into()), "c1");
-        let Message::Text(json) = stamped else { panic!("a text frame must stay a text frame") };
+        let stamped = stamp_from(
+            Message::Text(r#"{"t":"invoke","id":1,"from":"c99"}"#.into()),
+            "c1",
+        );
+        let Message::Text(json) = stamped else {
+            panic!("a text frame must stay a text frame")
+        };
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["from"], "c1", "the relay's connection key must overwrite whatever the client claimed");
+        assert_eq!(
+            v["from"], "c1",
+            "the relay's connection key must overwrite whatever the client claimed"
+        );
         assert_eq!(v["t"], "invoke", "no other field may be touched");
         assert_eq!(v["id"], 1);
 
         // A companion cannot smuggle a `to` past the stamp either — but note the real reason it is harmless is structural: inbound frames go to `forward_to_host`, never to `dispatch`.
-        let stamped = stamp_from(Message::Text(r#"{"t":"invoke","id":1,"to":"c2"}"#.into()), "c1");
-        let Message::Text(json) = stamped else { panic!("a text frame must stay a text frame") };
+        let stamped = stamp_from(
+            Message::Text(r#"{"t":"invoke","id":1,"to":"c2"}"#.into()),
+            "c1",
+        );
+        let Message::Text(json) = stamped else {
+            panic!("a text frame must stay a text frame")
+        };
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["from"], "c1");
 
         // Anything the relay cannot parse as a JSON object is forwarded byte-for-byte.
-        assert!(matches!(stamp_from(Message::Text("not json".into()), "c1"), Message::Text(s) if s == "not json"));
-        assert!(matches!(stamp_from(Message::Text("[1,2]".into()), "c1"), Message::Text(s) if s == "[1,2]"));
-        assert!(matches!(stamp_from(Message::Binary(vec![7]), "c1"), Message::Binary(b) if b == vec![7]));
+        assert!(
+            matches!(stamp_from(Message::Text("not json".into()), "c1"), Message::Text(s) if s == "not json")
+        );
+        assert!(
+            matches!(stamp_from(Message::Text("[1,2]".into()), "c1"), Message::Text(s) if s == "[1,2]")
+        );
+        assert!(
+            matches!(stamp_from(Message::Binary(vec![7]), "c1"), Message::Binary(b) if b == vec![7])
+        );
     }
 
     // ── INVARIANT R ──────────────────────────────────────────────────────────────────────────
-    // Asserts sizing relationship between `pty::MAX_TABS`, `pty::SCROLLBACK_CAP`, and `COMPANION_QUEUE_LIMIT_BYTES`.
+    // Asserts per-tab sizing relationship between `pty::SCROLLBACK_CAP` and `COMPANION_QUEUE_LIMIT_BYTES`.
 
     /// Bytes one tab's scrollback occupies in a `pty_output` replay frame's JSON text. base64 is `ceil(n/3) * 4` (128 covers the JSON envelope).
     fn replay_frame_bytes(scrollback_cap: usize) -> usize {
         scrollback_cap.div_ceil(3) * 4 + 128
     }
 
-    /// Bytes for one full scrollback replay across all tabs.
-    fn one_replay_bytes() -> usize {
-        crate::pty::MAX_TABS * replay_frame_bytes(crate::pty::SCROLLBACK_CAP)
+    /// Bytes for one tab's worst-case scrollback replay frame on the wire.
+    fn one_tab_replay_bytes() -> usize {
+        replay_frame_bytes(crate::pty::SCROLLBACK_CAP)
     }
 
-    /// **R1**: recovery replay fits with 50% budget reserved for undroppable state frames.
+    /// **R1**: one tab's worst-case replay fits within 25 % of the outbox budget.
     #[test]
     fn invariant_r1_a_recovery_replay_fits_with_room_for_undroppable_frames() {
-        let one = one_replay_bytes();
         assert!(
-            one <= COMPANION_QUEUE_LIMIT_BYTES / 2,
-            "INVARIANT R1 broken: a {}-tab scrollback replay is {} bytes, over half the {}-byte companion budget. \
-             A replay is the RECOVERY path and shares the queue with an `init` and pending `delta`s; once it exceeds \
-             what the queue can hold, coalesce() eats it, the resync loop re-issues it, and the phone never receives \
-             the early tabs at all. Raise COMPANION_QUEUE_LIMIT_BYTES, lower pty::SCROLLBACK_CAP, or lower \
-             pty::MAX_TABS (and src/store/terminalTabsStore.js's MAX_TABS with it) — in this same commit.",
-            crate::pty::MAX_TABS,
-            one,
-            COMPANION_QUEUE_LIMIT_BYTES
-        );
-    }
-
-    /// **R2**: concurrent addressed replay and broadcast congestion replay do not exceed full budget.
-    #[test]
-    fn invariant_r2_the_reachable_double_replay_does_not_trip_a_coalesce() {
-        let double = 2 * one_replay_bytes();
-        assert!(
-            double <= COMPANION_QUEUE_LIMIT_BYTES,
-            "INVARIANT R2 broken: an addressed replay plus a concurrent broadcast congestion replay is {} bytes \
-             against a {}-byte budget, so the ordinary two-replay overlap now coalesces and costs the joining phone \
-             its rehydrate. Same three dials as R1.",
-            double,
+            one_tab_replay_bytes() * 4 <= COMPANION_QUEUE_LIMIT_BYTES,
+            "INVARIANT R1 broken: one tab's scrollback replay ({} bytes) must fit within 25 % of the \
+             {}-byte companion budget. Raise COMPANION_QUEUE_LIMIT_BYTES or lower pty::SCROLLBACK_CAP.",
+            one_tab_replay_bytes(),
             COMPANION_QUEUE_LIMIT_BYTES
         );
     }
@@ -1734,38 +2163,49 @@ mod tests {
 
         // Three joins on one device: each answered with its own addressed replay.
         for key in ["c1", "c2", "c1"] {
-            state.dispatch(Message::Text(
-                format!(r#"{{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"{}"}}"#, key),
-            ));
+            state.dispatch(Message::Text(format!(
+                r#"{{"t":"pty_output","tab_id":0,"data":"","reset":true,"to":"{}"}}"#,
+                key
+            )));
         }
-        assert_eq!(queued(&tab1), 2, "each outbox holds exactly the replays addressed to it");
+        assert_eq!(
+            queued(&tab1),
+            2,
+            "each outbox holds exactly the replays addressed to it"
+        );
         assert_eq!(queued(&tab2), 1);
-
-        // The arithmetic the assertion above protects, stated so a reader does not have to re-derive what a device-level address would have cost.
-        let one = one_replay_bytes();
-        assert!(2 * one > COMPANION_QUEUE_LIMIT_BYTES / 2, "two replays in one outbox would break R1");
-        assert!(3 * one > COMPANION_QUEUE_LIMIT_BYTES, "three would blow the budget outright");
     }
 
-    /// Verifies budget headroom constants against plan §2.2 arithmetic.
+    /// Verifies budget headroom constants against per-tab arithmetic.
     #[test]
     fn the_budget_keeps_the_headroom_it_was_sized_for() {
-        assert_eq!(replay_frame_bytes(128 * 1024), 174_892, "base64 expansion is 4/3, not something else");
+        assert_eq!(
+            replay_frame_bytes(128 * 1024),
+            174_892,
+            "base64 expansion is 4/3, not something else"
+        );
         assert_eq!(COMPANION_QUEUE_LIMIT_BYTES, 8 * 1024 * 1024);
-        let one = one_replay_bytes();
-        assert_eq!(one, 2_798_272, "a full 16-tab replay is ~2.67 MiB on the wire");
-        assert_eq!(2 * one, 5_596_544, "R2's modelled pair is ~5.34 MiB, 67% of the budget");
         assert!(
-            COMPANION_QUEUE_LIMIT_BYTES / one >= 2,
-            "the budget must stay at least 2x a full replay — that ratio IS invariant R1"
+            one_tab_replay_bytes() * 4 <= COMPANION_QUEUE_LIMIT_BYTES,
+            "one tab's replay ({} bytes) must fit within 25 % of the {}-byte outbox budget",
+            one_tab_replay_bytes(),
+            COMPANION_QUEUE_LIMIT_BYTES
         );
     }
 
     /// CLAUDE.md serde rule: missing/corrupt `companion-server.json` defaults to disabled.
     #[test]
     fn persisted_server_state_defaults_to_off() {
-        assert!(!serde_json::from_str::<PersistedServerState>("{}").unwrap().enabled);
-        assert!(serde_json::from_str::<PersistedServerState>(r#"{"enabled":true}"#).unwrap().enabled);
+        assert!(
+            !serde_json::from_str::<PersistedServerState>("{}")
+                .unwrap()
+                .enabled
+        );
+        assert!(
+            serde_json::from_str::<PersistedServerState>(r#"{"enabled":true}"#)
+                .unwrap()
+                .enabled
+        );
         assert!(!PersistedServerState::default().enabled);
     }
 
@@ -1781,17 +2221,38 @@ mod tests {
 
         assert_eq!(parse_mount_owner(ours, &target), MountOwner::Ours);
         assert_eq!(parse_mount_owner(funnel, &target), MountOwner::Foreign("http://127.0.0.1:9999".to_string()), "a foreign mount must be reported WITH its target, so the UI can name what is holding it");
-        assert_eq!(parse_mount_owner("{}", &target), MountOwner::Vacant, "an empty serve config is what a fresh node prints");
-        assert_eq!(parse_mount_owner("not json at all", &target), MountOwner::Vacant);
-        assert_eq!(parse_mount_owner(r#"{"Web":{"mac.tail1234.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}"#, &target), MountOwner::Vacant, "another port is not the mount this app manages");
-        assert_eq!(parse_mount_owner(r#"{"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/mcp":{"Proxy":"http://127.0.0.1:9999"}}}}}"#, &target), MountOwner::Vacant, "another path is not the mount this app manages");
+        assert_eq!(
+            parse_mount_owner("{}", &target),
+            MountOwner::Vacant,
+            "an empty serve config is what a fresh node prints"
+        );
+        assert_eq!(
+            parse_mount_owner("not json at all", &target),
+            MountOwner::Vacant
+        );
+        assert_eq!(
+            parse_mount_owner(
+                r#"{"Web":{"mac.tail1234.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}"#,
+                &target
+            ),
+            MountOwner::Vacant,
+            "another port is not the mount this app manages"
+        );
+        assert_eq!(
+            parse_mount_owner(
+                r#"{"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/mcp":{"Proxy":"http://127.0.0.1:9999"}}}}}"#,
+                &target
+            ),
+            MountOwner::Vacant,
+            "another path is not the mount this app manages"
+        );
     }
 
     // ── W2: the pairing gate throttles, it does not shut the server down ─────────────────────
 
     fn enabled_relay() -> (RelayState, String) {
         let state = RelayState::new();
-        let code = state.mint_pairing_secrets();
+        let code = state.mint_pairing_secrets().unwrap();
         state.enabled.store(true, Ordering::SeqCst);
         (state, code)
     }
@@ -1810,14 +2271,41 @@ mod tests {
             state.judge_pair_attempt("not-the-code", ip(7), now);
         }
 
-        assert!(state.enabled.load(Ordering::SeqCst), "a stranger must never be able to switch remote control off");
-        assert!(!state.pairing_code.lock().unwrap().is_empty(), "the owner's pairing code must survive the storm");
-        assert!(matches!(state.judge_pair_attempt(&code, ip(7), now), PairVerdict::Locked(_)), "the attacking address is throttled, even with the right code");
-        assert!(matches!(state.judge_pair_attempt(&code, ip(8), now), PairVerdict::Accepted), "one address's strikes must not lock everybody out");
-        assert!(matches!(state.judge_pair_attempt(&code, ip(7), now + PAIR_LOCK_SECS + 1), PairVerdict::Accepted), "the lock is a window and expires on its own");
+        assert!(
+            state.enabled.load(Ordering::SeqCst),
+            "a stranger must never be able to switch remote control off"
+        );
+        assert!(
+            !state.pairing_code.lock().unwrap().is_empty(),
+            "the owner's pairing code must survive the storm"
+        );
+        assert!(
+            matches!(
+                state.judge_pair_attempt(&code, ip(7), now),
+                PairVerdict::Locked(_)
+            ),
+            "the attacking address is throttled, even with the right code"
+        );
+        assert!(
+            matches!(
+                state.judge_pair_attempt(&code, ip(8), now),
+                PairVerdict::Accepted
+            ),
+            "one address's strikes must not lock everybody out"
+        );
+        assert!(
+            matches!(
+                state.judge_pair_attempt(&code, ip(7), now + PAIR_LOCK_SECS + 1),
+                PairVerdict::Accepted
+            ),
+            "the lock is a window and expires on its own"
+        );
 
         state.enabled.store(false, Ordering::SeqCst);
-        assert!(matches!(state.judge_pair_attempt(&code, ip(8), now), PairVerdict::Disabled));
+        assert!(matches!(
+            state.judge_pair_attempt(&code, ip(8), now),
+            PairVerdict::Disabled
+        ));
     }
 
     /// The difference between a throttle and a kill switch: devices that already paired are outside
@@ -1826,8 +2314,16 @@ mod tests {
     fn an_already_paired_device_still_authenticates_after_a_lock() {
         let (state, code) = enabled_relay();
         let now = 1_000_000;
-        assert!(matches!(state.judge_pair_attempt(&code, ip(1), now), PairVerdict::Accepted));
-        let device = PairedDevice { id: generate_id(), token: generate_token(), label: "phone".into(), paired_at: now };
+        assert!(matches!(
+            state.judge_pair_attempt(&code, ip(1), now),
+            PairVerdict::Accepted
+        ));
+        let device = PairedDevice {
+            id: generate_id().unwrap(),
+            token: generate_token().unwrap(),
+            label: "phone".into(),
+            paired_at: now,
+        };
         let token = device.token.clone();
         state.devices.lock().unwrap().push(device);
 
@@ -1837,8 +2333,16 @@ mod tests {
 
         assert!(state.enabled.load(Ordering::SeqCst));
         // Exactly the lookup `handle_socket` performs for a `role=companion` connection.
-        let known = state.devices.lock().unwrap().iter().any(|d| d.token == token);
-        assert!(known, "a lock on pairing must not revoke a device that already paired");
+        let known = state
+            .devices
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|d| d.token == token);
+        assert!(
+            known,
+            "a lock on pairing must not revoke a device that already paired"
+        );
     }
 
     /// A distributed flood must still land on a cooling window, never on the old outcome.
@@ -1851,8 +2355,17 @@ mod tests {
         }
 
         assert!(state.enabled.load(Ordering::SeqCst));
-        assert!(matches!(state.judge_pair_attempt(&code, ip(250), now), PairVerdict::Locked(_)), "the ceiling holds even for an address with no strikes of its own");
-        assert!(matches!(state.judge_pair_attempt(&code, ip(250), now + PAIR_LOCK_SECS + 1), PairVerdict::Accepted));
+        assert!(
+            matches!(
+                state.judge_pair_attempt(&code, ip(250), now),
+                PairVerdict::Locked(_)
+            ),
+            "the ceiling holds even for an address with no strikes of its own"
+        );
+        assert!(matches!(
+            state.judge_pair_attempt(&code, ip(250), now + PAIR_LOCK_SECS + 1),
+            PairVerdict::Accepted
+        ));
     }
 
     /// Six digits are safe on a LAN because of the strike counter; a public origin needs a secret
@@ -1866,13 +2379,28 @@ mod tests {
         assert_eq!(code.len(), 6);
         assert_eq!(link.len(), 32, "128-bit hex");
         assert!(link.chars().all(|c| c.is_ascii_hexdigit()));
-        assert!(matches!(state.judge_pair_attempt(&link, ip(1), now), PairVerdict::Accepted));
-        assert!(matches!(state.judge_pair_attempt(&format!("  {}  ", code), ip(1), now), PairVerdict::Accepted), "a code pasted with whitespace still pairs");
-        assert!(matches!(state.judge_pair_attempt("not-the-code", ip(1), now), PairVerdict::Rejected));
+        assert!(matches!(
+            state.judge_pair_attempt(&link, ip(1), now),
+            PairVerdict::Accepted
+        ));
+        assert!(
+            matches!(
+                state.judge_pair_attempt(&format!("  {}  ", code), ip(1), now),
+                PairVerdict::Accepted
+            ),
+            "a code pasted with whitespace still pairs"
+        );
+        assert!(matches!(
+            state.judge_pair_attempt("not-the-code", ip(1), now),
+            PairVerdict::Rejected
+        ));
 
         // Both secrets share one lifetime: minting replaces the pair, so a restart invalidates an old link.
-        state.mint_pairing_secrets();
-        assert!(matches!(state.judge_pair_attempt(&link, ip(1), now), PairVerdict::Rejected));
+        state.mint_pairing_secrets().unwrap();
+        assert!(matches!(
+            state.judge_pair_attempt(&link, ip(1), now),
+            PairVerdict::Rejected
+        ));
     }
 
     /// The throttle must not become a memory leak an internet-wide scan can drive.
@@ -1887,7 +2415,10 @@ mod tests {
         assert!(gate.per_ip.len() <= MAX_PAIR_IP_RECORDS);
 
         gate.prune(now + PAIR_RECORD_TTL_SECS + PAIR_LOCK_SECS + 1);
-        assert!(gate.per_ip.is_empty(), "records with nothing left to remember are dropped once they go quiet");
+        assert!(
+            gate.per_ip.is_empty(),
+            "records with nothing left to remember are dropped once they go quiet"
+        );
     }
 
     // ── W3: the ingress mode ─────────────────────────────────────────────────────────────────
@@ -1899,25 +2430,57 @@ mod tests {
         assert!(old.enabled);
         assert_eq!(old.ingress_mode, INGRESS_TAILSCALE);
         assert_eq!(old.ingress_origin, "");
-        assert_eq!(PersistedServerState::default().ingress_mode, INGRESS_TAILSCALE);
+        assert_eq!(
+            PersistedServerState::default().ingress_mode,
+            INGRESS_TAILSCALE
+        );
 
         let saved = serde_json::from_str::<PersistedServerState>(r#"{"enabled":true,"ingressMode":"public","ingressOrigin":"https://devsync.example.com"}"#).unwrap();
         assert_eq!(saved.ingress_mode, INGRESS_PUBLIC);
         assert_eq!(saved.ingress_origin, "https://devsync.example.com");
 
-        assert_eq!(normalize_ingress("cloudflared", "").mode, INGRESS_TAILSCALE, "a mode this build cannot serve falls back rather than sticking");
-        assert_eq!(normalize_ingress(INGRESS_PUBLIC, " https://x.example.com/// ").origin, "https://x.example.com", "a stored origin never keeps a trailing slash");
+        assert_eq!(
+            normalize_ingress("cloudflared", "").mode,
+            INGRESS_TAILSCALE,
+            "a mode this build cannot serve falls back rather than sticking"
+        );
+        assert_eq!(
+            normalize_ingress(INGRESS_PUBLIC, " https://x.example.com/// ").origin,
+            "https://x.example.com",
+            "a stored origin never keeps a trailing slash"
+        );
     }
 
     /// The sibling-app hint is a suggestion, never a dependency.
     #[test]
     fn the_sibling_origin_hint_is_best_effort() {
-        assert_eq!(sibling_origin("https://mcp.example.com", "devsync").as_deref(), Some("https://devsync.example.com"));
-        assert_eq!(sibling_origin("https://mcp.example.com/", "devsync").as_deref(), Some("https://devsync.example.com"));
-        assert_eq!(sibling_origin("https://mcp.a.b.example.com", "devsync").as_deref(), Some("https://devsync.a.b.example.com"));
+        assert_eq!(
+            sibling_origin("https://mcp.example.com", "devsync").as_deref(),
+            Some("https://devsync.example.com")
+        );
+        assert_eq!(
+            sibling_origin("https://mcp.example.com/", "devsync").as_deref(),
+            Some("https://devsync.example.com")
+        );
+        assert_eq!(
+            sibling_origin("https://mcp.a.b.example.com", "devsync").as_deref(),
+            Some("https://devsync.a.b.example.com")
+        );
 
-        for junk in ["", "example.com", "https://example.com", "ftp://mcp.example.com", "https://", "https://mcp..com"] {
-            assert_eq!(sibling_origin(junk, "devsync"), None, "`{}` must yield no hint at all", junk);
+        for junk in [
+            "",
+            "example.com",
+            "https://example.com",
+            "ftp://mcp.example.com",
+            "https://",
+            "https://mcp..com",
+        ] {
+            assert_eq!(
+                sibling_origin(junk, "devsync"),
+                None,
+                "`{}` must yield no hint at all",
+                junk
+            );
         }
     }
 }
