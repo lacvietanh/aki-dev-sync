@@ -1,6 +1,6 @@
 <!-- Terminal tab strip for active scope tabs with title, pin, close, and inline rename. -->
 <template>
-  <div class="tab-group term-tab-group">
+  <div ref="stripEl" class="tab-group term-tab-group" @wheel="onWheel">
     <button
       v-for="t in tabs"
       :key="t.id"
@@ -73,7 +73,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs'
 import { renameTerminalTab, toggleTabPinned } from '../store/terminalTabsStore'
 import { iconTimestamp } from '../store/projectStore'
@@ -82,6 +82,18 @@ import { projectIconSrc } from '../utils/projectIcon'
 const { scopedTabs: tabs, ownedScopeTabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
 
 const addTitle = computed(() => `New terminal tab in this group (${ownedScopeTabs.value.length} open) (⌘T)`)
+
+const stripEl = ref(null)
+
+// A vertical mouse wheel has no horizontal axis to scroll; map it onto the strip.
+function onWheel(e) {
+  if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+  stripEl.value.scrollLeft += e.deltaY
+}
+
+watch(activeTabId, () => nextTick(() => {
+  stripEl.value?.querySelector('.term-tab.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}), { flush: 'post' })
 
 function onChipClick(t) {
   setActiveTab(t.id)

@@ -79,22 +79,23 @@
           <!-- Cell 1: Project Info -->
           <div class="grid-row-cell col-project-info">
             <div class="project-info-row">
-              <!-- Project Icon (drag handle) -->
-              <div
-                   class="project-drag-handle icon-glow"
-                   title="Drag to reorder"
-                   @mousedown="isHandleMouseDown = true">
-                <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="project-drag-img" draggable="false" @error="failedIcons[p.id] = true" />
-                <i v-else class="fa-solid fa-folder-open text-cyan project-drag-icon-fallback"></i>
+              <div class="project-icon-col">
+                <!-- Project Icon (drag handle) -->
+                <div
+                     class="project-drag-handle icon-glow"
+                     title="Drag to reorder"
+                     @mousedown="isHandleMouseDown = true">
+                  <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="project-drag-img" draggable="false" @error="failedIcons[p.id] = true" />
+                  <i v-else class="fa-solid fa-folder-open text-cyan project-drag-icon-fallback"></i>
+                </div>
+                <i class="fa-solid fa-power-off src-power" :class="[p.disabled ? 'is-off' : 'is-on', { 'is-locked': projectRuntime[p.id]?.syncing }]"
+                   :title="p.disabled ? 'Background sync/git checks OFF - click to enable' : 'Background sync/git checks ON - click to disable'"
+                   @click.stop="!projectRuntime[p.id]?.syncing && setProjectDisabled(p.id, !p.disabled)"></i>
               </div>
 
               <div class="project-text-col">
                 <div class="project-name">
                   <span class="project-name-label">{{ p.name }}</span>
-                  <label class="switch switch-sm" :title="p.disabled ? 'Enable background sync/git checks' : 'Disable background sync/git checks'" @click.stop>
-                    <input type="checkbox" :checked="!p.disabled" :disabled="projectRuntime[p.id]?.syncing" @change="setProjectDisabled(p.id, !$event.target.checked)" />
-                    <span class="slider"></span>
-                  </label>
                   <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" class="project-prod-link">
                     <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i>
                   </a>
@@ -791,6 +792,13 @@ html.fx-glass .grid-header {
   flex: 1;
   min-width: 0;
   padding-right: 6px;
+}
+
+.project-icon-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* Drag handle style */
