@@ -104,7 +104,7 @@ A phone on a weak link cannot always drain what the Mac produces. A runaway comm
 
 The rule is therefore **bounded, and drop by kind rather than by age**:
 
-- Each companion has an **8 MiB outbox** (1.21.1, up from 2 MiB — sized against the terminal's own caps via INVARIANT R in `web_server.rs`, so a companion joining with every terminal group at its tab limit can receive a full scrollback replay without the replay itself tripping the budget it needs to arrive through). Enqueue never blocks and never awaits.
+- Each companion has an **8 MiB outbox** (1.21.1, up from 2 MiB — sized per INVARIANT R1 in `web_server.rs` so a single-tab recovery replay always fits with headroom; with many tabs the coalesce + resync path handles overflow without looping). Enqueue never blocks and never awaits.
 - Over budget → the **coalescible** backlog is dropped and the phone is flagged for re-sync. Once its queue has genuinely drained, the host re-issues the existing `companion-connected` frame for that device, which the normal join path answers with a full `init` plus a `reset` scrollback replay. No new frame type, no timer: re-hydrating only on a drained queue is what keeps it self-limiting.
 - If what remains still exceeds the budget, the socket closes **1013** (case B4c above).
 

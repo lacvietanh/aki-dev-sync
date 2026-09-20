@@ -2,7 +2,7 @@
 
   Mount semantics, two different axes:
   - SWITCHING TABS (this component): every tab that has ever been activated stays mounted (`v-if="activatedTabs.has(t.id)"`) and only the active one is shown (`v-show`) — switching back to a tab never re-spawns its xterm instance or re-fetches its scrollback. This loop iterates the FULL tab list (not the scope-filtered one) ON PURPOSE, so switching between GROUPS never unmounts/re-spawns an xterm either — only which chip's tab is visible changes.
-  - COLLAPSING THE STACK: also non-destructive since 1.21.1. `body-persist` (below) tells DockStack to keep its body mounted and let CSS clip it, so a collapse no longer disposes N xterms and an expand no longer re-spawns and re-hydrates them. What it costs instead is that every mounted xterm and its 5000-line scrollback is RETAINED behind a closed panel — which is what MAX_TABS bounds. What it buys is that scroll position and a full-screen program's painted screen survive the round-trip, rather than being rebuilt from a ring buffer that may already have trimmed the escape sequences that drew them.
+  - COLLAPSING THE STACK: also non-destructive since 1.21.1. `body-persist` (below) tells DockStack to keep its body mounted and let CSS clip it, so a collapse no longer disposes N xterms and an expand no longer re-spawns and re-hydrates them. What it costs instead is that every mounted xterm and its 5000-line scrollback is RETAINED behind a closed panel. What it buys is that scroll position and a full-screen program's painted screen survive the round-trip, rather than being rebuilt from a ring buffer that may already have trimmed the escape sequences that drew them.
 -->
 <template>
   <DockStack
@@ -222,8 +222,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true));
   font-weight: 800;
   line-height: 16px;
   text-align: center;
-  background: #94a3b8;
-  color: #0b1220;
+  background: var(--slate-400);
+  color: var(--surface-deep);
   box-shadow: 0 0 0 2px var(--bg-primary);
   pointer-events: none;
 }

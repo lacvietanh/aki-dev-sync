@@ -5,25 +5,10 @@ import { action } from '../services/action'
 import { invoke } from '../utils/tauri'
 import { Toast } from './projectStore'
 
-// Two caps: per-scope user budget vs global machine guard. Exported so callers (useTerminalTabs.js) pre-validate before RPC stub on companion; checks here provide host defence-in-depth.
-
-/** Maximum tabs per scope/group (frontend working-set budget; PTY backend is scope-blind). */
-export const MAX_TABS_PER_SCOPE = 5
-
-/** Global ceiling mirroring src-tauri/src/pty.rs MAX_TABS (resource guard verified by Rust constant_guards unit test). */
-export const MAX_TABS = 16
-
-/** Refusal messages for scope limits. Differentiated between project and global groups (select via scopeTabLimitMessage). */
-export const PROJECT_TAB_LIMIT_MESSAGE = `This project already has ${MAX_TABS_PER_SCOPE} terminal tabs. Close one to open another.`
-export const GLOBAL_GROUP_TAB_LIMIT_MESSAGE = `The global group already has ${MAX_TABS_PER_SCOPE} terminal tabs. Close one to open another.`
-
-/** Global ceiling refusal message ("in any group" guides user to look across scopes). */
-export const CEILING_TAB_LIMIT_MESSAGE = `All ${MAX_TABS} terminal tabs are in use. Close one in any group first.`
-
 /**
  * Tab list ref: [{ id, title, projectId, cwd, titleLocked?, resizeOwner?, pinned? }]
  * resizeOwner: PTY size driver — 'host' (Mac) or companion frame.from connection id (docs/plan/done/wish-terminal-manual-resize-authority.md).
- * pinned: display-only flag across groups; projectId ownership unchanged so cap enforcement cannot be bypassed.
+ * pinned: display-only flag across groups.
  */
 export const terminalTabs = ref([])
 
@@ -31,11 +16,6 @@ export const terminalTabs = ref([])
 export const activeTerminalTabId = ref(0)
 
 export const GLOBAL_SCOPE = 'global'
-
-/** Returns the appropriate tab limit error message for the given scope. */
-export function scopeTabLimitMessage(scope) {
-  return scope === GLOBAL_SCOPE ? GLOBAL_GROUP_TAB_LIMIT_MESSAGE : PROJECT_TAB_LIMIT_MESSAGE
-}
 
 /** Per-screen active tab scope ('global' | projectId; in PER_SCREEN_KEYS so screen navigation is isolated). */
 export const activeTerminalScope = ref(GLOBAL_SCOPE)
@@ -49,16 +29,6 @@ function nextTabId() {
  * Optional runKind/pendingCmd tag DEV/BUILD tabs for command dispatch without extra round-trip (docs/plan/done/dev-build-in-app-launch.md).
  */
 export const addTerminalTab = action('terminalTabsStore.addTerminalTab', ({ title, projectId = null, cwd = null, runKind = null, pendingCmd = null } = {}) => {
-  // Scope cap checked before global ceiling to match useTerminalTabs.js capReached order.
-  const scope = projectId || GLOBAL_SCOPE
-  if (terminalTabs.value.filter((t) => (t.projectId || GLOBAL_SCOPE) === scope).length >= MAX_TABS_PER_SCOPE) {
-    Toast.fire({ icon: 'error', title: scopeTabLimitMessage(scope) })
-    return null
-  }
-  if (terminalTabs.value.length >= MAX_TABS) {
-    Toast.fire({ icon: 'error', title: CEILING_TAB_LIMIT_MESSAGE })
-    return null
-  }
   const tab = { id: nextTabId(), title: title || 'Shell', projectId, cwd, runKind, pendingCmd, pinned: false }
   terminalTabs.value = [...terminalTabs.value, tab]
   return tab

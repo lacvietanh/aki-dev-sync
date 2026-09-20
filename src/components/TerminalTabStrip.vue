@@ -66,7 +66,7 @@
         <i class="fa-solid fa-xmark"></i>
       </span>
     </button>
-    <button class="tab term-tab term-tab-add" :class="{ 'is-full': scopeFull }" :title="addTitle" @click="newTab">
+    <button class="tab term-tab term-tab-add" :title="addTitle" @click="newTab">
       <i class="fa-solid fa-plus"></i>
     </button>
   </div>
@@ -75,19 +75,13 @@
 <script setup>
 import { computed, nextTick, ref } from 'vue'
 import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs'
-import { MAX_TABS_PER_SCOPE, renameTerminalTab, toggleTabPinned } from '../store/terminalTabsStore'
+import { renameTerminalTab, toggleTabPinned } from '../store/terminalTabsStore'
 import { iconTimestamp } from '../store/projectStore'
 import { projectIconSrc } from '../utils/projectIcon'
 
 const { scopedTabs: tabs, ownedScopeTabs, activeTabId, setActiveTab, newTab, closeTab } = useTerminalTabs()
 
-// Scope cap uses ownedScopeTabs so foreign pinned tabs do not count against this group.
-const scopeFull = computed(() => ownedScopeTabs.value.length >= MAX_TABS_PER_SCOPE)
-const addTitle = computed(() =>
-  scopeFull.value
-    ? `This group is full, ${ownedScopeTabs.value.length} of ${MAX_TABS_PER_SCOPE}. Close a tab to open another.`
-    : `New terminal tab in this group, ${ownedScopeTabs.value.length} of ${MAX_TABS_PER_SCOPE} (⌘T)`
-)
+const addTitle = computed(() => `New terminal tab in this group (${ownedScopeTabs.value.length} open) (⌘T)`)
 
 function onChipClick(t) {
   setActiveTab(t.id)
@@ -238,7 +232,7 @@ function commitRename(t, value) {
 .tab.is-active {
   opacity: 1;
   background: rgba(96, 165, 250, 0.16);
-  color: #e5e7eb;
+  color: var(--gray-200);
   border-color: rgba(96, 165, 250, 0.55);
 }
 
@@ -274,11 +268,4 @@ function commitRename(t, value) {
   opacity: 1;
 }
 
-/* Dimmed on hover when cap is reached instead of hidden. */
-.term-tab-add.is-full {
-  cursor: not-allowed;
-}
-.term-tab-add.is-full:hover {
-  opacity: 0.5;
-}
 </style>

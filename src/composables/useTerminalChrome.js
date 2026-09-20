@@ -1,6 +1,5 @@
-// Terminal chrome visibility — per-device preference layered over a role default (docs/plan/done/terminal-chrome-settings.md §§4-6). Composable, not src/store/, for the same reason useTerminalFont.js and useDockLayout.js live here: which chrome a screen shows is a fact about the screen you are looking at, not the project, so services/mirror.js must never discover this key.
-//
-// CONTROLS is the single list every export below derives from (SSoT — the same control must never be named a second time in the menu markup or the storage layer): capability × preference composition (docs/arch/terminal-stack.md § "The capability pattern") reads role-availability off CONTROLS, never `isHost` at the call site — TerminalStack.vue and TerminalView.vue import `chromeVisible` only.
+// Per-device terminal chrome preferences; see docs/plan/done/terminal-chrome-settings.md §§4-6.
+// `CONTROLS` is the SSoT for role capability, defaults, menu rendering, and persisted preferences.
 import { computed, reactive, ref } from 'vue'
 import { isHost } from '../services/bridge'
 import { externalTerminalsSupported } from './useExternalTerminals'

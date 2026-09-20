@@ -9,10 +9,6 @@ import {
   addTerminalTab,
   closeTerminalTab,
   adoptTabs,
-  MAX_TABS,
-  MAX_TABS_PER_SCOPE,
-  scopeTabLimitMessage,
-  CEILING_TAB_LIMIT_MESSAGE,
   setTabPendingCmd,
 } from '../store/terminalTabsStore'
 import { projects, Toast } from '../store/projectStore'
@@ -64,7 +60,7 @@ const PENDING_CLAIM_TTL_MS = 15_000
 let pendingClaimAt = 0
 let pendingClaimTimer = null
 
-/** Sets a companion activation claim with a timeout backstop in case host cap enforcement drops the request. */
+/** Sets a companion activation claim with a timeout backstop. */
 function setPendingClaim(scope) {
   clearPendingClaim()
   pendingActivateScope.value = scope
@@ -73,7 +69,7 @@ function setPendingClaim(scope) {
     pendingClaimTimer = null
     if (pendingActivateScope.value === null) return
     clearPendingClaim()
-    Toast.fire({ icon: 'error', title: 'No terminal tab opened on the Mac. It may have reached a terminal limit.' })
+    Toast.fire({ icon: 'error', title: 'The Mac did not create the terminal tab.' })
   }, PENDING_CLAIM_TTL_MS)
 }
 
@@ -92,19 +88,6 @@ function pendingClaimLive() {
     return false
   }
   return true
-}
-
-/** Client-side pre-check for scope and global tab limits to provide immediate companion feedback before action dispatch. */
-function capReached(scope) {
-  if (terminalTabs.value.filter((t) => scopeOf(t) === scope).length >= MAX_TABS_PER_SCOPE) {
-    Toast.fire({ icon: 'error', title: scopeTabLimitMessage(scope) })
-    return true
-  }
-  if (terminalTabs.value.length >= MAX_TABS) {
-    Toast.fire({ icon: 'error', title: CEILING_TAB_LIMIT_MESSAGE })
-    return true
-  }
-  return false
 }
 
 function markActivated(id) {
@@ -130,7 +113,7 @@ function setActiveTab(id) {
 
 /** THE one algorithm behind every "show me a terminal for X" gesture — the project TERMINAL button,
  *  the header's global terminal icon, and ⌘T / the strip's `+`. All three used to spell out the same
- *  six steps (switch scope → reuse the scope's tab → cap check → add → activate, or queue the
+ *  steps (switch scope → reuse the scope's tab → add → activate, or queue the
  *  companion claim); only the scope key and whether reuse is wanted ever differed.
  *
  *  @param {string} scope                     GLOBAL_SCOPE or a project id
@@ -152,8 +135,6 @@ function setActiveTab(id) {
  * @param {boolean} [opts.expandStack] Expand dock terminal stack on entry
  */
 function openScopeTerminal(scope, { title = 'Shell', cwd = null, reuse = true, expandStack = false } = {}) {
-  // Preserve prior scope to restore selection if cap validation fails after scope switch.
-  const priorScope = activeTerminalScope.value
   if (expandStack) expandTerminalStack()
   activeTerminalScope.value = scope // switch group BEFORE any claim is queued (companion too)
   if (reuse) {
@@ -165,10 +146,6 @@ function openScopeTerminal(scope, { title = 'Shell', cwd = null, reuse = true, e
   }
   // Repeat-tap guard (companion only) — see "Companion add is fire-and-forget" in docs/arch/terminal-stack.md.
   if (reuse && pendingActivateScope.value === scope && pendingClaimLive()) return
-  if (capReached(scope)) {
-    activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
-    return
-  }
   const projectId = scope === GLOBAL_SCOPE ? null : scope
   const tab = addTerminalTab({ title, projectId, cwd })
   if (tab) setActiveTab(tab.id)
@@ -297,7 +274,6 @@ export function useTerminalTabs() {
   function openRunCommand(project, cmd, kind) {
     if (!project || !cmd) return
     const scope = project.id
-    const priorScope = activeTerminalScope.value
     expandTerminalStack()
     activeTerminalScope.value = scope
     const existing = terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === kind)
@@ -315,10 +291,6 @@ export function useTerminalTabs() {
       }
       return
     }
-    if (capReached(scope)) {
-      activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
-      return
-    }
     const tab = addTerminalTab({
       title: kind === 'dev' ? 'DEV' : 'BUILD',
       projectId: scope,
@@ -334,13 +306,8 @@ export function useTerminalTabs() {
   function openProjectRemoteTerminal(project, sshCmd) {
     if (!project || !sshCmd) return
     const scope = project.id
-    const priorScope = activeTerminalScope.value
     expandTerminalStack()
     activeTerminalScope.value = scope
-    if (capReached(scope)) {
-      activeTerminalScope.value = priorScope // put the screen back where it was; the Toast says why
-      return
-    }
     const tab = addTerminalTab({
       title: `${project.name} (SSH)`,
       projectId: scope,
@@ -355,7 +322,7 @@ export function useTerminalTabs() {
   return {
     tabs,            // FULL list — mount loop only
     scopedTabs,      // the strip, cycling, and the close-fallback use this — owned + pinned-foreign
-    ownedScopeTabs,  // cap display only — never includes a pinned foreign tab (see comment above)
+    ownedScopeTabs,  // never includes a pinned foreign tab (see comment above)
     scope, scopeProject,   // stack header identity
     activeTab, activeTabId, setActiveTab,
     newTab, closeTab, cycleTab,

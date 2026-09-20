@@ -34,7 +34,7 @@ A **group** is a set of tabs that share one identity: either one project, or the
 
 The stack header always shows which group you are in: a project icon (or a plain terminal glyph for global) plus a 4-character name (`TERM` for global). The tab strip next to it is that group's tabs only, plus any **pinned** tab from elsewhere (see below) — chips from other, unpinned groups are not shown, but they still exist and keep running; switching groups never re-spawns or loses any shell's scrollback. `+` opens a new tab **in the current group**; a chip's ✕ kills that one shell.
 
-**Pinning (1.24).** Each chip carries a small pin toggle at its left edge. A pinned tab shows in *every* group's strip — project or global — sorted ahead of the unpinned tabs, and `pinned: boolean` rides the tab object (`terminalTabsStore.js`) over the normal mirror, so it stays pinned for a paired phone too. Pinning is display-only: it never changes a tab's owning `projectId`, so the per-group (5) and global (16) caps stay keyed off real ownership and cannot be shrunk or bypassed by pinning a tab into a foreign group's strip.
+**Pinning (1.24).** Each chip carries a small pin toggle at its left edge. A pinned tab shows in *every* group's strip — project or global — sorted ahead of the unpinned tabs, and `pinned: boolean` rides the tab object (`terminalTabsStore.js`) over the normal mirror, so it stays pinned for a paired phone too. Pinning is display-only: it never changes a tab's owning `projectId`, so group membership stays keyed off real ownership and cannot be changed by pinning a tab into a foreign group's strip.
 
 `⌘T` / `⌘W` / `⌘⇧[` / `⌘⇧]` all act **within the current group only** — ⌘T in a project's group opens a shell already `cd`'d into that project, ⌘⇧[ / ⌘⇧] cycle only that group's tabs, and ⌘W closes only the active tab of the group you are looking at.
 
@@ -60,18 +60,11 @@ The stack header always shows which group you are in: a project icon (or a plain
 | The old external-terminal button on the `TERM` cell | Same OPEN popup item. |
 | `< 2 tabs` plain "TERMINAL" / "TERMINAL - EXITED" title | Group identity (icon + name), always shown, plus each chip's own exited tint. |
 
-## Tab and byte caps (1.21.1)
+## Tab counts and scrollback (1.21.1)
 
-Two caps, checked in this order, and both reachable from a paired phone as well as the Mac:
-
-- **Per group: 5 tabs.** The number a user is meant to have in their head — five shells is a working set, and wanting a sixth genuinely means closing one. Hitting it in a project's group shows *"This project already has 5 terminal tabs. Close one to open another."*; hitting it in the global group shows the same wording for *"The global group"*. The `TERM` cell's tooltip and the tab strip's `+` button both show the live count against this number, and the `+` dims (never hides) once the group is full.
-- **Global ceiling: 16 tabs, across every group.** A resource guard, not a budget — it is never shown ahead of time, and the app is built so it should essentially never fire in normal use. It happens to equal `1 + 3 × 5`, but that arithmetic stopped being load-bearing on 2026-07-28 when the global group's own permanent one-tab minimum was removed (see below) — it is simply a generous shared ceiling, not a guarantee that any particular number of full groups can always coexist. Hit it anyway and the message is *"All 16 terminal tabs are in use. Close one in any group first."* — the only refusal that says "in any group", because it is the only one whose cause can genuinely be sitting in a group the screen is not showing.
-
-A refusal in one group never touches any other group's tabs. Opening a project's `TERM` cell that turns out to be full also no longer strands you looking at that empty group: the screen returns to whichever group you were in before the tap.
+Tabs are unlimited — `+` is never disabled by count. Each live tab is a shell process plus three raw OS threads and a 128 KiB scrollback ring buffer. A phone joining replays each tab's scrollback on demand; if the total exceeds the 8 MiB outbox budget the relay coalesces and re-syncs gracefully without looping — see `docs/arch/terminal-stack.md` § PTY backend contract and `src-tauri/src/web_server.rs` INVARIANT R.
 
 Tapping a project's `TERM` cell (or the header's global icon) again while an earlier tap for that same group is still waiting on the Mac to answer is now a no-op instead of opening another tab (1.22.0) — a companion tap gets nothing back until the Mac's reply mirrors over, so with no visible feedback, a second tap (or an impatient few) each used to open its own tab. Mechanism: `docs/arch/terminal-stack.md`'s "Companion add is fire-and-forget" section.
-
-Raising the global ceiling costs real resources rather than being a UI preference: each live tab is a shell process plus three raw OS threads and up to 128 KiB of scrollback ring buffer, so 16 tabs is roughly 48 threads and 2 MiB of resident buffer at the absolute ceiling — see `docs/arch/terminal-stack.md` for the full derivation, including why the per-tab scrollback ring was halved (256 KiB to 128 KiB) alongside the phone's replay budget being raised, and why a phone joining with every group full used to never fully catch up rather than simply disconnecting.
 
 ## In-App Terminal from the OPEN popup
 
@@ -175,7 +168,7 @@ Deliberately not there: function keys, Alt/Meta, a configurable key row. None ar
 
 ## SSH into a remote host (in-app)
 
-The OPEN popup's REMOTE column now has **SSH Terminal (In-App)** above the original **SSH Terminal** (native `Terminal.app`), same ordering as LOCAL's In-App Terminal over its own native Terminal item, and for the same reason: it is the only one of the two that works from a phone. `build_remote_ssh_command` (`src-tauri/src/system.rs`) builds the exact `ssh <host> -t '...'` string the native item already launches in `Terminal.app` — same host validation, same `mkdir -p && cd` remote-side quoting — and hands it back as plain text; `openProjectRemoteTerminal` (`ProjectTable.vue`) then types that string into a fresh in-app PTY tab via `openProjectRemoteTerminal` (`useTerminalTabs.js`). Unlike DEV/BUILD, which still dedup by their own `runKind` and reuse an existing tab, SSH no longer dedups — every invocation opens a new tab, subject to the same per-scope (5) and global (16) tab caps as any other tab. Pure string construction, no subprocess, so it is companion-allowed (`COMPANION_ALLOWED_COMMANDS`).
+The OPEN popup's REMOTE column now has **SSH Terminal (In-App)** above the original **SSH Terminal** (native `Terminal.app`), same ordering as LOCAL's In-App Terminal over its own native Terminal item, and for the same reason: it is the only one of the two that works from a phone. `build_remote_ssh_command` (`src-tauri/src/system.rs`) builds the exact `ssh <host> -t '...'` string the native item already launches in `Terminal.app` — same host validation, same `mkdir -p && cd` remote-side quoting — and hands it back as plain text; `openProjectRemoteTerminal` (`ProjectTable.vue`) then types that string into a fresh in-app PTY tab via `openProjectRemoteTerminal` (`useTerminalTabs.js`). Unlike DEV/BUILD, which still dedup by their own `runKind` and reuse an existing tab, SSH no longer dedups — every invocation opens a new tab. Pure string construction, no subprocess, so it is companion-allowed (`COMPANION_ALLOWED_COMMANDS`).
 
 ## Auto-collapse when the last tab closes
 

@@ -13,7 +13,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { terminalTabs, MAX_TABS_PER_SCOPE, GLOBAL_SCOPE } from '../store/terminalTabsStore'
+import { terminalTabs, GLOBAL_SCOPE } from '../store/terminalTabsStore'
 import { externalTermCounts, externalTermGlobalCount } from '../store/projectStore'
 import { useTerminalTabs, tabAlive } from '../composables/useTerminalTabs'
 import TerminalCountBadges from './terminal/TerminalCountBadges.vue'
@@ -46,11 +46,7 @@ function onClick() {
 const cellTitle = computed(() => {
   const noun = isGlobal.value ? 'Global terminal' : 'In-app terminal'
   const lines = [
-    tabCount.value === 0
-      ? noun
-      : tabCount.value >= MAX_TABS_PER_SCOPE
-        ? `${noun}, ${tabCount.value} of ${MAX_TABS_PER_SCOPE} tabs in this group. Close one to open another.`
-        : `${noun}, ${tabCount.value} of ${MAX_TABS_PER_SCOPE} tabs in this group`,
+    tabCount.value === 0 ? noun : `${noun}, ${tabCount.value} tab(s) in this group`,
   ]
   if (externalCount.value > 0) {
     lines.push(
