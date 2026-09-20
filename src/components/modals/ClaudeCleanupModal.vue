@@ -213,7 +213,7 @@ watch(
   gap: 4px;
   font-size: 9px;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
@@ -223,7 +223,7 @@ watch(
 }
 
 .scope-tag i {
-  color: #94a3b8;
+  color: var(--slate-400);
   font-size: 9px;
 }
 
@@ -236,7 +236,7 @@ watch(
 
 .scan-line {
   font-size: 11px;
-  color: #64748b;
+  color: var(--slate-500);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -280,8 +280,8 @@ watch(
 
 .pick.all,
 .pick.some {
-  background: #d97757;
-  border-color: #d97757;
+  background: var(--brand);
+  border-color: var(--brand);
   color: #1a1a1a;
 }
 
@@ -315,21 +315,21 @@ watch(
   width: 15px;
   flex-shrink: 0;
   font-size: 10px;
-  color: #475569;
+  color: var(--slate-600);
   text-align: center;
 }
 
 .group-label {
   font-size: 11px;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--slate-200);
 }
 
 .group-hint {
   flex: 1;
   min-width: 0;
   font-size: 10px;
-  color: #64748b;
+  color: var(--slate-500);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -338,13 +338,13 @@ watch(
 .group-size {
   font-size: 11px;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--slate-400);
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
 
 .chev {
   font-size: 8px;
-  color: #475569;
+  color: var(--slate-600);
   transition: transform 0.15s;
 }
 
@@ -354,7 +354,7 @@ watch(
 
 .group.kept .group-label,
 .group.kept .group-size {
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .entries {
@@ -374,7 +374,7 @@ watch(
   align-items: center;
   gap: 8px;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--slate-400);
   padding: 2px 4px;
   border-radius: 4px;
 }
@@ -388,7 +388,7 @@ watch(
 }
 
 .entry.on {
-  color: #e2e8f0;
+  color: var(--slate-200);
 }
 
 .entry.gone {
@@ -428,13 +428,13 @@ watch(
 
 .status-msg.ok {
   background: rgba(16, 185, 129, 0.1);
-  color: #34d399;
+  color: var(--emerald-400);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .status-msg.err {
   background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  color: var(--red-400);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
@@ -448,19 +448,19 @@ watch(
 .btn-rescan {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.1);
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .btn-rescan:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
+  color: var(--slate-400);
 }
 
 .btn-cleanup-delete {
   flex: 1;
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.35);
-  color: #f87171;
+  color: var(--red-400);
 }
 
 .btn-cleanup-delete:hover:not(:disabled) {
@@ -469,8 +469,8 @@ watch(
 
 .btn-cleanup-delete.arming {
   background: rgba(239, 68, 68, 0.3);
-  border-color: #ef4444;
-  color: #fecaca;
+  border-color: var(--accent-red);
+  color: var(--red-200);
 }
 
 /* Narrow mode (SSoT 700px, main.css): scoped padding overrides global narrow rule. */

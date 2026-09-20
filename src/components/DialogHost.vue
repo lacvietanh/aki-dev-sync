@@ -1,6 +1,6 @@
 <template>
   <!-- Imperative Swal.fire overlay driven by pendingDialog state mirroring. -->
-  <div style="display:none" aria-hidden="true"></div>
+  <div hidden aria-hidden="true"></div>
 </template>
 
 <script setup>

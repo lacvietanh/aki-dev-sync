@@ -239,11 +239,11 @@ const { showIntroModal, closeIntroModal } = useIntro();
 .intro-content {
   font-size: 14px;
   line-height: 1.5;
-  color: #d1d5db;
+  color: var(--gray-300);
 }
 .intro-header h3 {
   margin: 0 0 8px 0;
-  color: #f3f4f6;
+  color: var(--text-light);
   font-size: 18px;
 }
 .intro-header p {
@@ -269,7 +269,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
   border-color: rgba(167, 139, 250, 0.2);
 }
 .alert-box.tech .alert-title {
-  color: #a78bfa;
+  color: var(--violet-400);
 }
 .alert-title {
   margin: 0 0 10px 0;
@@ -280,10 +280,10 @@ const { showIntroModal, closeIntroModal } = useIntro();
   gap: 8px;
 }
 .alert-box.info .alert-title {
-  color: #60a5fa;
+  color: var(--blue-400);
 }
 .alert-box.origin .alert-title {
-  color: #6ee7b7;
+  color: var(--emerald-300);
   opacity: 0.8;
 }
 .model-flow {
@@ -313,11 +313,11 @@ const { showIntroModal, closeIntroModal } = useIntro();
   color: rgba(255, 255, 255, 0.45);
 }
 .model-node.local .model-role { color: #22d3ee; }
-.model-node.remote .model-role { color: #f59e0b; }
+.model-node.remote .model-role { color: var(--amber-500); }
 .model-title {
   font-size: 13px;
   font-weight: 700;
-  color: #e5e7eb;
+  color: var(--gray-200);
   margin: 2px 0;
 }
 .model-meta {
@@ -337,8 +337,8 @@ const { showIntroModal, closeIntroModal } = useIntro();
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.arrow-push { color: #6ee7b7; }
-.arrow-pull { color: #60a5fa; }
+.arrow-push { color: var(--emerald-300); }
+.arrow-pull { color: var(--blue-400); }
 .subgroup-label {
   font-size: 10px;
   font-weight: 700;
@@ -372,7 +372,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
 }
 .feature-icon {
   font-size: 16px;
-  color: #a78bfa;
+  color: var(--violet-400);
   margin-top: 2px;
   flex-shrink: 0;
   width: 16px;
@@ -380,7 +380,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
 }
 .feature-text strong {
   display: block;
-  color: #e5e7eb;
+  color: var(--gray-200);
   font-size: 12px;
   font-weight: 700;
   margin-bottom: 3px;
@@ -392,25 +392,25 @@ const { showIntroModal, closeIntroModal } = useIntro();
 .mb-1 { margin-bottom: 4px; }
 
 /* Icon colors - using design system colors */
-.icon-guide { color: #6ee7b7; }
-.icon-push { color: #a78bfa; }
-.icon-select { color: #f59e0b; }
-.icon-pull { color: #3b82f6; }
-.icon-dryrun { color: #22c55e; }
-.icon-syncstatus { color: #a78bfa; }
+.icon-guide { color: var(--emerald-300); }
+.icon-push { color: var(--violet-400); }
+.icon-select { color: var(--amber-500); }
+.icon-pull { color: var(--blue-500); }
+.icon-dryrun { color: var(--green-500); }
+.icon-syncstatus { color: var(--violet-400); }
 .icon-hooks { color: #f97316; }
-.icon-delete { color: #ef4444; }
+.icon-delete { color: var(--accent-red); }
 .icon-presets { color: #14b8a6; }
-.icon-tasks { color: #00d2ff; }
+.icon-tasks { color: var(--accent-cyan); }
 .icon-openpopup { color: #06b6d4; }
-.icon-globalnote { color: #f59e0b; }
+.icon-globalnote { color: var(--amber-500); }
 .icon-usage { color: #818cf8; }
-.icon-cloud { color: #f59e0b; }
-.icon-ssh { color: #94a3b8; }
+.icon-cloud { color: var(--amber-500); }
+.icon-ssh { color: var(--slate-400); }
 .icon-background { color: #ec4899; }
-.icon-refresh { color: #fbbf24; }
-.icon-git { color: #f87171; }
-.icon-update { color: #10b981; }
+.icon-refresh { color: var(--amber-400); }
+.icon-git { color: var(--red-400); }
+.icon-update { color: var(--accent-green); }
 
 .modal-footer-right {
   justify-content: flex-end;

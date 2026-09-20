@@ -25,16 +25,16 @@ const COMMAND = 'sh scripts/get-antigravity-usage.sh';
 const INTERVAL_MS = 5000;
 
 console.log(`\x1b[36m========================================`);
-console.log(`🚀 Bắt đầu giám sát Antigravity Proxy`);
-console.log(`⏳ Chu kỳ: ${INTERVAL_MS / 1000}s`);
-console.log(`💻 Lệnh: ${COMMAND}`);
+console.log(`🚀 Starting Antigravity Proxy monitor`);
+console.log(`⏳ Interval: ${INTERVAL_MS / 1000}s`);
+console.log(`💻 Command: ${COMMAND}`);
 console.log(`========================================\x1b[0m\n`);
 
 async function checkProxy() {
   try {
     const { stdout, stderr } = await execAsync(COMMAND);
     
-    // In lỗi nếu stderr có nội dung nhưng tiến trình không crash.
+    // Treat stderr output as a failed probe even when the process exits successfully.
     if (stderr && stderr.trim().length > 0) {
       logError(stderr.trim());
       return;
@@ -43,27 +43,26 @@ async function checkProxy() {
     try {
       const data = JSON.parse(stdout);
       
-      // Bóc tách dữ liệu để in tóm tắt.
+      // Extract the account and Gemini usage for the one-line summary.
       const email = data.email || 'Unknown';
       const geminiModel = data.models?.find(m => m.label.toLowerCase().includes('gemini'));
       const usedPct = geminiModel 
         ? ((1 - geminiModel.remainingPercentage) * 100).toFixed(1) + '%' 
         : 'N/A';
 
-      logSuccess(`Proxy phản hồi tốt! Account: ${email} | Gemini Used: ${usedPct}`);
+      logSuccess(`Proxy healthy! Account: ${email} | Gemini Used: ${usedPct}`);
     } catch (parseErr) {
-      logError(`Lỗi parse JSON. Output thô: ${stdout.substring(0, 100)}...`);
+      logError(`JSON parse error. Raw output: ${stdout.substring(0, 100)}...`);
     }
 
   } catch (error) {
-    // IDE ngủ đông/lỗi trả về non-zero exit code; thông điệp nằm ở error.stderr hoặc error.message.
+    // A sleeping or unavailable IDE exits non-zero; prefer stderr when available.
     const errorMsg = error.stderr ? error.stderr.trim() : error.message.split('\n')[0];
-    logError(`Mất kết nối Proxy: ${errorMsg}`);
+    logError(`Proxy connection lost: ${errorMsg}`);
   }
 }
 
-// Chạy ngay lần đầu tiên.
+// Run once immediately, then continue on the polling interval.
 checkProxy();
 
-// Polling định kỳ mỗi 5s.
 setInterval(checkProxy, INTERVAL_MS);

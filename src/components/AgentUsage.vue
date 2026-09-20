@@ -980,7 +980,7 @@ async function handleIconClick() {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: #22c55e;
+  background: var(--green-500);
   box-shadow: 0 0 4px rgba(34, 197, 94, 0.6);
 }
 
@@ -994,7 +994,7 @@ async function handleIconClick() {
 
 .agent-plan-badge {
   background: rgba(6, 182, 212, 0.1);
-  color: #a5f3fc;
+  color: var(--cyan-200);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 9px;
@@ -1005,7 +1005,7 @@ async function handleIconClick() {
 
 .agent-plan-badge.claude {
   background: rgba(217, 119, 87, 0.1);
-  color: #D97757;
+  color: var(--brand);
 }
 
 .agent-plan-badge.ag {

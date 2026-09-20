@@ -1,8 +1,8 @@
 <template>
   <BaseModal :show="show" @close="$emit('close')" container-class="update-modal">
     <template #title>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <i class="fa-solid fa-circle-arrow-up" style="font-size: 16px; color: var(--accent-cyan);"></i>
+      <div class="modal-title-row">
+        <i class="fa-solid fa-circle-arrow-up title-glyph"></i>
         <span>Update Available - {{ displayVersion }}</span>
       </div>
     </template>
@@ -62,6 +62,7 @@ async function download() {
 </script>
 
 <style scoped>
+.title-glyph { font-size: 16px; color: var(--accent-cyan); }
 .update-body {
   padding: 20px 24px;
   overflow-y: auto;
@@ -70,7 +71,7 @@ async function download() {
 .update-body-content {
   font-size: 13px;
   line-height: 1.6;
-  color: #e2e8f0;
+  color: var(--slate-200);
 }
 .update-body-content :deep(h3) {
   font-size: 14px;
@@ -94,10 +95,10 @@ async function download() {
 }
 .update-body-content :deep(li) {
   margin-bottom: 5px;
-  color: #d1d5db;
+  color: var(--gray-300);
 }
 .update-body-content :deep(strong) {
-  color: #f3f4f6;
+  color: var(--text-light);
   font-weight: 700;
 }
 .update-body-content :deep(code) {
@@ -106,7 +107,7 @@ async function download() {
   padding: 1px 4px;
   font-family: monospace;
   font-size: 11px;
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 .update-body-content :deep(a) {
   color: var(--accent-blue);

@@ -118,7 +118,7 @@ async function applyMode(mode) {
   gap: 4px;
   font-size: 9px;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
@@ -128,7 +128,7 @@ async function applyMode(mode) {
 }
 
 .scope-tag i {
-  color: #94a3b8;
+  color: var(--slate-400);
   font-size: 9px;
 }
 
@@ -152,7 +152,7 @@ async function applyMode(mode) {
   border-radius: 6px;
   padding: 7px 10px;
   font-size: 11px;
-  color: #e2e8f0;
+  color: var(--slate-200);
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   outline: none;
   transition: border-color 0.15s;
@@ -164,7 +164,7 @@ async function applyMode(mode) {
 }
 
 .field-input::placeholder {
-  color: #374151;
+  color: var(--gray-700);
 }
 
 .key-row {
@@ -182,7 +182,7 @@ async function applyMode(mode) {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  color: #64748b;
+  color: var(--slate-500);
   cursor: pointer;
   padding: 6px 8px;
   font-size: 11px;
@@ -190,7 +190,7 @@ async function applyMode(mode) {
 }
 
 .btn-eye:hover {
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.07);
 }
 
@@ -213,13 +213,13 @@ async function applyMode(mode) {
 
 .status-msg.ok {
   background: rgba(16, 185, 129, 0.1);
-  color: #34d399;
+  color: var(--emerald-400);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .status-msg.err {
   background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  color: var(--red-400);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
@@ -238,23 +238,23 @@ async function applyMode(mode) {
 .btn-native {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.1);
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .btn-native:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
+  color: var(--slate-400);
 }
 
 .btn-proxy {
   background: rgba(217, 119, 87, 0.15);
   border-color: rgba(217, 119, 87, 0.45);
-  color: #d97757;
+  color: var(--brand);
 }
 
 .btn-proxy:hover:not(:disabled) {
   background: rgba(217, 119, 87, 0.25);
-  color: #fba97a;
+  color: var(--brand-light);
 }
 
 /* Narrow mode (SSoT 700px, main.css): scoped padding outranks global narrow rule so trim is repeated here. */

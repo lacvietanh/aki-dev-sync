@@ -15,7 +15,10 @@
     "build:app": "export BUILD_NUM=$(date +%H%M) && npm run tauri -- build --target aarch64-apple-darwin --bundles app && node scripts/post-build.js",
     "build:rmad": "export BUILD_NUM=$(date +%H%M) && npm run tauri -- build --target aarch64-apple-darwin --bundles dmg && node scripts/post-build.js",
     "build:rmud": "export BUILD_NUM=$(date +%H%M) && npm run tauri -- build --target universal-apple-darwin --bundles dmg && node scripts/post-build.js",
-    "dev:debug": "AKI_DEBUG=1 npm run tauri dev"
+    "dev:debug": "AKI_DEBUG=1 npm run tauri dev",
+    "audit:ui": "node scripts/audit-ui-architecture.mjs",
+    "test:ui-audit": "node --test scripts/tests/audit-ui-architecture.test.mjs",
+    "test:replay": "node --test scripts/tests/replay-hydration.test.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",

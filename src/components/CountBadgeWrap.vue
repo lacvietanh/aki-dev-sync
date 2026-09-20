@@ -29,8 +29,8 @@ defineProps({
 /* Pending count badge styling (red). */
 .sync-count-badge {
   z-index: 1;
-  background: #ef4444;
-  color: #fff;
+  background: var(--accent-red);
+  color: var(--white);
 }
 
 /* Small delete indicator badge on faint chip. */
@@ -44,7 +44,7 @@ defineProps({
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.85);
   box-shadow: none;
-  color: #ef4444;
+  color: var(--accent-red);
   font-size: 7px;
   line-height: 1;
   opacity: 0.95;

@@ -19,12 +19,12 @@ defineProps({
 }
 
 .term-badge-tabs.is-exited {
-  background: var(--accent-red, #ef4444);
-  color: #fff;
+  background: var(--accent-red, var(--accent-red));
+  color: var(--white);
 }
 
 .term-badge-ext {
-  background: #94a3b8;
-  color: #0b1220;
+  background: var(--slate-400);
+  color: var(--surface-deep);
 }
 </style>

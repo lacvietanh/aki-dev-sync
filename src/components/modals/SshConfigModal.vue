@@ -8,7 +8,7 @@
       <textarea v-model="sshConfigText" class="code-editor" spellcheck="false" placeholder="Host bien-guest\n  HostName 192.168..." @keydown.tab.prevent="handleEditorTab"></textarea>
     </div>
     <div class="modal-footer">
-      <div style="display: flex; gap: 8px; margin-right: auto;">
+      <div class="row-gap-8 push-left">
         <button class="btn-tech btn-tech-secondary" @click="undo" title="Undo" :disabled="!hasSshUndo">
           <i class="fa-solid fa-rotate-left"></i> UNDO
         </button>
@@ -16,7 +16,7 @@
           <i class="fa-solid fa-rotate-right"></i> REDO
         </button>
       </div>
-      <div style="display: flex; gap: 8px;">
+      <div class="row-gap-8">
         <button class="btn-tech btn-tech-secondary" @click="closeSshModal">CANCEL</button>
         <button class="btn-tech btn-tech-primary" @click="save"><i class="fa-solid fa-floppy-disk"></i> SAVE</button>
       </div>
@@ -40,6 +40,8 @@ function redo() { redoSshConfig() }
 </script>
 
 <style scoped>
+.row-gap-8 { display: flex; gap: 8px; }
+.push-left { margin-right: auto; }
 /* Narrow mode container padding (<=700px). */
 @media (max-width: 700px) {
   .ssh-editor-container {

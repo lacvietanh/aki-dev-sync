@@ -82,7 +82,7 @@ const collection = useGlobalTaskCollection()
   field-sizing: fixed;
   min-height: 42px;
   max-height: 60vh;
-  color: #e2e8f0;
+  color: var(--slate-200);
   font-size: 13px;
   font-family: 'JetBrains Mono', 'Fira Mono', monospace;
   line-height: 1.6;
@@ -90,7 +90,7 @@ const collection = useGlobalTaskCollection()
 }
 
 .global-notes-field :deep(.project-notes-textarea::placeholder) {
-  color: #475569;
+  color: var(--slate-600);
 }
 
 .note-footer {
@@ -103,7 +103,7 @@ const collection = useGlobalTaskCollection()
 
 .save-status {
   font-size: 11px;
-  color: #475569;
+  color: var(--slate-600);
   letter-spacing: 0.3px;
 }
 

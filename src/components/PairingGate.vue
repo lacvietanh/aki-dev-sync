@@ -133,7 +133,7 @@ onMounted(() => {
   padding: 14px;
   font-size: 15px;
   font-weight: 600;
-  color: #fff;
+  color: var(--white);
   background: #2563eb;
   border: none;
   border-radius: 10px;
@@ -149,7 +149,7 @@ onMounted(() => {
 .pair-err {
   margin: 14px 0 0;
   font-size: 13px;
-  color: #f87171;
+  color: var(--red-400);
 }
 
 .pair-state {

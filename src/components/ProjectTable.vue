@@ -685,7 +685,7 @@ html.fx-glass .grid-header {
   padding: 6px 0;
   font-size: 10px;
   font-weight: 800;
-  color: #a5f3fc;
+  color: var(--cyan-200);
   letter-spacing: 1px;
   text-transform: uppercase;
   white-space: nowrap;
@@ -940,7 +940,7 @@ fieldset:disabled .switch {
 .popup-header {
   font-size: 11px;
   font-weight: 700;
-  color: #e5e7eb;
+  color: var(--gray-200);
   padding: 0 12px 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 6px;
@@ -973,7 +973,7 @@ fieldset:disabled .switch {
 }
 
 .popup-copy-btn:hover {
-  color: var(--accent-cyan, #00d2ff);
+  color: var(--accent-cyan, var(--accent-cyan));
 }
 
 /* Keep tooltips accessible on disabled run buttons. */
@@ -1017,15 +1017,15 @@ fieldset:disabled .switch {
 
 /* STOP button state during active sync (red). */
 .btn-tech.btn-sync-stop {
-  background-color: #ef4444;
+  background-color: var(--accent-red);
   border-color: #7f1d1d;
-  color: #ffffff;
+  color: var(--white);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
 }
 
 .btn-tech.btn-sync-stop:hover:not(:disabled) {
-  background-color: #f87171;
+  background-color: var(--red-400);
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.75);
 }
 

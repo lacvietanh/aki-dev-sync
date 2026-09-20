@@ -240,8 +240,8 @@ defineExpose({
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px 8px;
-  background: #05070c;
-  color: #F3F4F6;
+  background: var(--surface-abyss);
+  color: var(--text-light);
   font-family: ui-monospace, Menlo, monospace;
   font-size: 12px;
   line-height: 1.4;

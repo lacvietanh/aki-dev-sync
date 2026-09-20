@@ -423,7 +423,7 @@ defineExpose({
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  background: #05070c;
+  background: var(--surface-abyss);
   padding: 4px 8px;
 }
 

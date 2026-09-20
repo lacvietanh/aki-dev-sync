@@ -42,6 +42,42 @@
   --text-darker: #6B7280;
   --border-color: rgba(255, 255, 255, 0.08);
   --bg-tertiary: rgba(255, 255, 255, 0.05);
+  /* ── Color primitives (audit-akirule-2026-09-18 P0.2): exact 1:1 values for UI color literals not already covered by the semantic --accent, --text and --bg tokens above. Adopting these is what closes the ui.A2 SSoT breach. ANSI/terminal theme + runtime data-driven colors are a separate contract and are deliberately NOT tokenized here. ── */
+  --white: #ffffff;
+  --black: #000000;
+  /* neutral scale (Tailwind gray/slate steps, kept at their exact hex) */
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-900: #0f172a;
+  /* dark surfaces (deepest → raised) */
+  --surface-abyss: #05070c;
+  --surface-deep: #0b1220;
+  --surface-raise: #131317;
+  /* status accents (base tones already live in --accent-red/amber/green) */
+  --red-400: #f87171;
+  --red-200: #fecaca;
+  --amber-500: #f59e0b;
+  --amber-400: #fbbf24;
+  --orange-600: #ff8700;
+  --yellow: #ffff00;
+  --emerald-400: #34d399;
+  --emerald-300: #6ee7b7;
+  --green-500: #22c55e;
+  --blue-500: #3b82f6;
+  --blue-400: #60a5fa;
+  --cyan-200: #a5f3fc;
+  --violet-400: #a78bfa;
+  --indigo-400: #818cf8;
+  /* brand terracotta */
+  --brand: #d97757;
+  --brand-light: #fba97a;
 }
 
 body {
@@ -343,7 +379,7 @@ a {
 
 .close-btn:hover {
   background-color: rgba(239, 68, 68, 0.9);
-  color: #fff;
+  color: var(--white);
   box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.5);
 }
 
@@ -363,7 +399,7 @@ a {
   border-radius: var(--radius-control);
   background: rgba(15, 20, 30, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #FFF;
+  color: var(--white);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
@@ -398,7 +434,7 @@ a {
 }
 
 .btn-tech-secondary:hover:not(:disabled) {
-  color: #FFF;
+  color: var(--white);
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.4);
 }
@@ -428,7 +464,7 @@ a {
 }
 
 .skeleton-box {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   border-radius: 4px;
   animation: skeleton-pulse 1.5s infinite;
 }
@@ -502,7 +538,7 @@ a {
   width: 10px;
   left: 2px;
   bottom: 2px;
-  background-color: #9CA3AF;
+  background-color: var(--text-muted);
   border-radius: 50%;
   transition: .3s;
 }
@@ -576,7 +612,7 @@ input:checked+.slider:before {
 }
 
 .dry-group.is-danger .dry-label {
-  color: #6B7280;
+  color: var(--text-darker);
   text-shadow: none;
 }
 
@@ -598,7 +634,7 @@ input:checked+.slider:before {
 
 .btn-tech-pull {
   background-color: var(--accent-blue);
-  border: 1px solid #000000;
+  border: 1px solid var(--black);
   color: var(--text-light);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
@@ -640,7 +676,7 @@ input:checked+.slider:before {
 
 .btn-tech-push {
   background-color: var(--accent-amber);
-  border: 1px solid #000000;
+  border: 1px solid var(--black);
   color: var(--text-light);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
@@ -742,7 +778,7 @@ input:checked+.slider:before {
 .btn-action-git {
   background: linear-gradient(135deg, #FF007A, #7928CA);
   border-color: rgba(255, 255, 255, 0.25);
-  color: #FFFFFF;
+  color: var(--white);
   font-size: 18px;
   box-shadow: 0 2px 5px rgba(121, 40, 202, 0.3);
 }
@@ -882,7 +918,7 @@ input:checked+.slider:before {
 
 .popup-item:hover {
   background: rgba(0, 210, 255, 0.08);
-  color: #fff;
+  color: var(--white);
 }
 
 .popup-item.popup-disabled {
@@ -901,7 +937,7 @@ input:checked+.slider:before {
 
 .badge-project {
   background: var(--accent-cyan);
-  color: #000;
+  color: var(--black);
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 800;
@@ -929,7 +965,7 @@ input:checked+.slider:before {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: #a5f3fc;
+  color: var(--cyan-200);
   white-space: pre-wrap;
   word-break: break-all;
   background: rgba(5, 7, 12, 0.95);
@@ -954,7 +990,7 @@ input:checked+.slider:before {
 }
 
 .log-global-date {
-  color: #4B5563;
+  color: var(--gray-600);
   margin-right: 8px;
   font-weight: 600;
 }
@@ -1018,7 +1054,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .btn-close-modal:hover {
-  color: #FFF;
+  color: var(--white);
 }
 
 .modal-body {
@@ -1048,13 +1084,13 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   background: rgba(255, 255, 255, 0.08);
 }
 .src-power.is-on {
-  color: #22c55e;
+  color: var(--green-500);
 }
 .src-power.is-off {
-  color: #6b7280;
+  color: var(--text-darker);
 }
 .src-power.is-locked {
-  color: #4b5563;
+  color: var(--gray-600);
   cursor: not-allowed;
 }
 .src-power.is-locked:hover {
@@ -1067,7 +1103,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  color: #6B7280;
+  color: var(--text-darker);
   font-style: italic;
   font-size: 12px;
 }
@@ -1094,7 +1130,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .btn-secondary:hover {
-  color: #FFF;
+  color: var(--white);
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.4);
 }
@@ -1182,7 +1218,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   padding: 6px 8px;
-  color: #FFF;
+  color: var(--white);
   font-size: 12px;
   font-family: monospace;
   outline: none;
@@ -1200,7 +1236,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 4px;
   padding: 8px 10px;
-  color: #FFF;
+  color: var(--white);
   font-size: 11px;
   outline: none;
   resize: vertical;
@@ -1234,7 +1270,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 .checkbox-group label {
   font-family: sans-serif;
   font-size: 11px;
-  color: #D1D5DB;
+  color: var(--gray-300);
   cursor: pointer;
 }
 
@@ -1262,12 +1298,12 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .text-blue {
-  color: #60a5fa !important;
+  color: var(--blue-400) !important;
   font-weight: 700;
 }
 
 .text-amber {
-  color: #fbbf24 !important;
+  color: var(--amber-400) !important;
   font-weight: 700;
 }
 
@@ -1335,7 +1371,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   padding: 16px;
   background: rgba(5, 7, 12, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #a5f3fc;
+  color: var(--cyan-200);
   border-radius: 6px;
   resize: none;
   outline: none;
@@ -1500,3 +1536,7 @@ html.fx-glass .terminal-header {
     max-width: 50px;
   }
 }
+
+.modal-title-row { display: flex; align-items: center; gap: 8px; }
+.modal-title-icon { width: 18px; height: 18px; border-radius: 3px; object-fit: contain; }
+.modal-title-glyph { font-size: 18px; }

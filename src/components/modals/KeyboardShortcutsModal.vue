@@ -66,7 +66,7 @@ const GROUPS = [
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .shortcut-row {
@@ -83,13 +83,13 @@ const GROUPS = [
   padding: 2px 6px;
   font-size: 10px;
   font-weight: 700;
-  color: #a5f3fc;
-  background: #0b1220;
+  color: var(--cyan-200);
+  background: var(--surface-deep);
   border: 1px solid rgba(0, 210, 255, 0.35);
   border-radius: 4px;
 }
 
 .shortcut-desc {
-  color: #94a3b8;
+  color: var(--slate-400);
 }
 </style>

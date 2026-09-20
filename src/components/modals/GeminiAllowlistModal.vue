@@ -98,17 +98,17 @@ async function seedAllowlist() {
 .allowlist-blurb {
   font-size: 11px;
   line-height: 1.5;
-  color: #94a3b8;
+  color: var(--slate-400);
   margin: 0 0 12px;
 }
-.allowlist-blurb code { color: #cbd5e1; }
+.allowlist-blurb code { color: var(--slate-300); }
 
 .section-label {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #64748b;
+  color: var(--slate-500);
   margin-bottom: 6px;
 }
 
@@ -119,7 +119,7 @@ async function seedAllowlist() {
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 3px;
@@ -127,7 +127,7 @@ async function seedAllowlist() {
   cursor: pointer;
 }
 
-.host-chip.active { color: #fba97a; border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
+.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
 
 .no-remotes { width: 100%; font-size: 10px; }
 
@@ -142,10 +142,10 @@ async function seedAllowlist() {
   border-radius: 5px;
 }
 
-.result-row.ok { background: rgba(16, 185, 129, 0.08); color: #34d399; }
-.result-row.err { background: rgba(239, 68, 68, 0.08); color: #f87171; }
+.result-row.ok { background: rgba(16, 185, 129, 0.08); color: var(--emerald-400); }
+.result-row.err { background: rgba(239, 68, 68, 0.08); color: var(--red-400); }
 .result-host { font-weight: 700; flex-shrink: 0; }
-.result-msg { color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .status-msg {
   font-size: 11px;
@@ -162,13 +162,13 @@ async function seedAllowlist() {
 
 .status-msg.ok {
   background: rgba(16, 185, 129, 0.1);
-  color: #34d399;
+  color: var(--emerald-400);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .status-msg.err {
   background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  color: var(--red-400);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
@@ -184,8 +184,8 @@ async function seedAllowlist() {
   flex: 1;
   background: rgba(217, 119, 87, 0.15);
   border-color: rgba(217, 119, 87, 0.45);
-  color: #d97757;
+  color: var(--brand);
 }
 
-.btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
+.btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: var(--brand-light); }
 </style>

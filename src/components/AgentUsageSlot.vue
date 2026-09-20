@@ -248,13 +248,13 @@ const slotAccountInfo = computed(() => {
 .tab.is-active {
   opacity: 1;
   background: rgba(96, 165, 250, 0.16);
-  color: #e5e7eb;
+  color: var(--gray-200);
   border-color: rgba(96, 165, 250, 0.35);
 }
 
 /* Contract C-3: circuit breaker halted power icon indicator (amber). */
 .src-power.is-halted {
-  color: #f59e0b;
+  color: var(--amber-500);
 }
 
 .src-icon {

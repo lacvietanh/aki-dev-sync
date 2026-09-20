@@ -25,7 +25,7 @@ defineProps({
 
 /* Normal open tasks - white */
 .task-badge-normal {
-  background: #fff;
+  background: var(--white);
   color: #04121a;
 }
 </style>

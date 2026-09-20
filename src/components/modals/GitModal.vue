@@ -1,15 +1,15 @@
 <template>
   <BaseModal :show="showGitModal && !!gitProject" @close="closeGitModal">
     <template #title>
-      <div style="display: flex; align-items: center; gap: 8px;">
+      <div class="modal-title-row">
         <img
           v-if="gitProject && !failedIcons[gitProject.id] && projectIconSrc(gitProject.id, iconTimestamp)"
           :src="projectIconSrc(gitProject.id, iconTimestamp)"
-          style="width: 18px; height: 18px; border-radius: 3px; object-fit: contain;"
+          class="modal-title-icon"
           alt=""
           @error="failedIcons[gitProject.id] = true"
         />
-        <i v-else class="fa-solid fa-code-branch" style="font-size: 18px;"></i>
+        <i v-else class="fa-solid fa-code-branch modal-title-glyph"></i>
         <span>Git Version Control: {{ gitProject?.name }}</span>
       </div>
     </template>
@@ -191,12 +191,12 @@ async function handleCommit() {
   padding: 8px 12px;
   background: rgba(5, 7, 12, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text-light, #f3f4f6);
+  color: var(--text-light, var(--text-light));
   border-radius: 4px;
   outline: none;
 }
 .large-input:focus {
-  border-color: var(--accent-cyan, #00d2ff);
+  border-color: var(--accent-cyan, var(--accent-cyan));
   background: rgba(5, 7, 12, 0.8);
 }
 
@@ -221,7 +221,7 @@ async function handleCommit() {
 .btn-refresh-status {
   background: transparent;
   border: none;
-  color: var(--accent-cyan, #00d2ff);
+  color: var(--accent-cyan, var(--accent-cyan));
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -242,7 +242,7 @@ async function handleCommit() {
   align-items: center;
   font-family: monospace;
   font-size: 12px;
-  color: var(--accent-cyan, #00d2ff);
+  color: var(--accent-cyan, var(--accent-cyan));
   cursor: pointer;
   word-break: break-all;
   text-decoration: none;

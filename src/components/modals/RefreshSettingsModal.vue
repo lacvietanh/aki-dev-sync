@@ -4,13 +4,13 @@
       <i class="fa-solid fa-rotate-right mr-1"></i> Background Refresh Settings
     </template>
     <div class="modal-body">
-      <p class="text-muted" style="font-size: 12px; margin-bottom: 16px;">
+      <p class="text-muted intro-note">
         Intervals in seconds. Set to <code>0</code> to disable a refresh type.
       </p>
 
       <div class="refresh-row">
         <div class="refresh-label">
-          <i class="fa-solid fa-code-branch" style="color: #94a3b8;"></i>
+          <i class="fa-solid fa-code-branch icon-slate"></i>
           <div>
             <div class="refresh-title">Git Status</div>
             <div class="refresh-desc">Uncommitted changes and recent git log per project</div>
@@ -24,7 +24,7 @@
 
       <div class="refresh-row">
         <div class="refresh-label">
-          <i class="fa-solid fa-arrows-rotate" style="color: #f59e0b;"></i>
+          <i class="fa-solid fa-arrows-rotate icon-amber"></i>
           <div>
             <div class="refresh-title">Push / Pull Check</div>
             <div class="refresh-desc">Detects file changes between local and remote - lights up Push or Pull when out of sync</div>
@@ -38,7 +38,7 @@
 
       <div class="refresh-row">
         <div class="refresh-label">
-          <i class="fa-solid fa-chart-bar" style="color: #818cf8;"></i>
+          <i class="fa-solid fa-chart-bar icon-indigo"></i>
           <div>
             <div class="refresh-title">Agent Usage</div>
             <div class="refresh-desc">Claude Code usage on remote host + Antigravity usage locally</div>
@@ -82,6 +82,10 @@ function save() {
 </script>
 
 <style scoped>
+.intro-note { font-size: 12px; margin-bottom: 16px; }
+.icon-slate { color: var(--slate-400); }
+.icon-amber { color: var(--amber-500); }
+.icon-indigo { color: var(--indigo-400); }
 .refresh-row {
   display: flex;
   align-items: center;
@@ -101,8 +105,8 @@ function save() {
 }
 .refresh-label i { margin-top: 2px; width: 14px; flex-shrink: 0; }
 
-.refresh-title { color: #e2e8f0; font-weight: 600; }
-.refresh-desc { color: #64748b; font-size: 11px; margin-top: 2px; }
+.refresh-title { color: var(--slate-200); font-weight: 600; }
+.refresh-desc { color: var(--slate-500); font-size: 11px; margin-top: 2px; }
 
 .refresh-input-group {
   display: flex;
@@ -114,12 +118,12 @@ function save() {
   width: 64px;
   text-align: right;
   background: #1a1a24;
-  border: 1px solid #374151;
-  color: #e2e8f0;
+  border: 1px solid var(--gray-700);
+  color: var(--slate-200);
   border-radius: 4px;
   padding: 4px 6px;
   font-size: 13px;
 }
-.refresh-input:focus { outline: none; border-color: #3b82f6; }
-.refresh-unit { color: #64748b; font-size: 12px; }
+.refresh-input:focus { outline: none; border-color: var(--blue-500); }
+.refresh-unit { color: var(--slate-500); font-size: 12px; }
 </style>

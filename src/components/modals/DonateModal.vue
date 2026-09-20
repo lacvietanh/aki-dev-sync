@@ -50,20 +50,20 @@ function openLink(url) {
 
 .donate-blurb {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--slate-400);
   margin: 0 0 4px;
   text-align: center;
 }
 
 .donate-note {
   font-size: 10px;
-  color: #64748b;
+  color: var(--slate-500);
   margin: 0 0 4px;
   text-align: center;
 }
 
 .donate-note code {
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 
 .qr-row {
@@ -79,7 +79,7 @@ function openLink(url) {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .qr-img {
@@ -87,7 +87,7 @@ function openLink(url) {
   height: 200px;
   object-fit: contain;
   border-radius: 8px;
-  background: #fff;
+  background: var(--white);
   padding: 6px;
 }
 
@@ -96,12 +96,12 @@ function openLink(url) {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--slate-500);
   text-decoration: none;
   margin-top: 4px;
 }
 
 .bank-link:hover {
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 </style>

@@ -1,15 +1,15 @@
 <template>
   <BaseModal :show="show" @close="$emit('close')" container-class="changelog-modal">
     <template #title>
-      <div style="display: flex; align-items: center; gap: 8px;">
+      <div class="modal-title-row">
         <img
           v-if="projectId && !failedIcons[projectId] && projectIconSrc(projectId, iconTimestamp)"
           :src="projectIconSrc(projectId, iconTimestamp)"
-          style="width: 18px; height: 18px; border-radius: 3px; object-fit: contain;"
+          class="modal-title-icon"
           alt=""
           @error="failedIcons[projectId] = true"
         />
-        <i v-else class="fa-solid fa-scroll" style="font-size: 18px;"></i>
+        <i v-else class="fa-solid fa-scroll modal-title-glyph"></i>
         <span>{{ title || 'Changelog' }}</span>
       </div>
     </template>
@@ -50,7 +50,7 @@ watch(() => bodyRef.value, (el) => {
   max-height: calc(80vh - 60px);
   font-size: 13px;
   line-height: 1.6;
-  color: #e2e8f0;
+  color: var(--slate-200);
 }
 
 /* markdown headings */
@@ -76,10 +76,10 @@ watch(() => bodyRef.value, (el) => {
 }
 .changelog-body :deep(li) {
   margin-bottom: 5px;
-  color: #d1d5db;
+  color: var(--gray-300);
 }
 .changelog-body :deep(strong) {
-  color: #f3f4f6;
+  color: var(--text-light);
   font-weight: 700;
 }
 .changelog-body :deep(code) {
@@ -88,7 +88,7 @@ watch(() => bodyRef.value, (el) => {
   padding: 1px 4px;
   font-family: monospace;
   font-size: 11px;
-  color: #a5f3fc;
+  color: var(--cyan-200);
 }
 .changelog-body :deep(hr) {
   border: none;

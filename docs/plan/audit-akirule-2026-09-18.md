@@ -178,3 +178,27 @@ Runtime/visual ledger sau khi mọi batch UI hoàn tất: mở app một lần �
 - Không thay Tauri version/capabilities đang compliant.
 - Không commit, push, release hoặc thay đổi git state trong audit.
 - Không tự phân loại/ghi đè các hunk đang có của owner.
+
+## Cập nhật thực thi — 2026-09-20 (/akithink + /akirule)
+
+Đo trên working tree 2026-09-20:
+
+- ✅ **Finding 6** (business backbone): `docs/biz/backbone.md` tồn tại, đủ chất (audience/USP/revenue/boundaries, tham chiếu `RULE-biz`/`RULE-docs`).
+- ✅ **Finding 5** (comment YAP): `src-tauri/src/pty.rs` và `src/composables/useTerminalChrome.js` giờ là comment why/constraint đúng `coding.B4`, hết narrative.
+- ✅ **Finding 4** (non-English): 5 comment gốc đã English từ trước; lượt này English-hoá nốt chuỗi log runtime tiếng Việt trong `scripts/test/monitor-ag-proxy.js` (verify: 0 ký tự VN, `node --check` OK).
+- ✅ **P0.2 nền token**: thêm ~30 color primitive vào `:root` của `src/assets/main.css` (giá trị 1:1, additive — chưa consume nên không đổi render). Loại trừ ANSI/terminal + runtime.
+- ⏳ **Finding 2** (383 màu): usage-migration CHƯA chạy — chờ visual ledger + xác nhận vocab token.
+- ⏳ **Finding 1** (inline style): detector thô đếm 79 (baseline 61) — CHƯA xử lý.
+- ↩️ **Finding 3** (CSS đảo tầng): DIỄN GIẢI LẠI qua /akithink — `<style scoped>` co-location là idiom Vue; `ui.C1` được thỏa bằng token layer + utility dùng chung, không dời cưỡng bức ~4k dòng (rủi ro cao / giá trị thấp). Chờ owner chốt: chấp nhận diễn giải, hay ép nghĩa đen.
+
+### Quyết định /akithink (P0 · 2026-09-20)
+- **Quyết định**: chạy Tier A (màu→token 1:1 + cắt inline tĩnh), giữ CSS scoped (diễn giải lại finding 3).
+- **Ràng buộc thực thi**: chỉ thay literal trong CSS/`<style>`; KHÔNG đụng literal màu trong JS (xterm theme, canvas, `logStore`/`ptyBridge`/`TerminalStack`/`TerminalTabStrip`/`UsageCircle`/`AgentUsageSlot`) vì `var()` không chạy ở đó và chúng là contract riêng.
+- **Loại bỏ**: (a) 444 patch mù (plan cấm); (b) dời CSS finding-3 theo nghĩa đen.
+- **Cổng đóng**: migrate theo cụm + `npm run lint:*` + `cargo check` + visual ledger (mở app) — KHÔNG báo Done trước visual ledger.
+
+### Bước còn lại
+1. ✅ 2026-09-20: migrate màu hex→`var()` trong `<style>` của 27 SFC và `main.css` (ngoài `:root`) cho mọi giá trị đã có token 1:1; `npm run build` xanh. Còn lại: hex không có token (`rgba()`/giá trị lẻ, cần chốt vocab) và literal trong JS (loại trừ theo quyết định). Chờ visual ledger.
+2. ✅ 2026-09-20 Finding 1: detector sửa để bỏ qua `:style`/`@style` binding (79 → 22 hit). Đã chuyển style tĩnh của `ProjectConfigModal`, `GitModal` (header), `ChangelogModal` (header), `UpdateModal`, `RefreshSettingsModal`, `SshConfigModal`, `DialogHost` sang class (shared: `.modal-title-row/-icon/-glyph` trong `main.css`; thêm token `--indigo-400`). 22 hit còn lại đều có lý do, chưa ghi vào `scripts/ui-audit.config.json`: HTML sinh lúc chạy (bảng ANSI của `GitModal`, span màu của `ClaudeSettingModal`), prop `container-style` của `BaseModal` (API, không phải style tĩnh trên phần tử), `anchor-name` của `TerminalChromeMenu`, fixture dương tính.
+3. ⏳ P2 gate: detector đã chính xác, nhưng `npm run audit:ui` còn exit 1 vì (a) hex CSS chưa có token, (b) hex trong JS (contract xterm/statusline/usage), (c) 37 SFC chưa có `sfcResidents` owner/reason. (c) chỉ điền được sau khi owner chốt diễn giải finding 3; không allowlist hàng loạt để gate xanh.
+4. Visual ledger + chuyển plan sang `docs/plan/done/`.

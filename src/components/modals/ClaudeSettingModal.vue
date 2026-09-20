@@ -920,7 +920,7 @@ const previewHtml = computed(() => {
 }
 
 .preview-box {
-  background: #000;
+  background: var(--black);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 8px 10px;
@@ -948,7 +948,7 @@ const previewHtml = computed(() => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: #94a3b8;
+  color: var(--slate-400);
   margin-top: 6px;
 }
 .fields-header {
@@ -961,23 +961,23 @@ const previewHtml = computed(() => {
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: none;
-  border: 1px solid #374151;
+  border: 1px solid var(--gray-700);
   border-radius: 4px;
   padding: 1px 7px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
 .toggle-all-btn:hover {
-  color: #e2e8f0;
-  border-color: #6b7280;
+  color: var(--slate-200);
+  border-color: var(--text-darker);
 }
 
 .hint {
   font-weight: 400;
   text-transform: none;
-  color: #4b5563;
+  color: var(--gray-600);
   letter-spacing: 0;
 }
 
@@ -1001,11 +1001,11 @@ const previewHtml = computed(() => {
 .row-item.dragging { opacity: 0.4; }
 
 /* Drop-position indicator: accent line on target edge without extra DOM. */
-.row-item.drop-before { box-shadow: inset 0 2px 0 0 #d97757; }
-.row-item.drop-after { box-shadow: inset 0 -2px 0 0 #d97757; }
+.row-item.drop-before { box-shadow: inset 0 2px 0 0 var(--brand); }
+.row-item.drop-after { box-shadow: inset 0 -2px 0 0 var(--brand); }
 
 .drag-handle {
-  color: #475569;
+  color: var(--slate-600);
   font-size: 10px;
   cursor: grab;
   align-self: center;
@@ -1017,7 +1017,7 @@ const previewHtml = computed(() => {
 
 .pinned-row { margin-bottom: 3px; }
 .pin-icon {
-  color: #475569;
+  color: var(--slate-600);
   font-size: 10px;
   align-self: center;
   padding: 0 2px;
@@ -1072,8 +1072,8 @@ const previewHtml = computed(() => {
 .host-chip input[type="checkbox"]:checked,
 .sep-toggle input[type="checkbox"]:checked,
 .target-check-item input[type="checkbox"]:checked {
-  background: #d97757;
-  border-color: #d97757;
+  background: var(--brand);
+  border-color: var(--brand);
 }
 
 /* The check itself: two borders rotated into a tick, so it needs no font or icon file. */
@@ -1087,7 +1087,7 @@ const previewHtml = computed(() => {
   top: 0.5px;
   width: 3px;
   height: 6px;
-  border: solid #fff;
+  border: solid var(--white);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }
@@ -1112,7 +1112,7 @@ const previewHtml = computed(() => {
 .ctl-part {
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   font-size: 9px;
-  color: #64748b;
+  color: var(--slate-500);
   background: rgba(255, 255, 255, 0.04);
   border-radius: 3px;
   padding: 1px 4px;
@@ -1121,7 +1121,7 @@ const previewHtml = computed(() => {
 
 .ctl-label {
   font-size: 11px;
-  color: #e2e8f0;
+  color: var(--slate-200);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1181,7 +1181,7 @@ const previewHtml = computed(() => {
   grid-template-rows: repeat(4, 14px);
   grid-auto-flow: column;
   gap: 4px;
-  background: #0f172a;
+  background: var(--slate-900);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
   padding: 6px;
@@ -1213,7 +1213,7 @@ const previewHtml = computed(() => {
   font-size: 9px;
   font-weight: 400;
   text-transform: none;
-  color: #64748b;
+  color: var(--slate-500);
   cursor: pointer;
 }
 .sep-toggle input { margin: 0; }
@@ -1221,7 +1221,7 @@ const previewHtml = computed(() => {
 /* Recessed row note for fixed behaviours without dedicated toggles. */
 .row-note {
   font-size: 9px;
-  color: #475569;
+  color: var(--slate-600);
   font-style: italic;
   line-height: 1.2;
 }
@@ -1231,7 +1231,7 @@ const previewHtml = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: #64748b;
+  color: var(--slate-500);
   font-size: 10px;
   cursor: pointer;
   flex-shrink: 0;
@@ -1239,10 +1239,10 @@ const previewHtml = computed(() => {
 .ctl-trunc input {
   width: 30px;
   padding: 1px 2px;
-  background: #0f172a;
+  background: var(--slate-900);
   border: 1px solid #1e293b;
   border-radius: 3px;
-  color: #cbd5e1;
+  color: var(--slate-300);
   font-size: 10px;
   text-align: center;
 }
@@ -1264,7 +1264,7 @@ const previewHtml = computed(() => {
 }
 .zebra-name {
   width: 32px;
-  color: #64748b;
+  color: var(--slate-500);
   font-size: 10px;
 }
 .zebra-swatch {
@@ -1307,7 +1307,7 @@ const previewHtml = computed(() => {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 3px;
-  color: #94a3b8;
+  color: var(--slate-400);
   font-size: 10px;
   padding: 1px 3px;
   outline: none;
@@ -1319,7 +1319,7 @@ const previewHtml = computed(() => {
 
 .ladder-zero {
   font-size: 10px;
-  color: #4b5563;
+  color: var(--gray-600);
   padding: 1px 3px;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
@@ -1338,7 +1338,7 @@ const previewHtml = computed(() => {
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--slate-400);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 3px;
@@ -1346,7 +1346,7 @@ const previewHtml = computed(() => {
   cursor: pointer;
 }
 
-.host-chip.active { color: #fba97a; border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
+.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: rgba(217, 119, 87, 0.1); }
 
 /* Per-CLI state inside chip: lit = renders line, hollow amber = unwired, distinct from swatch. */
 .cli-tag {
@@ -1358,8 +1358,8 @@ const previewHtml = computed(() => {
   border-radius: 2px;
   border: 1px solid transparent;
 }
-.cli-tag.on { color: #0f172a; background: #4ade80; }
-.cli-tag.off { color: #fbbf24; border-color: rgba(251, 191, 36, 0.55); background: transparent; }
+.cli-tag.on { color: var(--slate-900); background: #4ade80; }
+.cli-tag.off { color: var(--amber-400); border-color: rgba(251, 191, 36, 0.55); background: transparent; }
 
 .no-remotes { width: 100%; font-size: 10px; }
 
@@ -1374,10 +1374,10 @@ const previewHtml = computed(() => {
   border-radius: 5px;
 }
 
-.result-row.ok { background: rgba(16, 185, 129, 0.08); color: #34d399; }
-.result-row.err { background: rgba(239, 68, 68, 0.08); color: #f87171; }
+.result-row.ok { background: rgba(16, 185, 129, 0.08); color: var(--emerald-400); }
+.result-row.err { background: rgba(239, 68, 68, 0.08); color: var(--red-400); }
 .result-host { font-weight: 700; flex-shrink: 0; }
-.result-msg { color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .status-msg {
   font-size: 11px;
@@ -1393,13 +1393,13 @@ const previewHtml = computed(() => {
 
 .status-msg.ok {
   background: rgba(16, 185, 129, 0.1);
-  color: #34d399;
+  color: var(--emerald-400);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .status-msg.err {
   background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  color: var(--red-400);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
@@ -1414,19 +1414,19 @@ const previewHtml = computed(() => {
 .btn-reset {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.1);
-  color: #64748b;
+  color: var(--slate-500);
 }
 
-.btn-reset:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: #94a3b8; }
+.btn-reset:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: var(--slate-400); }
 
 .btn-apply {
   flex: 1;
   background: rgba(217, 119, 87, 0.15);
   border-color: rgba(217, 119, 87, 0.45);
-  color: #d97757;
+  color: var(--brand);
 }
 
-.btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: #fba97a; }
+.btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: var(--brand-light); }
 
 .modal-title-wrap {
   display: inline-flex;
@@ -1451,7 +1451,7 @@ const previewHtml = computed(() => {
 .target-label {
   font-size: 11px;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--slate-400);
 }
 
 .target-check-item {
@@ -1460,7 +1460,7 @@ const previewHtml = computed(() => {
   gap: 4px;
   font-size: 11px;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--slate-300);
   cursor: pointer;
 }
 

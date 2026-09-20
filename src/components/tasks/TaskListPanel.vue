@@ -368,7 +368,7 @@ watch(
 }
 
 .task-state-icon-btn.wish-btn.is-active {
-  color: #60a5fa;
+  color: var(--blue-400);
   opacity: 1;
 }
 

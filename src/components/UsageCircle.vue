@@ -430,7 +430,7 @@ html.fx-glass .usage-circle-container:hover .premium-tooltip {
 }
 
 .tooltip-val.highlight {
-  color: #a5f3fc;
+  color: var(--cyan-200);
   /* Bright cyan accent for emphasis */
   font-weight: 600;
 }

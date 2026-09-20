@@ -66,27 +66,27 @@
       </div>
 
       <!-- STACK PRESETS -->
-      <div class="full-width config-group mb-1 mt-1" style="border: 1px dashed #4b5563; padding: 12px; border-radius: 8px;">
-        <h4 class="group-title text-muted" style="font-size: 12px; margin-bottom: 8px;"><i class="fa-solid fa-layer-group mr-1"></i> EXCLUDE PRESETS</h4>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" @click="applyPreset('nuxt4')">Nuxt 4</button>
-          <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" @click="applyPreset('tauriv2')">Tauri v2 (Rust)</button>
-          <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" @click="applyPreset('default')">Aki Default</button>
+      <div class="full-width config-group mb-1 mt-1 dashed-group">
+        <h4 class="group-title text-muted dashed-group-title"><i class="fa-solid fa-layer-group mr-1"></i> EXCLUDE PRESETS</h4>
+        <div class="row-gap-8">
+          <button class="btn-secondary btn-compact" @click="applyPreset('nuxt4')">Nuxt 4</button>
+          <button class="btn-secondary btn-compact" @click="applyPreset('tauriv2')">Tauri v2 (Rust)</button>
+          <button class="btn-secondary btn-compact" @click="applyPreset('default')">Aki Default</button>
         </div>
-        <p class="text-muted" style="font-size: 11px; margin-top: 6px; font-style: italic;">Applies standard exclude filters for both PUSH and PULL (overwrites current excludes).</p>
+        <p class="text-muted hint-note">Applies standard exclude filters for both PUSH and PULL (overwrites current excludes).</p>
       </div>
 
       <!-- PROJECT ICON -->
-      <div class="full-width config-group mb-1 mt-1" style="border: 1px dashed #4b5563; padding: 12px; border-radius: 8px;">
-        <h4 class="group-title text-muted" style="font-size: 12px; margin-bottom: 8px;"><i class="fa-solid fa-image mr-1"></i> PROJECT ICON</h4>
-        <div style="display: flex; align-items: center; gap: 10px;">
+      <div class="full-width config-group mb-1 mt-1 dashed-group">
+        <h4 class="group-title text-muted dashed-group-title"><i class="fa-solid fa-image mr-1"></i> PROJECT ICON</h4>
+        <div class="row-gap-10">
           <img v-if="!iconLoadFailed && iconPreviewSrc" :src="iconPreviewSrc" alt=""
-               style="width: 32px; height: 32px; border-radius: 6px;" @error="iconLoadFailed = true" />
-          <button class="btn-secondary" style="font-size: 11px; padding: 4px 12px;" :disabled="reloadingIcon" @click="reloadIcon">
+               class="project-icon-preview" @error="iconLoadFailed = true" />
+          <button class="btn-secondary btn-compact" :disabled="reloadingIcon" @click="reloadIcon">
             <i class="fa-solid fa-rotate mr-1"></i> {{ reloadingIcon ? 'Reloading...' : 'Reload Icon' }}
           </button>
         </div>
-        <p class="text-muted" style="font-size: 11px; margin-top: 6px; font-style: italic;">Detected by project type: Tauri (src-tauri/tauri.conf.json) checks src-tauri/icons/32x32.png, 64x64.png, icon.png, 128x128.png. Nuxt (nuxt.config.ts|js) or web (package.json/index.html) checks public/favicon/icon-48.png, public/favicon.ico, public/favicon/favicon.ico, public/favicon/icon-192.png, public/icon.png, favicon.ico, icon.png. Other project types check the same list minus icon-192.png. Among the candidates that exist, the smallest file wins - and if that one is over 250 KB, no icon is shown rather than the next candidate. Reload after adding or replacing an icon file.</p>
+        <p class="text-muted hint-note">Detected by project type: Tauri (src-tauri/tauri.conf.json) checks src-tauri/icons/32x32.png, 64x64.png, icon.png, 128x128.png. Nuxt (nuxt.config.ts|js) or web (package.json/index.html) checks public/favicon/icon-48.png, public/favicon.ico, public/favicon/favicon.ico, public/favicon/icon-192.png, public/icon.png, favicon.ico, icon.png. Other project types check the same list minus icon-192.png. Among the candidates that exist, the smallest file wins - and if that one is over 250 KB, no icon is shown rather than the next candidate. Reload after adding or replacing an icon file.</p>
       </div>
 
       <!-- PUSH + PULL side-by-side -->
@@ -99,19 +99,19 @@
             <textarea class="large-textarea border-push" v-model="pushExcludesText" rows="5"></textarea>
           </div>
           <div class="form-group">
-            <div style="cursor: pointer; display: inline-block; margin-bottom: 6px;" @click="togglePushScripts = !togglePushScripts">
+            <div class="scripts-toggle" @click="togglePushScripts = !togglePushScripts">
               <label :class="hasPushScripts ? 'text-amber' : 'text-muted'" :style="{ cursor: 'pointer', fontSize: '11px', fontWeight: hasPushScripts ? '800' : '600' }">
                 <i class="fa-solid fa-code mr-1"></i> Pre &amp; Post Scripts
-                <i :class="togglePushScripts ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" style="margin-left: 4px;"></i>
+                <i :class="[togglePushScripts ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down', 'chevron-gap']"></i>
               </label>
             </div>
-            <div v-show="togglePushScripts" style="display: flex; flex-direction: column; gap: 8px;">
+            <div v-show="togglePushScripts" class="col-gap-8">
               <div class="form-group">
-                <label class="text-amber" style="opacity: 0.8">Pre-Push</label>
+                <label class="text-amber label-dim">Pre-Push</label>
                 <textarea class="large-textarea code-font border-push" v-model="editingProject.hooks.pre_push_cmd" rows="2"></textarea>
               </div>
               <div class="form-group">
-                <label class="text-amber" style="opacity: 0.8">Post-Push</label>
+                <label class="text-amber label-dim">Post-Push</label>
                 <textarea class="large-textarea code-font border-push" v-model="editingProject.hooks.post_push_cmd" rows="2"></textarea>
               </div>
             </div>
@@ -126,19 +126,19 @@
             <textarea class="large-textarea border-pull" v-model="pullExcludesText" rows="5"></textarea>
           </div>
           <div class="form-group">
-            <div style="cursor: pointer; display: inline-block; margin-bottom: 6px;" @click="togglePullScripts = !togglePullScripts">
+            <div class="scripts-toggle" @click="togglePullScripts = !togglePullScripts">
               <label :class="hasPullScripts ? 'text-blue' : 'text-muted'" :style="{ cursor: 'pointer', fontSize: '11px', fontWeight: hasPullScripts ? '800' : '600' }">
                 <i class="fa-solid fa-code mr-1"></i> Pre &amp; Post Scripts
-                <i :class="togglePullScripts ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" style="margin-left: 4px;"></i>
+                <i :class="togglePullScripts ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" class="chevron-gap"></i>
               </label>
             </div>
-            <div v-show="togglePullScripts" style="display: flex; flex-direction: column; gap: 8px;">
+            <div v-show="togglePullScripts" class="col-gap-8">
               <div class="form-group">
-                <label class="text-blue" style="opacity: 0.8">Pre-Pull</label>
+                <label class="text-blue label-dim">Pre-Pull</label>
                 <textarea class="large-textarea code-font border-pull" v-model="editingProject.hooks.pre_pull_cmd" rows="2"></textarea>
               </div>
               <div class="form-group">
-                <label class="text-blue" style="opacity: 0.8">Post-Pull</label>
+                <label class="text-blue label-dim">Post-Pull</label>
                 <textarea class="large-textarea code-font border-pull" v-model="editingProject.hooks.post_pull_cmd" rows="2"></textarea>
               </div>
             </div>
@@ -164,14 +164,14 @@
         </div>
         <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="delete-on-pull-modal" v-model="editingProject.delete_on_pull" />
-          <label for="delete-on-pull-modal" style="color: #60a5fa;">
+          <label for="delete-on-pull-modal" class="text-pull">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i>
             PULL with <code>--delete</code> - removes local files not present on remote
           </label>
         </div>
         <div class="checkbox-group mb-0 mt-1">
           <input type="checkbox" id="delete-on-push-modal" v-model="editingProject.delete_on_push" />
-          <label for="delete-on-push-modal" style="color: #fbbf24;">
+          <label for="delete-on-push-modal" class="text-push">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i>
             PUSH with <code>--delete</code> - removes remote files not present on local
           </label>
@@ -279,6 +279,19 @@ function applyPreset(stack) {
 </script>
 
 <style scoped>
+.dashed-group { border: 1px dashed var(--gray-600); padding: 12px; border-radius: 8px; }
+.dashed-group-title { font-size: 12px; margin-bottom: 8px; }
+.row-gap-8 { display: flex; gap: 8px; }
+.row-gap-10 { display: flex; align-items: center; gap: 10px; }
+.col-gap-8 { display: flex; flex-direction: column; gap: 8px; }
+.btn-compact { font-size: 11px; padding: 4px 12px; }
+.hint-note { font-size: 11px; margin-top: 6px; font-style: italic; }
+.project-icon-preview { width: 32px; height: 32px; border-radius: 6px; }
+.scripts-toggle { cursor: pointer; display: inline-block; margin-bottom: 6px; }
+.chevron-gap { margin-left: 4px; }
+.text-pull { color: var(--blue-400); }
+.text-push { color: var(--amber-400); }
+.label-dim { opacity: 0.8; }
 .excludes-split {
   display: flex;
   gap: 10px;
@@ -295,7 +308,7 @@ function applyPreset(stack) {
 /* Invalid path = the field itself turns red. No error row, no helper label - the reason lives in
    the native tooltip on the input and on the disabled Save button (UI Extreme Narrow). */
 .input-invalid {
-  border-color: #ef4444 !important;
+  border-color: var(--accent-red) !important;
   background: rgba(239, 68, 68, 0.06);
 }
 
@@ -311,7 +324,7 @@ function applyPreset(stack) {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #6ee7b7;
+  color: var(--emerald-300);
   margin-bottom: 4px;
 }
 
@@ -319,7 +332,7 @@ function applyPreset(stack) {
   font-size: 10px;
   font-weight: 700;
   background: rgba(16, 185, 129, 0.15);
-  color: #6ee7b7;
+  color: var(--emerald-300);
   border: 1px solid rgba(16, 185, 129, 0.3);
   padding: 1px 6px;
   border-radius: 4px;
@@ -328,7 +341,7 @@ function applyPreset(stack) {
 
 .commands-hint {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-darker);
   font-style: italic;
   margin: 0 0 10px;
 }
@@ -344,14 +357,14 @@ function applyPreset(stack) {
 }
 
 .text-green-dim {
-  color: #6ee7b7 !important;
+  color: var(--emerald-300) !important;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .text-amber-dim {
-  color: #fbbf24 !important;
+  color: var(--amber-400) !important;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -360,7 +373,7 @@ function applyPreset(stack) {
 .default-hint {
   font-size: 10px;
   font-weight: 400;
-  color: #6b7280;
+  color: var(--text-darker);
   font-style: italic;
   font-family: monospace;
   overflow: hidden;
@@ -384,7 +397,7 @@ function applyPreset(stack) {
 }
 
 .code-input:focus {
-  border-color: #10b981;
+  border-color: var(--accent-green);
 }
 
 /* Narrow mode - SSoT breakpoint is 700px (main.css). This file used to carry a rogue 560px block
