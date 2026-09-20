@@ -2,6 +2,8 @@
 
 **Start time:** 2026-09-10
 
+**Status:** amended 2026-09-20 (see Amendments)
+
 ## Initial purpose
 
 Note `task-1787801054655` của owner: *"khi thay đổi config/state thì không nên phụ thuộc việc khởi động lại app mới apply được. Việc phải restart app Aki Dev Sync để apply một thay đổi là tối kỵ vì có rất nhiều terminal và task đang dở dang của các dự án khác đang chạy song song."* Yêu cầu: rà mọi luồng giữ state/cache nạp một lần lúc startup mà không tự làm mới khi nguồn dữ liệu thật đổi, và cân nhắc file-watch/hot-reload ở nơi có rủi ro.
@@ -75,3 +77,8 @@ Hình dạng đúng cho từng mục, xếp theo giá trị trên chi phí:
 - `docs/plan/backlog.md` B17 (icon), B18 (các mục còn lại của audit này).
 - `src/composables/useProjectConfig.js:138` `loadData` — điểm nạp một lần duy nhất.
 - `src/store/projectStore.js:71` `refreshProjectIcons` — hàm có tên nói dối, đã sửa.
+
+## Amendments
+
+- 2026-09-20 · § Hình dạng đúng, mục 3: done — the header Refresh button now calls `loadData()` via `requestReloadConfig` (commit `3c7eb82`); the three migrations were checked and are idempotent (each guards on the field/entry it changes), and `isReloading` blocks re-entry.
+- 2026-09-20 · § Hình dạng đúng, mục 4: done — the Antigravity missing-tool flag now expires after 5 minutes (`AG_TOOL_MISSING_SUPPRESSION_SECS`, commit `a4be4ef`) instead of living for the whole process.

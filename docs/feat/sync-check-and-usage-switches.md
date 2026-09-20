@@ -1,6 +1,6 @@
 # Sync Check + Claude Code Remote Usage - Two Independent Switches
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-09-20 · v1.30.0
 
 ## Why
 
@@ -55,7 +55,7 @@ The fix was to give the status layer exactly one unit of work and one scheduler:
 
 - **One unit**: `refreshProject(p)` (`useBackgroundRefresh.js`) runs a project's three derived-state checks in parallel - `fetchGitStatus` (`useGit.js`), `checkProjectSyncStatus` (`useSyncStatus.js`), `fetchProjectStack` (`useProjectStack.js`). Everything that can cause a refresh is a caller of that unit or of its constituent checks: the two background timers, the per-project button, the global button (`refreshAllProjects()`), and `saveConfig()`.
 - **Busy state lives on the checks, not their callers**: `beginRefresh`/`endRefresh` maintain a per-project counter (`projectRuntime[id].refreshCount`) read via `isRefreshing(id)`; the header's spinner derives from the same counters via `anyRefreshing`. A counter rather than a boolean because several checks are in flight for one project at once. This is what makes a background tick light up the per-project icons - no trigger gets special-cased.
-- **`loadData()` is an app-load concern again**, called once on mount, not by the Refresh button. It re-reads config from disk; refreshing derived status is a different operation.
+- **The Refresh button reloads config, then runs the one unit**: `loadData()` re-reads `projects.json` and SSH hosts and ends with `refreshAllProjects()`, so edits apply without an app restart (see `docs/arch/refresh-controller.md`).
 
 ### Cancellation
 

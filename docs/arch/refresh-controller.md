@@ -1,6 +1,6 @@
 # Refresh Controller - one unit of work, one scheduler
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-09-20 · v1.30.0
 
 Status layer architecture: how a project's *derived* state (git status, remote diff, dev/build commands) gets refreshed, who is allowed to trigger it, where the busy indicator comes from, and how an in-flight check is cancelled.
 
@@ -68,7 +68,7 @@ Three rules hold this together:
 2. **One scheduler.** Both timers live in `useBackgroundRefresh.js`. No component owns a timer.
 3. **Busy state belongs to the check, not to its caller.** This is the load-bearing rule - it is what makes a background tick light up the per-project icons without any trigger being special-cased, and what guarantees the header spinner and the row icons can never disagree (they read the same counters).
 
-`loadData()` is an app-load concern again - called once on mount, never by a Refresh button. Re-reading config from disk and refreshing derived status are different operations.
+The global Refresh button calls `requestReloadConfig` → `loadData()`, which re-reads `projects.json` and SSH hosts and ends with `refreshAllProjects()` - the one unit above, so it adds no second refresh concept. Config edits therefore apply without restarting the app, which matters because a restart kills every live terminal. `loadData` is guarded by `isReloading` (header spinner reads `anyRefreshing || isReloading`), the button is disabled while a sync runs, its migrations are idempotent, and it advances each project's epoch and zeroes `refreshCount` exactly as `bumpEpoch` does.
 
 ### Why `refreshCount` is a counter, not a boolean
 
@@ -110,6 +110,7 @@ sequenceDiagram
 |---|---|
 | `remote_host` / `local_path` changed | `saveConfig()` - also blanks `hasPendingPush`/`hasPendingPull` (measured against the old host) and re-runs `refreshProject` against the new one |
 | Sync check switched off | `toggleSyncCheck()` - every project |
+| Global Refresh | `loadData()` - every project, while replacing its definition from disk |
 | Project list re-read from disk | `loadData()` - per project, while rebuilding runtime state |
 | Project removed | `confirmRemove()` - *implicitly*, see invariant below |
 
