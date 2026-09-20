@@ -1540,3 +1540,4 @@ html.fx-glass .terminal-header {
 .modal-title-row { display: flex; align-items: center; gap: 8px; }
 .modal-title-icon { width: 18px; height: 18px; border-radius: 3px; object-fit: contain; }
 .modal-title-glyph { font-size: 18px; }
+.row-gap-8 { display: flex; gap: 8px; }

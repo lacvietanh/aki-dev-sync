@@ -40,7 +40,6 @@ function redo() { redoSshConfig() }
 </script>
 
 <style scoped>
-.row-gap-8 { display: flex; gap: 8px; }
 .push-left { margin-right: auto; }
 /* Narrow mode container padding (<=700px). */
 @media (max-width: 700px) {

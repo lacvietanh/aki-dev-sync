@@ -281,7 +281,6 @@ function applyPreset(stack) {
 <style scoped>
 .dashed-group { border: 1px dashed var(--gray-600); padding: 12px; border-radius: 8px; }
 .dashed-group-title { font-size: 12px; margin-bottom: 8px; }
-.row-gap-8 { display: flex; gap: 8px; }
 .row-gap-10 { display: flex; align-items: center; gap: 10px; }
 .col-gap-8 { display: flex; flex-direction: column; gap: 8px; }
 .btn-compact { font-size: 11px; padding: 4px 12px; }
