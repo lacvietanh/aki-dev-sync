@@ -1,6 +1,6 @@
 # Background Refresh
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-09-20 · v1.30.0
 
 Automatic background polling that keeps three independent data types fresh without user interaction. Each type has a different cost profile and refresh interval.
 
@@ -80,6 +80,10 @@ This gives accurate signal: Push button lights up for real commits and file chan
 **Planned interval:** 30s (current) - acceptable since it's a single lightweight read.
 
 ---
+
+## PROJ-TOGGLE: per-project background checks
+
+A power icon (`.src-power`, the same control as the usage monitors and the SYNC header) under each project's icon writes `disabled` through the project-list writer (`setProjectDisabled`). `disabled: true` skips only that project's background sync/git polling; manual Refresh, PUSH/PULL and git actions still work, and other projects are untouched. The icon is locked while that project is syncing.
 
 ## Current state vs. planned
 
