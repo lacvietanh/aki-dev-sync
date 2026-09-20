@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-### [Unreleased]
+### [1.31.0] - 2026-09-20
 
 #### Added
 - **Project paths copy directly from their local/cloud icons.** Clicking either icon copies the complete path and briefly swaps it to a check mark, without adding another control to the project row.

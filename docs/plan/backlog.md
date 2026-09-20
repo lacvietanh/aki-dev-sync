@@ -51,5 +51,5 @@ Chạy một lần ở trạng thái cuối, không lặp theo từng mục (`co
 
 - `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge, nên tiếp tục theo chính plan đó.
 - `docs/plan/audit-akirule-2026-09-18.md` — plan UI đang chạy, có danh sách bước còn lại riêng.
-- **Release**: `CHANGELOG.md` `[Unreleased]` đang giữ các thay đổi chưa phát hành; version vẫn `1.30.0` (chỉ mint tại lúc release, `release.A`). Chưa push.
+- **Release**: 1.31.0 đã mint 2026-09-20 (`CHANGELOG.md` `[1.31.0]`).
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.
