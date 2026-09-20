@@ -555,6 +555,22 @@ impl RelayState {
         Ok(code)
     }
 
+    /// Turns the gate off and closes every registered companion. Registration checks the gate and inserts under the same `companions` lock this drains under, so once this returns no handshake that authenticated earlier can still insert.
+    fn disable_and_drain(&self) {
+        self.set_enabled(false);
+        self.connection_epoch.fetch_add(1, Ordering::SeqCst);
+        let mut companions = self.companions.lock().unwrap_or_else(|e| e.into_inner());
+        for (_, handle) in companions.drain() {
+            enqueue(
+                &handle.outbox,
+                Message::Close(Some(CloseFrame {
+                    code: CLOSE_SERVER_DISABLED,
+                    reason: "remote control was turned off on the host".into(),
+                })),
+            );
+        }
+    }
+
     /// Attempts to register a companion connection under the companions lock. Returns false if the
     /// server was disabled or the epoch advanced (a disable raced past auth — P1-2 invariant).
     fn try_register_companion(
@@ -1270,19 +1286,7 @@ pub async fn start_companion_server() -> Result<CompanionServerInfo, String> {
 #[tauri::command]
 pub async fn stop_companion_server() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<(), String> {
-        let state = relay();
-        state.set_enabled(false);
-        state.connection_epoch.fetch_add(1, Ordering::SeqCst);
-        let mut companions = state.companions.lock().unwrap_or_else(|e| e.into_inner());
-        for (_, handle) in companions.drain() {
-            enqueue(
-                &handle.outbox,
-                Message::Close(Some(CloseFrame {
-                    code: CLOSE_SERVER_DISABLED,
-                    reason: "remote control was turned off on the host".into(),
-                })),
-            );
-        }
+        relay().disable_and_drain();
         Ok(())
     })
     .await
@@ -1991,6 +1995,66 @@ mod tests {
 
     fn queued(outbox: &CompanionOutbox) -> usize {
         outbox.0.lock().unwrap().queue.len()
+    }
+
+    fn new_outbox() -> CompanionOutbox {
+        Arc::new((StdMutex::new(Outbox::new()), Notify::new()))
+    }
+
+    /// P1-1: an entropy failure must mint nothing and leave the previous secrets untouched.
+    #[test]
+    fn entropy_failure_mints_no_secret_and_keeps_existing_state() {
+        let state = RelayState::new();
+        *state.pairing_code.lock().unwrap() = "123456".to_string();
+        *state.pair_link_token.lock().unwrap() = "old-link".to_string();
+        FAIL_ENTROPY.with(|f| f.set(true));
+        let minted = state.mint_pairing_secrets();
+        let token = generate_token();
+        FAIL_ENTROPY.with(|f| f.set(false));
+        assert!(minted.is_err());
+        assert!(token.is_err());
+        assert_eq!(*state.pairing_code.lock().unwrap(), "123456");
+        assert_eq!(*state.pair_link_token.lock().unwrap(), "old-link");
+    }
+
+    /// P1-2: a companion that authenticated before a disable must not insert after it, and re-enabling admits a fresh connection.
+    #[test]
+    fn disable_after_auth_rejects_the_late_registration_and_leaves_registry_empty() {
+        let state = RelayState::new();
+        state.enabled.store(true, Ordering::SeqCst);
+        let epoch_at_auth = state.connection_epoch.load(Ordering::SeqCst);
+
+        state.disable_and_drain();
+
+        assert!(!state.try_register_companion(
+            1,
+            "dev".into(),
+            "c1".into(),
+            new_outbox(),
+            epoch_at_auth
+        ));
+        assert!(state.companions.lock().unwrap().is_empty());
+
+        state.enabled.store(true, Ordering::SeqCst);
+        let fresh_epoch = state.connection_epoch.load(Ordering::SeqCst);
+        assert!(state.try_register_companion(
+            2,
+            "dev".into(),
+            "c2".into(),
+            new_outbox(),
+            fresh_epoch
+        ));
+    }
+
+    /// P1-2: disabling closes sockets that were already registered.
+    #[test]
+    fn disable_closes_and_clears_registered_companions() {
+        let state = RelayState::new();
+        state.enabled.store(true, Ordering::SeqCst);
+        let outbox = register(&state, 1, "dev");
+        state.disable_and_drain();
+        assert!(state.companions.lock().unwrap().is_empty());
+        assert_eq!(queued(&outbox), 1, "one Close frame queued");
     }
 
     /// Backward-compatibility guarantee: unaddressed frames reach all companions (pre-1.21.1 behavior).

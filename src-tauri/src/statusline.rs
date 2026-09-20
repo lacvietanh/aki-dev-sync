@@ -1652,32 +1652,50 @@ mod tests {
 
     // ---- P0-2: no shared predictable /tmp dump -----------------------------------------------
 
+    /// An already-installed older script on the dev machine can legitimately keep writing that path while tests run, so the assertion is on this test's own payload rather than on the file's existence.
+    fn dump_has_sentinel(dump: &std::path::Path) -> bool {
+        std::fs::read_to_string(dump).is_ok_and(|c| c.contains("sentinel"))
+    }
+
+    /// Both P0-2 tests own the same fixed legacy path, so they must not interleave under the parallel test runner.
+    static LEGACY_DUMP_PATH: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// §P0-2. Running either execution path with a payload that contains a sentinel email/path
     /// must not create /tmp/statusline_stdin_dump.json.
     #[test]
     fn no_tmp_dump_on_any_execution_path() {
+        let _guard = LEGACY_DUMP_PATH.lock().unwrap_or_else(|e| e.into_inner());
         let dump = std::path::Path::new("/tmp/statusline_stdin_dump.json");
-        let _ = std::fs::remove_file(dump);
         run_script(
             "no_dump_cc.sh",
             &gen(&test_config()),
             r#"{"cwd":"/sentinel/path","model":{"display_name":"Sonnet 5"}}"#,
-            &[(".claude/auth-cache.json", r#"{"email":"sentinel@example.com"}"#)],
+            &[(
+                ".claude/auth-cache.json",
+                r#"{"email":"sentinel@example.com"}"#,
+            )],
         );
-        assert!(!dump.exists(), "/tmp/statusline_stdin_dump.json was written on the CC path");
+        assert!(
+            !dump_has_sentinel(dump),
+            "the CC path wrote its payload to /tmp/statusline_stdin_dump.json"
+        );
         run_script(
             ".gemini/antigravity-cli/no_dump_ag.sh",
             &gen(&test_config()),
             r#"{"cwd":"/sentinel/path","model":"gemini-2.5-flash"}"#,
             &[],
         );
-        assert!(!dump.exists(), "/tmp/statusline_stdin_dump.json was written on the AGY path");
+        assert!(
+            !dump_has_sentinel(dump),
+            "the AGY path wrote its payload to /tmp/statusline_stdin_dump.json"
+        );
     }
 
     /// §P0-2. A pre-planted symlink at the legacy /tmp path must not be followed: the script
     /// must not write through it to its target.
     #[test]
     fn legacy_tmp_symlink_is_not_followed() {
+        let _guard = LEGACY_DUMP_PATH.lock().unwrap_or_else(|e| e.into_inner());
         let dump = std::path::Path::new("/tmp/statusline_stdin_dump.json");
         let target = std::env::temp_dir().join("aki-symlinktest-sentinel");
         let _ = std::fs::remove_file(dump);
@@ -1700,9 +1718,13 @@ mod tests {
     // ---- P0-3: transactional installer -------------------------------------------------------
 
     /// Runs an installer script in a private temp home; returns (exit_success, home_path).
-    fn run_installer(label: &str, script: &str, files: &[(&str, &str)]) -> (bool, std::path::PathBuf) {
-        let home = std::env::temp_dir()
-            .join(format!("aki-installer-test/{}", label.replace('/', "_")));
+    fn run_installer(
+        label: &str,
+        script: &str,
+        files: &[(&str, &str)],
+    ) -> (bool, std::path::PathBuf) {
+        let home =
+            std::env::temp_dir().join(format!("aki-installer-test/{}", label.replace('/', "_")));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
         for (rel, contents) in files {
@@ -1756,7 +1778,11 @@ mod tests {
     #[test]
     fn installer_rejects_malformed_settings_and_leaves_state_intact() {
         for (alias, settings_rel, script_rel) in [
-            ("cc", ".claude/settings.json", ".claude/statusline-command.sh"),
+            (
+                "cc",
+                ".claude/settings.json",
+                ".claude/statusline-command.sh",
+            ),
             (
                 "ag",
                 ".gemini/antigravity-cli/settings.json",
@@ -1772,7 +1798,11 @@ mod tests {
                     (script_rel, original_script),
                 ],
             );
-            assert!(!ok, "{}: installer should have failed on malformed settings JSON", alias);
+            assert!(
+                !ok,
+                "{}: installer should have failed on malformed settings JSON",
+                alias
+            );
             let settings_after = std::fs::read_to_string(home.join(settings_rel)).unwrap();
             assert_eq!(
                 settings_after, "{not valid json",
@@ -1837,18 +1867,18 @@ mod tests {
             return;
         }
         for (alias, settings_rel, script_rel) in [
-            ("cc", ".claude/settings.json", ".claude/statusline-command.sh"),
+            (
+                "cc",
+                ".claude/settings.json",
+                ".claude/statusline-command.sh",
+            ),
             (
                 "ag",
                 ".gemini/antigravity-cli/settings.json",
                 ".gemini/antigravity-cli/statusline.sh",
             ),
         ] {
-            let (ok, home) = run_installer(
-                &format!("success_{}", alias),
-                &joined(&[alias]),
-                &[],
-            );
+            let (ok, home) = run_installer(&format!("success_{}", alias), &joined(&[alias]), &[]);
             assert!(ok, "{}: installer failed on a clean home", alias);
             let settings = std::fs::read_to_string(home.join(settings_rel)).unwrap_or_default();
             assert!(

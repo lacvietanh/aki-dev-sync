@@ -1,5 +1,7 @@
 # Plan: Audit hardening after terminal-stack review
 
+Status: done 2026-09-20. Every P0/P1/P2 item has code and a test in `cargo test` (233 pass); P1-1 and P1-2 acceptance tests were the last added (`entropy_failure_mints_no_secret_and_keeps_existing_state`, `disable_after_auth_rejects_the_late_registration_and_leaves_registry_empty`, `disable_closes_and_clears_registered_companions`).
+
 This plan records only findings that survived adversarial re-evaluation against the current working tree. Each candidate was challenged through six `/akithink` lenses: fact/reachability, strongest opposing case, trigger proof, impact, regression scope, and keep/downgrade/drop verdict.
 
 The goal is not to preserve the audit's original severity labels. It is to leave the smallest execution plan that protects real user outcomes without turning intended product choices or theoretical edges into ship blockers.
