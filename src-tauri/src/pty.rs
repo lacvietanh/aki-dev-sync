@@ -182,12 +182,12 @@ fn generation_accepted(tab_id: TabId, generation: u64) -> bool {
 ///
 /// Does NOT kill anything: `pty_close_tab` kills first and then calls this, so the ordering (fence, then forget) is visible at the call site rather than hidden in here.
 ///
-/// PERMANENT CLOSE FENCE: the floor entry is set to `u64::MAX` rather than removed. A missing floor
+/// CLOSE FENCE: the floor entry is set to `u64::MAX` rather than removed. A missing floor
 /// defaults to 0 (accept all), so removing it would let a late byte from the dying reader recreate
 /// the scrollback entry via `append_scrollback`'s `entry(...).or_default()` — resurrecting the tab
-/// in `pty_list_tabs`. `u64::MAX` is unreachable by the global generation counter in any realistic
-/// process lifetime, so `generation >= u64::MAX` is permanently false for every real session. The
-/// one `u64` per closed tab is the right trade against a resurrection bug that is otherwise invisible.
+/// in `pty_list_tabs`. The fence lasts until the id is reused: the frontend allocates `max(id)+1`, so
+/// closing the highest tab hands the same id to the next tab, and `admit_generation` lifts the fence
+/// for that tab's new session only.
 fn drop_tab_state(tab_id: TabId) {
     let state = pty_state();
     state.sessions.lock().unwrap().remove(&tab_id);
@@ -195,6 +195,15 @@ fn drop_tab_state(tab_id: TabId) {
     state.scrollbacks.lock().unwrap().remove(&tab_id);
     state.min_accepted.lock().unwrap().insert(tab_id, u64::MAX);
     state.tab_meta.lock().unwrap().remove(&tab_id);
+}
+
+/// Opens a freshly spawned session's bytes to the screens by moving its tab's floor to exactly `generation`. Generations are globally monotonic, so every earlier session of the tab — including a dying reader behind a close fence — stays rejected, while this one is accepted. Without it a reused tab id keeps the `u64::MAX` floor from its previous life and its new shell is silent.
+fn admit_generation(tab_id: TabId, generation: u64) {
+    pty_state()
+        .min_accepted
+        .lock()
+        .unwrap()
+        .insert(tab_id, generation);
 }
 
 /// Upserts ONE tab's durable metadata: `Some(v)` overwrites that field, `None` leaves whatever is
@@ -552,6 +561,7 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
         .map_err(|e| format!("failed to take pty writer: {}", e))?;
 
     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    admit_generation(tab_id, generation);
     // Installed while the sessions lock is held (lock order `sessions` → `inputs`, see the module doc comment), so no window exists in which a session is live but its tab's input queue is still the dead one's.
     let (input_tx, input_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     state.inputs.lock().unwrap().insert(
@@ -1152,6 +1162,34 @@ mod tests {
     }
 
     /// P2-1 resurrection guard: a late `append_scrollback` from a dying reader after
+    /// A tab id reused after its previous tab was closed (the frontend allocates `max(id)+1`) must accept its new session's bytes and still reject the old session's.
+    #[test]
+    fn reused_tab_id_accepts_the_new_session_only() {
+        const TAB: TabId = 16;
+        let state = pty_state();
+        state.scrollbacks.lock().unwrap().remove(&TAB);
+        state.min_accepted.lock().unwrap().insert(TAB, 0);
+
+        drop_tab_state(TAB);
+        assert!(
+            !generation_accepted(TAB, 70),
+            "closed tab must reject its old session"
+        );
+
+        admit_generation(TAB, 71);
+        append_scrollback(TAB, b"new shell prompt", Some(71));
+        assert!(
+            generation_accepted(TAB, 71),
+            "the reused id's new session must be accepted"
+        );
+        assert!(
+            !generation_accepted(TAB, 70),
+            "the old session must stay rejected"
+        );
+        assert_eq!(scrollback_text(TAB), "new shell prompt");
+        drop_tab_state(TAB);
+    }
+
     /// `drop_tab_state` must NOT recreate the tab's scrollback entry. `pty_list_tabs`
     /// reads `sessions` ∪ `scrollbacks`; if either key is recreated the closed tab
     /// rises from the dead. The `u64::MAX` floor inserted by `drop_tab_state` makes

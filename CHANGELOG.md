@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Fixed
+- **A new terminal tab no longer stays blank after closing the highest-numbered tab.** 1.31.0's close fence rejected every byte from a closed tab id forever, but new tabs take `max(id)+1`, so ⌘T after closing the last tab reused a fenced id and its shell ran with no output; only a further ⌘T (a never-closed id) worked. A fresh session now lifts the fence for itself while every earlier session of that id stays rejected. **Preserved**: late output from a closing tab still cannot resurrect it, and other tabs' floors are untouched. Guarded by `pty::tests::reused_tab_id_accepts_the_new_session_only`.
+
 ### [1.31.0] - 2026-09-20
 
 #### Added
