@@ -182,12 +182,7 @@ fn generation_accepted(tab_id: TabId, generation: u64) -> bool {
 ///
 /// Does NOT kill anything: `pty_close_tab` kills first and then calls this, so the ordering (fence, then forget) is visible at the call site rather than hidden in here.
 ///
-/// CLOSE FENCE: the floor entry is set to `u64::MAX` rather than removed. A missing floor
-/// defaults to 0 (accept all), so removing it would let a late byte from the dying reader recreate
-/// the scrollback entry via `append_scrollback`'s `entry(...).or_default()` — resurrecting the tab
-/// in `pty_list_tabs`. The fence lasts until the id is reused: the frontend allocates `max(id)+1`, so
-/// closing the highest tab hands the same id to the next tab, and `admit_generation` lifts the fence
-/// for that tab's new session only.
+/// CLOSE FENCE: the floor is raised to `u64::MAX`, not removed, so a dying reader's late bytes cannot resurrect the tab; `admit_generation` lifts it on id reuse (docs/arch/terminal-stack.md § Restart cannot orphan or clobber a session).
 fn drop_tab_state(tab_id: TabId) {
     let state = pty_state();
     state.sessions.lock().unwrap().remove(&tab_id);
@@ -197,7 +192,7 @@ fn drop_tab_state(tab_id: TabId) {
     state.tab_meta.lock().unwrap().remove(&tab_id);
 }
 
-/// Opens a freshly spawned session's bytes to the screens by moving its tab's floor to exactly `generation`. Generations are globally monotonic, so every earlier session of the tab — including a dying reader behind a close fence — stays rejected, while this one is accepted. Without it a reused tab id keeps the `u64::MAX` floor from its previous life and its new shell is silent.
+/// Raises a new session's tab floor to its own generation: lifts a reused id's close fence while every older session stays rejected.
 fn admit_generation(tab_id: TabId, generation: u64) {
     pty_state()
         .min_accepted

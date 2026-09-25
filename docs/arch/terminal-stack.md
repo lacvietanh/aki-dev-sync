@@ -1,6 +1,6 @@
 # Terminal stack — architecture
 
-> updated 2026-09-19 · v1.30.0
+> updated 2026-09-25 · v1.31.0
 
 How the in-app terminal's frontend is layered, and how terminal v2's SCOPES (tab groups) sit on top of it without touching Rust. User-facing behaviour: `docs/feat/in-app-terminal.md`.
 
@@ -96,6 +96,8 @@ The **read loop is a dedicated `std::thread`, and must stay one.** `spawn_blocki
 ### Restart cannot orphan or clobber a session
 
 Every spawn takes a generation number. A reader thread only retires the session slot if the session sitting in it is still the one it was reading. Without that, a shell killed by restart whose EOF arrives a moment late would null out the brand-new session that replaced it — leaving a terminal that is dead with no error anywhere and no way to tell why.
+
+The same generation floor fences a **closed** tab: closing raises its floor to `u64::MAX` so late bytes from the dying reader cannot recreate the scrollback entry and resurrect the tab in `pty_list_tabs`. The frontend allocates new ids as `max(id)+1`, so closing the highest tab hands its id to the next one; every real spawn therefore sets its tab's floor to its own generation (`admit_generation`), which admits the new session and keeps every older one rejected. Without that step a reused id is silent — the shell runs, its output is dropped (1.31.0 regression, fixed after it).
 
 ### Killing the shell means killing its process group
 
