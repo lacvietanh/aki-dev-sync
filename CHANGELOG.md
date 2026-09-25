@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ### [Unreleased]
 
 #### Fixed
+- **Opening a terminal tab no longer holds the shared session map while the shell process is created**, so resizing, typing-path lookups and closing existing tabs are not queued behind a slow spawn. A tab closed or restarted while its shell is still starting now has that shell reaped instead of installed. **Preserved**: a second open of the same tab still waits and reuses the one shell, and reusing a closed tab id still works.
 - **A new terminal tab no longer stays blank after closing the highest-numbered tab.** 1.31.0's close fence rejected every byte from a closed tab id forever, but new tabs take `max(id)+1`, so ⌘T after closing the last tab reused a fenced id and its shell ran with no output; only a further ⌘T (a never-closed id) worked. A fresh session now lifts the fence for itself while every earlier session of that id stays rejected. **Preserved**: late output from a closing tab still cannot resurrect it, and other tabs' floors are untouched. Guarded by `pty::tests::reused_tab_id_accepts_the_new_session_only`.
 
 ### [1.31.0] - 2026-09-20

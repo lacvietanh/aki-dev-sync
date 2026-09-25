@@ -3,7 +3,7 @@
 // Constraints: one shared PTY per `TabId`; missing IDs target tab 0 for companion compatibility
 // (except destructive `pty_close_tab`); PTY bytes remain base64/raw until xterm decoding; blocking PTY
 // work stays off the async runtime. Lock order is `sessions` → `inputs`, `scrollbacks` →
-// `min_accepted`, and `OutBuf` → `min_accepted`; `min_accepted` and `tab_meta` are leaf locks,
+// `min_accepted`, `sessions` → `spawn_inflight`, and `OutBuf` → `min_accepted`; `min_accepted`, `spawn_inflight` and `tab_meta` are leaf locks,
 // and no path may hold both `OutBuf` and `scrollbacks`. macOS builds and library tests verify the
 // `portable-pty` API used here.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -103,6 +103,10 @@ struct PtyState {
     ///
     /// LEAF LOCK: nothing is ever locked while this one is held. See the module doc comment's lock order block.
     min_accepted: StdMutex<HashMap<TabId, u64>>,
+    /// Serializes spawns, and is held across `spawn_command` on purpose — which is exactly why `sessions` must not be. A second `pty_spawn` for a tab whose shell is still being created waits here and then no-ops, so its caller can write into the shell as soon as the call returns.
+    spawn_gate: StdMutex<()>,
+    /// The tab the `spawn_gate` holder is creating and whether `kill_session` retired it meanwhile — the commit step's cancel signal. NOT `min_accepted`: that floor also stays at `u64::MAX` for a closed id that is being legitimately reused. LEAF LOCK, taken under `sessions` by `kill_session` and the commit.
+    spawn_inflight: StdMutex<Option<(TabId, bool)>>,
 }
 
 static PTY: OnceLock<PtyState> = OnceLock::new();
@@ -115,6 +119,8 @@ fn pty_state() -> &'static PtyState {
         scrollbacks: StdMutex::new(HashMap::new()),
         generation: AtomicU64::new(0),
         min_accepted: StdMutex::new(HashMap::new()),
+        spawn_gate: StdMutex::new(()),
+        spawn_inflight: StdMutex::new(None),
     })
 }
 
@@ -504,13 +510,24 @@ pub fn pty_set_tab_pinned(tab_id: u32, pinned: bool) {
     all.entry(tab_id).or_default().pinned = pinned;
 }
 
-/// The actual spawn, synchronous. Called only from inside a `spawn_blocking` closure. Takes the sessions lock itself and no-ops if a live session is already on this tab (T-3 idempotency, per tab).
+/// The actual spawn, synchronous. Called only from inside a `spawn_blocking` closure. No-ops if a live session is already on this tab (T-3 idempotency, per tab).
+///
+/// `openpty` + `spawn_command` (a `fork` on macOS, since `portable-pty` installs a `pre_exec` hook) run under `spawn_gate` only; `sessions` is held just for the presence check and the commit, so a slow spawn cannot stall resize/cwd/list/kill on the tabs that already exist.
 fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result<(), String> {
     let state = pty_state();
-    let mut guard = state.sessions.lock().unwrap();
-    if guard.contains_key(&tab_id) {
+    let _gate = state.spawn_gate.lock().unwrap_or_else(|e| e.into_inner());
+    if state.sessions.lock().unwrap().contains_key(&tab_id) {
         return Ok(());
     }
+    *state.spawn_inflight.lock().unwrap() = Some((tab_id, false));
+    struct ClearInflight;
+    impl Drop for ClearInflight {
+        fn drop(&mut self) {
+            *pty_state().spawn_inflight.lock().unwrap() = None;
+        }
+    }
+    let _clear = ClearInflight;
+
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -539,7 +556,7 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
     if let Some(dir) = cwd {
         cmd.cwd(dir);
     }
-    let child = pair
+    let mut child = pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("failed to spawn shell: {}", e))?;
@@ -554,6 +571,15 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
         .master
         .take_writer()
         .map_err(|e| format!("failed to take pty writer: {}", e))?;
+
+    let mut guard = state.sessions.lock().unwrap();
+    // `kill_session` sets the flag under this same lock, so a kill either lands before this check (cancelled here) or after the insert below (finds and kills the session) — never in between.
+    let retired = matches!(*state.spawn_inflight.lock().unwrap(), Some((t, true)) if t == tab_id);
+    if retired {
+        drop(guard);
+        terminate_child(&mut child);
+        return Ok(());
+    }
 
     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
     admit_generation(tab_id, generation);
@@ -605,6 +631,25 @@ fn kill_process_group(pid: u32) {
     unsafe { libc::killpg(pgid, libc::SIGKILL) };
 }
 
+/// Group first, then the child itself — see `kill_process_group`. `child.kill()` stays as the backstop for the non-unix path and for a child that somehow is not a group leader; `wait` reaps it. Blocks up to the grace period, so never call it holding a session lock.
+fn terminate_child(child: &mut Box<dyn Child + Send + Sync>) {
+    #[cfg(unix)]
+    if let Some(pid) = child.process_id() {
+        kill_process_group(pid);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// A spawn still creating a shell has no session to find yet, so a kill cannot reach it: mark it so its commit step reaps the shell instead of installing it. `Some(tab)` marks only that tab's spawn, `None` whichever is in flight (app exit). Callers hold `sessions`, which is what makes the mark atomic against the commit.
+fn retire_inflight_spawn(only_tab: Option<TabId>) {
+    if let Some((t, retired)) = pty_state().spawn_inflight.lock().unwrap().as_mut() {
+        if only_tab.is_none_or(|id| id == *t) {
+            *retired = true;
+        }
+    }
+}
+
 /// Kills ONE TAB's shell (if any) and drops that tab's session + input queue so the slot is free. The reader thread for that session will hit EOF shortly after and find the slot already empty / a newer generation in place — both handled, see `read_loop`'s tail.
 ///
 /// SCOPED BY NAME AND BY BODY (CLAUDE.md multi-entity guard): it touches the one `tab_id` it was given and nothing else. The scrollback is deliberately LEFT ALONE — `pty_kill` wants the `[process exited]` notice to remain readable, and `pty_restart` clears it explicitly right after.
@@ -618,18 +663,13 @@ fn kill_session(tab_id: TabId) {
     // `get_mut` path had, without the lock-hold.
     let session = guard.remove(&tab_id);
     let killed = session.as_ref().map(|s| s.generation);
+    retire_inflight_spawn(Some(tab_id));
     // Dropping the sender is what ends this session's writer thread (its `recv()` returns Err), and it is also what makes a `pty_write` to this tab arriving after the kill fail loudly with "no PTY session" instead of queueing keystrokes for a shell that no longer exists.
     state.inputs.lock().unwrap().remove(&tab_id);
     drop(guard);
     // Kill/grace loop OUTSIDE the sessions lock — see comment above.
     if let Some(mut s) = session {
-        // Group first, then the child itself — see `kill_process_group`. `child.kill()` stays as the backstop for the non-unix path and for a child that somehow is not a group leader.
-        #[cfg(unix)]
-        if let Some(pid) = s.child.process_id() {
-            kill_process_group(pid);
-        }
-        let _ = s.child.kill();
-        let _ = s.child.wait();
+        terminate_child(&mut s.child);
     }
     // Its reader thread is still alive for a moment longer, holding bytes it has already read. Fence them off HERE — before `pty_restart` clears this tab's buffer and spawns the replacement — so nothing that shell produced can reach a screen or the ring buffer again.
     if let Some(g) = killed {
@@ -639,14 +679,12 @@ fn kill_session(tab_id: TabId) {
 
 /// Kills EVERY tab's shell. The module's ONLY whole-map operation, and reachable from exactly one place: `shutdown()`, i.e. app exit — the single legitimate "everything" case (CLAUDE.md multi-entity guard: a whole-store wipe is only correct when the user explicitly asked to close everything, and quitting the app is that ask). Nothing user-facing may call it; closing one tab goes through `kill_session` + `drop_tab_state`.
 fn kill_all_sessions() {
-    // Snapshot the ids and release the lock before killing: `kill_session` takes the same lock, and `kill_process_group` can spend up to 300ms per tab inside it.
-    let ids: Vec<TabId> = pty_state()
-        .sessions
-        .lock()
-        .unwrap()
-        .keys()
-        .copied()
-        .collect();
+    // Snapshot the ids and release the lock before killing: `kill_session` takes the same lock, and `kill_process_group` can spend up to 300ms per tab inside it. Retiring the in-flight spawn in the same critical section means a shell being created right now is either already in this snapshot or is reaped by its own commit — never left running past exit.
+    let ids: Vec<TabId> = {
+        let sessions = pty_state().sessions.lock().unwrap();
+        retire_inflight_spawn(None);
+        sessions.keys().copied().collect()
+    };
     for id in ids {
         kill_session(id);
     }
@@ -1061,6 +1099,31 @@ mod tests {
     /// Generations are globally monotonic, so tab 11's live session can easily hold a LOWER generation than a session tab 10 has just retired. Under the old single global floor, retiring tab 10's generation would raise the floor above tab 11's — and tab 11 would go silent: its bytes dropped on the way to the scrollback and refused on the way to the screen, with nothing logged anywhere. That is the cross-tab fencing this test exists to make impossible to reintroduce.
     ///
     /// Uses tab ids nothing else touches, which is exactly what per-tab state buys: this test and `bytes_from_a_retired_session_never_reach_the_scrollback` can run concurrently without racing.
+    #[test]
+    fn a_kill_retires_only_the_spawn_in_flight_for_that_tab() {
+        const SPAWNING: TabId = 30;
+        const OTHER: TabId = 31;
+        let state = pty_state();
+        let retired = || matches!(*state.spawn_inflight.lock().unwrap(), Some((_, true)));
+
+        *state.spawn_inflight.lock().unwrap() = Some((SPAWNING, false));
+        kill_session(OTHER);
+        assert!(!retired(), "killing another tab must not cancel this spawn");
+        kill_session(SPAWNING);
+        assert!(
+            retired(),
+            "killing the tab being spawned must cancel its commit"
+        );
+
+        *state.spawn_inflight.lock().unwrap() = Some((SPAWNING, false));
+        retire_inflight_spawn(None);
+        assert!(
+            retired(),
+            "app exit must cancel whichever spawn is in flight"
+        );
+        *state.spawn_inflight.lock().unwrap() = None;
+    }
+
     #[test]
     fn retiring_one_tab_does_not_fence_another() {
         const A: TabId = 10; // the tab being retired

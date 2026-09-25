@@ -99,6 +99,12 @@ Every spawn takes a generation number. A reader thread only retires the session 
 
 The same generation floor fences a **closed** tab: closing raises its floor to `u64::MAX` so late bytes from the dying reader cannot recreate the scrollback entry and resurrect the tab in `pty_list_tabs`. The frontend allocates new ids as `max(id)+1`, so closing the highest tab hands its id to the next one; every real spawn therefore sets its tab's floor to its own generation (`admit_generation`), which admits the new session and keeps every older one rejected. Without that step a reused id is silent — the shell runs, its output is dropped (1.31.0 regression, fixed after it).
 
+### Creating a shell never holds the session map
+
+`openpty` + `spawn_command` (a `fork` on macOS, because `portable-pty` installs a `pre_exec` hook) run under `spawn_gate`, not under `sessions`, so a slow spawn cannot stall resize, cwd, list or kill on the tabs that already exist. The gate also makes a second spawn for the same tab wait and then no-op on the live shell, which callers that write into the shell right after `pty_spawn` returns depend on.
+
+A kill cannot reach a shell that is still being created, so `spawn_inflight` carries a "retired" flag: `kill_session` (close, kill, restart) sets it for that tab and `kill_all_sessions` (app exit) for whichever is in flight, both under `sessions`; the commit reads it under the same lock and reaps the new shell instead of installing it. The flag is deliberately not the close fence above: `u64::MAX` also marks a closed id that is about to be reused, so reading it as "closed mid-spawn" would kill the reused tab's fresh shell. Design record and rejected alternatives: `docs/plan/terminal-pty-spawn-lock-isolation.md`.
+
 ### Killing the shell means killing its process group
 
 `portable_pty`'s `Child::kill()` signals only the direct child — the login shell. Everything the user started *inside* that shell is a separate process in the shell's process group and receives nothing from it. `kill_current` therefore sends SIGHUP to the whole group first (`killpg`, the same signal closing a real terminal window sends) and escalates to SIGKILL only for what survives the grace period. `portable-pty` puts the child in its own session on unix, so the child's pid is its process-group id and one `killpg` reaches every descendant.
