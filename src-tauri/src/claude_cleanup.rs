@@ -760,7 +760,8 @@ mod tests {
 
         let auth_cache = resolve("auth-cache").expect("auth-cache must exist in catalog");
         let creds = resolve("credentials").expect("credentials must exist in catalog");
-        let rate_limits = resolve("rate-limits-cache").expect("rate-limits-cache must exist in catalog");
+        let rate_limits =
+            resolve("rate-limits-cache").expect("rate-limits-cache must exist in catalog");
 
         assert_eq!(
             entry_path(home, claude_dir, auth_cache),

@@ -9,7 +9,11 @@ use std::sync::{Mutex, OnceLock};
 /// Re-report a missing tool after this interval so hosts are re-probed during long-lived sessions.
 const AG_TOOL_MISSING_SUPPRESSION_SECS: i64 = 300;
 
-fn should_report_missing_tool(reported_at: &mut HashMap<String, i64>, host: &str, now: i64) -> bool {
+fn should_report_missing_tool(
+    reported_at: &mut HashMap<String, i64>,
+    host: &str,
+    now: i64,
+) -> bool {
     match reported_at.get(host) {
         Some(last) if now.saturating_sub(*last) < AG_TOOL_MISSING_SUPPRESSION_SECS => false,
         _ => {

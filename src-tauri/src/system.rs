@@ -666,7 +666,12 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
         //   3. one argv item to ssh, so ssh forwards it intact instead of splitting on spaces.
         let echo_cmd = format!("echo {}", shell_quote_remote_path(&path));
         let script = format!("bash -c {}", shell_quote(&echo_cmd));
-        command.args(["-o", &format!("ConnectTimeout={RESOLVE_CONNECT_TIMEOUT_SECS}"), &host, &script]);
+        command.args([
+            "-o",
+            &format!("ConnectTimeout={RESOLVE_CONNECT_TIMEOUT_SECS}"),
+            &host,
+            &script,
+        ]);
 
         let output = command
             .output()
@@ -1818,27 +1823,38 @@ mod tests {
             "~/projects".to_string(),
         )
         .await;
-        assert!(result.is_err(), "option-shaped host must be rejected before spawn");
+        assert!(
+            result.is_err(),
+            "option-shaped host must be rejected before spawn"
+        );
     }
 
     #[tokio::test]
     async fn resolve_remote_path_rejects_login_option_before_spawn() {
         let result = resolve_remote_path("-lroot".to_string(), "~/projects".to_string()).await;
-        assert!(result.is_err(), "option-shaped host must be rejected before spawn");
+        assert!(
+            result.is_err(),
+            "option-shaped host must be rejected before spawn"
+        );
     }
 
     #[tokio::test]
     async fn resolve_remote_path_rejects_whitespace_in_host_before_spawn() {
-        let result =
-            resolve_remote_path("my server".to_string(), "~/projects".to_string()).await;
-        assert!(result.is_err(), "host with whitespace must be rejected before spawn");
+        let result = resolve_remote_path("my server".to_string(), "~/projects".to_string()).await;
+        assert!(
+            result.is_err(),
+            "host with whitespace must be rejected before spawn"
+        );
     }
 
     #[tokio::test]
     async fn resolve_remote_path_rejects_control_chars_in_host_before_spawn() {
         let result =
             resolve_remote_path("host\x01evil".to_string(), "~/projects".to_string()).await;
-        assert!(result.is_err(), "host with control characters must be rejected before spawn");
+        assert!(
+            result.is_err(),
+            "host with control characters must be rejected before spawn"
+        );
     }
 
     #[test]
