@@ -3,10 +3,10 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-### [Unreleased]
+### [1.31.1] - 2026-09-27
 
 #### Fixed
-- **Opening a terminal tab no longer holds the shared session map while the shell process is created**, so resizing, typing-path lookups and closing existing tabs are not queued behind a slow spawn. A tab closed or restarted while its shell is still starting now has that shell reaped instead of installed. **Preserved**: a second open of the same tab still waits and reuses the one shell, and reusing a closed tab id still works.
+- **Opening a terminal tab no longer holds the shared session map while the shell process is created**, so resizing, typing-path lookups and closing existing tabs are not queued behind a slow spawn. A tab closed, killed, restarted or the app quitting while its shell is still starting now has that shell reaped instead of installed. **Preserved**: a second open of the same tab still waits and reuses the one shell, and reusing a closed tab id still works. Guarded by six tests that drive a real shell through the spawn path (`pty::tests::a_tab_closed_while_its_shell_is_being_created_leaves_no_session_and_no_process` and siblings).
 - **A new terminal tab no longer stays blank after closing the highest-numbered tab.** 1.31.0's close fence rejected every byte from a closed tab id forever, but new tabs take `max(id)+1`, so ⌘T after closing the last tab reused a fenced id and its shell ran with no output; only a further ⌘T (a never-closed id) worked. A fresh session now lifts the fence for itself while every earlier session of that id stays rejected. **Preserved**: late output from a closing tab still cannot resurrect it, and other tabs' floors are untouched. Guarded by `pty::tests::reused_tab_id_accepts_the_new_session_only`.
 
 ### [1.31.0] - 2026-09-20
