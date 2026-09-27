@@ -510,15 +510,43 @@ pub fn pty_set_tab_pinned(tab_id: u32, pinned: bool) {
     all.entry(tab_id).or_default().pinned = pinned;
 }
 
+/// What one attempt to create a tab's shell came to. Separated from the thread wiring so the gate/commit/cancel logic can be driven by tests without an `AppHandle`.
+enum Spawned {
+    AlreadyLive,
+    /// Committed to `sessions`; the caller owns starting the writer and reader threads.
+    Installed {
+        generation: u64,
+        input_rx: std::sync::mpsc::Receiver<Vec<u8>>,
+        writer: Box<dyn Write + Send>,
+        reader: Box<dyn Read + Send>,
+    },
+    /// Retired while being created (close, kill, restart, app exit); the shell was reaped and nothing was installed.
+    #[cfg_attr(not(test), allow(dead_code))]
+    Cancelled {
+        reaped_pid: Option<u32>,
+    },
+}
+
 /// The actual spawn, synchronous. Called only from inside a `spawn_blocking` closure. No-ops if a live session is already on this tab (T-3 idempotency, per tab).
 ///
 /// `openpty` + `spawn_command` (a `fork` on macOS, since `portable-pty` installs a `pre_exec` hook) run under `spawn_gate` only; `sessions` is held just for the presence check and the commit, so a slow spawn cannot stall resize/cwd/list/kill on the tabs that already exist.
 fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result<(), String> {
+    if let Spawned::Installed {
+        generation,
+        input_rx,
+        writer,
+        reader,
+    } = spawn_shell(tab_id, cwd)?
+    {
+        std::thread::spawn(move || writer_loop(input_rx, writer, tab_id, generation));
+        std::thread::spawn(move || read_loop(app, tab_id, reader, generation));
+    }
+    Ok(())
+}
+
+fn spawn_shell(tab_id: TabId, cwd: Option<String>) -> Result<Spawned, String> {
     let state = pty_state();
     let _gate = state.spawn_gate.lock().unwrap_or_else(|e| e.into_inner());
-    if state.sessions.lock().unwrap().contains_key(&tab_id) {
-        return Ok(());
-    }
     *state.spawn_inflight.lock().unwrap() = Some((tab_id, false));
     struct ClearInflight;
     impl Drop for ClearInflight {
@@ -527,6 +555,9 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
         }
     }
     let _clear = ClearInflight;
+    if state.sessions.lock().unwrap().contains_key(&tab_id) {
+        return Ok(Spawned::AlreadyLive);
+    }
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -577,8 +608,9 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
     let retired = matches!(*state.spawn_inflight.lock().unwrap(), Some((t, true)) if t == tab_id);
     if retired {
         drop(guard);
+        let reaped_pid = child.process_id();
         terminate_child(&mut child);
-        return Ok(());
+        return Ok(Spawned::Cancelled { reaped_pid });
     }
 
     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -601,11 +633,12 @@ fn spawn_if_absent(app: AppHandle, tab_id: TabId, cwd: Option<String>) -> Result
             generation,
         },
     );
-    drop(guard); // release before handing `app` to the new thread
-
-    std::thread::spawn(move || writer_loop(input_rx, writer, tab_id, generation));
-    std::thread::spawn(move || read_loop(app, tab_id, reader, generation));
-    Ok(())
+    Ok(Spawned::Installed {
+        generation,
+        input_rx,
+        writer,
+        reader,
+    })
 }
 
 /// SIGHUP → SIGKILL the shell's ENTIRE process group, not just the shell process itself.
@@ -1099,10 +1132,163 @@ mod tests {
     /// Generations are globally monotonic, so tab 11's live session can easily hold a LOWER generation than a session tab 10 has just retired. Under the old single global floor, retiring tab 10's generation would raise the floor above tab 11's — and tab 11 would go silent: its bytes dropped on the way to the scrollback and refused on the way to the screen, with nothing logged anywhere. That is the cross-tab fencing this test exists to make impossible to reintroduce.
     ///
     /// Uses tab ids nothing else touches, which is exactly what per-tab state buys: this test and `bytes_from_a_retired_session_never_reach_the_scrollback` can run concurrently without racing.
+    /// Holding `sessions` before starting the spawn parks it at its presence check with the in-flight slot already set, so a test can retire it at a known point.
+    ///
+    /// `spawn_inflight` is one process-wide slot, so every test that drives it or a real spawn takes turns.
+    static SPAWN_SLOT: StdMutex<()> = StdMutex::new(());
+
+    fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
+        for _ in 0..500 {
+            if ready() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for {what}");
+    }
+
+    fn spawn_in_flight_for(tab: TabId) -> bool {
+        matches!(*pty_state().spawn_inflight.lock().unwrap(), Some((t, _)) if t == tab)
+    }
+
+    fn session_pid(tab: TabId) -> Option<u32> {
+        pty_state()
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&tab)
+            .and_then(|s| s.child.process_id())
+    }
+
+    /// Runs `spawn_shell` on its own thread, as `pty_spawn`'s `spawn_blocking` does.
+    fn spawn_on_thread(tab: TabId) -> std::thread::JoinHandle<Result<Spawned, String>> {
+        std::thread::spawn(move || spawn_shell(tab, None))
+    }
+
+    /// Drains the shell's output the way `read_loop` does: a shell killed with undrained pty output can hang in the kernel while exiting, which would make `wait` in these tests block.
+    fn installed(outcome: Spawned) -> bool {
+        let Spawned::Installed { mut reader, .. } = outcome else {
+            return false;
+        };
+        std::thread::spawn(move || {
+            let mut sink = [0u8; 4096];
+            while matches!(reader.read(&mut sink), Ok(n) if n > 0) {}
+        });
+        true
+    }
+
+    #[test]
+    fn a_tab_closed_while_its_shell_is_being_created_leaves_no_session_and_no_process() {
+        const TAB: TabId = 40;
+        let _serial = SPAWN_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+        let state = pty_state();
+
+        let commit_blocked = state.sessions.lock().unwrap();
+        let spawn = spawn_on_thread(TAB);
+        wait_until("the spawn to take the gate", || spawn_in_flight_for(TAB));
+        retire_inflight_spawn(Some(TAB));
+        drop(commit_blocked);
+
+        match spawn.join().unwrap().unwrap() {
+            Spawned::Cancelled {
+                reaped_pid: Some(pid),
+            } => assert!(!alive(pid as i32), "the cancelled shell must be reaped"),
+            _ => panic!("a retired spawn must be cancelled with a reaped shell"),
+        }
+        assert!(session_pid(TAB).is_none());
+        assert!(!state.inputs.lock().unwrap().contains_key(&TAB));
+    }
+
+    #[test]
+    fn a_restart_during_a_spawn_ends_with_exactly_one_live_shell() {
+        const TAB: TabId = 41;
+        let _serial = SPAWN_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+
+        let commit_blocked = pty_state().sessions.lock().unwrap();
+        let first = spawn_on_thread(TAB);
+        wait_until("the first spawn to take the gate", || {
+            spawn_in_flight_for(TAB)
+        });
+        retire_inflight_spawn(Some(TAB));
+        let replacement = spawn_on_thread(TAB);
+        drop(commit_blocked);
+
+        let Spawned::Cancelled {
+            reaped_pid: Some(old_pid),
+        } = first.join().unwrap().unwrap()
+        else {
+            panic!("the spawn a restart retired must be cancelled");
+        };
+        assert!(installed(replacement.join().unwrap().unwrap()));
+        let new_pid = session_pid(TAB).expect("the replacement is the tab's session");
+        assert_ne!(old_pid, new_pid);
+        assert!(!alive(old_pid as i32));
+        assert!(alive(new_pid as i32));
+        kill_session(TAB);
+        assert!(!alive(new_pid as i32));
+    }
+
+    #[test]
+    fn concurrent_opens_of_one_tab_make_one_shell_and_of_many_tabs_make_many() {
+        const SAME: TabId = 42;
+        let _serial = SPAWN_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+
+        let same_tab: Vec<_> = (0..8).map(|_| spawn_on_thread(SAME)).collect();
+        let created = same_tab
+            .into_iter()
+            .map(|h| installed(h.join().unwrap().unwrap()))
+            .filter(|&made_one| made_one)
+            .count();
+        assert_eq!(created, 1, "one tab, one shell");
+
+        let many: Vec<_> = (43..53).map(|t| (t, spawn_on_thread(t))).collect();
+        for (tab, h) in many {
+            assert!(installed(h.join().unwrap().unwrap()), "tab {tab} must open");
+        }
+        for tab in 42..53 {
+            assert!(session_pid(tab).is_some(), "tab {tab} has a session");
+            kill_session(tab);
+            assert!(session_pid(tab).is_none());
+        }
+    }
+
+    #[test]
+    fn killing_a_committed_session_still_reaps_its_shell() {
+        const TAB: TabId = 53;
+        let _serial = SPAWN_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+
+        assert!(installed(spawn_on_thread(TAB).join().unwrap().unwrap()));
+        let pid = session_pid(TAB).unwrap();
+        assert!(alive(pid as i32));
+        kill_session(TAB);
+        assert!(!alive(pid as i32));
+        assert!(session_pid(TAB).is_none());
+    }
+
+    #[test]
+    fn a_spawn_that_never_returns_cannot_stall_the_tabs_that_already_exist() {
+        let _serial = SPAWN_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+        let _stuck_spawn = pty_state()
+            .spawn_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            kill_session(54);
+            let _ = pty_state().sessions.lock().unwrap().contains_key(&55);
+            let _ = done.send(());
+        });
+        finished
+            .recv_timeout(Duration::from_secs(2))
+            .expect("session-map operations must not wait on the spawn gate");
+    }
+
     #[test]
     fn a_kill_retires_only_the_spawn_in_flight_for_that_tab() {
         const SPAWNING: TabId = 30;
         const OTHER: TabId = 31;
+        let _serial = SPAWN_SLOT.lock().unwrap_or_else(|e| e.into_inner());
         let state = pty_state();
         let retired = || matches!(*state.spawn_inflight.lock().unwrap(), Some((_, true)));
 
