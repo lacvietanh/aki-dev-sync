@@ -1,5 +1,7 @@
 # Project config into `.akidevsync/` — field classification & scope decision
 
+Status: superseded by `docs/research/akidevsync-project-config-scope-2.md`
+
 **Start time:** 2026-09-09
 
 ## Initial purpose
@@ -70,7 +72,7 @@ Re-reading the note: it never states a concrete pain (no "I switched machines an
 
 ## Amendments
 
-- **2026-09-27 — reopen trigger hit.** Concrete need: sync state (baseline, `last_sync_*`) belongs to a (project, host) pair but is stored per project, observed live as a baseline recorded against one host being compared against another. Owner direction: move settings into `.akidevsync/`. Superseded by `docs/plan/project-state-into-akidevsync.md`, which keeps this doc's objections by making config and state local-only (`.akidevsync/local/`, never transferred).
+- **2026-09-27 — reopen trigger hit.** Concrete need: sync state (baseline, `last_sync_*`) belongs to a (project, host) pair but is stored per project, observed live as a baseline recorded against one host being compared against another. Owner direction: move settings into `.akidevsync/`. Superseded by `docs/research/akidevsync-project-config-scope-2.md`.
 
 ## Cross-refs
 

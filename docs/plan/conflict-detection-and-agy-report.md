@@ -1,6 +1,6 @@
 # Sync conflict detection + agy report
 
-**Order: plan 2 of 2.** Depends on `docs/plan/project-state-into-akidevsync.md` (plan 1): the per-host baseline this plan reads is `.akidevsync/local/hosts/<host>/baseline.json`, created there.
+**Order: plan 2 of 3.** Depends on `docs/plan/settings-and-state-layout.md` (plan 1): the per-host baseline this plan reads is `~/.aki/devsync/state/<project_id>/<host>/baseline.json`, created there, and it already carries plan 1's F2 fix (a merge push no longer forgets local deletions). Independent of plan 3 (`docs/plan/deploy-action.md`). Target release: 1.32.0.
 
 ## Scope — pinned
 
@@ -23,7 +23,7 @@ Both badges lit at once does **not** mean conflict: with `-u` a file edited on b
 ## Current mechanism (read from code)
 
 - `rsync_change_files` runs `-avzu --dry-run --modify-window=2` per direction and keeps file lines only: names, no size or mtime.
-- `write_baseline` stores `path → local mtime` after every full non-dry sync, one file per project, with no record of the host.
+- `write_baseline` stores `path → local mtime` after every full non-dry sync, one file per project, with no record of the host (plan 1 moves it per host and records `remote_path`).
 - `compute_sync_counts` uses the baseline for **existence** only (local deletion → push; push file with local mtime = baseline → suppressed). It never looks at the remote side's change since the baseline, so it cannot see a conflict. Table: `docs/feat/sync-flow.md` §2.
 
 ## Design
@@ -41,7 +41,8 @@ The pull dry-run drops `-u` and adds `--out-format='%n\t%l\t%M'`, so the one exi
 | Case | Class |
 |---|---|
 | L absent | existing rule: in B → local deleted → push; not in B → remote created → pull |
-| no baseline for this host, or not in B with both present | no ancestor → today's `-u` count, never called a conflict |
+| path under `.git/` | never a conflict: counted in its own `.git` group (push includes `.git` by design, and `.git/index` changes on both sides constantly) |
+| no baseline for this host, baseline `remote_path` ≠ current, or not in B with both present | no ancestor → today's `-u` count, never called a conflict |
 | L = B, R > B | pull |
 | L > B, R = B | push |
 | R < B | push — remote behind (stale) |
@@ -62,17 +63,18 @@ Conflicts are removed from `push_count`/`pull_count` and returned as `SyncStatus
 
 ### 5. agy explanation (on demand, never on the poll)
 
-One call from **Explain**: `agy -p --output-format json --json-schema <schema> --model <flash tier> --print-timeout 120`; binary resolved from static candidates first (`~/.local/bin/agy`) per the cold-start PATH rule; inside `spawn_blocking`.
+Explain is disabled with a tooltip giving the reason when no `agy` binary resolves (e.g. a Linux build without it): never a silent no-op. One call from **Explain**: `agy -p --output-format json --json-schema <schema> --model <flash tier> --print-timeout 120`; binary resolved from static candidates first (`~/.local/bin/agy`) per the cold-start PATH rule; inside `spawn_blocking`.
 
 Payload — the whole picture behind both lit badges, not only conflicts:
 - Per-class, per-top-directory counts for both directions, host, last sync time with this host, whether the remote is behind.
-- Per conflict: metadata row + unified diff of local vs remote (remote copy fetched to a temp dir). Text only, 400 lines per file; binaries and secret-named files (`.env*`, `*.pem`, `*key*`) send metadata only.
+- Per conflict: metadata row + unified diff of local vs remote (remote copy fetched to a temp dir). Text only, 400 lines per file; binaries and secret-named files (`.env*`, `*.pem`, `*key*`) send metadata only. The name filter does not catch a secret inside an ordinary file; accepted because Explain is an explicit click and the popover says the diffs are sent to agy.
 
 Output schema: `{headline, situation, per_conflict: [{path, what_changed_local, what_changed_remote}]}` — descriptive fields only. The prompt forbids recommendations; the schema has no field to put one in.
 
 ## Execution steps
 
-- [ ] Fixture test: confirm `--out-format` `%l`/`%M` report the **sender's** (remote) attributes in a dry-run pull; if not, fall back to `get_file_conflict_info` on the candidate set (one extra SSH, only when candidates exist).
+- [ ] Fixture test: confirm `--out-format` `%l`/`%M` report the **sender's** (remote) attributes in a dry-run pull; if not, fall back to `get_file_conflict_info` on the candidate set (one extra SSH, only when candidates exist). The output line is printed by the **local** rsync, so the result on Linux (GNU rsync 3.x) does not prove the Mac: see § Mac checks.
+- [ ] Unknown rsync (openrsync, or `%M` missing from the output): classification is skipped and today's counts are shown, never a guessed class (the stock-macOS-rsync false-positive history).
 - [ ] Pull dry-run: drop `-u`, add `--out-format`, reapply the `-u` filter in Rust; unit test that `pull_count` is unchanged on non-conflict fixtures.
 - [ ] Classifier (table in §2) as a pure function over `(L, R, B, sizes)`; one unit test per row.
 - [ ] Checksum residue call with the cap.
@@ -80,6 +82,15 @@ Output schema: `{headline, situation, per_conflict: [{path, what_changed_local, 
 - [ ] Read-only breakdown popover with Explain.
 - [ ] `explain_sync_status` command (async + `spawn_blocking`, capability entry): payload builder, agy call, schema-parsed result. No rsync/git mutation.
 - [ ] Update `docs/feat/sync-flow.md` §2 table, `README.md`, `IntroModal.vue`.
+
+## Mac checks after the code is done
+
+The steps above can be written and unit-tested on Linux. Leave these unticked until run on the Mac:
+
+- [ ] Run the pull dry-run with `--out-format='%n\t%l\t%M'` using the rsync binary the app resolves (`rsync --version` from the app's PATH) and confirm the size/mtime are the remote's.
+- [ ] Real case from § Evidence (`tuvi.akinet.me` vs `bien`): badges, tooltip breakdown and `⚠ n` match the hand analysis.
+- [ ] Badge overlay and popover look right in the real window (WKWebView), narrow and wide.
+- [ ] Explain runs end to end with `~/.local/bin/agy`.
 
 ## Decisions
 
@@ -97,6 +108,7 @@ Hand-run dry-runs, read-only.
 
 ## Cross-references
 
-- `docs/plan/project-state-into-akidevsync.md` — plan 1, per-host state and baseline.
+- `docs/plan/settings-and-state-layout.md` — plan 1, per-host state and baseline.
+- `docs/research/akidevsync-project-config-scope-2.md` — why state is per (machine, project, host).
 - `docs/feat/sync-flow.md` §2 — baseline reclassification this plan extends.
 - `docs/plan/backlog.md` #6 — the backlog item this plan resolves (note `task-1787393248179`).

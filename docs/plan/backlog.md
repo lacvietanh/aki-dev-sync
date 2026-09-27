@@ -35,7 +35,7 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
-| 6 | Badge hai phía kèm prompt chạy AGY/Claude | `task-1787393248179`, `task-1785676763350` (mở lại) | Thiết kế xong, hai plan theo thứ tự: (1) `docs/plan/project-state-into-akidevsync.md` — config và state theo từng host về `.akidevsync/local/`; (2) `docs/plan/conflict-detection-and-agy-report.md` — phân loại đụng độ, agy chỉ diễn giải, không hành động. Còn lại: implement plan 1 trước |
+| 6 | Tách setting/state theo đúng chủ sở hữu; badge hai phía; Deploy | `task-1785676763350`, `task-1789390613266`, `task-1787393248179`, `task-1790401977743`, `task-1790490810608` | Thiết kế xong (`docs/research/akidevsync-project-config-scope-2.md`), ba plan cho 1.32.0: (1) `docs/plan/settings-and-state-layout.md` — project / máy / máy×host, `.akidevsync/` vẫn là data thường của project (không đi đường riêng), sửa F2 (baseline quên file đã xoá); (2) `docs/plan/conflict-detection-and-agy-report.md` — phân loại đụng độ, agy chỉ diễn giải; (3) `docs/plan/deploy-action.md` — DEPLOY cạnh DEV/BUILD, hook chỉ cho sync, F3 (3 hook deploy chạy nhầm trên Mac, lỗi bị nuốt). Thứ tự: 1 trước, 2 và 3 độc lập |
 
 ## Nợ kỹ thuật không chặn ship
 
