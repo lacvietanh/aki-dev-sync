@@ -68,6 +68,10 @@ Re-reading the note: it never states a concrete pain (no "I switched machines an
 
 **Reopen trigger:** if a concrete need shows up — e.g. an owner actually wants `pull_excludes` or a hook command to travel with the repo across machines, or a team-sharing use case for this app emerges — re-open with that specific need named, and scope the split to only the fields that need it (start from the "clean candidate" list above, not the full struct).
 
+## Amendments
+
+- **2026-09-27 — reopen trigger hit.** Concrete need: sync state (baseline, `last_sync_*`) belongs to a (project, host) pair but is stored per project, observed live as a baseline recorded against one host being compared against another. Owner direction: move settings into `.akidevsync/`. Superseded by `docs/plan/project-state-into-akidevsync.md`, which keeps this doc's objections by making config and state local-only (`.akidevsync/local/`, never transferred).
+
 ## Cross-refs
 
 - `docs/plan/backlog.md` B2 — the originating note.

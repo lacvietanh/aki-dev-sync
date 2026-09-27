@@ -9,18 +9,19 @@ Snapshot từ `.akidevsync/notes.json` và trạng thái repo ngày 2026-09-20 (
 
 ## Việc của owner trên máy này
 
-| # | Việc | Lý do |
-|---|---|---|
-| C | Mở app → Statusline → **Apply lại** cho Claude Code và Antigravity | `~/.claude/statusline-command.sh` và `~/.gemini/antigravity-cli/statusline.sh` vẫn là bản cũ, còn ghi payload (email, cwd, usage) ra `/tmp/statusline_stdin_dump.json` mỗi lượt. Kiểm: `grep -c statusline_stdin_dump` trên hai file phải ra 0. |
+Không còn — statusline đã apply lại xong (owner xác nhận 2026-09-27).
 
 ## Runtime ledger — chỉ người mới xác nhận được (gom một lượt)
 
-Chạy một lần ở trạng thái cuối, không lặp theo từng mục (`coding.B3`):
+`>16 tab in-app terminal` đã bỏ khỏi ledger: đợt hardening spawn-lock (`docs/plan/done/terminal-pty-spawn-lock-isolation.md`) tự chạy 6 test tự động dựng shell thật, bao gồm mở đồng thời 8–10 tab và kill/restart giữa chừng — coi như đã xác nhận, không cần tay làm lại.
 
-- Mở app: duyệt modal family và các bề mặt UI đã đổi (`docs/plan/audit-akirule-2026-09-18.md` bước 7).
-- Điện thoại companion: kết nối lại khi có nhiều tab, xác nhận tab nguội hiện lịch sử khi mở (plan `done/companion-replay-bound.md` ghi "verified by reading").
-- Mở nhiều hơn 16 tab in-app terminal, xác nhận không có giới hạn và không treo.
-- Refresh all: sửa `projects.json` bằng tay rồi bấm, xác nhận áp dụng không cần restart và không mất terminal đang mở.
+Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây — xem lý do bên dưới. Còn đúng 1 mục:
+
+1. **Điện thoại companion, nhiều tab** — mở app trên điện thoại, kết nối lại (reconnect) khi Mac đang có nhiều tab terminal mở, mở một tab đã "nguội" (không hoạt động gần đây) và xem nó có hiện lại lịch sử cũ (scrollback) hay màn hình trắng. Qua nếu tab nguội hiện đúng lịch sử.
+
+Đóng, 2026-09-27:
+- **Modal/màu token**: đợt đổi hex→`var()` đã chạy production 1 tuần (từ 1.31.0, 2026-09-20) qua dùng thật hàng ngày, owner xác nhận không thấy lệch màu — coi là đã qua ledger, không cần buổi duyệt riêng.
+- **Refresh all không mất terminal**: xác nhận bằng đọc code, không cần tay bấm — `loadData()` (`src/composables/useProjectConfig.js:138`) chỉ ghi vào `projects.value`/`projectRuntime`/notes, không chạm bất kỳ state hay lệnh PTY nào (terminal tab sống hoàn toàn ở phía Rust, độc lập với danh sách project). Nút **Refresh all** là icon vòng xoay (`.btn-refresh-main`) ở góc trên bên phải titlebar, có từ 1.31.0 (2026-09-20) — nó đã bao gồm cả việc đọc lại `projects.json`/SSH hosts từ đĩa (`handleRefresh()` gọi `loadData()` rồi mới `refreshAllProjects()`), không phải nút refresh-per-project riêng (nút đó là icon nhỏ trên từng dòng project, chỉ chạy `refreshProject(p)`, không đọc lại config).
 
 ## Sửa lỗi — điều tra trước khi đổi
 
@@ -28,20 +29,23 @@ Chạy một lần ở trạng thái cuối, không lặp theo từng mục (`co
 |---|---|---|---|
 | 2 | Kéo-thả file làm app crash | `task-1789604877926` | Reproduce và lấy crash/log trước; ưu tiên cao vì làm mất phiên đang chạy |
 | 3 | AGY usage hỏng từ khoảng 1.29–1.30 | `task-1789578897581` | Trace nguồn quota, cache và cadence. Cờ "thiếu tool" của AG đã hết hạn sau 5 phút (`a4be4ef`) — đó là mục 4 của research cache, không chứng minh là nguyên nhân hỏng usage, nên note vẫn mở |
-| 4 | Cache/state chỉ nạp lúc startup | `task-1787801054655`, `task-1789390613266` | Project list, SSH hosts và cờ tool-missing AG đã xử lý (Refresh all, TTL 5 phút). Còn lại: các mục research chưa nêu là 'để nguyên'. Không thêm filesystem watcher; cân nhắc đóng note khi runtime ledger qua |
 
 ## Research / thiết kế
 
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
-| 6 | Badge hai phía kèm prompt chạy AGY/Claude | `task-1787393248179` | Làm rõ entry point và prompt trước khi lập plan |
-| 7 | Config project: đọc theo yêu cầu (RAM) hay nạp lại khi file đổi | note `open` "project setting: cố vấn…" | Đã có câu trả lời: RAM là nguồn hằng ngày, đọc lại từ đĩa tại thời điểm dùng (nút Refresh), không watcher (`startup-cached-state-audit.md`). Đóng note khi runtime ledger qua |
+| 6 | Badge hai phía kèm prompt chạy AGY/Claude | `task-1787393248179`, `task-1785676763350` (mở lại) | Thiết kế xong, hai plan theo thứ tự: (1) `docs/plan/project-state-into-akidevsync.md` — config và state theo từng host về `.akidevsync/local/`; (2) `docs/plan/conflict-detection-and-agy-report.md` — phân loại đụng độ, agy chỉ diễn giải, không hành động. Còn lại: implement plan 1 trước |
 
 ## Nợ kỹ thuật không chặn ship
 
 - `scythe.py` báo 623 `[WRAP]/[YAP]` toàn repo, chủ yếu `src-tauri/src/pty.rs` (121), `system.rs` (62), `statusline.rs` (37) và các doc trong `docs/plan/done/`. Số ngang baseline trước đợt hardening, nên là nợ cũ. Xử lý theo từng file khi chạm tới, không quét hàng loạt.
 - `cargo fmt --check` còn lệch ở vài file `src-tauri/src` (ví dụ `agent_usage/antigravity.rs`); chạy `cargo fmt` một lần trong commit riêng.
+- Từ `docs/plan/done/audit-akirule-2026-09-18.md` (đóng 2026-09-27, visual ledger đã qua bằng dùng thật):
+  - 34 hex cứng trong JS (xterm theme, `statuslineColors.js`, `useSync.js`, `remoteActions.js`, `projectStore.js`, `UsageCircle`, `TerminalView`) chưa ghi exception có owner+lý do trong `scripts/ui-audit.config.json`.
+  - Vài `rgba()` lẻ chưa có token vai trò (nền kính tối, glow, bóng đen `.8`) — thêm token khi một giá trị lặp ≥3 lần trong cùng vai trò.
+  - 22 inline style hợp lệ (HTML sinh runtime, prop `container-style` của `BaseModal`, `anchor-name`) chưa ghi exception để gate `npm run audit:ui` hết đỏ.
+  - Detector `scripts/audit-ui-architecture.mjs` báo nhầm selector trùng trong `@media`/`@keyframes` và đếm nhầm định nghĩa trong `:root`/fallback `var(--x, #hex)` là literal.
 
 ## Hoãn có chủ ý
 
@@ -49,7 +53,6 @@ Chạy một lần ở trạng thái cuối, không lặp theo từng mục (`co
 
 ## Ngoài backlog này
 
-- `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge, nên tiếp tục theo chính plan đó.
-- `docs/plan/audit-akirule-2026-09-18.md` — plan UI đang chạy, có danh sách bước còn lại riêng.
-- **Release**: 1.31.1 đã mint 2026-09-25 (`CHANGELOG.md` `[1.31.1]`).
+- `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
+- **Release**: 1.31.1 đã mint 2026-09-27 (`CHANGELOG.md` `[1.31.1]`).
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.

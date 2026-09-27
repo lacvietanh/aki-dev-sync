@@ -224,3 +224,9 @@ Mỗi token alpha nằm trong `:root` của `main.css` kèm ghi chú rằng nó 
 ### Quyết định đã chốt (/akithink 2026-09-20)
 
 Chạy màu→token 1:1 trước, giữ CSS scoped, không patch mù 444 chỗ, không đụng literal màu trong JS. Reopen khi visual ledger phát hiện lệch render.
+
+## Đóng — 2026-09-27
+
+Visual ledger qua: đợt đổi hex→`var()` chạy production 1 tuần (từ 1.31.0, 2026-09-20) qua dùng thật hàng ngày, owner xác nhận không lệch màu — không cần buổi duyệt modal riêng.
+
+6 việc còn lại ở "Còn lại — theo thứ tự làm" không chặn ship và không phải rủi ro hiển thị (ghi exception có lý do, token hoá vài `rgba()` lẻ, sửa 1 detector false-positive) — dời xuống `docs/plan/backlog.md` § Nợ kỹ thuật, xử lý theo từng file khi chạm tới thay vì giữ cả plan mở. Reopen nếu dùng thật phát hiện lệch render mà visual ledger đã bỏ qua.
