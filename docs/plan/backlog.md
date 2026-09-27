@@ -54,5 +54,5 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 ## Ngoài backlog này
 
 - `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
-- **Release**: 1.31.1 đã mint 2026-09-27 (`CHANGELOG.md` `[1.31.1]`).
+- **Release**: bản public mới nhất là 1.31.0; 1.31.1 chưa từng ship nên đã gộp lại vào `[Unreleased]` (2026-09-27), sẽ ra cùng 1.32.0.
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.

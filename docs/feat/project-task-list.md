@@ -1,6 +1,6 @@
 # Task List & Notes — shared engine, two data sources
 
-> updated 2026-09-27 · v1.31.1
+> updated 2026-09-27 · v1.31.0
 
 A lightweight task list and note-taking module, available in two places that now share one engine: **per-project** (the `TASKS` column, right before `GIT`) and **Global Note** (the titlebar sticky-note icon). Same add/pin/wish/done/notes behavior in both — only what backs the data differs.
 
