@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+### [Unreleased]
+
+#### Changed
+- **The titlebar Refresh tooltip and the intro now say what Refresh and opening Tasks actually do**: the titlebar Refresh re-reads `projects.json`, SSH hosts and every project's notes from disk before refreshing git/remote diff/usage, and the Tasks dialog re-reads `.akidevsync/notes.json` each time it opens, so edits made outside the app show up without a restart. README and `docs/feat/project-task-list.md` document the same re-read moments and the last-write-wins caveat.
+
 ### [1.31.1] - 2026-09-27
 
 #### Fixed

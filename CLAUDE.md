@@ -3,7 +3,8 @@
 ## Aki Rules
 
 Shared rules live at `~/.aki/akidevrule/`. Read `~/.aki/akidevrule/index.md` for the full rule index and loading policy.
-Claude Code loads these automatically via the `akirule` skill. Gemini reads them directly from that path.
+Claude Code loads the core rules and the router via `@` imports in `~/.claude/CLAUDE.md`; contextual rule files are then read on a route match.
+Antigravity (IDE and `agy`) has every rule installed natively as `akirule-<topic>.md`.
 
 ---
 

@@ -116,7 +116,7 @@
           <div class="feature-icon icon-tasks"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-text">
             <strong>Project Tasks & Notes</strong>
-            <span>Task management: Pin 📌, Wish 🕒 and Done (which auto-unpins). Includes a Project Notes card that grows natively with its content via CSS (`field-sizing: content`) and trims stray whitespace. Shares its task engine and list UI with Global Note below.</span>
+            <span>Task management: Pin 📌, Wish 🕒 and Done (which auto-unpins). Includes a Project Notes card that grows natively with its content via CSS (`field-sizing: content`) and trims stray whitespace. Shares its task engine and list UI with Global Note below. Tasks and notes live in the project itself (<code>.akidevsync/notes.json</code>), travel with Push/Pull, and are re-read from disk each time the Tasks dialog opens.</span>
           </div>
         </div>
 
@@ -172,7 +172,7 @@
           <div class="feature-icon icon-refresh"><i class="fa-solid fa-arrows-rotate"></i></div>
           <div class="feature-text">
             <strong>Refresh - 1 unit of work</strong>
-            <span>The per-project Refresh button and the global one in the titlebar both call the same <code>refreshProject()</code> (git status + sync diff + stack detection, in parallel) - no more full app reload. Spinner state lives on each check itself, so a background cycle spins the icon at the right moment too.</span>
+            <span>The per-project Refresh button and background cycles call <code>refreshProject()</code> (git status + sync diff + stack detection, in parallel) - the one unit of work. The titlebar Refresh does that too, but first re-reads <code>projects.json</code>, SSH hosts and every project's notes from disk - no app restart, open terminals untouched. Spinner state lives on each check itself, so a background cycle spins the icon at the right moment too.</span>
           </div>
         </div>
 

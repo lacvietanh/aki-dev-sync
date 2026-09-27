@@ -251,7 +251,7 @@
           <i class="fa-solid fa-heart"></i>
         </button>
         <div class="btn-group-refresh">
-          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="(anyRefreshing || isReloading) ? 'Refreshing all - git, remote diff, usage…' : 'Refresh all - git, remote diff, usage'" :disabled="anySyncing || anyRefreshing || isReloading">
+          <button class="btn-tech btn-tech-secondary btn-refresh-main" @click="handleRefresh" :title="(anyRefreshing || isReloading) ? 'Reloading config & notes from disk - refreshing git, remote diff, usage…' : 'Reload config & notes from disk - then refresh git, remote diff, usage'" :disabled="anySyncing || anyRefreshing || isReloading">
             <i class="fa-solid fa-rotate-right" :class="{ 'fa-spin': anyRefreshing || isReloading }"></i>
           </button>
           <button class="btn-tech btn-tech-secondary btn-refresh-settings" @click="showRefreshSettings = true" title="Background Refresh Settings" :disabled="isReloading">

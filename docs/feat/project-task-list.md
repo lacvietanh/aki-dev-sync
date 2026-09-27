@@ -1,6 +1,6 @@
 # Task List & Notes — shared engine, two data sources
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-09-27 · v1.31.1
 
 A lightweight task list and note-taking module, available in two places that now share one engine: **per-project** (the `TASKS` column, right before `GIT`) and **Global Note** (the titlebar sticky-note icon). Same add/pin/wish/done/notes behavior in both — only what backs the data differs.
 
@@ -61,7 +61,7 @@ In addition to individual tasks, a general **Project Notes** card is placed at t
 
 ### Project tasks & notes — `<local_path>/.akidevsync/notes.json` (since 1.22.0)
 
-**The local repo is the source of truth for a project; a remote host is only somewhere its code runs.** Tasks and notes therefore live in the project's own working directory, not in the app's central `projects.json`. The file is meant to be committed — that is the point of the move. Design record: `docs/plan/done/1.22.0-notes-json-ssot.md`. Owner: `src-tauri/src/project_notes.rs`, the only place in the Rust tree that spells `.akidevsync/`.
+**The local repo is the source of truth for a project; a remote host is only somewhere its code runs.** Tasks and notes therefore live in the project's own working directory, not in the app's central `projects.json`. The file is meant to be committed — that is the point of the move. Design record: `docs/plan/done/1.22.0-notes-json-ssot.md`. Owner: `src-tauri/src/project_notes.rs` — the file's path, schema, and read/write logic; `sync.rs` also spells `.akidevsync/` once, in its rsync protect filter, and `projects.rs` carries a deprecation comment on the legacy fields (below).
 
 **Self-hosting wrinkle, noted 2026-07-30, unresolved.** This app is itself a project the app can manage, so its own repo also grows a `.akidevsync/notes.json` — and this one is real: it holds the owner's actual task list for this project, not a fixture. It is gitignored in *this* repo rather than committed, which is the opposite of the paragraph above ("the file is meant to be committed — that is the point of the move"). That is a live tension, not a settled exception: "tasks travel with the repo so they're shareable" argues for committing it here of all places, while "this is the owner's private working list, not something to publish in an open-source repo" argues against. Left for the owner to decide; nothing here should be read as the resolution.
 
@@ -90,6 +90,8 @@ Collapsing those four into "empty" is exactly the data-loss bug the type exists 
 
 **Writes are read-modify-write under one global async mutex**, then `write_atomic` (temp + rename). `None` for a field means *leave what is on disk alone*, never *clear it* — so a `git pull` that changed `notes` survives a task-only write. Same-field races are last-write-wins but never silent: if the on-disk `updated_at` is newer than the caller's, the write still lands and reports `clobbered: true`, which raises a Toast pointing at git. No CRDT, no conflict UI — git is the recovery path.
 
+**When the app re-reads the file.** Three moments trigger a fresh read from disk: app launch (`loadData`'s hydrate pass), the titlebar Refresh (`requestReloadConfig`, which runs the same `loadData`), and each time the Tasks dialog opens (`requestProjectNotesRefresh`, watched on `showTasksModal`/`tasksProject` in `ProjectTasksModal.vue`). So an external edit — a `git pull`, an agent editing the file directly — surfaces without restarting the app. The caveat is the clobber paragraph below: an edit made in the dialog while it still shows an older copy writes last-write-wins over that external change, with the `clobbered` toast as the only signal. Reopen the dialog (or hit Refresh) first to pick up the external edit before typing.
+
 **A late read must never land on top of an edit.** The read is `spawn_blocking` precisely because it can stall for tens of seconds on an unhealthy network mount, so this sequence is reachable: modal opens → refresh starts → user edits → `applyTaskEdit` writes and re-seeds → *then* the pre-edit read resolves. Applying it would revert the edit on screen and persist that reverted content on the next save — the 1.20.0 bug in a new place. So `projectNotesStore.js` keeps a **per-id generation counter**: every mutation bumps it, every async read captures it at start and drops its own result if it is no longer current. The same counter is why a `local_path` change sets the entry to `'unknown'` **synchronously** before kicking off the re-read — until that read lands, the old directory's entry would otherwise still answer `ok`/writable while `applyTaskEdit` already writes to the new path.
 
 Writes are additionally **serialised per project id** (`queueNotesWrite` in `remoteActions.js`), so the second of two rapid edits reads a `baseUpdatedAt` that already reflects the first. Without it, every fast second edit would report `clobbered` against our own previous write — a false "someone else changed this file" alarm, which is worse than none, since that toast is the only signal telling the user to go look at git. Rust's global mutex makes the *file* safe; this queue makes the caller's view of `updated_at` *truthful*. Different halves, neither replaces the other.
@@ -105,7 +107,7 @@ Writes are additionally **serialised per project id** (`queueNotesWrite` in `rem
 #[serde(default, skip_serializing_if = "Option::is_none")] pub notes: Option<String>,
 ```
 
-so a cleared key is never re-materialized, not even by a stale companion array (the `sync_git` precedent). An on-disk file with content **wins** over the legacy fields; an `unavailable`/`corrupt` directory is skipped entirely and retried next launch. Both fields and `ProjectTask` are deleted in 1.23.0.
+so a cleared key is never re-materialized, not even by a stale companion array (the `sync_git` precedent). An on-disk file with content **wins** over the legacy fields; an `unavailable`/`corrupt` directory is skipped entirely and retried next launch. Both fields and `ProjectTask` are still present in `projects.rs` — removal is pending, tracked in `docs/plan/project-state-into-akidevsync.md`, which rewrites `projects.rs`.
 
 ### Global tasks — `~/.aki/devsync/globalnote.json`
 
@@ -134,7 +136,7 @@ pub struct GlobalNoteFile {
 - `src/store/projectNotesStore.js` - `projectNotes` (mirrored) + the three id-scoped accessors; the companion read path.
 - `src/composables/useProjectNotes.js` - hydrate/refresh, `isProjectNotesWritable`, `projectNotesFor`, `migrateLegacyProjectNotes`.
 - `src/store/remoteActions.js` - `applyTaskEdit` (the ONE writer) and `requestProjectNotesRefresh`.
-- `src-tauri/src/projects.rs` - `ProjectTask` struct and the DEPRECATED `notes`/`tasks` `Option` fields on `SyncProject` (removed in 1.23.0).
+- `src-tauri/src/projects.rs` - `ProjectTask` struct and the DEPRECATED `notes`/`tasks` `Option` fields on `SyncProject` — still present, removal tracked in `docs/plan/project-state-into-akidevsync.md`.
 - `src-tauri/src/global_note.rs` - `GlobalNoteFile`, `read_global_note`/`write_global_note` commands.
 - `src/components/TaskCell.vue` - project row's trigger button, using `TaskCountBadges`.
 - `src/components/modals/ProjectTasksModal.vue`, `GlobalNoteModal.vue` - the two modals, each just header/footer + `NotesField` + `TaskListPanel`.
