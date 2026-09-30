@@ -58,7 +58,7 @@ if [ "${SKIP_BUILD:-}" = "1" ]; then
 else
   (
     cd "$REPO_ROOT"
-    npm run build:app
+    NO_REVEAL=1 npm run build:app
   ) || fail "npm run build:app failed"
 fi
 

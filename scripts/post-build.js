@@ -23,7 +23,7 @@ const SLOTS = [
 const NATIVE_ARCH = { aarch64: 'arm', x86_64: 'x64', universal: 'uni' }
 
 function reveal(absPath) {
-  if (process.platform !== 'darwin') return
+  if (process.platform !== 'darwin' || process.env.NO_REVEAL === '1') return
   try { execSync(`open -R ${JSON.stringify(absPath)}`) } catch { /* Finder is optional */ }
 }
 
