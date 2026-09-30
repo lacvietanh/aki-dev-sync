@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [Unreleased]
+## [1.32.0] - 2026-09-30
 
 ### Added
 - **`npm run install:app` and `npm run help`.** `install:app` builds, signs and replaces the copy in `/Applications` (the same as running `./scripts/install-desktop.sh`); `help` lists every npm script with a one-line purpose and fails if `package.json` gains a script the list does not describe.

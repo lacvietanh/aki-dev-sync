@@ -50,5 +50,5 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 ## Ngoài backlog này
 
 - `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
-- **Release**: bản public mới nhất là 1.31.0; 1.31.1 chưa từng ship nên đã gộp lại vào `[Unreleased]` (2026-09-27), sẽ ra cùng 1.32.0.
+- **Release**: 1.32.0 ra 2026-09-30 (gồm phần từng gọi là 1.31.1/1.32.1). Tồn đọng chuyển sang 1.32.1: (a) chuỗi kiểm tra runtime trên Mac trong `docs/plan/1.32.0-mac-handoff.md` § 3 (chưa chạy; ba plan 1–3 giữ ở `docs/plan/` đến khi chuỗi này xong, các task note #6 giữ mở); (b) `scythe.py` báo 41 `[YAP]` (review, không có `[WRAP]`) ở file mới của đợt này — `conflict.rs`, `sync_state.rs`, `sync.rs`, `migrate-deploy-hooks.mjs`; (c) `cargo fmt` một commit riêng.
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.
