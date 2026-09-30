@@ -42,7 +42,7 @@
       </div>
 
       <!-- SYNC features -->
-      <div class="subgroup-label mb-1">⚡ SYNC</div>
+      <div class="subgroup-label intro-gap-tight">⚡ SYNC</div>
       <div class="features-grid mb-3">
         <div class="feature-card">
           <div class="feature-icon icon-push"><i class="fa-solid fa-arrow-up"></i></div>
@@ -85,10 +85,26 @@
         </div>
 
         <div class="feature-card">
+          <div class="feature-icon icon-syncstatus"><i class="fa-solid fa-triangle-exclamation"></i></div>
+          <div class="feature-text">
+            <strong>Conflict Detection</strong>
+            <span>Both badges lit does not mean conflict on its own - a real conflict (the same file edited on both sides since the last common sync with this host) shows as a <code>⚠ n</code> badge on PUSH, kept out of the push/pull counts. Click any lit badge - PUSH count, PULL count, or the conflict badge - for the same read-only PUSH | PULL popover and an <strong>Explain</strong> button that opens <code>agy</code> in a terminal tab to brief you - it describes, never recommends, and nothing here acts on either side. Explain shows its reason and stays disabled when <code>agy</code> is not installed.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
           <div class="feature-icon icon-hooks"><i class="fa-solid fa-code"></i></div>
           <div class="feature-text">
             <strong>Pre / Post Hooks</strong>
-            <span>Scripts run before/after each sync (build, restart a service, notify...), on Local or Remote as you choose.</span>
+            <span>Scripts run before/after each sync (build, restart a service, notify...), on Local or Remote as you choose. Sync-only - shipping to production is the separate DEPLOY action, never a hook side effect.</span>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon icon-hooks"><i class="fa-solid fa-rocket"></i></div>
+          <div class="feature-text">
+            <strong>Deploy</strong>
+            <span>A third button beside DEV/BUILD, auto-detected from <code>package.json</code>'s own <code>scripts.deploy</code>. Runs local or on its own named SSH host (never the sync host implicitly) in its own in-app terminal tab; always shows one confirm dialog with the exact command and target first (the button, or an optional after-push offer that never fires on a dry run). Tiny <code>D</code>/<code>H</code> badges on PUSH show at a glance whether a push here offers a deploy and whether it has sync hooks configured.</span>
           </div>
         </div>
 
@@ -96,7 +112,7 @@
           <div class="feature-icon icon-delete"><i class="fa-solid fa-clone"></i></div>
           <div class="feature-text">
             <strong>Mirror / Delete</strong>
-            <span>Turn on <code>--delete</code> for an exact mirror. Push never deletes by default; once enabled, pushing over newer Remote changes asks for confirmation first. Whichever direction is armed shows a small red trash glyph on a faint chip in the bottom corner of its button (bottom-left for PUSH, bottom-right for PULL) - hidden while that button reads STOP, so a running sync never looks like the deletion is what's happening.</span>
+            <span>Turn on <code>--delete</code> for an exact mirror. Push never deletes by default; once enabled, pushing over newer Remote changes asks for confirmation first. The first real sync with a host a project has never used always asks first, naming the exact destination. Whichever direction is armed shows a small red trash glyph on a faint chip in the bottom corner of its button (bottom-left for PUSH, bottom-right for PULL) - hidden while that button reads STOP, so a running sync never looks like the deletion is what's happening.</span>
           </div>
         </div>
 
@@ -110,7 +126,7 @@
       </div>
 
       <!-- TOOLS & MONITOR features -->
-      <div class="subgroup-label mb-1">🛠 TOOLS & MONITOR</div>
+      <div class="subgroup-label intro-gap-tight">🛠 TOOLS & MONITOR</div>
       <div class="features-grid">
         <div class="feature-card">
           <div class="feature-icon icon-tasks"><i class="fa-solid fa-list-check"></i></div>
@@ -204,6 +220,7 @@
           <li><strong>Remote Control:</strong> Control the app from a phone browser - on the same LAN, over Tailscale, or through a public HTTPS origin you run (Tailscale is one option, not a requirement) - pair once per address with a 6-digit code, then it reconnects silently. Confirmation dialogs (delete, remove project) mirror to both screens and are still verified on the Mac.</li>
           <li><strong>In-app terminal & groups:</strong> A real shell (genuine PTY) runs inside the app, scoped into one tab group per project plus a global group. A paired phone gets the same real terminal (full TUI support - <code>vim</code>, <code>htop</code>, Claude Code's own UI) plus a key row for Esc/Tab/Ctrl/Shift/arrows, since a phone has no physical keyboard - and a "Fit to my screen" button that sizes the shared terminal to the phone with one tap (the Mac can always reclaim it with one tap of its own). Above 900px window width the terminal + log dock moves to a right-hand column instead of the bottom; the column has no width splitter (it follows the window), while the log stack inside it stays draggable. An external <code>Terminal.app</code> session launched from this app is now tagged with the project that launched it, so the external-sessions list shows "launched from X" instead of only guessing by folder. A 3-dot menu in the terminal header lets you hide/show individual chrome pieces (compose input, key row, tab strip, and more) per device.</li>
           <li><strong>Tasks &amp; notes live in the repo, not in the app:</strong> A project's tasks and notes live in <code>&lt;project&gt;/.akidevsync/notes.json</code>, travel with the repo, and now sync along with it - a mirroring PUSH/PULL still cannot erase them.</li>
+          <li><strong>Project facts live in the repo too:</strong> Name, production URL, excludes and DEV/BUILD commands are project facts, not per-machine settings, so they also live in <code>&lt;project&gt;/.akidevsync/project.json</code> and travel the same way. Everything that genuinely differs per machine - host, local path, remote path, hooks, delete-on-sync - stays in <code>projects.json</code>; the Project Config dialog labels every field with where it is saved.</li>
           <li><strong>Vietnamese typing in the terminal:</strong> OpenKey/EVKey retype a corrected syllable as one event carrying the whole string; the terminal now reads typed text from the input surface itself instead of the key event, so nothing gets truncated.</li>
         </ul>
       </div>
@@ -211,7 +228,7 @@
       <!-- Origin Story - moved to bottom, preserved -->
       <div class="alert-box origin mt-3">
         <h4 class="alert-title"><i class="fa-solid fa-bullseye"></i> Origin Story</h4>
-        <p class="mb-1">Built to serve the author's own (Lạc Việt Anh) need to streamline a daily coding workflow:</p>
+        <p class="intro-gap-tight">Built to serve the author's own (Lạc Việt Anh) need to streamline a daily coding workflow:</p>
         <ul class="custom-list">
           <li><strong>Local - Source of Truth:</strong> code kept safe with its Git history, edited in a personal <em>Antigravity Pro</em>.</li>
           <li><strong>Remote - AI Workspace:</strong> code pushed up for <em>Claude Code / MAX</em> (a separate account) to generate at scale from the Terminal.</li>
@@ -295,16 +312,16 @@ const { showIntroModal, closeIntroModal } = useIntro();
   flex: 1;
   padding: 10px 12px;
   border-radius: 6px;
-  background: rgba(5, 7, 12, 0.6);
+  background: var(--scrim);
   border: 1px solid var(--border-color);
 }
 .model-node.local {
-  border-color: rgba(34, 211, 238, 0.25);
-  background: rgba(34, 211, 238, 0.04);
+  border-color: var(--color-local-edge);
+  background: color-mix(in srgb, var(--color-local) 4%, transparent);
 }
 .model-node.remote {
-  border-color: var(--amber-500-edge);
-  background: rgba(245, 158, 11, 0.04);
+  border-color: var(--color-remote-edge);
+  background: color-mix(in srgb, var(--color-remote) 4%, transparent);
 }
 .model-role {
   font-size: 10px;
@@ -312,8 +329,8 @@ const { showIntroModal, closeIntroModal } = useIntro();
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.45);
 }
-.model-node.local .model-role { color: #22d3ee; }
-.model-node.remote .model-role { color: var(--amber-500); }
+.model-node.local .model-role { color: var(--color-local); }
+.model-node.remote .model-role { color: var(--color-remote); }
 .model-title {
   font-size: 13px;
   font-weight: 700;
@@ -337,13 +354,13 @@ const { showIntroModal, closeIntroModal } = useIntro();
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.arrow-push { color: var(--emerald-300); }
-.arrow-pull { color: var(--blue-400); }
+.arrow-push { color: var(--color-local); }
+.arrow-pull { color: var(--color-remote); }
 .subgroup-label {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-faint);
   text-transform: uppercase;
 }
 .custom-list {
@@ -365,7 +382,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: rgba(5, 7, 12, 0.6);
+  background: var(--scrim);
   padding: 10px 12px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
@@ -389,7 +406,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
   font-size: 11px;
   color: var(--text-muted);
 }
-.mb-1 { margin-bottom: 4px; }
+.intro-gap-tight { margin-bottom: 4px; }
 
 /* Icon colors - using design system colors */
 .icon-guide { color: var(--emerald-300); }
@@ -404,7 +421,7 @@ const { showIntroModal, closeIntroModal } = useIntro();
 .icon-tasks { color: var(--accent-cyan); }
 .icon-openpopup { color: #06b6d4; }
 .icon-globalnote { color: var(--amber-500); }
-.icon-usage { color: #818cf8; }
+.icon-usage { color: var(--indigo-400); }
 .icon-cloud { color: var(--amber-500); }
 .icon-ssh { color: var(--slate-400); }
 .icon-background { color: #ec4899; }

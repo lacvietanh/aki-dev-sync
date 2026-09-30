@@ -1,12 +1,17 @@
 import { invoke } from '../utils/tauri'
 import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from '../store/projectStore'
 import { syncCheckEnabled } from '../store/syncCheckStore'
+import { getProjectConfigEntry } from '../store/projectConfigStore'
 import { useLogs } from './useLogs'
 
 // Status check sharing beginRefresh/endRefresh indicator; uses epoch check (bumpEpoch) to discard stale mid-flight results.
 export async function checkProjectSyncStatus(project) {
   if (!syncCheckEnabled.value) return
   if (projectRuntime.value[project.id]?.syncing) return
+  // Item 2 (docs/plan/settings-and-state-layout.md): a status check reads the excludes on `project`,
+  // which may be an empty/stale registry leftover unless project.json is the authoritative 'ok' - same
+  // boundary as `useSync.js::startSync`'s guard.
+  if (getProjectConfigEntry(project.id).status !== 'ok') return
   // beginRefresh first - see fetchGitStatus.
   beginRefresh(project.id)
   const epoch = currentEpoch(project.id)
@@ -48,9 +53,17 @@ export async function checkProjectSyncStatus(project) {
       hasPendingPull: result.has_remote_changes,
       pushCount: result.push_count ?? 0,
       pullCount: result.pull_count ?? 0,
+      conflicts: result.conflicts ?? [],
+      gitCount: result.git_count ?? 0,
+      remoteBehind: result.remote_behind ?? false,
+      byTopDir: result.by_top_dir ?? {},
+      syncCheckError: null,
     }
-  } catch (_) {
-    // SSH/network error - leave hasPendingPush/Pull unchanged so buttons don't flicker.
+  } catch (e) {
+    // Counts stay at the last good check so buttons don't flicker; the error is surfaced on the buttons instead of swallowed.
+    if (currentEpoch(project.id) !== epoch) return
+    const current = projectRuntime.value[project.id]
+    if (current) projectRuntime.value[project.id] = { ...current, syncCheckError: String(e) }
   } finally {
     // Only the generation that started this counts its own completion - see fetchGitStatus.
     if (currentEpoch(project.id) === epoch) endRefresh(project.id)

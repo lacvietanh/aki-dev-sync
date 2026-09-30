@@ -20,12 +20,15 @@ import {
   bumpProjectNotesGeneration,
 } from './projectNotesStore'
 import { isProjectNotesWritable, refreshProjectNotes } from '../composables/useProjectNotes'
+import { setProjectConfigEntry, getProjectConfigEntry, dropProjectConfigEntry, queueConfigWrite } from './projectConfigStore'
+import { canSaveProjectConfig, replaceProjectById } from '../composables/projectConfigPure'
 import { sshHosts, hasSshUndo, hasSshRedo } from './sshStore'
 import { appendGlobalLogLines } from './logStore'
 import { askConfirm } from './dialogStore'
+import { auditLog } from '../utils/auditLog'
 import { startSync, openSelectDialog } from '../composables/useSync'
 import { refreshProject, refreshAllProjects } from '../composables/useBackgroundRefresh'
-import { saveProjectsList, loadData } from '../composables/useProjectConfig'
+import { saveProjectsList, loadData, resolveHostSwitch, projectDisplayName } from '../composables/useProjectConfig'
 
 function byId(id) {
   return projects.value.find((p) => p.id === id) || null
@@ -66,7 +69,7 @@ export const requestCancelSync = action('remoteActions.requestCancelSync', async
   try {
     // False indicates transfer finished before click; informs user so state is unambiguous.
     const killed = await invoke('cancel_sync', { projectId: id })
-    if (killed === false) Toast.fire({ icon: 'info', title: `Nothing left to stop for "${project.name}"` })
+    if (killed === false) Toast.fire({ icon: 'info', title: `Nothing left to stop for "${projectDisplayName(project)}"` })
   } catch (e) {
     Toast.fire({ icon: 'error', title: `Could not stop sync: ${String(e).replace('Error: ', '')}` })
   }
@@ -91,13 +94,20 @@ export const setDryRun = action('remoteActions.setDryRun', (id, value) => {
   saveProjectsList()
 })
 
-// Updates remote host: resets pending counts, bumps epoch to invalidate old diffs, and triggers refresh.
+// Updates remote host: `remote_path` is a project fact (1.32.1, one remote directory regardless of host)
+// and `deploy` names its own host, so neither is touched here; only hooks restore from `targets` (F5).
+// Logged: nothing else records which host a project pointed at when a sync ran. Resets pending counts, bumps
+// epoch to invalidate old diffs, and triggers refresh. Shares its switch logic with the config dialog's own
+// Remote Host select (S3, useProjectConfig.js::resolveHostSwitch).
 export const setRemoteHost = action('remoteActions.setRemoteHost', (id, host) => {
   const project = byId(id)
   if (!project || project.remote_host === host) return
-  project.remote_host = host
+
+  const next = resolveHostSwitch(project, host)
+  auditLog('host', `${project.id} (${project.local_path}) remote_host ${project.remote_host || '(none)'} -> ${host} [table]`)
+  Object.assign(project, { targets: next.targets, remote_host: next.remote_host, hooks: next.hooks })
   bumpEpoch(id)
-  projectRuntime.value[id] = { ...projectRuntime.value[id], hasPendingPush: null, hasPendingPull: null }
+  projectRuntime.value[id] = { ...projectRuntime.value[id], hasPendingPush: null, hasPendingPull: null, syncCheckError: null }
   saveProjectsList()
   refreshProject(project)
 })
@@ -202,68 +212,171 @@ export const reorderProjects = action('remoteActions.reorderProjects', (orderedI
 })
 
 // Creates or updates project in host reactive `projects` array and persists changes to disk.
+// Atomic save owned by the writer: project.json is written FIRST, before
+// anything else in this function is touched. When the current status is not writable
+// (`canSaveProjectConfig`, 'unknown' included) or the write itself fails, this returns `{ ok: false }` and
+// changes NOTHING - no `projects.value` replacement, no registry write/strip, no success toast, only the
+// error toast below. Only once the write has actually landed (or an existing file at a changed path wins,
+// T3) does the function proceed to mutate the store and persist the registry.
 export const applyProjectConfig = action('remoteActions.applyProjectConfig', async (plain) => {
-  if (!plain || !plain.id) return
+  if (!plain || !plain.id) return { ok: false, reason: 'invalid' }
   const index = projects.value.findIndex((p) => p.id === plain.id)
   const isNew = index === -1
 
   // Rejects save if project was removed while modal was open, preventing accidental resurrection.
   if (isNew && isProjectRemoved(plain.id)) {
-    Toast.fire({ icon: 'error', title: `"${plain.name}" was removed - not saved` })
-    return { rejected: 'removed' }
+    Toast.fire({ icon: 'error', title: `"${projectDisplayName(plain)}" was removed - not saved` })
+    return { ok: false, reason: 'removed' }
+  }
+
+  // The save decision itself, off the CURRENT status (an existing project's `projects.value` entry has
+  // not been touched yet at this point) - the exact same `canSaveProjectConfig` the dialog's Save button
+  // uses (ProjectConfigModal.vue), so a save that slipped past a disabled button (Enter, a companion
+  // screen) is refused here too instead of silently doing the wrong thing.
+  const currentStatus = getProjectConfigEntry(plain.id).status
+  if (!canSaveProjectConfig(isNew, currentStatus)) {
+    Toast.fire({ icon: 'error', title: `Cannot save "${projectDisplayName(plain)}" - .akidevsync/project.json is ${currentStatus}` })
+    return { ok: false, reason: 'not-writable' }
+  }
+
+  const prev = isNew ? null : projects.value[index]
+  const localPathChanged = !isNew && prev.local_path !== plain.local_path
+  const identityChanged = !isNew && (prev.remote_host !== plain.remote_host || prev.local_path !== plain.local_path)
+
+  // Project.json is written BEFORE any store/registry mutation below - the registry copy is stripped only once this write actually succeeded (a legacy copy is removed only once its new home holds it).
+  const writeResult = await queueConfigWrite(plain.id, async () => {
+    try {
+      // A local_path change landing on a folder that already owns an `ok` project.json must not be
+      // overwritten by the dialog's values (which may belong to the OLD path) - the file already there
+      // wins, and the project adopts its content instead, same as "a file already in the repo wins".
+      if (localPathChanged) {
+        const existing = await invoke('read_project_config', { localPath: plain.local_path })
+        if (existing?.status === 'ok' && existing.file) {
+          return { ok: true, kept: true, file: existing.file }
+        }
+      }
+      const file = await invoke('write_project_config', {
+        localPath: plain.local_path,
+        config: {
+          name: plain.name || '',
+          production_url: plain.production_url || '',
+          pull_excludes: plain.pull_excludes || [],
+          push_excludes: plain.push_excludes || [],
+          commands: { dev: plain.dev_cmd_override || '', build: plain.build_cmd_override || '', deploy: plain.deploy_cmd || '' },
+        },
+      })
+      return { ok: true, kept: false, file }
+    } catch (e) {
+      console.error('[projectConfig] write failed', e)
+      return { ok: false, error: e }
+    }
+  })
+
+  if (!writeResult.ok) {
+    // The write failed - nothing else in this function has run yet, so `projects.value`, the config store entry and the on-disk registry all stay exactly as they were before this call.
+    Toast.fire({ icon: 'error', title: `Could not save project.json: ${String(writeResult.error).replace('Error: ', '')}` })
+    return { ok: false, reason: 'write-failed' }
+  }
+
+  // From here on the write landed (or an existing file at the new path wins) - safe to mutate the store.
+  let toSave = { ...plain }
+  if (writeResult.kept) {
+    toSave = {
+      ...toSave,
+      name: writeResult.file.name,
+      production_url: writeResult.file.production_url,
+      pull_excludes: [...writeResult.file.pull_excludes],
+      push_excludes: [...writeResult.file.push_excludes],
+      dev_cmd_override: writeResult.file.commands?.dev || '',
+      build_cmd_override: writeResult.file.commands?.build || '',
+      deploy_cmd: writeResult.file.commands?.deploy || '',
+    }
   }
 
   if (!isNew) {
-    const prev = projects.value[index]
+    // Resolve by id at mutation time, never the `index` captured before the await (see replaceProjectById).
+    const replaced = replaceProjectById(projects.value, plain.id, toSave)
+    if (!replaced.found) {
+      Toast.fire({ icon: 'error', title: `"${projectDisplayName(plain)}" was removed - not saved` })
+      return { ok: false, reason: 'removed' }
+    }
+    projects.value = replaced.list
+    if (prev.remote_host !== plain.remote_host) {
+      auditLog('host', `${plain.id} (${plain.local_path}) remote_host ${prev.remote_host || '(none)'} -> ${plain.remote_host} [settings]`)
+    }
+    if (JSON.stringify(prev.deploy || null) !== JSON.stringify(plain.deploy || null)) {
+      auditLog('deploy', `${plain.id} (${plain.local_path}) deploy config ${JSON.stringify(prev.deploy || null)} -> ${JSON.stringify(plain.deploy || null)}`)
+    }
     // Identity change invalidates in-flight status checks; bump epoch and reset pending diff counts.
-    const identityChanged =
-      prev.remote_host !== plain.remote_host || prev.local_path !== plain.local_path
-    projects.value[index] = { ...plain }
     if (identityChanged) {
       bumpEpoch(plain.id)
       projectRuntime.value[plain.id] = {
         ...projectRuntime.value[plain.id],
         hasPendingPush: null,
         hasPendingPull: null,
+        syncCheckError: null,
       }
       // Reset notes to 'unknown' synchronously so writes are locked until new path notes are loaded.
       setProjectNotesEntry(plain.id, { status: 'unknown' })
       refreshProjectNotes(plain.id, plain.local_path)
     }
   } else {
-    projectRuntime.value[plain.id] = {
-      git_status: '...',
-      git_log: '',
-      remote_url: '',
-      syncing: false,
-      // Live project epoch is always >= 1; increment ensures monotonic epoch even if id was previously used.
-      epoch: (projectRuntime.value[plain.id]?.epoch ?? 0) + 1,
-      refreshCount: 0,
+    // `isNew` was computed before the `await` above - a second Save on the same brand-new
+    // project can land here too. Re-resolve by id against the live list (see replaceProjectById) and
+    // replace instead of pushing a second entry.
+    const replaced = replaceProjectById(projects.value, plain.id, toSave)
+    if (replaced.found) {
+      projects.value = replaced.list
+    } else {
+      projectRuntime.value[plain.id] = {
+        git_status: '...',
+        git_log: '',
+        remote_url: '',
+        syncing: false,
+        // Live project epoch is always >= 1; increment ensures monotonic epoch even if id was previously used.
+        epoch: (projectRuntime.value[plain.id]?.epoch ?? 0) + 1,
+        refreshCount: 0,
+      }
+      projects.value.push(toSave)
     }
-    projects.value.push({ ...plain })
     // Seed 'unknown' status first to lock writes until notes are initially read from disk.
     setProjectNotesEntry(plain.id, { status: 'unknown' })
     refreshProjectNotes(plain.id, plain.local_path)
   }
 
-  await saveProjectsList()
+  setProjectConfigEntry(plain.id, { status: 'ok', ...writeResult.file, error: '' })
+  if (writeResult.kept) {
+    Toast.fire({ icon: 'info', title: `Kept the existing .akidevsync/project.json already at "${plain.local_path}"` })
+  }
+
   const saved = projects.value.find((p) => p.id === plain.id)
+  await saveProjectsList()
   if (saved) refreshProject(saved)
   // Refreshes icon cache after disk save and bumps timestamp to bust webview image cache.
   await refreshProjectIcons()
   iconTimestamp.value = Date.now()
+  return { ok: true }
 })
 
 // Removes a project from reactive list, marks id removed, cleans runtime/notes entries, and persists.
-export const removeProject = action('remoteActions.removeProject', (id) => {
+export const removeProject = action('remoteActions.removeProject', async (id) => {
   if (!id) return
   projects.value = projects.value.filter((p) => p.id !== id)
   // Records removed id so any open config modal cannot resurrect it.
   markProjectRemoved(id)
   // Deleting runtime entry cancels in-flight status checks (currentEpoch reports 0).
   delete projectRuntime.value[id]
-  // Drops memory notes entry; on-disk repo file is intentionally preserved.
+  // Drops memory notes/config entries; on-disk repo files are intentionally preserved.
   dropProjectNotesEntry(id)
+  dropProjectConfigEntry(id)
+  // B5 (docs/plan/settings-and-state-layout.md § B): removes this project's own state/<id>/ tree (every
+  // host's baseline + last_sync) - scoped to this one id, never another project's (1.9.3 multi-entity
+  // guard). Best-effort: a failure here must not block removing the project from the list.
+  try {
+    await invoke('delete_project_state', { projectId: id })
+  } catch (e) {
+    console.error('delete_project_state failed:', e)
+  }
   return saveProjectsList()
 })
 
@@ -311,7 +424,7 @@ export const applySshHostsChange = action('remoteActions.applySshHostsChange', a
     const affected = projects.value.filter((p) => p.remote_host === missingHost)
     if (affected.length > 0) {
       // Prompts confirmation before repointing projects to prevent unintended --delete pushes to wrong server.
-      const list = affected.map((p) => `<li>${escHtml(p.name)}</li>`).join('')
+      const list = affected.map((p) => `<li>${escHtml(projectDisplayName(p))}</li>`).join('')
       const answer = await askConfirm({
         kind: 'confirm',
         title: 'SSH host renamed?',
@@ -328,7 +441,10 @@ export const applySshHostsChange = action('remoteActions.applySshHostsChange', a
         cancelButtonText: `Keep '${missingHost}'`,
       })
       if (answer && answer.confirmed) {
-        affected.forEach((p) => { p.remote_host = newHost })
+        // `affected` was captured before the `askConfirm` await - re-resolve each id against the
+        // live list now, so a project removed/replaced while the dialog was open is skipped rather than
+        // mutated on a detached, stale reference.
+        affected.forEach((p) => { const live = byId(p.id); if (live) live.remote_host = newHost })
         needsSave = true
         logSsh(`Repointed ${affected.length} projects from '${missingHost}' to '${newHost}' (user confirmed).`)
         Toast.fire({ icon: 'info', title: `Repointed projects to '${newHost}'` })
@@ -359,7 +475,8 @@ export const applySshHostsChange = action('remoteActions.applySshHostsChange', a
       const newHost = answer && answer.confirmed ? answer.value : null
 
       if (newHost) {
-        affected.forEach((p) => { p.remote_host = newHost })
+        // Same re-resolution as the single-rename branch above.
+        affected.forEach((p) => { const live = byId(p.id); if (live) live.remote_host = newHost })
         needsSave = true
         logSsh(`Migrated ${affected.length} projects from ${missingHost} to ${newHost}.`)
       }

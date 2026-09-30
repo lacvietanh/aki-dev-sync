@@ -24,7 +24,7 @@
         label="Project Notes"
         :placeholder="writable
           ? 'Write general project notes, credentials, or context here...'
-          : 'Read-only — this project\'s .akidevsync/notes.json could not be read'"
+          : `Read-only — .akidevsync/notes.json could not be read: ${notesEntry.error || notesEntry.status}`"
         :rows="2"
         :readonly="!writable"
         class="mb-3"

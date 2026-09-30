@@ -199,6 +199,12 @@ pub fn error(tag: &str, msg: &str) {
     write_line(tag, msg);
 }
 
+/// Always written: file + stderr. Use for user actions that move files or change where they go (sync, deploy,
+/// host switch) - the only record left to reconstruct what went where after the fact.
+pub fn audit(tag: &str, msg: &str) {
+    write_line(tag, msg);
+}
+
 /// Written only when --debug / AKI_DEBUG=1. Use for key lifecycle events (start, done, STALE_RESET, force-sync outcome).
 pub fn info(tag: &str, msg: &str) {
     if is_debug() {
@@ -224,11 +230,12 @@ pub fn get_log_path() -> String {
 }
 
 /// Routes frontend log entry through backend pipeline (usage.log + stderr).
-/// Only info/debug are gated by debug mode; "error" is always written (matching three-level contract).
+/// Only info/debug are gated by debug mode; "error" and "audit" are always written.
 #[tauri::command]
 pub fn log_frontend(level: String, tag: String, msg: String) {
     match level.as_str() {
         "error" => error(&tag, &msg),
+        "audit" => audit(&tag, &msg),
         "info" => info(&tag, &msg),
         _ => debug(&tag, &msg),
     }

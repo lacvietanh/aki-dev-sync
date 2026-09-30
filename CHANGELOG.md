@@ -3,27 +3,52 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-### [Unreleased]
+## [Unreleased]
 
-#### Changed
-- **The titlebar Refresh tooltip and the intro now say what Refresh and opening Tasks actually do**: the titlebar Refresh re-reads `projects.json`, SSH hosts and every project's notes from disk before refreshing git/remote diff/usage, and the Tasks dialog re-reads `.akidevsync/notes.json` each time it opens, so edits made outside the app show up without a restart. README and `docs/feat/project-task-list.md` document the same re-read moments and the last-write-wins caveat.
+### Added
+- **`npm run install:app` and `npm run help`.** `install:app` builds, signs and replaces the copy in `/Applications` (the same as running `./scripts/install-desktop.sh`); `help` lists every npm script with a one-line purpose and fails if `package.json` gains a script the list does not describe.
+- **AI Settings: choose the model and the briefing prompt `agy` uses for Explain.** A sliders button beside Explain in the sync popup opens a small dialog with the models `agy` actually offers (read live from `agy models`; the model name carries its thinking level) and the editable Explain prompt with a reset to default.
+- **The count popup is now "Sync Changes": PUSH and PULL side by side.** Two equal columns, each listing its top-level directories with counts, wider than before and titled so it is easy to refer to; conflicts sit below. Local and remote now have one colour pair app-wide (local amber, remote blue): the PUSH/PULL buttons, the PUSH/PULL blocks in project settings, the last-action tags and the intro diagram all follow it (the intro diagram used to draw local in cyan and remote in amber). **Preserved**: every other use of amber and blue (warnings, usage bars, agent colours) is unchanged.
+- **Explain now gives a short briefing instead of a generic summary.** One situation sentence, then each collision with what changed locally and on the remote (quoting the differing lines and saying whether the two edits touch the same lines), then what PUSH and PULL would each do, with ages like "edited 3 days ago". It no longer repeats the file lists the popup already shows, may run read-only commands to look inside the busiest folders, and still only describes, never recommends a side.
+- **Deploy is now its own action, beside DEV/BUILD, instead of a hidden side effect of a push hook.** A third inline button, `commands.deploy` (project.json, same shape as DEV/BUILD), defaults to `npm run deploy` when `package.json` actually declares a `scripts.deploy` entry, else stays empty and the button is disabled with a "set one in Project Settings" tooltip - unlike DEV/BUILD's convention-only default, this one reads the script. `deploy` (`run_on`: local/remote, `on_push`, and for a remote deploy its own SSH `host` plus an optional `path` that defaults to the project's remote path) is set once per project in Project Config's RUN COMMANDS group. A remote deploy never runs on the sync host implicitly: with no deploy host picked the button is disabled with that reason, and switching the sync host - one click in the table - never changes where a deploy runs. Deploy always opens an in-app terminal tab (local in the project folder, or a fresh SSH tab on the deploy host that `cd`s to the deploy path and runs `bash -lc '<cmd>'`) and always shows one confirm dialog with the exact command and target first - the button, or an optional offer right after a successful non-dry PUSH with `on_push` on (a dry run never offers it; for a remote deploy, only a push to the deploy host itself offers it, so a push to a staging box never offers deploying production). No ignore-errors option. Two tiny `D`/`H` letter badges on the PUSH button show at a glance whether a push to the current host will offer a deploy and whether it has any sync hooks configured, tooltip listing the commands - no new row (Extreme Narrow). The confirm dialog mirrors to a paired phone through the same `askConfirm` mechanism already used for a Remote Host switch; the DEPLOY button itself shares DEV/BUILD's existing host/companion launch path, unverified here by a dedicated test. See `docs/feat/deploy.md`.
+- **Project settings now live in the project itself.** Name, Production URL, push/pull excludes and the DEV/BUILD commands are read from the project's own `.akidevsync/project.json` — editing that file, or the project's git branch, changes what the app shows without any registry copy overriding it. The config dialog labels each field **in the project** or **on this Mac**, and disables Save (reason shown) unless the project's settings file was read back present-and-valid, or confirmed genuinely absent and safe to create — including while that read is still in flight, e.g. right after a titlebar Refresh (same as Tasks). Saving writes `.akidevsync/project.json` first: if that write fails, or the project vanished from the list while the write was in flight, nothing else changes — no field is applied, no registry write happens, only an error is shown. Every save, for an existing project or a brand-new one, resolves its project by id at the moment it lands, so it can never land on the wrong entry or create a duplicate if the list was reordered, another project removed, or the same new project saved twice while a write was in flight, and one project's save never touches another's settings. A project the app cannot read now shows its folder name instead of a blank row. A push, pull or delete preview always re-reads its excludes from `.akidevsync/project.json` at the moment it runs and refuses if that file is not readable, so a sync can never run on excludes carried over from a stale or half-loaded screen. A folder mounted or reconnected after launch that already has a `.akidevsync/project.json` recovers on the next titlebar Refresh; only a folder that was never seeded stays refused for sync until you open and Save its config, or restart the app. Preserved: a project untouched by this change behaves exactly as before.
+- **Hooks and sync history are now tracked per remote host**, not shared across every host a project has ever used — syncing with a second host no longer overwrites or reads back the first host's state, and the delete-confirmation warning now always compares against the host you are about to sync with, not whichever host synced most recently. Removing a project also removes its sync history for every host. The remote path itself is a project fact and stays the same regardless of which host serves it — it is never tracked per host. Preserved: changing one project's one host never touches any other project's or any other host's saved state.
+- **Both PUSH and PULL badges lit no longer reads as "conflict" by itself.** A real conflict — the same file edited on both sides since the last common sync with this host — is classified using the per-host baseline as a third comparison point, checksummed when **both sides changed since the baseline and their sizes match** (capped at 200 files, cached across polls; the rest are flagged unverified rather than guessed), and shown as a `⚠ n` badge overlay on PUSH, excluded from the push/pull counts. **Clicking any lit badge — PUSH count, PULL count, or the conflict badge — opens the same read-only breakdown popover**, showing a per-class, per-top-directory count and whether the remote is behind, with one **Explain** button that asks `agy` for a plain-language summary of the whole picture behind both badges, including a unified diff per conflict — descriptive only, no recommendation and no action button. **Explain is disabled with its reason in its tooltip when no `agy` binary resolves**, checked before the button can be clicked rather than only after a failed attempt. An rsync build whose `--out-format` output cannot be parsed, or whose metadata call itself fails, degrades to the pre-existing counts with zero conflicts reported, never a guessed classification. A remote-deleted file the local side never touched is once again excluded from every count, matching the pre-1.32.0 behavior. An rsync mtime is now read as this Mac's own local time at the moment the file was actually modified (not UTC, and correct across a DST transition), so an ordinary local edit under a non-UTC time zone is no longer misclassified as a conflict. **Preserved**: a project untouched by this change behaves exactly as before.
 
-#### Fixed
+- **Mirror mode's delete-confirmation dialog now also catches silent overwrites, not just deletions.** A mirror PUSH/PULL (`delete_on_push`/`delete_on_pull` on) drops `-u`, so besides deleting anything absent from the source, it also transferred over any file the destination held a newer-or-equal copy of - with no preview, no confirm, and no log line, unlike the deletion half which the existing typed-confirmation dialog already guarded. A new `get_sync_overwrite_preview` runs alongside `get_sync_delete_preview`; the dialog now lists deletions and overwrites separately, both previews share the push-only-dir auto-approve and the "preview failed → still ask" fallback the deletion guard already had. See `docs/feat/sync-flow.md`'s Safety Guard bullet.
+- **The first real PUSH or PULL between a project and a remote host now asks first, naming the exact `host:path`.** Both mirror previews are blind to an empty or missing destination, and the remote host is a one-click dropdown in the table, so the first transfer to a host the project has never synced with - mirror or not, including a SELECT push - shows one confirm dialog naming the direction and destination. A dry run never asks; if the sync history cannot be read, it asks.
+- **Every sync, deploy and remote-host change is now written to `~/.aki/devsync/usage.log`, debug mode or not** - project, direction, dry or real, `local <-> host:path`, and the outcome for a sync; the command and target for a deploy; old and new host (and whether it came from the table or Project Settings) for a host switch, plus any deploy-config change. Nothing recorded this before, so there was no way to reconstruct afterwards which host a push had gone to.
+
+### Changed
+- **Modal and terminal styling now comes from shared classes and role tokens instead of per-component copies.** The terminal key row and compose bar, the remote host picker, scope tags, intro notes, status messages and the form footer moved into `main.css`, and 62 repeated colour literals became named tokens; no layout or colour changes, except that long error text in the Claude Setting and Gemini Allowlist dialogs now wraps like everywhere else and the Cleanup and Profile footers no longer shrink. `npm run audit:ui` is now a passing gate with recorded exceptions.
+- **The titlebar Refresh tooltip and the intro now say what Refresh and opening Tasks actually do**: the titlebar Refresh re-reads `projects.json`, SSH hosts, every project's notes and `project.json`, and the newest sync outcome per project, from disk before refreshing git/remote diff/usage, and the Tasks dialog re-reads `.akidevsync/notes.json` each time it opens, so edits made outside the app show up without a restart. README and `docs/feat/project-task-list.md` document the same re-read moments and the last-write-wins caveat.
+
+### Fixed
+- **A failing status check no longer floods `usage.log`.** When two steps of one poll failed (metadata pull and the fallback count), each overwrote the other's remembered message so both were logged again every poll; each failure kind is now remembered separately and logged once until it changes or clears.
+- **A project whose `notes.json` cannot be parsed now says why in the Tasks dialog.** Instead of a generic "could not be read", the read-only notes field shows the parser's own message (for example `expected ',' at line 56 column 5`), so a missing comma or a git conflict marker can be located at once. The file is still never overwritten. **Preserved**: every other project's notes and tasks are untouched.
+- **`./scripts/install-desktop.sh` no longer pops a Finder window on the built `.app`.** The reveal is now skipped when the build is followed by an install; a plain `npm run build:app` or `build:rmud` still reveals its output.
+- **Explain in the sync popup no longer hangs or fails with `agy exited non-zero: -p took "--output-format"`.** It now opens `agy` read-only (`--mode plan`, per the recorded agy facts) in its own in-app terminal tab with its normal interface, so you watch it work, see the answer stream in, and can steer or quit it, instead of a silent background call.
+- **A failed sync status check no longer leaves the PUSH/PULL badges silently frozen on their last value.** The buttons keep the last good counts (no flicker) but get a dashed red outline, and their tooltip opens with the error; the failure is also written to `usage.log` once per change of error, per project and host. Conflict detection's checksum step works for remote paths written as `~/...` (the default for new projects) - it previously failed on every poll for them, which is what froze the badges - and if that step fails for any other reason, its files are reported as unverified conflicts instead of failing the whole status check.
 - **Opening a terminal tab no longer holds the shared session map while the shell process is created**, so resizing, typing-path lookups and closing existing tabs are not queued behind a slow spawn. A tab closed, killed, restarted or the app quitting while its shell is still starting now has that shell reaped instead of installed. **Preserved**: a second open of the same tab still waits and reuses the one shell, and reusing a closed tab id still works. Guarded by six tests that drive a real shell through the spawn path (`pty::tests::a_tab_closed_while_its_shell_is_being_created_leaves_no_session_and_no_process` and siblings).
 - **A new terminal tab no longer stays blank after closing the highest-numbered tab.** 1.31.0's close fence rejected every byte from a closed tab id forever, but new tabs take `max(id)+1`, so ⌘T after closing the last tab reused a fenced id and its shell ran with no output; only a further ⌘T (a never-closed id) worked. A fresh session now lifts the fence for itself while every earlier session of that id stays rejected. **Preserved**: late output from a closing tab still cannot resurrect it, and other tabs' floors are untouched. Guarded by `pty::tests::reused_tab_id_accepts_the_new_session_only`.
+- **Switching a project's Remote Host — from the table or inside the config dialog — now restores that host's own saved hooks**, or starts clean if you have never used that host before. The remote path itself never changes on a host switch — it is the same directory regardless of host, so there is nothing left to fill in or confirm.
+- **A local deletion no longer looks like "the remote created this file" after a merge push.** A file deleted locally after a push without Mirror is still recognized as pending deletion on the next pull, instead of looking like a new remote-only file.
+- **`api.akitao.com`'s deploy host was recorded wrong by the deploy-hook migration above** - `bien`, the box used for code-only sync, instead of `akicloud`, the only host running `api-akitao.service`. The DEPLOY button would have looked available and offered no error, but the deploy script's own machine guard (`user == akinet` on Linux) would have silently no-op'd on every run against `bien`. Corrected to `akicloud` directly in the registry; confirmed by the running service, DNS, and the script's own guard - not by triggering a real deploy.
+- **The PUSH/PULL count and conflict badge overlays sat close enough to the button underneath that a click meant for PUSH/PULL could land on the badge instead** once the badges became clickable (their own popover). Both overlays now sit 3px further off the corner, and the `D`/`H` letter badges are bigger and higher-contrast (were reported as too faint to read).
+- **The PUSH/PULL count and conflict badges could not be clicked open at all.** They were plain `<span>` elements, and a popover can only be opened by a `<button>` or `<input>`, so a click did nothing; they are now buttons. Once open, the breakdown popover was also cropped by the right edge of the narrow window (only a sliver showed), so it now keeps both window edges clear. The popover is anchored to the PUSH button's wrapper, which exists in every row, so a row whose only lit badge is `⚠` or PULL (nothing to push) opens it in place too instead of into an anchor that was not there. With Sync check off the badges keep their counts and still open it (only the PUSH, PULL, DRY and Explain controls are disabled, each on its own instead of through one disabled group). See `docs/plan/conflict-detection-and-agy-report.md` § Amendments.
 
-### [1.31.0] - 2026-09-20
+## [1.31.0] - 2026-09-20
 
-#### Added
+### Added
 - **Project paths copy directly from their local/cloud icons.** Clicking either icon copies the complete path and briefly swaps it to a check mark, without adding another control to the project row.
 - **The OPEN popup's In-App Terminal action always creates a fresh project tab.** The project-row terminal button keeps its existing focus/reuse behavior, so the two entry points now match their distinct purposes.
 
-#### Fixed
+### Fixed
 - **The terminal tab strip now scrolls** with a plain mouse wheel and keeps the active tab in view, and the dock header shrinks to the window instead of stretching past it, so tabs beyond the visible edge are reachable in a narrow dock.
 - **Hardening after the terminal-stack audit.** `resolve_remote_path` now validates the host and enforces a connect/exec deadline; the statusline no longer dumps raw payloads (email, cwd, usage) to a shared `/tmp` path; statusline install patches `settings.json` first with same-directory temp files and stops on any failure, leaving script and settings untouched; remote-control secrets fail closed when OS entropy is unavailable instead of falling back to time/PID state; disabling remote control now guarantees an empty companion registry (no in-flight handshake can insert afterwards); Claude usage polling and cleanup resolve every cache from the selected `CLAUDE_CONFIG_DIR`, so identity and quota never mix across profiles; closing a PTY tab can no longer be resurrected by late output, and `kill_session` no longer holds the session map while waiting on the process. **Preserved**: default `$HOME/.claude` installs, other tabs' sessions/scrollback, and paired devices' credentials. **Action needed**: scripts already installed keep the old `/tmp` dump line until Statusline is Applied again from the app.
 - **Antigravity missing-tool notice re-arms every 5 minutes** instead of firing once per app run, so a host that gains or loses the tool is re-probed in long-lived sessions.
 
-#### Changed
+### Changed
 - **Refresh all now reloads `projects.json` and the SSH host list from disk first**, then refreshes every project, so config edits apply without restarting the app. A companion click forwards to the host, which owns disk access. Antigravity's binary-cache TTL is not covered by this.
 - **Terminal tabs are no longer capped.** `MAX_TABS`/`MAX_TABS_PER_SCOPE` are gone from the tab store and composable; the strip keeps its horizontal scroll.
 - **A phone reconnect no longer replays every tab's full history.** On connect or resync the host sends full scrollback for at most 4 tabs (active, then pinned, then list order) and an authoritative empty `reset` (size, liveness, existence) for the rest, so the burst stays under the companion outbox budget at any tab count. A tab's history still arrives when it is opened on the phone (the terminal view fetches `pty_get_scrollback` on mount). Guarded by `npm run test:replay`.
@@ -31,19 +56,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **UI colors and static inline styles moved onto shared tokens/classes.** Every hex value with an exact token in the stylesheet or a `<style>` block now uses `var(--token)`, and six modals' static `style=` attributes became classes; rendering is intended to be identical. `npm run audit:ui` reports what remains. **Unverified at runtime** until the modals are opened once.
 - **The backlog now contains only open work.** Completed, rejected, and superseded entries were removed; remaining notes are grouped by readiness and ranked easiest-first.
 
-### [1.30.0] - 2026-09-12
+## [1.30.0] - 2026-09-12
 
-#### Added
+### Added
 - **The DMG now carries a double-click install helper.** Tauri's macOS DMG bundler has no "extra files" option, so `scripts/inject-dmg-file.js` converts the built DMG to read-write, copies `Install (double-click + password).command` into it alongside the app and the `Applications` shortcut, then reseals it (`hdiutil convert`/`attach`/`detach`) - `scripts/post-build.js` runs this for every native-arch DMG it renames. The script itself tries a plain `cp -R` to `/Applications` first (the default `admin`-group permissions on that folder already allow it without elevation) and only falls back to an `osascript … with administrator privileges` password prompt if that fails; `xattr -cr` and `codesign --force --deep -s -` never need elevation and always run unconditionally, followed by `open`. README's install steps now point at this file instead of the old manual drag + right-click-Open + `xattr` ritual.
 
-### [1.29.1] - 2026-09-11
+## [1.29.1] - 2026-09-11
 
-#### Fixed
+### Fixed
 - **In-app terminal copy works again.** 1.29.0's unverified select-to-copy swallowed every left mousedown and replayed a synthetic event whose `detail` is 0, so xterm never started a selection; Option-drag and `⌘C` both had nothing to copy. The mouse is xterm's again. `⌘C` plus the selection stash from 1.28.1 are restored. OSC 52 stays (remote tools can still write the Mac clipboard; that path does not take the mouse). **Preserved**: the per-tab stash, redundant mouse-protocol re-arm suppression, and OSC 52 handler. **Unverified at runtime** until Option-drag then `⌘C` is confirmed on a Mac under `claude` over SSH.
 
-### [1.29.0] - 2026-09-10
+## [1.29.0] - 2026-09-10
 
-#### Changed
+### Changed
 - **The shared rule corpus is now called AkiDevRule everywhere in the app.** The App-icon menu still said "AkiClaudeDoc" and its Repo button pointed at a GitHub repo that no longer exists, so the Install button was the only half that still worked. Menu label, both buttons, the repo link, the Tauri command (`install_akiclaudedoc` -> `install_akidevrule`) and the checkout paths it probes were all renamed together, and the "not found" error is now in English like the rest of the UI instead of Vietnamese. Past CHANGELOG and plan entries keep the old name on purpose - they record what was true when written.
 - **Owner-local install now preserves macOS TCC grants across rebuilds.** `scripts/install-desktop.sh` creates/reuses `Aki Dev Sync Dev`, builds the arm64 `.app`, preserves entitlements while signing, then replaces `/Applications/Aki Dev Sync.app`; `docs/ref/install-desktop.md` is the app-specific lookup.
 - `docs/ref/macos-terminal-tcc-permissions.md`: PTY/`aki.devsync` only — folder Allow + spawn scope. Mechanism lookup: installed `~/.aki/akidevrule/docs/ref/macos-codesign-tcc.md` (`tauri.B7` is concise).
@@ -51,7 +76,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - `scripts/post-build.js`: unified DMG naming with AWU/AIObox — `CARGO_TARGET_DIR`, rename only `{productName}_{version}_{arch}.dmg` for the minted version, arch tokens `arm` / `x64` / `uni`, absolute path + Finder reveal. Lookup: `/Volumes/DEV/Frameworks/Tauri/AkiTauri/ref/tauri-macos-dmg.md`.
 - **Remote Control dropdown slimmed** to on/off, the pairing code, and the URL list, with a single row opening the settings modal. The Tailscale HTTPS toggle moved into that modal.
 
-#### Added
+### Added
 - **The project settings modal has a Project Icon section.** It shows the icon the app resolved for that project, a Reload Icon button, and help text spelling out exactly where the app looks: the candidate paths differ by detected project type (Tauri / Nuxt / web / other), the smallest existing candidate wins, and one over 250 KB means no icon at all rather than falling through to the next. Previously nothing in the UI said any of this, and there was no way to make the app notice an icon you had just added.
 - **Cursor joins the IDE list in the OPEN popup**, local and Remote-SSH, alongside VSCode, VSCode Insiders and Antigravity. It greys out when Cursor is not installed, the same way the others do. Adding a fourth entry also collapsed the remote-launch branch chain into one scheme lookup; VSCode and Insiders produce byte-identical URIs to before.
 - **`__pycache__/` is excluded by default on both sync directions, on existing projects too.** `.wrangler/` and `.claude/` were already in the defaults; only Python's cache dir was missing. A one-shot migration adds the entry to every project that lacks it on the next app load, appending it and touching nothing else in either list - a project that already has it is not rewritten at all. Same shape as the existing `.akidevsync/` migration, including its trade-off: deleting `__pycache__/` from a project by hand will not stick, since the migration re-adds it on the following load.
@@ -65,10 +90,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Task Notes text limits unified.** `src/constants/taskLimits.js` is now the single source for every text-length cap (`TASK_TITLE_MAX`, `TASK_DETAIL_MAX`, `NOTES_MAX`, `GLOBAL_NOTE_MAX`), replacing five scattered literals across `NotesField.vue`, `TaskListPanel.vue`, `ProjectTasksModal.vue`, `GlobalNoteModal.vue`. Detail text and project/global notes grew room (1500 → 3000 and 1500 → 5000) since they were the tightest in practice; title and the global-note cap are unchanged.
 - **AGY pre-allow list grows to 100 entries.** Adds every script path the akiflow/akidevsync-notes skills invoke (`council-cost.sh`, `council-read.sh`, `council-verify.sh`, `scythe.sh`, `notes_cli.py`) plus the read-only commands `aki-mcp-sv`'s own shell allowlist already treats as safe (`pwd`, `tree`, `whoami`, `uniq`, `cut`, `top`, `nproc`, `lsblk`, `ip addr`, and the read-only `git` subcommands `describe`/`ls-remote`/`merge-base`/`shortlog`) that this app's seed list was missing.
 
-#### Removed
+### Removed
 - **The "Claude Code Remote Host" selector is gone from the SSH Config modal.** It was left over from before each Agent Usage slot carried its own host, and it had quietly stopped working over Remote Control: it wrote the value directly instead of going through the mirrored action, so changing it from a phone never reached the host. Every remote slot already has its own host dropdown showing the resolved value. Nothing changes for anyone in practice - a host you previously picked is still remembered and still used, and a slot with no explicit host still falls back to it, or to the first entry in `~/.ssh/config` exactly as before.
 
-#### Fixed
+### Fixed
 - **Adding or replacing a project's icon no longer requires restarting the app.** The icon cache was built exactly once, during the single `load_projects` call at startup, and `refreshProjectIcons()` - called right after a project's config is saved, and named as if it rescanned - only re-read that same stale cache. So a favicon added after launch was invisible until the whole app was restarted, which is the one thing that cannot be done casually here: it kills every running terminal and in-flight task across every project. A new `reload_project_icons` command rescans the project directories for real, and the save path plus the new Reload Icon button both go through it. Full audit of what else is cached at startup: `docs/research/startup-cached-state-audit.md`.
 - **A reload no longer dumps every terminal into the global scope.** Right-clicking slightly off the tab strip hits the webview's own "Reload", which wipes all frontend state while the shells themselves keep running in the background - and the backend had never recorded which project a shell belonged to, only its id and whether it was alive. So every surviving terminal came back as a generic global shell: project badges read zero, pinned tabs lost their pin, renamed tabs lost their names. Ownership, title and pinned state are now kept on the backend alongside the shell itself, so a reload re-adopts each terminal into its own project. A shell that genuinely has no owner still lands in the global scope, which was always the right answer for that one case and is no longer applied to everything. Root cause and the two rejected alternatives: `docs/research/terminal-tab-ownership-reload-loss.md`.
 - **A renamed terminal tab is no longer cut off, and too many tabs now scroll instead of squashing.** Tabs shared one flexible width, so every tab shrank as more opened and a deliberately explicit name was truncated by a 160px cap. Each tab now sizes to its own name between 84px and 220px, and the strip scrolls horizontally like VSCode's once they overflow. No scroll buttons or overflow menu were added.
@@ -77,46 +102,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Ten wrong pairing codes no longer disable Remote Control.** The strike counter was global and its penalty was `enabled = false` persisted to disk plus the pairing code cleared - correct on a LAN, but on a public origin it is an unauthenticated kill switch anyone can pull, recoverable only by walking to the Mac. The penalty is now a cooling window on **pairing** only: already-paired devices keep working, the server stays up, and the cost of a bad-code storm is a delayed re-pair. It is counted per source address (10 failures → 5 minutes) so one address guessing badly cannot lock out another, with a global backstop an order of magnitude higher (100) against a distributed spray. Sizing record (reach, capability, motive, blast radius) and the reopen trigger: `docs/plan/remote-ingress-rework.md` §4.
 - **Saving one Remote Control preference no longer drops the other.** The old writer emitted `{"enabled": …}` as the entire file, so any toggle would have erased the new ingress fields; it is now one `persist_server_state()` writing the whole record from live state.
 
-### [1.28.1] - 2026-08-20
+## [1.28.1] - 2026-08-20
 
-#### Fixed
+### Fixed
 - **`⌘C` now copies the terminal selection**, including a selection a mouse-tracking TUI wiped a moment after it was made. xterm's only copy route is a native `copy` DOM event that only ever gets fed a selection on Linux (primary-selection emulation) - in this WKWebView it never fired, so `⌘C` silently touched nothing, on any target. The terminal now claims `⌘C` itself and writes the selection through the app's own clipboard path, plus stashes the last non-empty selection so a wipe right after selecting doesn't lose it. Also suppresses a redundant mouse-protocol re-arm that was clearing the selection outright when a TUI re-emitted a mouse mode already active.
 - **Terminal tab shortcuts (`⌘⇧[`, `⌘⇧]`, `⌘W`, zoom) now repeat**, instead of working once per terminal click. The focus flag they gated on went stale on every tab switch - it's a live focus check now.
 
-### [1.28.0] - 2026-08-19
+## [1.28.0] - 2026-08-19
 
-#### Added
+### Added
 - **Glass Effect toggle**, in the App-icon menu below "Enable SSH Terminal Color" - turns the frosted-glass blur back on for the chrome surfaces listed below, off by default, persisted in `localStorage` (`src/composables/useVisualEffects.js`).
 
-#### Changed
+### Changed
 - **App data directory moved from Tauri's per-OS default (`~/Library/Application Support/aki.devsync/` on macOS) to `~/.aki/devsync/`**, matching the rest of the `~/.aki/` ecosystem. A one-time migration runs at startup, before the logger opens its file: `projects.json`, `usage.log`, `globalnote.json`, `ssh_undo_state.txt`, `ssh_redo_state.txt`, `baselines/`, `companion-devices.json`, `companion-server.json` are each walked per file (a directory's children are copied individually, not as one unit), a file is copied only when the destination lacks it, its source is deleted only once its own copy succeeds, and a legacy directory is removed only once it is actually empty - so a single unreadable child can never strand the rest of an artifact, and a partial migration is safely retried on the next launch instead of reading as already done. Verified on the owner's Mac: fresh launch created `~/.aki/devsync/`, moved every artifact byte-identical (globalnote.json, companion-devices.json, ssh_undo_state.txt diffed identical; 25/25 baseline files, 24/24 projects), legacy directory survived holding only non-artifact leftovers as expected, and a second launch was a silent no-op - see `docs/plan/done/appdata-dir-to-aki-devsync.md`.
 - **Idle GPU: `backdrop-filter` blur removed from permanently-mounted chrome** (`.dashboard-bottom`, `.terminal-header`, `.grid-header`, `.premium-tooltip`) - a continuous compositor blur on always-mounted elements was the confirmed top idle-GPU cost; restored only opt-in via the new Glass Effect toggle above. The in-app terminal's cursor now blinks only for the tab that is both active and focused, instead of every mounted tab. `RefreshRing`'s countdown now advances in roughly one step per second instead of animating every frame. The `pulse` keyframe dropped its `box-shadow` channel, keeping only `opacity`/`transform`. Removed 46 lines of dead `.projects-table` CSS with no matching `<table>` markup anywhere in the app. Measured on the owner's Mac via Activity Monitor's GPU History (system-wide, not the single-process reading originally targeted): idle and under normal use now sits around 25%, down from the ~95% baseline before this fix - see `docs/plan/done/fix-idle-gpu-webkit-compositor.md`.
 - **Changelog moved out of the titlebar into the App-icon menu** (before GitHub Repository), and the titlebar version text is no longer clickable - the clickable element was cutting into the window's drag region; the whole titlebar is draggable again.
 
-#### Fixed
+### Fixed
 - **`F1`-`F3` and `F12` now reach the app's window-shortcut handler while typing in the in-app terminal**, as long as the terminal is on its normal screen buffer (a shell prompt) - previously xterm always consumed those bare function keys first. A full-screen program using the alternate screen buffer (`vim`, `htop`, `mc`) still gets them, unchanged. One shared list, `src/constants/windowShortcuts.js`, is now read by both the terminal's key handler and `AppHeader.vue`'s shortcut handler.
 - **In-app terminals no longer leak `CLAUDE_CODE_CHILD_SESSION` into spawned shells.** `portable-pty`'s `CommandBuilder` inherits the whole parent process environment by default; when this app itself was launched from inside a Claude Code session, that session's own `CLAUDE_CODE_CHILD_SESSION=1` propagated into every terminal tab, silently disabling transcript saving for any `claude` CLI run inside one. Now stripped at the one PTY-spawn funnel (`src-tauri/src/pty.rs`).
 - **`⌘T` now opens a new terminal from anywhere**, not only while an existing terminal tab already has focus - previously pressing it with the dock collapsed or no tab open did nothing. It now also un-collapses the dock. Every other terminal shortcut (`⌘W`, tab cycling, zoom) still requires an existing terminal in focus, since they only make sense on one.
 
-### [1.27.0] - 2026-08-18
+## [1.27.0] - 2026-08-18
 
-#### Changed
+### Changed
 - **`F1` now snaps to the monitor the app is currently on**, via `currentMonitor()`, instead of always the topmost-leftmost monitor of the whole system - falls back to the old topmost-leftmost pick only when the current monitor can't be determined.
 - **`F2` is now a toggle** between `ultrawide` (1400px) and `narrow`, reading the last-applied width preset rather than one-way to 1400px - pressing it again returns to `narrow`.
 - **Terminal tabs dropped the default terminal glyph.** A pinned tab now shows the project icon instead, with the pin marker shrunk to an absolute overlay at its top-left corner - no new element added to the tab, per the Extreme Narrow UI rule.
 - **Agent Usage: removed the "Stale" badge and its tooltip.** Past the existing 10-minute threshold, the panel now shows only the data-age ("ago") text - no separate stale state or label.
 - **Task detail text limit raised from 500 to 1500 characters** in `TaskListPanel.vue` - since both Project Tasks and Global Note already share this one component, the change applies to both without touching either modal.
 
-#### Added
+### Added
 - **`F12` toggles the pin (always on top, all spaces)**, equivalent to the titlebar pin button.
 
-### [1.26.0] - 2026-08-17
+## [1.26.0] - 2026-08-17
 
-#### Added
+### Added
 - **Window-view shortcuts `F1` / `F2` / `F3`, plus a third width preset at 1400px (`Ultra`).** `F1` applies Narrow + Stick Top-Left, `F2` sets the width to 1400px, `F3` centers on the primary monitor. `Ultra` joins `Narrow` / `Wide` as a clickable width preset in the App-icon menu's `AppWindow:` grid, with its own active state. Every width preset is now capped at the current monitor's work-area width before resizing, so 1400px on a smaller display fills the screen instead of hanging off the right edge. Replaces the previous `⌘1` / `⌘2` combos. A **Keyboard Shortcuts** titlebar button (⌨, next to Global Note, always visible in both narrow and wide) opens a dedicated modal grouping the three F-keys and the in-app terminal's own shortcuts (`⌘T`/`⌘W`/`⌘⇧[`/`⌘⇧]`/`⌘+`/`⌘-`/`⌘0`) - moved out of the App-icon dropdown, which was getting long, and out of the small floating key-badges previously overlaid on the preset grid (they visually collided with the button rows).
 - **Donate modal with PayPal and MoMo QR codes, plus a suggested transfer note.** The Donate button/menu item now opens a modal showing both QR images (PayPal first), a suggested memo line (`DONATE FROM AKI DEV SYNC <version>`) so a transfer stays identifiable, plus a link to the existing VietQR bank-transfer page. Replaces the previous behavior of opening the VietQR page directly.
 
-#### Changed
+### Changed
 - **Unified Narrow Mode & Right-Dock main-view cap SSoT to 440px** (shipped as 420px in 1.25.0). Synchronized `MAIN_VIEW_MAX_WIDTH` (`useRightDockLayout.js`), `NARROW_WIDTH` (`useAppWindow.js`), Tauri window `minWidth` (`tauri.conf.json`), the `--main-view-max-width` fallback in `main.css`, and modal container styles (`ClaudeCleanupModal.vue`, `GeminiAllowlistModal.vue`). Documented in `docs/feat/right-dock.md`.
 - **The OPEN drop-up and the terminal 3-dot menu are now native popovers.** Both used a hand-rolled mechanism - a wrapper `.is-open` class, per-project inline position styles held in a ref, hover-to-open with a 12px invisible hover bridge and a 150ms close delay, plus document-level `pointerdown` and `keydown` listeners wired up and torn down by a watcher. All of it is replaced by the `popover` attribute with `popovertarget` on the trigger: the browser provides toggling, click-outside dismissal, `Esc`, and one-menu-at-a-time. About 80 lines of JS across `ProjectTable.vue` and `TerminalChromeMenu.vue` become two small `beforetoggle` handlers that do nothing but place the menu. Because a popover renders in the top layer, this also fixes two real defects: the menu could be clipped by the project table's own scroll container, and `position: fixed` was resolving against `.dashboard-left` rather than the viewport (a CSS container establishes `contain: layout`, which makes it the containing block for fixed descendants) while the coordinates were computed in viewport space. Opening is now click/tap only - hover no longer opens it - and picking an action closes the menu. `backdrop-filter`, `will-change` and the scale animation are gone with it, so no popup keeps a compositor layer alive while closed. See `docs/feat/open-popup.md`.
 - **Agent Usage: dropped the unused `remote` prop** from `AgentUsage.vue` and its binding in `AgentUsageSlot.vue`; removed the `.zone-fieldset:hover` rule.
@@ -134,7 +159,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   - **Tooling, Tests & Helper Scripts (14 files, -305 lines net)**: `scripts/test-ansistrip.mjs`, `get-claudecode-usage.sh`, `get-antigravity-usage.sh`, `provision-claudecode.sh`, `tailscale-serve-https.sh`, `tauri-runner.js`, `lint-remote-scripts.js`, `verify-pty-resize.sh`, `capture-ime-evidence.sh`, `lint-simpleview-boundary.js`, `test/monitor-ag-proxy.js`, `fix-ssh-agent-leak.sh`, `post-build.js`, `sync-version.js`.
   - **Constants & Utilities (11 files, -269 lines net)**: `src/constants/protocol.js`, `ansiStrip.js`, `statuslineColors.js`, `bytes.js`, `clipboard.js`, `projectIcon.js`, `tauri.js`, `tasks.js`, `scheduler.js`, `terminalOwnership.js`, `src/main.js`.
 
-#### Fixed
+### Fixed
 - **OPEN popup overflowed off-screen in the narrow right-dock column.** Its trigger sits mid-row, not at a screen edge, so anchoring the popup to either edge of the trigger (via CSS Anchor Positioning's `anchor()`) always pushed roughly half of it past whichever side the row was shorter on. It now pins to the app's own left edge instead (`left: 8px`, plain viewport-relative CSS, independent of the trigger) - `TerminalChromeMenu.vue`'s 3-dot menu is unaffected, its trigger genuinely sits at a row edge and keeps anchoring to it. See `docs/feat/open-popup.md`.
 - **Terminal chrome menu (3-dot) drop-up got clipped/obscured when the terminal panel was maximized.** Its trigger sits in the panel header, which lands near the top of the window once maximized, leaving little room for the menu to open upward. It now also flips to drop-down (`.is-dropdown`) when `dockMaximized` is true, not only in right-dock mode.
 - **Container Query vs Media Query dual-hiding collision on `.u-narrow-hide` and `.u-wide-hide`**. When window width was wide (>=900px) with Right-Dock active (main-view container width <=700px), global `@media (min-width: 701px)` hid `.u-wide-hide` while `@container main-view (max-width: 700px)` hid `.u-narrow-hide`, causing both to vanish simultaneously and stripping table header labels down to `(25)`. Restructured `main.css` utility queries to a Container-first default with explicit narrow override (`display: inline !important`), ensuring consistent `PJ (25)` display across all narrow-width contexts.
@@ -142,16 +167,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Claude Code reset timer lifecycle in AgentUsage (`ccClockTimer`)**. Switched timer initialization from `onMounted` to a reactive `watch(() => props.agentId, ...)` with cleanup. When switching an existing slot between Antigravity and Claude Code, the 60s countdown and 5h boundary auto-retry now start reliably without requiring component remount.
 - **AgentUsage header email truncated less aggressively in right-dock mode than in true narrow mode.** `isNarrow` compared email length against `window.innerWidth <= 700`, but in right-dock mode the window itself stays wide (>=900px to engage) while `dashboard-left` is capped at 440px - the header showed the 12-char truncation instead of the 7-char one every sibling component already applies via `@container main-view`. Now derives `isNarrow` from `rightDockActive` OR the window width, matching the CSS breakpoint exactly.
 
-### [1.25.0] - 2026-08-16
+## [1.25.0] - 2026-08-16
 
-#### Added
+### Added
 - **Right-side dock column above 900px window width.** The terminal stack relocates from the bottom of the window into a dedicated right-side column when the window is wide enough (>= 900px), with the main view capped at 420px and the terminal filling 100% of remaining width. The right-dock terminal mode is dedicated and clean: the bottom dock's drag splitter is hidden, while the log stack inside the right column stays draggable. The global event log stack moves to the bottom of the main view column. Below 900px (or on mobile companions / remote browsers), the layout smoothly returns to the bottom dock with independent collapse, maximize, and splitter controls. `src/composables/useRightDockLayout.js` is the single source for the trigger and max-width.
 - **External terminals now say whether they were launched from a project or merely happen to sit in its folder.** A session Terminal.app opens from this app's OPEN popup or DEV/BUILD is tagged by its tty with the project that launched it; the External Terminals modal reads that tag first and shows "launched from X", falling back to today's "in X's folder" cwd-match only for an untagged session. An SSH session's cwd is the local `$HOME`, so this is the only way those ever showed the right project before. See `docs/plan/done/terminal-ownership-model.md`.
 - **External-terminal badge counts now honour spawn origin, not just cwd.** A terminal this app opens from a project's OPEN popup counts on that project's `TERM` cell badge from the moment it opens, even if its working directory is elsewhere (an SSH session, or a window that `cd`s away); previously such a session counted on nobody's badge. A terminal the app did not open still falls back to the existing directory-matching rule.
 - **Per-project disable toggle to reduce background load.** A project can now be marked disabled from its Settings gear (Configuration modal) to skip that project's background sync/git-status polling (the periodic checks that run for every project on a timer). A disabled project's row dims and its tooltip states the reason. Manual actions (per-project Refresh button, PUSH/PULL, opening the Git modal) are unaffected and still work on a disabled project; only the two background timers skip it. Every other project's polling is untouched.
 - **Terminal chrome visibility menu.** A 3-dot drop-up in the terminal stack header lets each device hide or show individual pieces of terminal chrome (command bar, key row, text-size buttons, tab strip, group name, external-terminals button, maximize button) independently, with different defaults for the Mac (mostly off) and a paired phone (mostly on). A companion's tab strip is always checked and locked: it is the only way to open, close or switch tabs there. Preferences are per-device (`localStorage`, never mirrored). The command bar (compose input) row defaults on for the Mac too, since it remains the only working path for macOS's built-in Vietnamese composing IME. See `docs/plan/done/terminal-chrome-settings.md`.
 
-#### Changed
+### Changed
 - **Idle GPU/CPU cleanup: notification dot no longer animates forever, `transition: all` narrowed to named properties.** `AppHeader.vue`'s unread-notification dot now plays its `pulse-red` animation once instead of `infinite`. Every `transition: all` site found by the idle-cost sweep (`docs/research/perf-idle-gpu-cpu.md`) now names the specific properties it animates instead of the catch-all, except `.btn-tech` and `.btn-cell-trigger` in `main.css`, which stay `all` by design (shared base classes with heterogeneous per-variant modifiers, interaction-only so no idle cost). Actual GPU/CPU savings not yet measured with a profiler.
 - **Design System & Tokenization Cleanup.** Removed static inline styles in `ProjectTable.vue` (skeleton loader, popup dropdowns) and `AppHeader.vue`, converting them to semantic scoped classes. Tokenized hardcoded hex color values across `main.css`, `AppHeader.vue`, and `TerminalTabStrip.vue` into CSS custom properties. Some of those swaps also change the colour actually rendered, not just where it is declared: `#FFF` -> `#F3F4F6`, `#a5f3fc` -> `#00d2ff`, donate `#f87171` -> `#ef4444`, note-sticky `#f59e0b` -> `#ff8c00`, popup icons `#fbbf24` / `#38bdf8` -> `#ff8c00` / `#00d2ff`, pinned tab `#60a5fa` -> `#0088ff`.
 - **Event log renamed `RAW CONSOLE` -> `PROJECT LOG`**, with the header icon changed from `fa-terminal` to `fa-list-ul`.
@@ -165,7 +190,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **`TerminalCell.vue` replaced by `TerminalScopeButton.vue`, one component now serving both the project table header (global scope) and each project row (per-project scope)** instead of two near-duplicate cells only one of which was ever named `TerminalCell`. No behavior change.
 - **Internal: hard-wrap sweep on the code buckets** (JS/Vue composables/services/store/components and every Rust file under `src-tauri/src/`): rejoined hard-wrapped comments and prose back into one logical line each, no behavior change.
 
-#### Fixed
+### Fixed
 - **Global event log expand/collapse inversion in right-dock mode.** Removed `body-persist` from LogStack and removed overriding `flex: none !important; height: auto !important` styles. LogStack now unmounts logs when collapsed (reserving exactly 44px for header + 1-line peek), respects `dockStackFlex('log')` when expanded (20vh) with a draggable splitter, and aligns chevron icon directions (`fa-chevron-up` to expand, `fa-chevron-down` to collapse).
 - **Responsive breakpoint query mismatch in AppHeader and modals.** Replaced container queries `@container main-view (max-width: 700px)` with `@media (max-width: 700px)` in `AppHeader.vue` and `TaskListPanel.vue` since those components reside outside the main-view container. The Agent Usage and ProjectTable components moved the other way for the same reason - see the Changed entry above.
 - **`open_remote_subprocess` and `install_akiclaudedoc` no longer freeze the window.** Both were plain synchronous `fn` commands running a subprocess to completion on the IPC thread; they are now `async fn` wrapping the blocking call in `tauri::async_runtime::spawn_blocking`, so opening a remote terminal or installing AkiClaudeDoc leaves the UI responsive.
@@ -174,39 +199,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Toast no longer covers the ProjectTable ACTIONS column or a modal footer.** Repositioned from bottom-center to top-end, below the titlebar.
 - **ProjectTable empty state CTA.** Added direct "Add Project" button when no projects are configured to prevent dead-end flow.
 
-### [1.24.0] - 2026-08-12
+## [1.24.0] - 2026-08-12
 
-#### Added
+### Added
 - **Pin a terminal tab and it stays in the strip from every group.** The tab strip only ever showed the active group's tabs, so switching to another project hid the one session you were actually watching — a build, an `agy` run, a tail. Each chip now has a small pin toggle at its left edge; a pinned tab renders in every group's strip, project or global, and sorts ahead of the unpinned ones. A pinned tab still belongs to the group that created it — closing, the per-group cap of 5 and the global cap of 16 all key off ownership, so parking a pinned tab in someone else's strip never eats that group's budget. `pinned` is a field on the tab object, so it mirrors to a paired phone with the rest of the tab list.
 - **Change a project's host from the table.** The row printed `host:path` as static text and the only way to repoint a project was Project Settings. The host half is now a compact dropdown over your SSH config's hosts, saved the moment you pick one; the path stays text. A host stored in a project but no longer present in `~/.ssh/config` is still listed as an option, so opening the dropdown can never silently drop a value it did not recognise. Changing the host clears that project's pending push/pull counts, since they were counted against the old target, and immediately re-checks sync against the new one — no restart needed. The dropdown reads as plain text (no chrome until hover) that widens to fit the host name on a wide window and stays clipped short on a narrow one.
 
-#### Changed
+### Changed
 - **`.akidevsync/` now travels with the project on PUSH and PULL** instead of being excluded from both. 1.22.0 added that exclude as the guard that made per-project task lists safe: a mirroring PULL deletes what the remote does not have, and the remote never had the folder. The guard is now the right one — rsync is handed a protect rule for `.akidevsync/` on every transfer that runs with `--delete`, in both directions — which separates "transfer this folder" from "may delete this folder", the two things the old exclude conflated. Net effect: tasks and notes reach the server with the project and come back with it, and a mirroring sync still cannot erase them. Existing projects have the old entry stripped from both lists automatically on the next launch.
 - **One button shape for the whole app.** The six controls on a project row — git, terminal, OPEN, tasks/notes, log, settings — were four different CSS skeletons agreeing on height by coincidence and disagreeing on radius and padding, patched back into alignment with seven `!important` overrides in the table's own stylesheet. They now share one base class carrying size, radius and spacing, with modifier classes that change colour and state only; the overrides are gone rather than merely outvoted. Radius and control gap joined `--control-h` as tokens. Along the way: a button class with zero usages deleted, two spellings of the same icon square folded into one, one shared modal-button skeleton hoisted out of four modals that each redeclared it, and the host dropdown's styling promoted to a global pattern instead of being copied per call site — 81 lines of CSS removed net, with nothing rendered differently on purpose.
 - **The phone companion mounts the real in-app terminal (xterm.js) again, full-screen TUI support (`vim`, `htop`, `claude`/`agy`'s own UI) included** — reverting 1.23.0's SimpleView plain-text-stream fallback, whose accepted cost was exactly that class of program rendering garbled on a phone. Resize safety no longer comes from the phone never getting a real grid at all; it comes from an explicit, revocable claim: the Mac auto-drives the shared terminal's size by default (unchanged from before), and a companion may take temporary authority only via one deliberate "Fit to my screen" tap in its key row — never automatically or in the background, which is what makes this safe against the original 1.20.0 incident (a phone silently resizing the shared PTY mid-build) that the old "Mac only, always" rule existed to prevent. The Mac gets a small "sized for a connected phone — tap to reclaim" pill whenever a companion currently holds that claim. `SimpleView.vue` and its supporting files are kept in the tree, unreferenced, as a candidate for a future opt-in low-bandwidth mode rather than deleted outright. Design: `docs/plan/wish-terminal-manual-resize-authority.md`.
 - **Global Note reclaims width in a narrow window.** The note card's own side padding sat inside the modal body's, and the modal itself held to 90vw even on a phone. At narrow widths the modal now fills the window (bar the overlay's 8px), and the doubled side padding is collapsed to a hairline so the mono text runs flush to the edge. Textarea size unchanged.
 
-#### Fixed
+### Fixed
 - **Collapsing or expanding one bottom-dock panel no longer resizes the other.** The terminal stack and the event log are presented as independent panels, but their heights were coupled: the dock had a stored height that did not depend on which panels were expanded, and the two divided it with `flex: 1 1 0` — so the space a collapsing panel freed was swallowed by its sibling's `flex-grow` instead of returned to the project table. Collapsing the terminal made the log jump up; expanding it again made the log dip to half. Each panel now owns its own height and the dock's height is their sum, so a panel's own length survives every gesture aimed at the other one. Resizing follows the same split: instead of one splitter for the whole dock, each expanded panel has its own drag handle at its top edge, resizing only itself (double-click still resets, now per panel). MAXIMIZE is unchanged and remains the way past the 85% ceiling. Both heights persist per screen exactly as the single height did — the phone still cannot resize the Mac's layout — but the old stored value is not carried over, so the dock returns to its default proportions once. Design: `docs/plan/dock-stack-independent-height.md`.
 
-### [1.23.0] - 2026-08-03
+## [1.23.0] - 2026-08-03
 
-#### Added
+### Added
 - **SSH Terminal (In-App)**, a new item in the OPEN popup's REMOTE column, above the existing native **SSH Terminal** — the only one of the two that works from a phone, same reasoning as LOCAL's own In-App Terminal over its native counterpart. Types the exact same `ssh <host> -t '...'` command the native item already launches in `Terminal.app` into a PTY tab inside the app instead of a second external window. Unlike DEV/BUILD, it never dedups to an existing tab — a user may legitimately want several SSH sessions to the same project at once.
 - **The external-terminal button in the terminal panel header now shows a badge**: the total count of every open external `Terminal.app` session, not just the count already shown per project. Its icon also changed from a generic window glyph to the same terminal glyph the in-app tabs use, boxed in a rounded outline so it still reads as its own distinct "external" affordance.
 - **The usage panel scales to 8 slots (4 rows)**, up from a hardcoded ceiling of 4. The old `ALL_TIER_ROWS` was a literal two-row array — anything past `tierCount 2` sliced past its end and rendered nothing. Row/slot generation is now derived from one bound (`MAX_TIER_ROWS` in `usageTierStore.js`); the account popup's opening corner is derived from a slot's grid position instead of a hardcoded A/B/C/D switch (so a bottom row opens upward instead of into the panel's scroll clip); and any slot beyond the original A-D defaults to local Claude Code, never a remote target with no host picked, which would show an empty-host error card.
 - **SimpleView: the phone companion now renders the PTY byte stream as a plain scrolling text stream** instead of mounting an xterm.js grid. The phone never receives `cols`/`rows` and never calls `term.resize()`, so a wide Mac viewport can no longer mangle output on a narrow screen. Cursor-up, line-erase and carriage-return are honoured; all other grid geometry is dropped.
 
-#### Removed
+### Removed
 - **Antigravity Log Out button removed** from the Agent Usage panel. The contextual Log Out for the Antigravity IDE (`state.vscdb`) and the AG/CLI surface (`~/.gemini/`) is no longer available in the app.
 
-#### Changed
+### Changed
 - **The app-icon menu's usage picker is now a `Usage slots:` select (2/4/6/8)**, replacing two preset buttons capped at "1 row"/"2 rows" — a button per option would have widened the menu without limit as the row ceiling grows.
 - **Stick Top-Left now always spans the full height of its monitor's work area**, instead of measuring the project list's DOM content and sizing to fit it. The measurement function is removed; the window snaps to the top-left of the top-left-most connected monitor and takes that display's full work-area height (screen minus menu bar) every time, whether or not the project list has finished rendering yet.
 - **`remember` now captures the window's exact size and position instead of a preset choice**, and the ⌘1/⌘2 highlight reflects the session's last-applied preset rather than the saved bounds. Details: `docs/feat/window-presets.md`.
 - **Fixed a remembered window position landing on the wrong monitor on multi-monitor Macs with mismatched DPI.** Bounds are now captured and restored entirely in logical points; the key rename means remember must be turned back on once.
 
-#### Fixed
+### Fixed
 - **The projects table's header no longer drifts out of alignment with its own columns.** The header row and every project row were each their own independent CSS grid that only happened to share the same column-width formula; a column sized from its own content (the SYNC column's button cluster) computed a different real pixel width in the header's own grid (short "SYNC" label) than in a row's grid (the full PUSH/DRY/PULL/LOG/gear cluster), so the two drifted apart. The header and every row are now `subgrid`s of one shared grid, so all of them are forced to agree on the same column widths.
 - **The PUSH/PULL LAST ACTION line showed the opposite colour of the button that ran it** (a push showed in the pull button's colour and vice versa). The two now match their buttons.
 - **The OPEN popup no longer drifts away from its own trigger button.** It centered on the whole window's horizontal midpoint instead of the button that opened it, so widening the app past a narrow width visibly detached the popup from the row that opened it. It now centers on the trigger button itself (still clamped so it can't run off a viewport edge).
@@ -217,9 +242,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Typographic space-lookalikes typed or pasted into the in-app terminal no longer break shell parsing.** macOS's `⌥+Space` types U+00A0 (non-breaking space) directly, and Gboard's suggestion-chip insertion and text pasted from a formatted web page/doc often carry U+00A0 or U+202F instead of an ASCII space. Shells treat those as ordinary word characters rather than `IFS`, so e.g. `echo "1 2 3"` parsed as one token and failed with `command not found`. `usePtyTerminal.js`'s `sendRaw()` — the one funnel every keystroke source (typed text, IME chunks, pasted text via xterm, the compose row) already passes through before reaching the PTY — now replaces `U+00A0`/`U+202F` with a real ASCII space. Deliberately a replacement, not a deletion: unlike the drain's own `SENTINELS` handling in `useTerminalTextDrain.js` (which *deletes* OpenKey's invisible edit markers), the user meant a word boundary here, just typed or pasted the typographic variant of one. Separate mechanism from the already-closed 1.22.0 double-space blocker (an uncancelled `_keyPress` re-sending the same keystroke) and from the still-open Android/Gboard double-insert (`docs/research/terminal-gboard-double-insert.md`) — neither of those is a character-substitution bug, and neither predicted this one.
 - **Option-drag now selects text in the in-app terminal even while a mouse-mode TUI (`claude`, `agy`, or any program enabling mouse-tracking) is running.** xterm.js only forces a selection under `⌥`-drag when its own `macOptionClickForcesSelection` option is set, which this project had never turned on, so the escape hatch silently never worked. Added to the `Terminal` constructor in `TerminalView.vue`; `⌘C` then copies the held selection as before.
 
-### [1.22.0] - 2026-07-31
+## [1.22.0] - 2026-07-31
 
-#### Added
+### Added
 - **Claude Code Cleanup, a new item in the app-icon menu**, showing what Claude Code's own files cost you in disk and letting you tick exactly what goes. Every individual path has its own checkbox; the group checkbox above it is just a select-all for that group and shows a dash when only part of it is picked. The groups are Account (signs you out), Data (transcripts, prompt history, file-undo snapshots), Agent memory, and Cache (safe, regenerates), plus a **Kept** group listed with sizes but no checkboxes, so what survives is visible rather than promised. **Preserved**: your skills, hooks, `settings.json` and `CLAUDE.md` files are not deletable through this feature at all - the app can only touch paths it names literally in code, and the window sends categories rather than file paths, so nothing outside that list is expressible. Anything the app does not recognise is likewise kept, and shown under "Unlisted" rather than swept up. Agent memory *is* deletable, but only from its own group, so clearing chat history can never take it along by accident: clearing transcripts empties each project folder around its `memory/`, and ticking memory as well removes both and the now-empty folder. Sizes use the same units Finder does. Mac window only, not available from a paired phone.
 
 - **A project's tasks and notes now live in the project itself**, at `<project>/.akidevsync/notes.json`, instead of inside the app's own settings file. They travel with the repo: clone it on another Mac, or open it with someone else, and the task list is there. The file always carries an `about` link back to this app's repo so anyone who finds it knows what wrote it, and it is pretty-printed so a change shows up as a readable diff. Existing projects are moved across automatically on the next launch, once, and the app never writes tasks or notes back into its settings file afterwards. **Preserved**: the file already in a repo always wins over the app's old copy, so a checkout that someone else already filled in is never overwritten; and if a project's folder cannot be read right now, that project is skipped entirely and retried next launch rather than migrated against a directory we could not see.
@@ -235,7 +260,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 - **New app-icon menu item: Pre-allow AGY Commands.** Merges a checked-in, recommended set of commands (`git status`, `curl`, `jq`, `agy` itself, ...) into the selected host(s)' `~/.gemini/antigravity-cli/settings.json` `permissions.allow`, so a new machine or a new agy account stops getting a permission prompt for every routine dev command. A union merge via `jq`, not an overwrite - every other key in that file (`agentMode`, `model`, `statusLine`, ...) survives untouched, and re-running it is harmless (the list is de-duplicated). Its own menu item, its own modal, and its own backend command (`apply_gemini_allowlist`) - deliberately not folded into the Statusline Customizer, since applying a statusline must never silently widen a host's permissions as a side effect (SRP).
 
-#### Changed
+### Changed
 - **The projects table now spends extra width on the project name and paths**, not on the sync buttons. The name column was fixed and the sync column absorbed every pixel a wider window gave it, so widening the app made the one column with truncated text no wider. Both columns now flex, weighted 2:1 toward the project column, and the narrow-mode floor for the name column goes up by 1rem. Sync keeps an elastic minimum instead of a fixed guess so its button cluster can never be clipped.
 - **The Global Note's text box starts at ~2 rows, and its modal follows the app's narrow mode.** It now passes `rows="2"` to the shared notes field, and its min-height is a derived 42px (2 lines at this box's own 13px/1.6 type) instead of a guessed round number like the old 320px/190px. `field-sizing: content` (unsupported by this app's WKWebView runtime anyway, and a risk of fighting manual resize where it is supported) is reset to `fixed` for this box specifically, so sizing is driven only by min-height/max-height/resize - the same mechanism that always worked here, just with the floor corrected. The modal was also the one modal missed by the narrow-mode padding pass, so it kept full desktop padding on a phone. Dragging it taller still works and the 60vh ceiling is unchanged.
 - **Antigravity usage probe ported from JavaScript to POSIX shell (`scripts/get-antigravity-usage.sh`) and Rust backend decomposed into domain modules**:
@@ -252,7 +277,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 - **Terminal keyboard input: xterm owns keys, the app owns text.** Two earlier attempts in this same unreleased window are both gone, replaced rather than layered: a capture-phase guard (`useWkImeGuard.js`) that intercepted xterm's internal handlers, then an app-owned overlay `<textarea>` with `disableStdin: true` that re-implemented xterm's own key protocol (arrows, modifiers, F-keys, bracketed paste) badly enough to regress six ways. The actual bug turns out to be one line of xterm 5.5.0 (`_keyPress` truncates a multi-character `event.key` to its first UTF-16 unit — the `"ăn gì" -> "ăn g"` symptom), not the WKWebView `keyCode 229` tagging the chain originally blamed. `useTerminalTextDrain.js` fixes only that: every key still goes through xterm's own pipeline untouched (so arrows, Ctrl/Alt encoding, F-keys and paste stay exactly xterm's own correct behaviour), and a capture-phase `input` listener on xterm's own textarea reads and sends the full corrected string whenever xterm's own `_keyPress` did not already claim and cancel the key — by construction (`preventDefault` suppressing the textarea mutation), never by classifying the input source. Root cause: `docs/research/terminal-vietnamese-ime-root-cause-4.md`. Diagnostics (`window.__akiTermInput`) are kept for the investigation below; the A/B escape hatch that could fall back to stock xterm has been removed now that the drain is confirmed to be what makes typing work, so there is only one input path left to read. **Preserved**: the compose row for true composing IMEs (macOS's built-in Vietnamese input, Japanese, Chinese) is untouched — the drain stands down whenever an actual composition is active. **Tested on real hardware by the owner, 2026-07-31, and not yet finished**: the original truncation bug (`"ăn gì" -> "ăn g"`) is gone and arrows/Ctrl/Alt/F-keys/paste show no regression. A second real-hardware pass the same day found and closed a further blocker the first pass had missed — every space was duplicated even with no input method running (also uppercase A-Z, an undetected corollary of the same cause), traced to `_keyPress` calling `cancel()` without `force` for exactly those two key classes, so xterm's own guard against sending a key twice never engaged; `customKeyEventHandler` now vetoes every keypress instead of only multi-character carriers, one branch removed rather than a guard added. Root cause and hardware verification: `docs/research/terminal-vietnamese-ime-root-cause-5.md`, `docs/research/terminal-input-jul31.md`. **Still open, tracked separately, not touched by this fix**: on Android/Gboard a corrected character arrives alongside the original it was meant to replace (`"ăn gì" -> "aăn giì"`) — scheduled in `docs/plan/terminal-input-jul31.md` §2.2. macOS's own built-in Telex input is deliberately out of scope (VS Code breaks the same way); OpenKey is the supported engine.
 
-#### Fixed
+### Fixed
 - **On a paired phone, the Ctrl and Shift keys in the terminal's key row now light up while they are latched.** They always worked - Shift then Tab really did send a backtab, Ctrl then a letter really did send the control byte - but the button gave no sign it was armed, so the only way to know was to press a key and see what happened. The cause was one word: the object holding the terminal's live state was stored in a deep `ref`, and Vue unwraps refs held inside a deeply-reactive object, so the armed flag the button read was permanently `undefined` while the latch itself (which lives in a closure Vue cannot reach) carried on working. Two other readings of that same object were failing the same silent way and are fixed by the same change: a latched Ctrl typed into the phone's compose box, and the terminal tab's live/dead state, which could never leave "unknown" and so never showed a tab whose shell had exited. No new element, badge or label was added - the armed state is still the button filling with the accent colour. Runtime-only, so **unverified until the owner confirms on a real phone**.
 - **Claude Code's account card and the real terminal statusline no longer keep showing the previous account's email after a switch, even though quota always refreshed correctly - including when two `claude` processes hold two different, genuinely-logged-in accounts while sharing one `CLAUDE_CONFIG_DIR` (a normal daily setup here, not an edge case).** Three layered bugs, found the same day: (1) email was read from `$HOME/.claude.json`, a file the current CLI (2.1.220) no longer writes to - it writes `oauthAccount` into `.claude.json` **inside its own config directory**, `$HOME/.claude` by default even when `CLAUDE_CONFIG_DIR` is unset; (2) even at the corrected path, `.claude.json` turned out to be a cache the CLI itself flushes on its own internal schedule rather than per-session, so when two sessions share a config dir, whichever one flushes last wins there regardless of which actually just logged in - reading it could show the right email for one poll and silently revert on the next. Both `scripts/get-claudecode-usage.sh` and the generated statusline script now resolve the displayed email/org by running `claude auth status` itself (live on every poll in the app script; behind a 15s subprocess-avoidance cache, not a staleness-tolerance one, in the statusline) - this call resolves the identity of the session that invoked it, matching how the terminal statusline itself is always invoked as a direct child of the session it renders for. `.claude.json` remains the source for tier/subscription-type/`accountUuid` only. Details: `docs/plan/cc-account-identity-ssot.md` §15.
 - **A pinned Antigravity usage slot no longer shows an arbitrarily old cached reading while a live one is available**, whenever the running Antigravity surface (IDE vs `agy` CLI) differs from the one the slot was pinned to. Account identity was `(host, email, sourceType)`, and a pin was an exact-triple filter - IDE and CLI were two entities that happened to share an email, so a slot pinned to the IDE stopped matching the moment the same account was used from `agy`, and the fallback for "the pin matched nothing live" was the cache, not the live reading. Identity is now `(host, email)` with no `sourceType`: a pin is an email-only handle and matches whichever surface that account is running under; `sourceType` survives only as icon metadata ("most recent surface"), not as part of identity. **Preserved**: the cache migration only merges entries that already shared one email across surfaces (IDE/desktop/CLI) into the freshest reading - every other account's cached entry, keyed by its own email, is untouched. Verified by the owner on both the local machine and a remote host. Full history: `docs/plan/done/ag-usage-pin-vs-live.md`.
@@ -272,15 +297,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Tapping a project's or the global group's terminal button more than once before the Mac answers no longer opens one tab per tap.** A companion's tap sends the request and gets nothing back until the Mac's reply mirrors over, with no visible feedback that it was already on its way — so a second tap, or an impatient few, each opened its own tab. A tap for a group that is already waiting on an earlier one is now a no-op. Known residual gap, not closed by this fix: two browser tabs open on the same paired phone do not share this guard, since each tab is a separate page with its own state (`docs/arch/terminal-stack.md`).
 - **The global terminal group no longer piles up phantom "Shell" tabs across dev-server reloads.** The global group used to be pinned to a permanent one-tab minimum, re-seeded at boot whenever the frontend's tab list came back empty; that seed could race the backend's own re-adoption of an already-live shell, and each race added one more tab nothing could tell was already accounted for. The floor is removed entirely - the global group is now symmetric with every project's group: it opens on demand and can close down to zero tabs, exactly like a project's group already could.
 
-### [1.21.0] - 2026-07-27
+## [1.21.0] - 2026-07-27
 
-#### Security
+### Security
 - **A paired phone can no longer call arbitrary host functions.** The remote-gesture registry used to register *every* function a store module exported, not just the ones deliberately wrapped as remote actions - 16 internal functions were reachable, including the confirm-dialog opener, whose `html` argument is rendered as raw markup inside the Mac's app window. Wrapping a function as an action is now what registers it, so the exposed set is exactly the intended one.
 - **A paired phone can no longer invoke arbitrary backend commands.** The command bridge had no allowlist, so a companion could start a destructive sync directly and skip the type-the-project-name confirmation, which lives in the UI layer. There is now an explicit allowlist of read-only and gesture commands; everything else is refused with an error the companion can see. PUSH/PULL from the phone are unaffected - they route through host-side actions, so the confirmation still runs. The statusline and Claude-profile menu items, which write this Mac's config, are now hidden on the phone rather than opening a modal whose Apply could only fail.
 - **Remote host names are validated at four more entry points** (usage probe, usage provisioning, statusline check and apply). A host string beginning with `-` is read by `ssh` as an option and can execute a local command; the validation existed but four commands took the host as a direct argument and skipped it.
 - **Config backups no longer accumulate forever.** Each Claude-profile switch wrote a timestamped copy of `~/.claude/settings.json`, each containing the auth token in plain text, and nothing ever pruned them. The five most recent are kept (same for the `~/.zshrc` backups).
 
-#### Added
+### Added
 - **Dock split into two independently collapsible stacks**: TERMINAL above LOG, each with its own collapse state. Collapsing the log stack no longer hides it entirely - it shrinks to one live line showing the latest log message.
 - **Terminal multi-tab**: `⌘T` new tab, `⌘W` close tab, `⌘⇧[` / `⌘⇧]` cycle tabs. Each tab carries its own exited badge (red icon tint), independent of every other tab.
 - **Terminal groups (scoped tab groups)**: tabs are now grouped by project - each project's `TERM` cell (and the column header's terminal icon, for the global group) switches the stack to show only that group's tabs; other groups' shells keep running untouched. `⌘T`/`⌘W`/`⌘⇧[`/`⌘⇧]` act within the current group only. The stack header always shows a group identity (project icon + name, or a plain terminal glyph for global) and the tab strip is always visible - the old "plain title below 2 tabs" state is gone. The panel header's toolbar (CLEAR/RESTART/KILL/OPEN) is replaced by a single CLOSE/EXPAND button; KILL/RESTART now live on the tab chip itself (✕, then + to restart), OPEN moved to each project's OPEN popup.
@@ -290,11 +315,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Sticky Shift** in the phone key row (between Tab and Ctrl): arms the next key-row press only - Tab becomes backtab (`Shift+Tab`, for Claude Code's mode cycling), the arrows become their shifted CSI sequences; Enter/Esc pass through unaffected.
 - **Compose input** under the key row: type a full command via voice dictation or the phone's IME, then send it in one go instead of keystroke-at-a-time into xterm.
 
-#### Changed
+### Changed
 - **The Claude Code usage card draws one bar per quota bucket, whatever the account has**, instead of the two hardcoded 5-Hour/7-Day bars. `rate_limits` is an open map and Anthropic already ships model-scoped weeklies (`seven_day_opus`, `seven_day_sonnet`, `seven_day_oauth_apps`); those reached the app intact and were then dropped at the last step. Bars are ordered 5-Hour → 7-Day → known per-model weeklies → anything unknown alphabetically, and an unrecognised key still gets a readable label (`seven_day_haiku` → "7-Day Haiku") rather than a raw key. **Preserved**: with today's two-bucket data the card renders exactly as before - same markup, same order, no new rows (Extreme Narrow); the 5-Hour reset-collision quirk, the "shared 7-Day pool full dims the 5-Hour bar" rule, the colour thresholds, the reset countdown and the 5h boundary refetch all behave identically; a model-scoped weekly neither dims another bar nor is dimmed by one; a `null` bucket is skipped, not drawn as N/A; the Antigravity path is untouched. If/when a `seven_day_fable` bucket appears, no code change is needed.
 - **The external-Terminal badge is now a LIVE count**, not a session tally: it reports how many external `Terminal.app` windows/tabs are standing in that project's directory *right now*, so closing a window drops the badge within ~5s instead of leaving it stuck at an ever-growing number of opens. The host re-scans the process table (`pgrep`/`ps`/one batched `lsof`) every 5s and once right after it opens a window; a window running a dev server counts once, not once per child process.
 
-#### Fixed
+### Fixed
 - **The OPEN popup now opens on tap**, not hover only - on a phone it (and everything only reachable through it) was simply unreachable. Tapping the `OPEN` button pins the menu; Esc, a tap outside, or another tap on the button closes it. At most one popup is open at a time.
 - **The popup's position is no longer shared state**: it moved out of the mirrored `projectRuntime` into the component, so hovering OPEN on the Mac stops yanking the phone's popup to the Mac's coordinates - and can no longer resurrect the runtime entry of a project that was just removed.
 - **The popup's REMOTE column is no longer hidden by the SYNC switch.** Only **Upload (select files)** is gated now (dimmed, with a tooltip naming the switch); SSH Terminal, the VSCode/Antigravity Remote entries and COPY reach the server without moving files, so they stay usable with sync off.
@@ -327,7 +352,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **The destructive-sync confirmation is in English**, like the rest of the app. It was the only Vietnamese copy in the product, on the one dialog that gates irreversible deletion.
 - Two feature docs still showed the forbidden blocking-subprocess pattern as current code, in the file the project's own guide names as the example to copy.
 
-#### Preserved
+### Preserved
 - Hover still opens the OPEN popup on the Mac exactly as before - tap support is added alongside it, not instead of it, and the popup's contents, ordering and positioning are unchanged.
 - The SYNC switch still blocks every path that actually moves files: PUSH/PULL, the popup's Upload item, and background + manual remote-diff checks.
 - COPY (local) stays enabled even when the project's folder is missing, and both COPY buttons keep their check-mark flash on success.
@@ -344,9 +369,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - Stopping an unwatched usage monitor keeps its last reading cached, and stops only that monitor - every other host's and agent's monitor keeps polling untouched.
 - Each sync's cancel registry stays keyed per project, so refusing a second concurrent sync for one project cannot cancel or block another project's run.
 
-### [1.20.0] - 2026-07-27
+## [1.20.0] - 2026-07-27
 
-#### Added
+### Added
 - **In-app terminal**: a real PTY-backed terminal in a new `TERMINAL` tab next to the event log, usable from a paired phone (unlike `Terminal.app`, which only renders on the Mac). History recall, `Ctrl+C`, interactive prompts and full-screen programs like `vim` all work.
 - **One shared session**: Mac and phone type into and see the same shell, byte-identical output. Mac is the sole resize authority.
 - **Compact key row** for phone keyboards: Esc, Tab, sticky Ctrl (tap Ctrl, then a key), arrows, Enter.
@@ -360,7 +385,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Switching a monitor off keeps its last reading** (marked cached) instead of losing it; other monitors are unaffected.
 - **Stale Claude Code cards now show an age** ("12m ago") instead of just "Stale", matching Antigravity's existing behavior.
 
-#### Fixed
+### Fixed
 - Changing a monitor's remote host no longer discards its previous reading — monitors can no longer be re-pointed at all.
 - Two machines signed into the same Antigravity account no longer overwrite each other's cached usage; readings are now filed by (machine, account, session type).
 - Remote usage card could still show another machine's numbers after the above lookup fix; storage itself is now scoped too, and a slot no longer parses the cache directly.
@@ -417,52 +442,52 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - A panic under the remote-control relay's shared-state locks no longer disables remote control for the rest of the app run.
 - The update check now times out after 15 seconds instead of potentially holding a thread open forever on a captive portal.
 
-#### Upgrade note
+### Upgrade note
 - A remote path with a shell-unsafe character (quote, space, `$(...)`) now requires rsync 3.2.4+; the app refuses the operation with a message naming the character and rsync version rather than guessing. `brew install rsync` if you hit this.
 - Upgrading re-files all cached Antigravity usage history by machine. This is a one-way move: rolling back to 1.19.0 afterward finds that history empty (not lost — 1.19.0 can't read the new layout). Claude Code readings, accounts, SSH hosts, projects, tasks and notes are untouched.
 - Cached Antigravity readings older than 10 days are still pruned regardless of machine — the only cross-machine write left in that cache.
 
-#### Security note
+### Security note
 - The in-app terminal adds no new confirmation gate beyond the existing pairing token, since a paired device could already run arbitrary shell commands via DEV/BUILD. **Off** still cuts every device instantly.
 - A plain-HTTP (LAN) remote-control connection is unencrypted and the pairing token travels in the URL. The **On** switch turns amber and warns when copying a plain-HTTP address; only the Tailscale HTTPS address is encrypted.
 
-#### Known limitation
+### Known limitation
 - A phone's Project Config modal doesn't auto-close after removing a project from that phone. The removal itself works and mirrors everywhere; only the modal's own open state is still per-screen.
 
 ---
 
-### [1.19.0] - 2026-07-25
+## [1.19.0] - 2026-07-25
 
-#### Added
+### Added
 - **Remote Control (preview)**: control the Mac from a phone browser on the same LAN or over Tailscale. Menu ☰ → **Remote Control** → **On** shows a pairing code and `IP:PORT`; the phone pairs once and reconnects silently after that, across restarts on both ends. **Off** cuts every device immediately; 10 wrong codes in a row disables it and wipes the code. See [Remote Control](docs/feat/remote-control.md).
 - **Minimal PWA install for the companion** (favicon, `apple-mobile-web-app` tags, manifest, network-passthrough service worker) — iOS "Add to Home Screen" and desktop Chrome "Open as window" work over plain LAN http.
 - **HTTPS over Tailscale, as an in-app toggle** (`tailscale serve`), unlocking the Android standalone PWA and same-origin `wss://`. Menu → Remote Control → **HTTPS (PWA)**.
 - **Antigravity monitoring for a remote host**: the REMOTE tab now carries the same `AG | CC` pair as LOCAL, each with its own on/off state and one shared host choice.
 
-#### Changed
+### Changed
 - A pool whose 7-day quota is full now dims its own 5-hour reading instead of competing for attention.
 - Statusline's `<20%` tier recolored to aquamarine for readability; app swatches and the script's ANSI codes now derive from one shared color table so they can't disagree.
 - The two "Apply to" checkboxes now look like checkboxes instead of color swatches.
 - Text selection is disabled across UI chrome (labels, tabs, headers, badges) and enabled where it matters (console output, git diff, changelog, project paths, emails, pairing code, statusline preview).
 
-#### Fixed
+### Fixed
 - The 700px narrow-mode stylesheet block had been dead code since 1.14.0 due to cascade ordering; it now takes effect again.
 - Modals fixed at narrow widths (~420px): GitModal footer overflow, ProjectTasksModal's forced horizontal scroll, IntroModal's feature grid, ProjectConfigModal's path fields, and long project names pushing the close button off screen.
 - Removed a second, drifted 560px narrow breakpoint in ProjectConfigModal; 700px is now the single app-wide value.
 - Host's own relay connection was silently rejected on a dual-stack bind (`::ffff:127.0.0.1` not recognized as loopback); fixed by binding IPv4-only.
 - Config save, remove/new project, SSH host edit/undo/redo, refresh-interval save and the global note now update the Mac's live state when triggered from a companion, instead of only writing to disk.
 
-#### Known limitation
+### Known limitation
 - DEV/BUILD/REPORT still switch macOS Spaces when the browser/Terminal already has a window on another desktop — a macOS Mission Control behavior with no public API workaround. Fix: System Settings → Desktop & Dock → Mission Control → turn off "switch to a Space with open windows for the application".
 
-#### Security note
+### Security note
 - A paired companion device can invoke any Tauri command on the host; there is no per-command allowlist, the pairing token is the sole gate. By design for now (not multi-tenant).
 
 ---
 
-### [1.18.0] - 2026-07-23
+## [1.18.0] - 2026-07-23
 
-#### Added
+### Added
 - **Dual statusline deployment**: Statusline Customizer now generates and deploys to both **Claude Code** (`~/.claude/statusline-command.sh`) and **AGY CLI** (`~/.gemini/antigravity-cli/statusline.sh`).
 - **CLI identity tag**: the statusline can lead with a colored `CC`/`AG` tag so you can tell which CLI produced the line at a glance. On by default, always pinned first.
 - **Account field** (active session email) added to the statusline catalog, in both the generator and the Vue customizer.
@@ -474,7 +499,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **`npm run test:statusline`**: automated test harness for the statusline generator/customizer, covering all 18 switches plus widths, colors, thresholds and drag order.
 - **Every Terminal window this app opens now auto-snaps to the top-right corner** (local terminal, SSH terminal, DEV/BUILD, AkiClaudeDoc installer).
 
-#### Changed
+### Changed
 - Statusline probe/apply: per-host SSH timeout dropped 30s→5s, the remote shell self-terminates via `timeout`/`gtimeout`/a `perl` fallback, each host runs in its own thread instead of serially, and hosts are now locked against overlapping SSH operations from other features.
 - Antigravity surface labels shortened to `AG` (Desktop App), `IDE` (VS Code extension), `CLI` (terminal); a merged desktop+CLI session now reads `AG`.
 - Header dropdown reorganized: Changelog moved to the version row, Check Update disables itself mid-check, a separator splits usage-row options from window actions, and the Statusline Customizer row shows both target icons.
@@ -484,10 +509,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - Customizer defaults now come only from the Vue component; the duplicate Rust-side defaults are gone.
 - Host rows and checkboxes restyled (tighter rows, hollow checkbox instead of a filled color swatch).
 
-#### Removed
+### Removed
 - The standalone `share/aki-statusLine/` copy of the statusline script — a hand-maintained duplicate loaded by nothing at runtime.
 
-#### Fixed
+### Fixed
 - Phantom quota in the statusline (rlcache v4, present since 1.10.0): the rate-limits cache had no expiry and was shared across every account that ever ran on the host. Now bound to the account that wrote it, and expired entries are dropped.
 - The cache also lost data on a corrupt file (blanked the whole statusline), on a 5h-only payload overwriting stored 7d data, and on a non-atomic write; now validated, merged, and written via tmp+rename.
 - "Apply to" now defaults to both targets (was AGY only), the choice persists, and Apply is disabled with nothing ticked.
@@ -512,13 +537,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ---
 
 
-### [1.17.0] - 2026-07-22
+## [1.17.0] - 2026-07-22
 
-#### Added
+### Added
 - **Antigravity 2.0 Desktop App Support ("Bản Trắng")**: Full support for detecting and monitoring the standalone Antigravity Electron App (`/Applications/Antigravity.app`), supporting all 3 execution surfaces: Desktop App (`AG`), IDE (`AG IDE`), and AGY CLI (`AGY`).
 - **Brand Assets**: Extracted official crisp 64x64 PNG icon for Antigravity Desktop App (`public/antigravity-app-icon.png`).
 
-#### Changed
+### Changed
 - **Multi-Surface Labeling Specification**: Locked header title labels:
   - `AG`: Antigravity Desktop App (`sourceType: "desktop"` - Bản trắng).
   - `AG IDE`: Antigravity IDE (`sourceType: "ide"` - Bản VS Code).
@@ -530,14 +555,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   - `Log Out AG IDE`: Clears SQLite `state.vscdb` OAuth rows.
   - `Log Out AGY CLI`: Clears shared `~/.gemini/` credentials.
 
-#### Fixed
+### Fixed
 - **Full Deleted File List Preview in `--delete` Confirmation Modal**: Removed sample file truncation (`slice(0, 8)` and `... and X more`), displaying 100% of deleted files in a scrollable code block (`max-height: 240px; overflow-y: auto;`). Expanded modal width (`560px`) for comfortable reading.
 
 ---
 
-### [1.16.1] - 2026-07-22
+## [1.16.1] - 2026-07-22
 
-#### Changed
+### Changed
 - **Antigravity Header Title (Wide Mode)**: Renamed wide mode title from generic `Antigravity` to source-aware `agy` (when CLI source is active) or `AG IDE` (when IDE source is active). Remains hidden in narrow mode (`<= 700px`).
 - **SRP Type & Live Status Icons**:
   - Row start icon in account dropdown menu now explicitly displays `<i class="fa-solid fa-terminal"></i>` for AGY CLI (purple `#c084fc`) or `<img src="/antigravity-icon.png">` for AG IDE (`12px × 12px`).
@@ -546,30 +571,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Stable Masked Email Display**: Masked emails (`showEmail === false`) now display 4 prefix characters followed by a fixed-width `3rem` blurred element (`email-blurred-fixed`), maintaining stable layout width during visibility toggling.
 - **Smart 4-Corner Dropdown Placement Pattern**: Created explicit CSS pattern classes (`popup-pos-tl`, `popup-pos-tr`, `popup-pos-bl`, `popup-pos-br`) with `top: auto` / `bottom: auto` / `left: auto` / `right: auto` resets, dynamically bound to slot positions (A/B/C/D) to ensure popups expand correctly in all 4 directions.
 
-#### Fixed
+### Fixed
 - **10-Day Account Cache Eviction**: Integrated automatic cache pruning in `loadAgStore()` to evict account records older than 10 days (`> 864,000s`) from `localStorage`.
 
 ---
 
-### [1.16.0] - 2026-07-22
+## [1.16.0] - 2026-07-22
 
-#### Added
+### Added
 - **Multi-Instance Antigravity & AGY CLI Quota Monitoring**: Detects both Antigravity IDE and standalone AGY CLI (`agy`) processes via OS process table scanning (`ps auxww`) and listening Connect RPC ports (`GetUnleashData`, `GetUserStatus`), displaying separate account quota cards when running concurrently.
 - **Dynamic Usage Tier Store** (`usageTierStore.js`): Tracks and persists usage tier counts in `localStorage` (`aki-usage-tier-count`), providing dynamic tier switching across usage cards.
 - **Empirical Research Document**: Added `docs/research/antigravity-multi-instance-cli-discovery-20260722.md` detailing the socket, RPC, and process inspection findings for multi-instance quota extraction.
 
-#### Changed
+### Changed
 - **Agent Usage UI & Store Integration**: Refactored `AgentUsage.vue`, `AgentUsageSection.vue`, `AgentUsageSlot.vue`, and `AppHeader.vue` to reactively render multiple concurrent Antigravity account instances and dynamic tier badges.
 - **Scripts and Tauri Backend**: Updated `scripts/get-antigravity-usage.js` and `src-tauri/src/agent_usage.rs` to query all active Connect RPC server ports across IDE and CLI instances instead of stopping at the first process found.
 
-#### Fixed
+### Fixed
 - **Documentation and Scripts Audit**: Cleaned up legacy/orphaned store references, updated shell/JS script linters, and synchronized `docs/` architecture documents.
 
 ---
 
-### [1.15.1] - 2026-07-21
+## [1.15.1] - 2026-07-21
 
-#### Added
+### Added
 - **Donate button**: Added to the titlebar (hidden in narrow mode) and the app-icon dropdown menu.
 - **Dropdown color previews**: Statusline Customizer and Enable SSH Terminal Color items in the app-icon dropdown now demonstrate their own visual effect (custom palette and OSC 11 background tint).
 - **Statusline Customizer: fields are reordered by drag and drop** (`ClaudeSettingModal.vue`), replacing the up/down chevrons. Native HTML5 drag events plus `<TransitionGroup>`, no new dependency. A group moves as one unit; a member cannot be dragged out of its group.
@@ -578,7 +603,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Reset ETA is per window**: `rate_limits`/`rate_reset` split into `rate_limits_5h`/`rate_limits_7d` and `rate_reset_5h`/`rate_reset_7d`, so the 5h and 7d windows each get their own ETA tick. Saved configs migrate in place, keeping their position in the field order.
 - **Three regression tests for the generated script** (`statusline.rs`): `bash -n` on the full script, an assertion of each group's join expression, and an end-to-end run against a realistic Claude Code payload. The script is built from string fragments, so nothing else catches a broken edit.
 
-#### Changed
+### Changed
 - **The dynamic-color ladder has five tiers, not four**: blue below 25%, green 25-55%, yellow 55-75%, orange 75-88%, red at 88% and above. The bands narrow as the value gets urgent, since that is where the color has to carry information. Configs saved under the old ladder fill in the new tier from the default rather than breaking.
 - **Session cost is colored by the same ladder**, scaled against $30 for a full red. It is a denominator rather than a tier, so it is not exposed as a threshold.
 - **"Dynamic color" shows the ladder instead of asserting it exists**: the five tier colors as dots, in order, with the current thresholds in the tooltip. The threshold editor renders from the tier list, so the implied blue floor is visible and adding a tier is one entry rather than four hand-written rows.
@@ -587,11 +612,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **The Statusline Customizer shows what each row prints**, as small monospace chips: `context` reads `ctx · NN% · in+out · /max` (the printed number is input+output, which the label alone never said), `cache` reads `read/all% · read/all`. Both quota lines now carry the "Dynamic color" note, and "locked" was renamed to it everywhere.
 - **The `⟳` icon before a reset ETA is gone** - the time value alone already said it.
 
-#### Removed
+### Removed
 - **`UsageProgressBar.vue`**, orphaned since the Claude Code usage flow was deleted in 1.14.0: no call sites, but still carrying a live force-sync button wired to nothing.
 - **`is_vite_project()` and `ProjectStackInfo.is_vite`** (`system.rs`), leftovers of the DEV auto-open-browser feature removed in 1.15.0. Nothing on the frontend read the field.
 
-#### Fixed
+### Fixed
 - **`docs/plan/audit-1.11-1.15.md` written**: An audit of breaking changes across the last 5 releases. Findings #1 (orphaned `UsageProgressBar.vue`) and #2 (dead `is_vite` leftovers) resolved in this release.
 - **`docs/feat/statusline-customizer.md` written** as the living description of the feature, which until now existed only as plan documents. Three completed plans moved to `docs/plan/done/` and the docs index updated.
 - **README, the in-app intro, and `docs/index.md` rewritten against the code** rather than patched again. They still advertised Force Sync Quota (deleted in 1.14.0), described Remote Mode as one switch (split in 1.15.0), described background refresh as three loose pollers, and never mentioned the app-icon menu or the window-size presets that shipped in 1.11.0. One dead doc link fixed; the release build command (`build:rmud`) documented.
@@ -606,13 +631,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.15.0] - 2026-07-21
+## [1.15.0] - 2026-07-21
 
-#### Added
+### Added
 - **Upload moved into the OPEN popup as a `.popup-item`, disabled the same way every other popup item is** (`ProjectTable.vue`) - it used to be its own standalone button. A new per-project Refresh button (`fa-arrows-rotate`) took its old position: it runs `refreshProject(p)` - the one shared unit of work (git status, remote diff, stack info) for just that project - and deliberately does not call `triggerManualRefresh()` (which would wake every usage monitor) or `loadData()`.
 - **Statusline Customizer: 3 new fields, all default OFF** - `cache_pct`/`cache_tokens` (from `context_window.current_usage`, hidden rather than showing `0%` when that block is `null` post-`/compact`) and `rate_reset` (ETA sub-row under the existing rate-limit fields). None of this changes anyone's already-running statusline until they opt in from the customizer.
 
-#### Changed
+### Changed
 - **`aki-remote-mode-enabled` split into two independent switches**: `syncCheckEnabled` (`syncCheckStore.js`, gates git/remote-diff polling and PUSH/PULL) and Claude Code remote monitoring's own power toggle (`aki-src-ccremote-enabled`, via `useToggleableSource`, no longer tied to sync check). **Both switches seed from the old single localStorage key on first read - no one's prior on/off state is reset.** See `docs/feat/sync-check-and-usage-switches.md`.
 - **The global Refresh button no longer reloads the app - it refreshes, using the same unit of work every other refresh trigger uses.** Root cause of a long tail of "the buttons only react when I click the global refresh" complaints: `handleRefresh()` called `loadData()`, i.e. a full app reload (re-read `projects.json`, SSH hosts, IDE availability), and the "everything dims" effect came from `loadData`'s global `isReloading` flag - not from the projects themselves. The background git/diff timers meanwhile had no visible state at all. So the global button and every other refresh path were two unrelated mechanisms that merely looked like one feature, and no amount of per-button state could reconcile them. Now `handleRefresh()` calls `refreshAllProjects()`, which fans the single per-project unit out in parallel and restarts the ring cycles; `loadData()` is back to being an app-load concern, called once on mount.
 - **One refresh controller, one unit of work** (`useBackgroundRefresh.js`; architecture, flowcharts and invariants documented in `docs/arch/refresh-controller.md`). `refreshProject(p)` runs a project's three derived-state checks in parallel - git status, remote diff, and stack info (DEV/BUILD commands). Every trigger is now a caller of that same unit or of its constituent checks: the two background timers, the per-project Refresh button, the global Refresh button, and saving a project's config. `stack_info` in particular used to be fetched only inside `loadData`'s sequential per-project `await` loop, so it silently stopped being refreshed by anything once the global button no longer called `loadData` - it is now a first-class check (`useProjectStack.js`) alongside the other two.
@@ -625,21 +650,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **The RefreshRing no longer disappears when its source is paused/off - it stays in place, dimmed** (`RefreshRing.vue`, `.refresh-ring--off { opacity: 0.35 }`): it previously `v-if`'d itself out of the DOM at `intervalS <= 0`, which visibly shifted the SYNC column's layout every time the switch was toggled.
 - **Power-toggle icons (`.src-power`) enlarged** (`font-size` 9px→12px, `padding` 1px→3px, `main.css`) - too small to comfortably hit.
 
-#### Removed
+### Removed
 - **DEV button's auto-open-browser feature, entirely** (`run_project_dev` in `system.rs`, plus `extract_port_flag`/`extract_port_field`/`resolve_dev_port`). Two rounds of attempted fixes (widening the TCP-poll window from 3s to 20s, then detaching the poll into a background task so the frontend toast didn't hang for up to 20s waiting on it) still didn't make the browser reliably open - the real gap was port resolution not generalizing across real dev-script configs (custom scripts, non-standard ports, monorepo boot times). `run_project_dev` now only opens Terminal, identical to `run_project_command` (BUILD). See `docs/plan/batch-jul21-ux-fixes.md` §3.
 
-#### Fixed
+### Fixed
 - **DEV/BUILD Terminal launch no longer holds up its own success toast.** Was `.await`-ing the browser-open poll (up to 20s) before resolving the Tauri command, which the frontend experienced as a hang indistinguishable from a bug. Moot now that the auto-open-browser feature is removed (see above) - the command returns as soon as Terminal opens.
 
-### [1.14.0] - 2026-07-20
+## [1.14.0] - 2026-07-20
 
-#### Added
+### Added
 - **DEV button now opens the running dev server in the browser for web projects** (`system.rs` `run_project_dev`, `ProjectTable.vue`): clicking DEV still opens Terminal exactly as before, but for Nuxt/Vite projects (never Tauri - its `dev` opens its own native window) the app then waits for the dev server to accept connections and opens `http://localhost:<port>`. Copying the URL out of Terminal by hand is no longer needed. The port is resolved in order: an explicit `--port`/`-p` flag in `package.json` `scripts.dev`, then `nuxt.config.*` `devServer.port`, then `vite.config.*` `server.port`, then the framework default (Nuxt 3000 / Vite 5173). The browser is opened with `open -g`, which activates nothing - macOS therefore does not switch Spaces, and the browser window appears on the workspace the user is already in. A dev server that doesn't come up within 3s is silent, not an error - 3s comfortably covers an already-warm dev server without holding up the click for a minute on a slow/first-time compile. The command is `async fn` + `spawn_blocking` per the never-block-the-UI rule (it runs a subprocess launch plus a poll loop; running that on the IPC thread would freeze the window for its full duration).
 - **Narrow mode: the window is usable below 700px wide** (`main.css` + every UI component). One global breakpoint (`max-width: 700px`) and two global utilities (`.u-narrow-hide`, `.u-wide-hide`) are the single source of truth - no component defines its own narrow breakpoint. At narrow width: the usage panel drops the agent name and the LOCAL/REMOTE/AG/CC tab labels (icons remain), the titlebar hides the version/build text and shrinks the app title, the project-name column shrinks to `6.5rem` (enough to keep a few characters of the remote path readable - an initial 40%/4.8rem guess proved too tight), PUSH/PULL keep a little extra horizontal padding once their text is gone so they don't collapse to a cramped square, the Global Event Log's expand/copy/clear buttons go icon-only, and the projects header becomes `PJ (n)` with a `+` button. Every hidden label keeps its full text in the `title` tooltip, and no control was left both label-less and icon-less. The "Update available" badge stays visible at any width. Window `minWidth` (`tauri.conf.json`) is lowered from 600 to 400 so the window can actually be resized down into and past the narrow breakpoint - the 1.14.0 draft had left it at 600, which meant narrow mode existed in the CSS but was never reachable by dragging the window edge.
 - **Version and build time are now in the app menu dropdown** (`AppHeader.vue`): the first dropdown item shows the same `version buildtime` format the titlebar used, swaps to "Read Changelog" on hover, and opens the Changelog modal on click - the same action the titlebar version already had. This is what keeps the version reachable once narrow mode hides it from the titlebar.
 - **Window-size presets in the app menu dropdown** (`useAppWindow.js`, `AppHeader.vue`): Narrow (resizes to 420px, matching `tauri.conf.json`'s `minWidth`) and Wide (768px) both keep height and on-screen position untouched except for nudging `x` back on-screen if the new width would push the window past the monitor's work-area edge. Stick Top-Left moves the window flush against the top-left-most connected monitor's work area (by smallest `x + y` origin, not necessarily the primary monitor - excludes the menu bar) and auto-fits height to the project list's real content height (summed from `.top-header`, `.agent-usage-section`, `.grid-header`, `.grid-body`, `.dashboard-bottom`), clamped between the OS-enforced minimum height and the monitor's available height. Center Primary repositions (never resizes) to the middle of the primary monitor.
 
-#### Changed
+### Changed
 - **The usage area is a fixed 161px viewport and scrolls instead of resizing the UI** (`AgentUsageSection.vue`): it previously grew and shrank with its content, so the whole window jumped every time a source loaded, errored, or switched account. It is now a fixed height measured from the bottom edge of the titlebar, with a 4px low-contrast scrollbar scoped to that element only (the app-wide 6px scrollbar rule is untouched). No wrapper element or border was added.
 - **OPEN popup opens centered on the window** (`ProjectTable.vue`): it was pinned to the trigger button's left edge, so a wide popup was cropped by the right edge of the window. It now centers horizontally, clamped to an 8px viewport margin, with the scale-in animation re-anchored to match.
 - **Task rows lead with Pin; Mark Done moved to the right, before Copy** (`ProjectTasksModal.vue`). Behaviour, tooltips and the Enter-to-complete shortcut are unchanged - position only.
@@ -647,27 +672,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Claude Code Profile and Statusline Customizer modals now share the common `BaseModal` chrome** (`ClaudeProfileModal.vue`, `ClaudeSettingModal.vue`) instead of each carrying its own duplicated `Teleport`/`Transition`/backdrop/header markup and CSS - same look and behavior, ~180 fewer duplicated lines. `BaseModal` already backed every other modal in the app; these two were the last holdouts.
 - **Usage-ring tooltip opens upward instead of down-right** (`UsageCircle.vue`): the usage panel that hosts these circles (`AgentUsageSection.vue`) is a fixed-height box with `overflow-y: auto`, and a tooltip opening downward from a circle near the bottom of that box was clipped by the scroll container before it became visible. This is a global fix, not narrow-only - the clipping wasn't width-dependent. Also shrunk the tooltip's own footprint (170px → 130px wide, tighter internal gaps/font-sizes) so it reads as a compact hover card rather than a full panel.
 
-#### Changed
+### Changed
 - **Claude Code usage docs consolidated from 11 files to 3** (~2.400 → ~460 dòng): `docs/arch/usage-claudecode.md` (kiến trúc đang chạy, viết lại - bản cũ chứa 5 chỗ tự đính chính inline), `docs/research/claudecode-usage-FINAL.md` (sự thật đã kiểm chứng + nhật ký đã-thử-đã-bỏ + bản đồ 8 file cũ ở §7), `docs/plan/claudecode-usage-cleanup-FINAL.md` (kế hoạch dọn code). **Các entry CHANGELOG cũ bên dưới còn trỏ tới 8 file đã xoá - cố ý không sửa**, vì CHANGELOG là sổ ghi lịch sử, không phải tài liệu sống; nội dung của chúng nằm ở research §7.
 
-#### Removed
+### Removed
 - **The entire active Claude Code usage flow - force-sync, the headless `claude -p` probe, and orphan-session cleanup - is gone; the statusLine hook cache is now the only data source** (`agent_usage.rs`, `useAgentUsage.js`, `AgentUsage.vue`, `get-claudecode-usage.sh`; deleted `force-sync-claudecode.sh`, `force-sync-parse.py`). This supersedes the same-version fix below that tried to bound and clean up that flow instead of removing it. A remote host was found holding **19 orphaned `claude` sessions, 6GB RAM + 4GB swap** - traced to force-sync's three sequential `claude` round-trips racing a 30s budget built for a single poll. Bounding the calls (45s remote timeout, 180s outer budget, corrected `pkill` patterns) fixed the leak, but a live measurement afterward showed the deeper problem: a headless `claude` turn **only ever returns the reset boundary, never a usage percentage** - the whole three-call dance was buying almost nothing. Deleted rather than patched further: `force_sync_agent_usage`, `cleanup_orphan`, `ORPHAN_PATTERNS`, `wait_with_timeout`, and the OAuth `oauth/usage` HTTP poll in `get-claudecode-usage.sh` (an unpublished, unstable Anthropic endpoint - see docs/research/claudecode-usage-FINAL.md §3). Crossing the 5-hour reset boundary with no new Claude Code turn yet no longer blanks the card: the last reading stays on screen marked cached (reusing Antigravity's existing `isCached`/`cachedAt` mechanism) with a line reading "Waiting for next Claude Code session". **Trade-off, accepted deliberately, not a regression:** usage spent from the Claude desktop app or Cowork (outside Claude Code) no longer moves this app's numbers until the next CC turn - the OAuth poll was the only thing that could see that activity, and it was removed for the reasons above. Full rationale: `docs/arch/usage-claudecode.md` §5-6.
 
-#### Fixed
+### Fixed
 - **Usage polling stops instead of probing a dead host forever** (`useAgentUsage.js`, `agent_usage.rs`): an incident log showed 12 consecutive failures spaced at exactly 30.0s - the poll kept going for 24 minutes after the host had stopped accepting TCP. After 5 consecutive failures polling now halts and says so, resuming only on an explicit user action (Reload or a host change) - deliberately not on the `visibilitychange`/`focus` wake listeners, which fire constantly and would rebuild the same loop through the back door. A hard stop rather than exponential backoff: the log's even spacing proves probes were already serialized by the existing `isChecking` guard and never piled up, so there was nothing for a graduated delay to relieve. Every polling SSH carries `ConnectTimeout=10`, `ServerAliveInterval=5`, `ServerAliveCountMax=3` and `BatchMode=yes` (without `ConnectTimeout` a saturated host could burn the whole script budget on the TCP handshake alone, timing out before anything ran remotely).
 - **REPORT.html no longer raises confirm dialogs for routine, already-synced churn - in either direction** (`useSync.js`): `REPORT.html` is an artifact this app itself produces and opens (the OPEN popup's REPORT button). Ordinary `--delete` sync has no newer/older awareness at all, in either direction - it deletes anything missing from the source side regardless of when it was last touched. `REPORT.html` gets a targeted exception to that: before auto-approving its deletion, the app now checks the destination copy's mtime (`get_file_conflict_info`, reused from the SELECT-push conflict check) against this project's `last_sync_time`. Unchanged since the last sync → auto-approved silently, exactly the routine churn this fix targets. Modified more recently than the last sync → left in the normal confirm dialog, since someone likely regenerated it deliberately on the other side and blind-deleting it would be a real loss. If the mtime check itself fails (e.g. SSH hiccup), the file falls back to asking rather than silently deleting - fail closed. Applies identically to push and pull. The SELECT-push overwrite confirm (a separate, push-only dialog for the native multi-file picker) is unchanged: it already only lists `REPORT.html` when the destination copy is genuinely newer than the source about to be pushed. The artifact list is a single named constant, so adding a second flow-app artifact later is one edit.
 - **Narrow-mode header and sync-row polish, post-release testing** (`AppHeader.vue`, `ProjectTable.vue`): the title text now lives in its own `.title-block` wrapper so the `DEV` tag sits centered under just "Aki Dev Sync" (`flex-direction: column; align-items: center`) instead of under the whole icon+title cluster; the app-icon dropdown's Narrow/Wide preset icons changed to `fa-compress`/`fa-expand` for a clearer visual match. Grid columns and gaps were re-tuned at 700px so the GIT ring, LAST, ACTION and SYNC cells read as evenly spaced instead of patchwork (`grid-header-cell`/`grid-row-cell` now flex-center their content). The DRY toggle went through several iterations - an absolute-positioned "overlap the row's bottom border" design was tried and dropped for good after it repeatedly collided with the row below (CSS stacking-context fights over paint order); it now stays in normal flow between PUSH and PULL, sized directly (no blur-inducing `transform: scale()`), with just enough clearance on the PUSH side for its count-badge overhang (`CountBadgeWrap`'s badge sits 5px past the button's corner) and a corrected toggle-knob vertical center (`bottom: 1px`, not the desktop-sized `2px`, for the shrunk 8px-tall track). At narrow width, `UsageCircle.vue`'s sub-label also moves off to the side of the ring and onto its top interior (absolutely positioned, tiny) since the ring is the only element with spare room at that width - the wide "label beside ring" layout is untouched outside the breakpoint.
 
 ---
 
-### [1.13.1] - 2026-07-20
+## [1.13.1] - 2026-07-20
 
-#### Fixed
+### Fixed
 - **PUSH badge stopped counting push-only directories (e.g. `.git/`), so a local commit could sit unpushed with no signal** (`sync.rs`): 1.13.0's status check (`rsync_change_files`) excluded the *union* of `push_excludes ∪ pull_excludes` for both directions, so a dir that only lives in `pull_excludes` (push-only, like `.git/`) never registered as "changed" on the push side even though a real push genuinely carries it. Reported after real use: committing locally and pushing to origin left the PUSH badge at 0 while hitting PUSH still shipped a full batch of `.git` files. This was an unintended regression, not the intended behavior - the status check now reads the exclude list for its own direction only (push reads `push_excludes`, pull reads `pull_excludes`), matching real push/pull exactly. A badge for a direction now counts exactly what that direction would transfer. R3 (mirror-push auto-approves deletions confined to a push-only dir, no confirm dialog) is unchanged - it never depended on the union and is unaffected by this revert. `write_baseline`'s exclude list is deliberately left on the union: the baseline exists to detect "remote deleted this since last sync, don't push it back," which does not apply to a push-only dir (local is always authoritative there, so remote-side loss should always re-push) - tracking those files in the baseline would risk wrongly suppressing them. Full analysis: `docs/plan/done/push-only-paths.md` §9.
 
 ---
 
-### [1.13.0] - 2026-07-19
+## [1.13.0] - 2026-07-19
 
 > **Đính chính 2026-07-20 (sau release, đo thật trên Mac).** Mục "Changed" dưới đây nói thay đổi này
 > *root-cause* được phàn nàn "badge PUSH sáng dù không sửa gì", quy nguyên nhân cho `.git/index`
@@ -686,43 +711,43 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 > đếm nó là đúng. R3 (không hỏi hộp thoại xoá trong push-only dir) giữ nguyên - nó độc lập với R2.
 > Phân tích đầy đủ: `docs/plan/done/push-only-paths.md` §1.2, §2, §9.
 
-#### Fixed
+### Fixed
 - **Migration off `sync_git` could reverse itself and start pushing `.git` on every project** (`projects.rs`, `useProjectConfig.js`): caught by self-audit before release. The migration deleted the `sync_git` key client-side, but `save_projects` deserializes into the typed `SyncProject`, so `#[serde(default = "default_true")]` wrote `"sync_git": true` straight back to `projects.json` - while the "already migrated" guard lived in **localStorage**, volatile state guarding durable data. Losing that flag re-ran the migration against a re-materialized `true` and stripped `.git/` out of `push_excludes` for every project at once. The field is now `Option<bool>` + `skip_serializing_if` (never written back once deleted), the flag is gone, and the migration is idempotent by construction. **What's preserved**: an already-migrated project is left completely untouched on later loads, so a user who deliberately removed `.git/` from their own `pull_excludes` does not get it forced back every launch.
 - **Delete-preview could show a truncated path** (`sync.rs`): `get_sync_delete_preview` stripped rsync's `deleting ` marker with `trim_start_matches`, which strips *repeatedly* - a file whose own path starts with `deleting ` lost both copies, putting a wrong path into the list the user reads before approving a destructive mirror sync. Now `strip_prefix`.
 
-#### Removed
+### Removed
 - **Dead `get_project_files` command** (`git.rs`, `lib.rs`): zero frontend callers. It survived earlier review because the refactor below renamed its `sync_git` parameter to `include_git_entry`, which made it look maintained rather than unused.
 
-#### Changed
+### Changed
 - **Push-only paths now derive from exclude lists - the `.git` toggle is gone** (`sync.rs`, `useSync.js`, `useProjectConfig.js`, `ProjectTable.vue`): a "push-only path" is now simply a dir-entry (`.git/`, `.wrangler/`, …) present in `pull_excludes` but absent from `push_excludes` - no separate `sync_git` field, no hardcoded `.git` special-casing in `build_rsync_args`. This root-causes the long-standing "badge PUSH lights up with no local changes" complaint: `.git/index`/`FETCH_HEAD` churn from the app's own background `git status` calls was being counted as push-worthy. The status check (`rsync_change_files`) now excludes the **union** of `push_excludes ∪ pull_excludes` for both directions, so push-only dirs never register as changed - still carried on a real push, just not counted ("carried, not counted"). Mirror-push deletions confined entirely to a push-only dir auto-approve with a log line instead of popping the type-the-project-name dialog; deletions outside those dirs still confirm as before. A migration (`useProjectConfig.js`) converts each project's old `sync_git` boolean into the equivalent `.git/` entry in `push_excludes`/`pull_excludes`, touching only that one entry per project - the rest of each project's exclude lists is preserved byte-for-byte. Full design writeup: `docs/plan/push-only-paths.md`.
 - **The push-only rule is general - `.git/` is just its default instance.** Worth knowing before you edit an exclude list by hand: moving *any* directory into the push-only state (present in `pull_excludes`, absent from `push_excludes`) silently grants it two properties beyond "not pulled" - its churn stops counting toward the PUSH badge (R2), and deletions confined to it are auto-approved on a mirror push without the type-the-project-name dialog (R3). Both follow from the exclude pair alone; neither is spelled out in the config UI. `.git/` merely happens to be the directory every project already has in that state.
 - **What's preserved**: every project's exclude-list customizations outside the single migrated `.git/` entry; a project that had `sync_git` ON keeps pushing `.git` (now via `push_excludes` lacking `.git/`), one that had it OFF keeps not pushing it (now via `push_excludes` containing `.git/`). Verified two ways before release: the migration was replayed offline against the real 17-project `projects.json` (15 ON / 2 OFF - the ≥2-entities Regression Guard case, satisfied by real data), predicting a diff of exactly *17 × `sync_git` key removed, 2 × `.git/` added to `push_excludes`, nothing else*; then the app's first real launch was diffed against a pre-migration backup to confirm that prediction exactly.
 
 ---
 
-### [1.12.0] - 2026-07-18
+## [1.12.0] - 2026-07-18
 
-#### Added
+### Added
 - **Usage monitor self-heals after macOS sleep/occlusion** (`useAgentUsage.js`): reset-time countdowns and quota bars used to freeze intermittently - sometimes recovering on their own, sometimes stuck until a manual webview reload - because WKWebView suspends/throttles `setInterval` while the window is fully occluded, minimized, or the machine sleeps, which silently stalls every poll-driven recovery layer underneath it. Two module-scoped listeners, shared by all three usage sources (AG/CC-local/CC-remote), now drive recovery: `visibilitychange`/`focus` triggers an immediate refresh the moment the window is looked at again, and a 7s watchdog heartbeat catches suspends that never flip `document.visibilityState` (pure occlusion). Investigated whether the new pin-across-Spaces window (1.11.0) was itself the trigger - it isn't (`useAppWindow.js` only touches window APIs, never the poll/IPC path); pinning just makes the window visible more often, so the freeze got *noticed* more, not caused more. Full writeup: `docs/plan/fix-usage-monitor-freeze.md`.
 - **Claude Code 5-hour bar now auto-refreshes at its own reset boundary** (`AgentUsage.vue`): mirrors the boundary-trigger Antigravity's `UsageCircle` already had - previously CC relied entirely on a server-script-side stale check that shared the same freeze exposure as the bug above.
 
-#### Fixed
+### Fixed
 - **Antigravity usage probe had no timeout** (`agent_usage.rs`): a blackholed SSH connection or unresponsive local IDE RPC left `get_antigravity_usage`'s `wait_with_output()` blocking forever, permanently wedging the JS-side `isChecking` guard and freezing that source until an app relaunch - worse than the equivalent Claude Code path, which already had a 30s hard timeout. Generalized the CC timeout/kill/drain funnel (renamed `run_remote_script_timeout` → `run_interpreter_timeout`, parameterized by a new `Interpreter` enum) instead of writing a second copy, and routed AG through it with the same 30s ceiling.
 - **7-Day usage bar could silently vanish mid-session** (`provision-claudecode.sh`): the statusline cache hook (`aki-rlcache v2`) only preserved previously-cached `rate_limits` when a turn omitted the field entirely - a turn that *had* `rate_limits` (the normal case; current Claude Code only reports `five_hour`, no `seven_day`) still overwrote the whole cache file, clobbering a `seven_day` value the separate OAuth-poll recovery layer had just written. Hook bumped to v3: deep-merges `rate_limits` per-key instead of an all-or-nothing swap, and switched to an atomic (temp file + `mv`) write.
 - **`provision_agent_usage`/`force_sync_agent_usage` ran a blocking subprocess wait directly on the async executor** (`agent_usage.rs`): both were `async fn` but never wrapped their (up to 30s) blocking call in `spawn_blocking`, unlike every other command in this file - found while auditing the AG timeout fix. A worst case (several hosts retrying force-sync right after a sleep/wake, SSH still reconnecting) could starve tokio workers and delay unrelated IPC calls. Now wrapped identically to `get_agent_usage`/`logout_antigravity`.
 
-#### Changed
+### Changed
 - **"New Project" moved next to the project count**: the button left the top header row entirely and now sits inline with "PROJECTS (n)" in the table header, kept icon-only with the same cyan `btn-tech-primary` styling plus a small persistent glow so it still reads as the primary create action at a glance.
 
 ---
 
-### [1.11.0] - 2026-07-17
+## [1.11.0] - 2026-07-17
 
-#### Added
+### Added
 - **Pin window across all macOS Spaces**: thumbtack toggle in the titlebar (next to Minimize/Close) keeps the window on top and visible across Spaces, via `setAlwaysOnTop` + `setVisibleOnAllWorkspaces` (`useAppWindow.js`); state persists to `localStorage` and restores on launch. Still yields to another app running full-screen in the same Space - that's macOS's own full-screen behavior, not a gap to close.
 - **Claude Code local usage monitor locks off while Proxy mode is active**: native usage data (rate-limit %, email/org, session cost) reads straight from Anthropic's own account API, which has no visibility into a proxy's actual traffic - so the LOCAL tab's Claude Code toggle is force-disabled (dimmed, tooltip explains why) whenever Proxy mode is on. New shared `claudeModeStore.js` tracks the mode; switching back to native unlocks the toggle without auto re-enabling monitoring.
 
-#### Changed
+### Changed
 - **Project table narrowed**: `PROJECT`/`TASKS`/`GIT`/`LAST` column widths retuned (`--grid-cols: 13.5rem 2.2rem 5rem 3.8rem 1fr` → `12rem 2.5rem 2.5rem 2.5rem 1fr`), and the git status text label ("Dirty"/"Clean"/"Ahead"/"No Git"/"Git Error") dropped in favor of button-state styling - count badge for changed files, blue glow for `Ahead`, grayed-out for `No Git`/`Git Error` (tooltip still spells out the exact state). The old narrow-width `!important` rule that force-showed icons was replaced by one rule that just hides button text below 800px (the always-narrow `.actions-wrapper` button padding itself is unchanged); per-button icon/text was simplified too - SELECT is now icon-only (hand-pointer + upload, tooltip explains the pick-then-push/bypass-exclude/DRY-independent behavior), the `.git` checkbox dropped its icon for text-only, and LOG's icon (previously hidden by an inline style a stray `!important` rule silently canceled anyway) is now just always shown next to its text. Header labels shortened to `PROJECTS (n)` and `LAST` (full text in tooltip). Default window width reduced 875px → 720px to match.
 - **Agent usage panel decluttered**: header icon-to-label gap tightened (`8px` → `2px`); account emails truncated to 10 chars in the header (full email still in the account-switch dropdown); Antigravity's plan badge collapses "Google" → "GG"; the AG cached-time note drops the word "cached". Body state rendering (`AgentUsage.vue`) consolidated from ad hoc `v-if`/`v-else-if` chains into one `uiStatus` computed resolving `error` → `off` → `loading` → `empty` → `data`, fixing a bug where toggling a source off (or Proxy-mode locking it off) left stale usage bars on screen until relaunch. New `locked` prop swaps the off-state message to "Monitor only for native Claude - Proxy mode active" when a lock, not the user, turned it off.
 - **App-icon menu is now the single home for local-only admin actions**: Claude Code Profile, Statusline Customizer, and Edit SSH Config moved out of the always-visible header row / usage panel (where Profile and Statusline could render duplicated across the two usage slots) into the app-icon dropdown, each labeled "(Local)" since none of them take a remote-host target - the Profile modal also carries a "Local" scope tag as a second confirmation. The dropdown trigger swapped from a small chevron to a `fa-bars` icon in a pill for better discoverability, and its items are now grouped with separators (links/updates, local utilities, AkiClaudeDoc).
@@ -731,13 +756,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.10.1] - 2026-07-15
+## [1.10.1] - 2026-07-15
 
-#### Fixed
+### Fixed
 - **Update dialog title showed a doubled "v" ("vv1.10.0")**: `newVersionAvailable` (`AppHeader.vue`) is set from GitHub's `tag_name`, which already carries a `v` prefix; `UpdateModal.vue`'s title template unconditionally prepended another one. Now a `displayVersion` computed strips any existing `v` before re-adding exactly one, and cargo/npm version fields - separately audited this release - never carry a `v` (see `CLAUDE.md` § Version string format).
 - **Statusline Customizer froze the entire app window on open**: the new auto-install check (below) ran `check_statusline_status`'s SSH/local probe as a plain synchronous `#[tauri::command]`, and `apply_statusline_config` called its blocking SSH loop directly inside an `async fn` without `spawn_blocking` - both block the command-dispatch thread, freezing window repaint and input for as long as the probe/apply takes. Also caught and fixed the same pre-existing class in `check_for_updates` (blocking `curl` on every app launch, no timeout). All three are now properly `async fn` + `tauri::async_runtime::spawn_blocking`, matching the pattern already used correctly elsewhere in this codebase (`git.rs`, `agent_usage.rs`). `CLAUDE.md` gets a new ABSOLUTE, zero-exception "never block the UI" rule so this class doesn't recur, pushed into the shared `AkiClaudeDoc` rule corpus as a new `RULE-stack-tauri.md` (this repo previously only had a copy-pasted "GLOBAL TAURI STACK" section, not a shared file).
 
-#### Added
+### Added
 - **Update dialog "Release Page" button**: opens the GitHub release's `html_url` directly (new `releaseUrl` prop), alongside the existing "Download DMG" button.
 - **Update dialog re-downloads smarter**: clicking "Download DMG" now checks `~/Downloads` first (new `find_in_downloads` command) and opens the already-downloaded `.dmg` directly (mounting it) instead of re-triggering a browser download when the file is already present. Falls back to the browser download URL otherwise. Does not attempt to self-terminate the running app - the user still finishes the drag-to-Applications step manually.
 - **Statusline Customizer modal widened to 90vw** (was a fixed 480px) - the live ANSI preview line no longer wraps awkwardly on typical window sizes.
@@ -745,72 +770,72 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **SSH Terminal Color** (`Enable SSH Terminal Color` in the app-icon dropdown menu): installs an idempotent `ssh()` zsh wrapper into `~/.zshrc` (OSC 11/111 background tint while a remote session is active, reset on exit) so a remote shell is visually distinguishable from local at a glance. Local-machine-only by design - the background swap has to live in the shell that launches `ssh`, so there's nothing to roll out to remote hosts. Guarded by begin/end markers so re-running never duplicates, and backs up the pre-existing `~/.zshrc` once to `~/.zshrc.aki-bak`.
 - **AkiClaudeDoc menu items**: "AkiClaudeDoc Repo" opens the GitHub repo; "Install AkiClaudeDoc" runs the local checkout's `install.sh` in a visible Terminal window, resolved via well-known candidate paths (mirrors the existing `$CLAUDE_BIN` resolver pattern) since the checkout location varies per machine - falls back to an error pointing at the repo to clone when no local checkout is found.
 
-#### Changed
+### Changed
 - **Versioning rule tightened (ABSOLUTE) after a real regression**: git tags had silently drifted from bare semver (`1.8.0`…`1.9.7`) to `v`-prefixed (`v1.9.8`, `v1.10.0`) partway through the project's history, which is exactly what caused the doubled-"v" UI bug above. `CLAUDE.md` now states explicitly that the version *attribute itself* (`package.json`, `Cargo.toml`, git tags) must never contain a `v` prefix - display-only `v` (UI badges, GitHub Release titles) is unaffected and always was fine. Same rule pushed into the shared `AkiClaudeDoc` rule corpus (`RULE-release.md`) so it applies to every Aki project, not just this one. This release's tag is cut bare (`1.10.1`, not `v1.10.1`) to restore the original convention.
 
 ---
 
-### [1.10.0] - 2026-07-15
+## [1.10.0] - 2026-07-15
 
-#### Added
+### Added
 - **Statusline Customizer**: a new "Statusline Customizer" button next to the existing Claude Code Profile button opens a modal to build `~/.claude/statusline-command.sh` visually instead of hand-editing it over chat. Toggle which groups appear (identity, cwd, model+effort, context window, 5h/7d rate limits, session duration/lines/cost, and an experimental git-branch field), reorder them with up/down, recolor the plain-label fields (cwd/model/session/git - identity and all %/+/- values keep their meaningful locked colors), tune the 3 color-tier thresholds (default 50/70/85), and see a live ANSI-accurate preview before applying. One "Apply" push writes the generated script + patches `statusLine` in `settings.json` on the local machine and/or any configured remote host (checkbox list sourced from the project table's `remote_host`s), reusing the existing `ssh host sh` execution path - no new transport code. Safety: the very first Apply to a host backs up any pre-existing hand-edited script to `statusline-command.sh.aki-bak` before overwriting; the mandatory `aki-rlcache v2` rate-limit caching block is always emitted and is not user-togglable, since usage tracking depends on it. New Rust module `src-tauri/src/statusline.rs`; new `src/components/modals/ClaudeSettingModal.vue`. Field catalog covers the groups already locked in during planning (see `docs/plan/statusline-customizer.md`), not the full statusLine JSON schema - architecture (one match arm + one catalog entry per field) makes adding more straightforward later.
 - **`share/aki-statusLine/`**: the hand-tuned statusline script (now also the customizer's default preset) published as a standalone drop-in asset for Claude Code users who don't run Aki Dev Sync - `cp` it to `~/.claude/statusline-command.sh`, no app install needed. README gets a new section with the demo infographic and install steps.
 
 ---
 
-### [1.9.8] - 2026-07-13
+## [1.9.8] - 2026-07-13
 
-#### Fixed
+### Fixed
 - **Force-sync/provision intermittently failed with `exit=127 command not found: claude` right after app launch, self-healing within minutes** - a PATH race, not a parsing or auth bug. `force-sync-claudecode.sh`, `provision-claudecode.sh`, and `get-claudecode-usage.sh` all resolve `claude` by asking a `zsh -lc`/`bash -lc` login shell for its PATH; when these scripts were spawned right at/near cold start, the user's shell rc/profile (nvm, path_helper, etc.) had not always finished sourcing yet, so the login shell's PATH did not include `claude`'s install dir. Confirmed live in `usage.log`: two consecutive force-sync runs failed this way within 1s of a `STARTUP` line, then the identical command succeeded manually minutes later. Root-cause fixed once at the single funnel all three scripts pass through (`run_remote_script_timeout`, `agent_usage.rs`): a preamble now resolves `$CLAUDE_BIN` via static, well-known install paths (`~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin`) - a file-existence check with zero dependency on rc-sourcing timing - before falling back to the previous `command -v`/login-shell lookup. All three scripts now invoke `"$CLAUDE_BIN"` instead of bare `claude`, so any future script sent through the same funnel inherits the fix automatically. Verified with `env -i` (empty PATH, worst case) and a live dry run: `claude` resolves and `/usage` returns real output where the old code would have hit `exit=127`. Mac-only path list for now (this app ships macOS only); extend when Linux/Windows ships. Documented as a general pattern in `CLAUDE.md` (new GLOBAL TAURI STACK section, reusable across future Tauri projects) since any subprocess spawning a login shell to find a user-installed CLI is subject to the same race, not just this one binary.
 
 ---
 
-### [1.9.7] - 2026-07-10
+## [1.9.7] - 2026-07-10
 
-#### Fixed
+### Fixed
 - **Claude Code header email could still show the just-switched-away-from account for up to 5 minutes after reopening the app**: the 1.9.4 fix added a 5-minute TTL (`AUTH_REFRESH_AGE_S=300`) so `~/.claude/auth-cache.json` no longer echoed the same email forever, but the TTL is purely time-based - it can't tell "cache is still valid" apart from "cache just went stale because the user switched CC accounts a moment ago." An account switch followed by reopening the app within that 5-minute window still read the fresh-looking (but wrong) cached email. Also confirmed Force Sync/Reload never touched `auth-cache.json` at all, so there was no way to manually correct it either - only waiting out the TTL worked. Fixed by making the very first Claude Code usage check per host, per app launch, bypass the cache regardless of its age: `cc_auth_force_needed()` (`agent_usage.rs`) tracks per-host first-call state for the process lifetime and sets `AKI_FORCE_AUTH_REFRESH=1` for that one call; `get-claudecode-usage.sh` now skips the cached-auth branch whenever that flag is set, forcing a real `claude auth status` run. Verified live (`--debug` build) and by the user with a real account switch + app restart. Deliberately scoped to app-open only (matches how rare account switches actually are) - periodic polling still uses the unchanged 300s TTL, no new background checks added.
 
 ---
 
-### [1.9.6] - 2026-07-09
+## [1.9.6] - 2026-07-09
 
-#### Fixed
+### Fixed
 - **5-Hour reset time showed the 7-Day reset (a misleading "~5 days from now" countdown) when the 5h window sat idle**: Claude Code reports `five_hour.resets_at == seven_day.resets_at` when the 5h window is at 0% with no fresh API traffic to establish a real boundary (observed after leaving the app running overnight - `rl 5h=[pct=0 resets_at=1783998000] 7d=[pct=35 resets_at=1783998000]`). The `cc5hResetsAt` computed in `AgentUsage.vue` now returns `null` when the 5h `resets_at` exactly equals the 7d `resets_at`, so the 5h reset line falls into its existing N/A state instead of drawing a bogus multi-day reset. Self-heals the moment real traffic writes a distinct 5h boundary. Not a parsing bug - `get-claudecode-usage.sh` faithfully copies whatever Claude reports; this is a display-layer guard.
 - **Provision retry storm: an empty `claude auth status` made the provision script exit 1, so the JS caller retried it every 30s forever (264 occurrences observed in one log)**: `provision-claudecode.sh` ended on `[ "$AUTH_JSON" != '{}' ] && printf … > auth-cache`, making the whole script's exit status hostage to that test - an empty auth (`{}`) returned exit 1 even though the actual provisioning contract (the statusline patch) had already succeeded above. `useAgentUsage.js` flipped `provisioned=false` on any provision error and let the next poll re-run it, so a Mac where `claude auth status` returns `{}` re-provisioned on every tick. Fix is scoped, not a blanket `exit 0` band-aid: (1) the script now `exit 0`s unconditionally (auth caching is a best-effort side task, decoupled from the exit code) but **surfaces** an empty auth as a `[SHELL:provision]` stderr diagnostic - a real signal that correlates with the empty-`/usage` bug, so it is logged, never silently swallowed; (2) `provision_agent_usage` (`agent_usage.rs`) now logs non-empty provision stderr at ERROR even on success, so that diagnostic reaches `usage.log` in production; (3) `useAgentUsage.js` bounds provision retries at `MAX_PROVISION_RETRIES=3` so a genuinely down host can still be picked up when it returns, but never storms.
 
 - **Bug B (`/usage` intermittently returns empty → force-sync gives up → `no_pct_match`/`raw_len=0`) now recovers via the native `rate_limit_event`**: the force-sync pipeline hinged entirely on scraping `claude -p /usage` *text*, which intermittently comes back empty (captured 56m and 2h36m before a reset - transient, self-correcting; the earlier "only at a reset boundary" theory is **disproven**). Proven empirically on Mac that headless `claude -p` does **not** fire the statusLine hook, and - the fix - that `claude -p '…' --output-format json` carries `rate_limit_info.resetsAt` (server-truth, real epoch, no year-guessing) for the currently-binding window in the turn's **own** response, independent of the fragile `/usage` text render (validated live: `resetsAt` matched the cache's server-truth exactly). The probe in `force-sync-claudecode.sh` now runs with `--output-format json` and exports `CLAUDE_SYNC_JSON_RESETS_AT`/`_TYPE`; `force-sync-parse.py` uses the JSON `resetsAt` as the **authoritative** five_hour reset (falling back to the text scrape), and - the Bug B recovery - when `/usage` text is empty but the JSON gives a five_hour reset, writes the reset and **preserves the last-known percentage** instead of giving up. `seven_day` is untouched (still statusLine-hook-owned). Degrades exactly as before only when BOTH the text and the JSON are empty (a genuinely dead/unauthenticated CLI), which is now distinguishable in the log (`reset_source`, `json_resets_at`). Research: `docs/research/claude-headless-rate-limit-event-2026-07-09.md`.
 
-#### Changed
+### Changed
 - **Force-sync give-up debug alert is now `--debug`-only (was shown to every user in 1.9.5)**: the raw prompt + stderr `Swal` dump reads as a crash to a normal user - a fresh install with no cache yet, or a reset-boundary give-up, would blast it with nothing the user did wrong. `showForceSyncDebugAlert` in `useAgentUsage.js` is now gated behind `_isDebugMode`, so it surfaces only when the operator explicitly ran with `--debug`; normal builds keep only the existing inline red error text. (The 1.9.5 `Added` entry that introduced the always-on alert is superseded.)
 - **Force-sync now escalates its shell stderr to ERROR on failure paths, so the empty-`/usage` diagnostic survives a production (non-`--debug`) run**: the `[SHELL:force-sync] run_usage: EMPTY stdout - claude stderr=…` line (the one clue to *why* `/usage` came back empty) was emitted via `log_shell_stderr` at `debug` level, which the logger suppresses in production - so every real occurrence of the `no_pct_match`/`raw_len=0` bug left no trace. Added `log_shell_stderr_error` (`agent_usage.rs`), wired into the three force-sync failure sites (empty stdout, parse-failed, json-error), which dumps every stderr line at ERROR; the happy path stays `debug` (no new log spam on a successful sync).
 
-#### Instrumentation note
+### Instrumentation note
 - Architectural docs (`usage-claudecode.md`) intentionally **not** rewritten in this release: the JSON path is validated on a healthy run and wired with a text fallback, but the one case it cannot be proven against without a live reproduction - does the JSON survive at the exact moment `/usage` is empty - is now trapped by the new `reset_source`/`json_resets_at` diagnostics (logged at ERROR on failure). Docs get their single, definitive update once a real empty-`/usage` occurrence is captured with the JSON outcome beside it.
 
 ---
 
-### [1.9.5] - 2026-07-08
+## [1.9.5] - 2026-07-08
 
-#### Fixed
+### Fixed
 - **Force-sync "resets" parser never matched current CLI output - silently zeroed `resets_at` and burned a probe session every single sync**: `claude -p /usage` now prints `"resets Jul 14 at 9:59am"` (word "at", no comma, minutes omitted when on the hour - e.g. `"resets Jul 14 at 10am"`), but the regex in both `force-sync-claudecode.sh` (2 call sites) and `force-sync-parse.py` still required the older `"resets Jul 14, 9:59am"` comma format. Every real `/usage` response therefore failed the reset-time match: `probe_decision` always came back `YES` (burning a real quota-consuming probe session on every force-sync, even when the reset time was already valid), and the parser silently wrote `resets_at: 0` to the cache instead of the real timestamp - no red error (the `pct` field still parsed fine), just a quietly broken 5-hour countdown. Found via a real Mac `usage.log` capture (not reproduced synthetically). Regex now accepts both the comma and "at" separators with optional minutes: `resets\s+([a-zA-Z]+\s+\d+)(?:,|\s+at)\s+(\d+)(?::(\d+))?\s*([ap]m)`. Root cause of the separate `parse_error=no_pct_match` (empty CLI output) case is still open - see `docs/plan/claudecode-oauth-usage-p3.md`.
 - **COPY remote path / open remote IDE froze the whole UI for a few seconds**: `copyRemotePath` (`ProjectTable.vue`) called `resolveRemoteFullPath`, which fired a fresh blocking SSH round-trip (`resolve_remote_path`, `system.rs`) on every click, even though it only needed to copy the already-known `remote_path` string. Two fixes: (1) `copyRemotePath` now copies `project.remote_path` verbatim (mirrors `copyLocalPath`) - `~` is a valid, portable path on the remote (shells/scp/rsync expand it there), so no network round-trip is needed at all. (2) `resolve_remote_path` (still used by remote IDE-open) changed from a plain `pub fn` to `pub async fn` wrapped in `tauri::async_runtime::spawn_blocking`, so the SSH call no longer runs on Tauri's main thread - the UI stays responsive even on the first IDE-open per host. `resolveRemoteFullPath` also gained a `(host, path)` result cache so repeated IDE-opens skip the SSH round-trip entirely after the first resolve. See `docs/plan/done/fix-copy-remote-path-blocking.md`.
 
-#### Added
+### Added
 - **Force-sync give-up now shows a debug alert with the actual prompt + raw output**: when Claude Code usage force-sync exhausts its retries, the UI previously only showed a one-line red error (e.g. `parser did not parse (parse_error=no_pct_match)`) with no way to see what was actually run. `useAgentUsage.js` now fires a `Swal` on final give-up (once, not per retry) showing the host, the exact command run (`claude --model haiku -p /usage`), the error, and - when available - the parser's `parse_error` and a preview of the raw output, so the failure is debuggable directly from a shipped build without digging through log files. Root cause of `no_pct_match` itself is still open - see `docs/plan/claudecode-oauth-usage-p3.md`.
 - **REPORT button opens a project's `REPORT.html` (akihtmlreport skill output) in the OS default browser**: new button in the OPEN popup header (`ProjectTable.vue`) calls `resolve_report_html` (`system.rs`), which compares local vs. remote mtime for `REPORT.html` (reusing the existing `git::get_file_conflict_info` stat-diff primitive, not a new SSH script), pulls the remote's copy first if it's newer (`sync::rsync_pull_file`, a small shared single-file rsync helper - the existing push/pull pipeline only honors single-file selection on push), then opens the resulting local file via `macos_open`. Opens in the system browser rather than an in-app webview window deliberately: the app's own CSP (`script-src 'self'`, no `unsafe-inline`) would break REPORT.html's self-contained inline JS/CSS, and there is no existing in-app-webview-window precedent in this codebase to build on safely without a Mac verify cycle.
 
-#### Changed
+### Changed
 - **Force-sync `run_usage()` now captures `claude`'s stderr instead of discarding it - the intermittent empty-output failure (`parse_error=no_pct_match`, `raw_len=0`) is finally diagnosable**: that failure only happens at a quota-reset boundary while no Claude Code session is running on the target host - nothing keeps `~/.claude/rate-limits-cache.json` warm and claude's backend hasn't populated the new window yet, so `claude -p /usage` prints nothing. The probe path in `force-sync-claudecode.sh` is the intended recovery, but a single probe + single re-read doesn't always catch it (this is the heavier variant of the already-documented reset-boundary case in `docs/arch/usage-claudecode.md` §266). Until now `run_usage()` ran `claude … 2>/dev/null`, so every occurrence left zero trace of *why* claude produced nothing. It now redirects stderr to a temp file and logs `run_usage: EMPTY stdout - claude stderr=…` **only when stdout is empty** (surfacing auth failure / timeout / hard rate-limit / claude-not-found); the normal path gains no new log line, and the two redundant `run_usage: using zsh -lc …` lines were dropped. No shell-level retry was added - `useAgentUsage.js` already auto-retries force-sync up to `MAX_FORCESYNC_RETRIES` on the next poll tick. Confirmed not reproducible on the dev Mac (0/40 forced local runs - the machine always has a live session keeping the cache warm); root cause still pending a real captured stderr. See `docs/plan/claudecode-oauth-usage-p3.md`.
 
 ---
 
-### [1.9.4] - 2026-07-07
+## [1.9.4] - 2026-07-07
 
-#### Added
+### Added
 - **LAST ACT column shows which remote host the last action ran against**: a project's `remote_host` is editable, so over time one project can sync against different remotes - but the LAST ACT badge only said `PUSH 2h ago` with no clue *where to*. New persisted `last_sync_host` field (`SyncProject` in `src-tauri/src/projects.rs`, `#[serde(default)]` for old `projects.json` records) is stamped with the project's current `remote_host` on every successful sync (`useSync.js`), and rendered as a tiny muted one-line text (9px, ellipsized, full host in tooltip) under the badge in `ProjectTable.vue`. Hidden entirely when no action has run yet - no extra element in the "Never" state.
 - **Claude Code usage now refreshes without a Claude Code turn (OAuth polling, P3, Phase 1) - works on file-token hosts only, Mac keychain gap confirmed**: usage is pool-shared across claude.ai app, Cowork, Desktop, and Claude Code (`docs/research/claude-app-usage-measurement.md`), but the existing statusLine-hook writer (P1) only fires on a CC turn - a day spent only in the Claude app left the header frozen on the last CC session's numbers (Lỗi C, `docs/arch/usage-claudecode.md` §2). `scripts/get-claudecode-usage.sh` gained an oauth block that polls `GET api.anthropic.com/api/oauth/usage` with the `~/.claude/.credentials.json` token before the stale-check runs, merges `five_hour`/`seven_day` into the same cache the hook writes, gated to at most once/minute and skipped whenever the cache is already fresh - fail-open at every step, token never touches stdout/args/a temp file. **Confirmed 2026-07-07 on the actual Mac target machine: `~/.claude/.credentials.json` does not exist there** (credential moved fully to OS keychain) - the oauth block harmlessly no-ops (`oauth: no token`) but does not fix the original incident on Mac. Keychain support is intentionally not being chased right now (ACL/password-prompt risk, and paused per user bandwidth) - see `docs/plan/claudecode-oauth-usage-p3.md` for the full finding and `docs/research/claude-app-usage-measurement.md` §8.
 
-#### Fixed
+### Fixed
 - **Usage progress rings lost their smooth transition when switching accounts (or on any null→data jump)**: `UsageCircle.vue`'s active progress `<circle>` was gated behind a bare `v-if="hasPercentage && percentage > 0"` - when a live fetch (account switch, first load) briefly returns `null`/`0`, Vue destroyed the element, then mounted a brand-new one already at the incoming percentage, with no prior frame for the CSS `transition: stroke-dashoffset` to animate from. Fixed by wrapping the `v-if`'d circle in Vue's own `<Transition name="circle-fill">` (its native enter/leave lifecycle, not a hand-rolled class/opacity toggle), with the matching `.circle-fill-enter-active/leave-active/enter-from/leave-to` CSS hooks - the ring now fades gracefully across the empty↔real-data boundary instead of jump-cutting; the existing `stroke-dashoffset` transition still covers same-element percentage changes while mounted.
 - **Claude Code header email stuck on the old account after switching CC accounts on the same host**: `scripts/get-claudecode-usage.sh` cached auth info (email/orgName) in `~/.claude/auth-cache.json` by running `claude auth status` only on the very first poll (the `else` branch of a file-exists check) - once written, every later poll `cat`'d that same file forever, with nothing to detect a login switch, even though the usage-% numbers (separate writer) kept updating correctly. Now the cache is time-gated (`AUTH_REFRESH_AGE_S=300`): missing OR older than 5 minutes re-runs `claude auth status`, so an account switch self-corrects within one refresh window without needing an app restart; a failed/empty refresh falls back to the last-known cache instead of blanking the email. Unit-tested 4 branches (no-cache, fresh-cache, stale-cache-refresh, refresh-fails-fallback) against a fake `$HOME`/`claude` binary. Residual unverified case (needs a real Mac account switch to observe, not fixable via static code): if `claude auth status` itself lags behind a fresh login internally, this fix bounds the staleness to ≤5 min instead of forever, but can't make it instant.
 - **Stale badge blind to a cache frozen mid-window**: `useAgentUsage.js` computed the `Stale` badge's data age from `fetched_at` (the moment Rust read the file - always ≈0 on a successful poll), so a cache that stopped being updated mid-window (`resets_at` still in the future) never tripped the badge - exactly the freshness blind spot in Lỗi C, worse for the 7-Day bar since force-sync never writes `seven_day` at all. Now uses `file_modified_at` (the cache's real mtime) for the age check, so any stalled writer - statusLine hook or the new oauth poll - surfaces as `Stale` after 10 minutes, reusing the existing badge with zero new UI elements.
@@ -818,12 +843,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.9.3] - 2026-07-03
+## [1.9.3] - 2026-07-03
 
-#### Added
+### Added
 - **Auto-opening "Update Available" modal**: `check_for_updates` on startup already knew when a newer GitHub release existed, but only lit the header's "Update" badge - the user had to click through to the GitHub releases page to see what changed. New `UpdateModal.vue` renders the release's markdown `body` ("What's New") via the existing `renderMarkdown` util and adds a direct "Download DMG" button that opens the release's `.dmg` asset `browser_download_url` straight (via `macos_open`), skipping the browser detour entirely. The modal now auto-opens on launch when a new version is detected, gated by a `aki-devsync-update-dismissed` localStorage flag (keyed by version tag) so clicking "Later" doesn't re-nag on every subsequent launch - "Check for Updates" in the icon dropdown and the header badge both still always show it on demand.
 
-#### Fixed
+### Fixed
 - **Antigravity account panel showed the just-logged-out or a permanently-N/A account after switching accounts**: three separate gaps in `useAgentUsage.js` compounded into "reload doesn't fix it." (1) `persistAgAccount` wrote every successful-exit live payload into the per-account cache unconditionally, even when `quotaSummary` came back `null` (the Connect RPC's `GetUserStatus` + `RetrieveUserQuotaSummary` are independent `Promise.allSettled` calls in `scripts/get-antigravity-usage.js`, so the latter can fail alone right after an account switch while the script still exits 0) - this permanently poisoned that email's cache with N/A, which could then resurface on any later offline-fallback read. Now a `quotaSummary: null` payload no longer overwrites an existing good cache entry for the same email. (2) `logout_antigravity` (Rust) correctly wiped AG's own session (SQLite auth rows, keychain item, cookies) but never touched this app's own state - `activeEmail`/`viewingEmail`/the localStorage account cache all kept pointing at the just-logged-out account, so after logging into a different account the UI kept falling back to the old one until a live fetch happened to land. `AgentUsage.vue` now emits `logout-success` after the backend call resolves, wired to a new `resetAccount()` on the composable that wipes the AG cache/view-state and immediately re-checks. (3) A manual "Reload" click landing while a poll was already in flight was silently dropped by the `isChecking` mutex with no queuing - `checkUsage()` now queues one immediate re-run instead of a no-op, so reload always does something even right after a relaunch when probes are slower.
 - **Force sync failed with `parse_error=no_pct_match` after quota reset**: `force-sync-parse.py` bailed immediately when Claude's `/usage` output contained no `X% used` line - which is exactly what happens right after a rate-limit window resets (fresh session, 0% used, no percentage printed). The parser now checks whether the output looks like a genuine `/usage` response at all (contains "claude", "usage", "resets", "session", etc.); if yes, it assumes `pct=0` and continues parsing `resets_at` normally so the cache gets a valid timestamp written. Hard exits only when the output is empty or clearly unrelated.
 - **Global Note icon didn't show yellow on startup**: `noteContent` was only populated when the user clicked the note icon to open the modal - so the yellow color indicator in AppHeader was always invisible until at least one open/close cycle. `initGlobalNote()` now runs silently in `App.vue`'s `onMounted`, reading the note content from disk without showing the modal, so the icon correctly lights up on first render if there is any saved content.
@@ -833,22 +858,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.9.2] - 2026-07-03
+## [1.9.2] - 2026-07-03
 
-#### Added
+### Added
 - **Git changed-file count badge**: the pink/purple GIT button now shows a small absolute-overlay count badge (same style as the PUSH/PULL count badges) with the number of changed files from `git status --porcelain`, so local-only projects (no rsync remote configured) finally get a visible "how many changes" signal instead of relying on the rsync push/pull counters, which only ever populate for remote-mode projects. `get_git_info` (`src-tauri/src/git.rs`) gained a `changed_count` field; `useGit.js` stores it as `projectRuntime[id].git_changed_count`.
 - **One-shot cleanup of the legacy `~/.aki/devsync-baselines` path**: sync baselines moved to Tauri's appDataDir back in 1.7.1, but the old `~/.aki/devsync-baselines` dir was only ever read as a fallback, never removed. A new `cleanup_legacy_baselines` command migrates any baseline files not already present in appDataDir, then deletes the legacy dir; `App.vue` calls it once on startup, gated by a `aki-legacy-baseline-cleanup-v1` localStorage flag so it doesn't re-run (or re-touch the filesystem) on every launch.
 - **COPY buttons for LOCAL/REMOTE full path** in the project OPEN popup, inline on the same row as the "LOCAL"/"REMOTE (SSH)" section label (no new row, per the extreme-narrow UI rule). Local copies `p.local_path` directly; remote resolves `~`/`$HOME` via `resolve_remote_path` first (same resolution `openIdeRemote` already used for launching remote IDEs, now shared through `resolveRemoteFullPath`) so the clipboard always gets an absolute path.
 - **Git Modal: PULL button** - `commit`/`push`/`fetch` existed but `pull` was missing entirely; added `runGitPull` (`useGit.js`) and a PULL button next to FETCH/PUSH.
 - **Git Modal: real command output as feedback** - commit/push/pull/fetch previously only surfaced their result as a line in the global console; the modal's own status pane just got silently overwritten by the next `git status` refresh, so you never actually saw what push/pull/fetch printed. Now the modal displays each action's actual stdout/stderr (colors included, via `-c color.ui=always`) the same way a terminal would, and the status-badge refresh that follows runs silently in the background instead of clobbering it (`fetchGitStatus(id, silent, updateModalLog)` gained an `updateModalLog` flag). The ANSI-to-HTML converter also gained blue/magenta and a catch-all for stray escape codes, since fetch/push/pull use more of the color palette than plain `git status`.
 
-#### Fixed
+### Fixed
 - **SSH/local "Open Terminal" spawned two windows on a cold start**: `tell application "Terminal" to do script "..."` always opens a *new* window for the command, but when Terminal.app wasn't already running, macOS's own app-launch behavior threw up a second, unrelated default window (home directory) as a side effect of `tell application` implicitly launching it - racing the `do script` window. `open_remote_subprocess`'s `terminal` case and `run_project_command` (`src-tauri/src/system.rs`) now share a new `open_terminal_with_command` helper that checks whether Terminal was running *before* acting: if it had to launch Terminal itself, it waits briefly and reuses that freshly-created window (`in window 1`) instead of letting `do script` spawn a second one; if Terminal was already running, behavior is unchanged (a fresh window per open, as before). Also calls `activate` so the new/reused window comes to the front.
   - The local **Terminal** button in the OPEN popup still had this bug after the above fix - it called `macos_open` (`open -a Terminal <path>`) directly instead of going through `open_terminal_with_command`. New `open_local_terminal` command routes it through the same helper.
   - The fixed-`delay 0.5` wait for Terminal's own default window to appear was itself a race on a slow shell startup (heavy `.zshrc`: nvm, conda, etc.) - if the window wasn't up yet when checked, `do script` would open a second window anyway, and the slow default window would still appear moments later (exactly "one window at $HOME + one at the right target"). Replaced with a poll (up to ~2s, every 100ms) that exits as soon as the window shows up.
 - **Global Note edits sometimes needed an extra close+reopen to "stick"**: `closeGlobalNote()` fired its save (`flushSave()`) without awaiting it, so a fast reopen could call `read_global_note` before the write had finished landing on disk, overwriting the just-typed content with the stale on-disk copy in memory (the file itself was fine - only the visible textarea looked wrong). `closeGlobalNote` now awaits the save before closing, and `openGlobalNote` awaits any save still in flight before reading, so the two can no longer race.
 
-#### Refactored
+### Refactored
 - **De-duplicated the count-badge overlay markup**: the GIT/PUSH/PULL buttons each repeated the same `sync-btn-wrap` + `sync-count-badge` block inline. Extracted into `CountBadgeWrap.vue` (`count` prop + default slot); all three call sites and the shared CSS now live in one place.
 - **De-duplicated legacy-baseline-path and appDataDir-caching logic in `sync.rs`**: `~/.aki/devsync-baselines` was reconstructed independently in three spots (`baseline_dir`'s fallback, `legacy_baseline_path`, and the new `cleanup_legacy_baselines`) - collapsed into one `legacy_baseline_dir()`. Likewise the "cache appDataDir into the `APP_DATA_DIR` OnceLock" snippet was copy-pasted across `run_sync`, `check_sync_status`, and `cleanup_legacy_baselines` - collapsed into one `ensure_app_data_dir()`.
 - **De-duplicated `useGit.js`'s fetch/push/pull/commit bodies**: each was a near-identical copy of "set loading, log, invoke, log result, refresh status, catch/log/rethrow." Collapsed into a shared `runGitAction(project, verb, steps)` runner (`steps` is a list of arg-arrays so commit's `add -A` + `commit -m` still works as two steps); the four exports are now thin one-liners.
@@ -856,9 +881,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.9.1] - 2026-07-03
+## [1.9.1] - 2026-07-03
 
-#### Added
+### Added
 - **Per-source ON/OFF monitoring switches**: usage monitoring is now built from three independent sources - Antigravity (local), Claude Code (local), Claude Code (remote via SSH). Antigravity and Claude Code (local) each have their own power icon that starts/stops polling without affecting the others; both default ON (no SSH cost). Claude Code (remote) has no switch of its own - see the Remote Mode entry below. Turning a source off no longer blanks its card: the last-known reading stays visible marked *cached* instead of disappearing, and only shows "Monitoring off" when there was never any data to begin with.
 - **Claude Code local monitoring**: Claude Code usage can now be read directly off this machine (no SSH) - the backend's remote-script runner (`agent_usage.rs`) gained a `host == "local"` path that runs the existing provision/get/force-sync scripts through a local shell instead of `ssh host sh`; the scripts themselves needed no changes since they were already pure POSIX `sh` against `$HOME`.
 - **Two independent display slots (LOCAL | REMOTE tabs)**: each half of the usage section now freely picks LOCAL or REMOTE and, within LOCAL, which agent (AG/CC) to show - instead of a fixed "local on the left, remote on the right" layout. REMOTE mode surfaces the SSH host picker directly next to the REMOTE tab, alongside the Remote Mode power icon (see below).
@@ -866,32 +891,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Remote Mode - single global master switch** (`src/store/remoteModeStore.js`): one flag now gates every remote-touching code path app-wide - PUSH/PULL/SELECT buttons, the Open popup's remote IDE options, background *and* manual remote-diff checks, and Claude Code remote usage monitoring. Lives as a power icon inside the usage widget's REMOTE tab, next to the SSH host picker (contextual - visible only when that tab is active), not a separate always-on header control. Defaults ON. See `docs/feat/remote-mode.md`.
 - **Antigravity Log Out**: a destructive-styled row in the AG account dropdown that quits Antigravity and truly signs the account out. The live OAuth session lives in VS Code's globalState SQLite store (`User/globalStorage/state.vscdb`) under the keys `antigravityUnifiedStateSync.oauthToken` / `.userStatus`, stored unencrypted (base64 protobuf, not Electron `safeStorage` ciphertext). `logout_antigravity` quits the app, then deletes those two rows from `state.vscdb` **and** `state.vscdb.backup` (Antigravity restores from the backup otherwise) via `/usr/bin/sqlite3`, plus the account-only Chromium files (Cookies, Local/Session Storage, network state) and the `"Antigravity IDE Safe Storage"` Keychain item. `User/` and the rest of `globalStorage/` are untouched, so settings, extensions, and rules survive intact. Verified end-to-end: after logout the token rows stay gone and the IDE no longer silently re-authenticates on relaunch.
 
-#### Fixed
+### Fixed
 - **Claude Code PRO/Max badge missing**: `get-claudecode-usage.sh` only read `subscriptionType`/`rateLimitTier` from `~/.claude/.credentials.json`, which no longer exists on newer Claude Code versions (credential storage moved to the OS keychain) - usage % still worked (different file) but the tier badge silently disappeared. The script now falls back to `claude auth status` (already called for email/org) when the credentials file is missing or yields `Unknown`.
 - **Antigravity usage monitoring flashed a repeating error banner**: the probe script itself is stable while the IDE runs (~175 ms), but `agent_usage.rs::get_antigravity_usage` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out response. Each `Err` set `error.value` in `useAgentUsage.js`, surfacing a scary banner on every poll for entirely normal states. `get_antigravity_usage` now treats **any** non-zero script exit as a soft empty state (`Ok(None)`) and logs the reason at debug level, so the UI falls back to the last cached account instead of an error. Also fixes signed-out detection: the current IDE build returns HTTP `500` (`GetCascadeModelConfigData() is nil`), not `401`, when signed out - `get-antigravity-usage.js` now recognizes both signatures.
 
-#### Changed
+### Changed
 - **Claude plan badge text simplified**: shows just the tier (`Pro`, `Max 5x`) instead of `Claude Pro` / `Claude Max 5x` - the agent name column already reads "Claude Code", so the prefix was redundant.
 
 ---
 
-### [1.8.0] - 2026-07-02
+## [1.8.0] - 2026-07-02
 
-#### Added
+### Added
 - **Antigravity multi-account usage cache + account dropdown**: AG usage is now cached **per account (by email)** in `localStorage` (`aki-antigravity-usage-cache-v2`, shape `{accounts:{[email]:{data,fetchedAt}}, lastActiveEmail}`), keeping the history of every account seen on the machine. Clicking the email in the AG header opens a dropdown listing each cached account with its cached-ago time and a "live" dot on the active one; selecting a previous account pins the view to its cached usage (shown with the *Cached* badge) while the background poll keeps refreshing the active account. The old single-blob key is migrated once then removed. No new DOM element added (Extreme Narrow). **Claude Code intentionally does not get this** - one account per remote host by design (noted in code + docs).
 
-#### Fixed
+### Fixed
 - **Antigravity showed the wrong account after switching**: The AG offline cache was a single un-keyed blob, so when a live fetch returned `null` (the language server restarts right after an account switch - very common) the null branch displayed that stale blob = the *previous* account; whether you saw old or new depended on whether the fetch happened to succeed that tick (a race that persisted even across reload). The null branch now deterministically shows the **last-active account's** cache (labeled *Cached*), and the next successful fetch overwrites it with the true current account.
 - **Claude Code transiently showed 100% full red**: The remote statusline hook injected by `provision-claudecode.sh` fabricated `used_percentage = 100` on every rate-limit window whenever a Claude turn's JSON lacked `rate_limits`. That key is dropped on many ordinary turns - not just at genuine 429 exhaustion - so the cache was clobbered to a false 100% (red) until the next real turn corrected it. The hook (now marked `# aki-rlcache v2`) merges the previous `rate_limits` **verbatim** instead of fabricating; genuine exhaustion still shows the last-known % and preserves `resets_at` so STALE_RESET recovery keeps working. The provision script gained a version-aware, idempotent migration so hosts already patched with the buggy v1 block are upgraded (v1 block removed, v2 injected), and `useAgentUsage.js` re-provisions each host once per session so existing remotes actually receive the fix. **Requires a rebuild on the Mac** (script is embedded via `include_str!`).
 
-#### Changed
+### Changed
 - **Task-per-project badge split by pin state**: The tasks button now shows two overlay badges instead of one - pinned open tasks (amber, top-right, matching the pin colour) and normal open tasks (white, bottom-right) - each hidden when its count is 0.
 
 ---
 
-### [1.7.1] - 2026-07-02
+## [1.7.1] - 2026-07-02
 
-#### Fixed
+### Fixed
 - **PUSH/PULL with `--delete` completely stuck**: `preConfirm` in the Swal dialog returned `true` (boolean) instead of `val` (string), so the `typed !== project.name` check was always true and the sync aborted right after confirmation. Result: clicking the red confirm button did nothing at all.
 - **Delete preview error silently swallowed → unguarded destructive sync**: If SSH failed while running `get_sync_delete_preview`, `deleteList` stayed `[]` and the Swal warning was skipped - the `--delete` sync ran with no warning. Rust now checks rsync's exit code (non-zero → `Err` instead of returning an empty list as before), and JS asks the user whether to continue instead of staying silent.
 - **Sync could hang silently if SSH raised an interactive prompt**: rsync/hooks in `spawn_and_stream` inherited the app's stdin - if SSH asked for a hostkey/password (e.g. host key changed), the process waited for input forever, with no log and no error. stdin is now `Stdio::null()` → the prompt fails immediately as an error visible in the log.
@@ -901,9 +926,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.7.0] - 2026-06-30
+## [1.7.0] - 2026-06-30
 
-#### Added
+### Added
 - **Tier 2 Baseline Manifest - bidirectional EC-3 disambiguation**: After every full successful sync, a local file-list snapshot is written to `{appDataDir}/baselines/{project_id}.json`. The status checker uses it in both directions:
   - **PULL side**: file in pull_files + in baseline + missing locally → Mac deleted it → reclassified to `push_count` (not `pull_count`).
   - **PUSH side (symmetric)**: file in push_files + in baseline → remote deleted it (both sides had it at last sync; now only Mac does) → suppressed from `push_count`. This is the dominant case when coding 75 %+ on a remote server - remote-deleted files no longer inflate the PUSH badge.
@@ -917,13 +942,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Per-project run command overrides in Project Settings**: A new "RUN COMMANDS - LOCAL ONLY" section in Project Settings lets you override the detected DEV and build commands per project. Shows the auto-detected default as placeholder.
 - **Exclude list side-by-side layout**: PUSH and PULL configuration panels are now displayed side-by-side (50/50) in Project Settings, collapsing to vertical only below ~560px viewport width, saving significant vertical space.
 
-#### Changed
+### Changed
 - **`dev:debug` npm script**: `AKI_DEBUG=1 npm run tauri dev` - runs dev mode with debug logging enabled. Split from the regular `dev` script so normal usage stays free of log noise.
 - **Git commands non-blocking**: `run_git_command`, `get_git_info`, and `get_project_files` Rust commands now run inside `spawn_blocking`, preventing async executor starvation during long git operations (large repos, slow fetch/push).
 - **Git modal - buttons disabled during initial load**: `isGitLoading` is now set while the initial git status loads on modal open, preventing accidental clicks before data is ready.
 - **Build time format simplified**: Titlebar build stamp now shows `x.x.x HHMM` only - no `v` prefix, no date, just version and 4-digit time, compact and unambiguous.
 
-#### Fixed
+### Fixed
 - **UI freeze on PUSH/PULL click**: Log panel now opens immediately on every click, before any async work. For delete-mode ops, shows "Checking files at risk..." while the SSH preview runs so the UI never appears frozen. Rust emits a "Connecting..." log line before SSH mkdir/version checks, closing the 1-3s silent gap between "START SYNC" and first rsync output.
 - **DRY RUN + delete confirm bug**: The type-to-confirm delete dialog appeared even when Dry Run mode was ON - nothing would be deleted by a dry run, making the dialog misleading. `isDryRun` is now evaluated before the `isDeleteOp` guard so the dialog is skipped entirely in dry run mode.
 - **Post-sync count badges not clearing immediately**: After a successful sync, `pushCount`/`pullCount` badge overlays now clear at the same time as the button glow, not after the next background poll.
@@ -933,9 +958,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.6.0] - 2026-06-29
+## [1.6.0] - 2026-06-29
 
-#### Added
+### Added
 - **Project Changelog Preview**: A `CHANGELOG` button dynamically appears in the Git modal footer if a changelog file is detected, opening a Markdown visual preview inside a modal (inheriting from the system `ChangelogModal`).
 - **ANSI Color Status Support**: The Git status log console now parses and renders ANSI colors (Red/Green/Yellow/Cyan/Bold) for file states and commits.
 - **Unicode Vietnamese Filename Support**: Added `core.quotepath=false` to Git commands to prevent octal-escaped representation of Vietnamese characters in the status lists and history console logs.
@@ -943,32 +968,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Manual and Auto Update Check**: Silent background update checks on launch and a manual check option inside the Header logo dropdown menu with version update badges.
 - **Project Notes Feature**: Safe metadata note storage saved dynamically on blur/change with zero-JS native height auto-growing via CSS `field-sizing: content`.
 
-#### Changed
+### Changed
 - **Modals Project Icon Integration**: Displayed 18px project icons in the title headers of Git, Changelog, and Task modals, and increased the Open popup header icon size to 18px.
 - **Git Backend Consolidation**: Consolidated Rust backend commands (`git_fetch`, `git_push`, `git_commit`) into a single macOS-safe environment PATH command executor `run_git_command`.
 
-#### Fixed
+### Fixed
 - **Task Done State Pin Clean-up**: Toggling a task as completed automatically resets its pin status (`pin = false`).
 - **Changelog Carry-over Bug**: Automatically resets the active changelog state when switching between projects to prevent the preview modal from reopening unexpectedly.
 
 ---
 
-### [1.5.1] - 2026-06-28
+## [1.5.1] - 2026-06-28
 
-#### Fixed
+### Fixed
 - **Production icons blank** (`tauri.conf.json`): Added `aki-devsync-icon:` and `http://aki-devsync-icon.localhost` to CSP `img-src`. The custom URI protocol introduced in 1.5.0 was silently blocked by the WebView CSP in production builds, causing all project icons to disappear. Dev mode was unaffected (relaxed CSP).
 - **OPEN button caret direction** (`ProjectTable.vue`): Changed `fa-caret-down` → `fa-caret-up` to match the actual drop-up popup direction.
 - **Grid column gap reset** (`ProjectTable.vue`): Restored `--grid-gap` to `0.5rem` (desktop) and `0.25rem` (mobile), which was incorrectly reduced to `2px` when the TASKS column was added in 1.5.0.
 
-#### Changed
+### Changed
 - **`build:app` script** (`package.json`): Now builds ARM `.app` bundle only (`--target aarch64-apple-darwin --bundles app`) instead of all targets and bundle types. Use `build:rmad` for ARM DMG, `build:rmud` for universal DMG.
 - **`post-build.js`**: Handles `.app`-only builds - logs the output path and reveals it in Finder. When a DMG is present (release builds), only the DMG is revealed. Warning only fires when no artifact is found at all.
 
 ---
 
-### [1.5.0] - 2026-06-28
+## [1.5.0] - 2026-06-28
 
-#### Added
+### Added
 - **Per-project Task List** (`projects.rs`, `useProjectTasks.js`, `TaskCell.vue`, `ProjectTasksModal.vue`): Each project now has a lightweight task list for tracking active items, pinned goals, and future wishes.
   - Clicking the trigger button opens a focused centered modal (`ProjectTasksModal.vue`) where active tasks are sorted with Pinned tasks first, followed by normal tasks, then wish tasks, and completed tasks sink to the bottom of the list.
   - Placed checklist checkmark (Done), thumbtack (Pin), and clock (Wish / do-it-later) toggle buttons together on the left of each task row, grouping all state controls.
@@ -984,7 +1009,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   - Removes base64 parsing and IPC payload bloat during render.
 - **Single Instance Configuration** (`Cargo.toml`, `lib.rs`): Integrated `tauri-plugin-single-instance` to prevent database locks and process conflicts by ensuring only a single instance of the app runs at a time, focusing the active window on subsequent launches.
 
-#### Changed
+### Changed
 - **Compact Project Table Grid Layout** (`ProjectTable.vue`): Tightened grid column layout by reducing the grid column gap (`--grid-gap`) to `2px` and shrinking the Tasks column width to `2.2rem` to eliminate empty spaces and keep elements tightly aligned.
 - **Open Launcher Popup UX** (`ProjectTable.vue`): Replaced JS mouseenter/mouseleave timeout timers on the OPEN button launcher with native CSS transition delays (`transition-delay: 0.15s` on mouseleave).
   - Positioned the popup with `position: fixed` (escaping table container `overflow-y: auto` clipping) and ALWAYS UP (positioning exactly above the trigger button on hover with 0px gap).
@@ -994,26 +1019,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.4.2] - 2026-06-27
+## [1.4.2] - 2026-06-27
 
-#### Fixed
+### Fixed
 - **UTF-8 crash on non-ASCII log preview** (`agent_usage.rs`): The `preview()` log helper sliced strings at a raw byte index (`&s[..max]`), which panicked and aborted the whole app when the cut landed mid-character - e.g. a Vietnamese Claude Code `session_name` ("Khảo sát cơ ch…") embedded in the cached usage JSON. The slice runs while building the `format!` argument, so it crashed even **without** `--debug`. Now walks back to the nearest char boundary before slicing, protecting all `preview()` call sites.
 - **Non-ASCII filenames mangled in git status** (`git.rs`): `git status --porcelain` octal-escapes non-ASCII paths (`"\303\251"`), so Vietnamese/emoji filenames displayed as escape sequences. Added `-c core.quotepath=false` so git emits real UTF-8.
 - **Post-build DMG rename no-op for arm-triple builds** (`scripts/post-build.js`): `tauri build --target aarch64-apple-darwin` emits the DMG to the triple-specific `target/aarch64-apple-darwin/release/bundle/dmg` dir, which the rename step did not scan - producing "No matching DMG files found to rename." Added that directory to the scan list.
 
 ---
 
-### [1.4.1] - 2026-06-27
+## [1.4.1] - 2026-06-27
 
-#### Added
+### Added
 - **Antigravity Plan Status Monitoring**: Natively extracts the `userTier` object from the `GetUserStatus` Connect RPC payload to display the active subscription tier (e.g. "Google AI Pro") as a styled premium badge next to the Antigravity header in `AgentUsage.vue`.
 - **Last Cached state for Antigravity**: Displays the last successful quota snapshot when the local Antigravity IDE is turned off or offline, complete with an auto-updating relative time indicator (e.g. "Cached 5m ago") that refreshes every 10s.
 - **Tauri Async Executor Protection**: Wrapped the blocking synchronous child processes for Antigravity and Claude Code monitoring inside `tauri::async_runtime::spawn_blocking` to prevent CPU starvation on the main async executor.
 - **Stale State computation fix for AG**: Reworked the stale state check to run against `fetched_at` age instead of Claude-specific `rate_limits` structure.
 
-### [1.4.0] - 2026-06-27
+## [1.4.0] - 2026-06-27
 
-#### Added
+### Added
 - **Live Sorting for projects list** (`ProjectTable.vue`): Drag and drop to reorder projects, with Vue 3 `<transition-group>` for smooth transitions. Order is persisted to `projects.json` on drag end.
 - **Mac/Tauri Drag & Drop Pitfall solutions** (`tauri.conf.json`, `ProjectTable.vue`):
   - Disabled `dragDropEnabled` in native window config to prevent Tauri Rust layer from swallowing HTML5 drag events.
@@ -1032,7 +1057,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
   - Adjusted button labels (e.g. `NEW PROJECT` to `PROJECT`, `INTRO` to `INTRO`, `SSH CONFIG` to `SSH`).
   - Added clean formatting structure to the console/progress layouts.
 
-#### Changed
+### Changed
 - **Agent Usage Email hidden state** (`AgentUsage.vue`): Replaced `v-if` template toggle with a CSS blur filter (`filter: blur(3px)`) to maintain exact element layout sizing when email is hidden.
 - **Centralized frontend logging pipeline** (`logger.rs`, `lib.rs`, `useAgentUsage.js`): All frontend usage-flow events are now forwarded to the same Rust backend pipeline (`usage.log` + stderr) via a new `log_frontend(level, tag, msg)` IPC command. Previously logs were written exclusively to `console.warn` in the Webview - invisible from terminal and interleaved out of order with Rust entries. Now all log entries (Rust + JS) appear in chronological order in a single stream when running with `--debug`. Frontend console output is still printed immediately (before IPC) to preserve DevTools source-line links; console output is fully silent in production (no `--debug`) except for genuine `error`-level failures.
 - **Compact log timestamp format** (`logger.rs`, `useAgentUsage.js`): Timestamp format changed from `YYYY-MM-DD HH:MM:SS.mmm` to `YYYYMMDD.HHMMSS.mmm` (e.g. `20260627.122617.123`) - saves ~10 bytes per line, reduces log file size at scale with no loss of readability.
@@ -1041,14 +1066,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.3.3] - 2026-06-25
+## [1.3.3] - 2026-06-25
 
-#### Fixed
+### Fixed
 - **Claude usage stuck "No data" after quota reset - root cause: `set -o pipefail` kills dash** (`force-sync-claudecode.sh`): Force-sync script is delivered via `ssh host sh` (= POSIX dash on most Linux remotes). The line `set -o pipefail 2>/dev/null || true` made dash exit immediately (exit 2, zero stdout/stderr) - `set` is a POSIX special built-in so a usage error exits the shell before `|| true` can run, and `2>/dev/null` hides the error. Silent death → cache never refreshed → `get-usage` returned `STALE_RESET` every poll → UI stuck on "No data" permanently after quota reset. Latent since refactor `98fa2b7` (changed `ssh host <cmd>` login-shell to `ssh host sh` POSIX dash). Fixed with dash-safe subshell probe: `( set -o pipefail ) 2>/dev/null && set -o pipefail`. Full post-mortem: `docs/research/claude-usage-dash-pipefail-regression.md`.
 - **Force sync firing unconditionally on every app startup** (`useAgentUsage.js`): The `manualRefreshCount` watcher called `forceSync()` directly for claudecode. On startup, `loadData()` → `refreshAll()` → `triggerManualRefresh()` incremented the counter, firing force-sync even when the cache was valid. Fixed: the watcher now calls `checkUsage()` for all agents; force-sync only auto-triggers inside `checkUsage()` when data is genuinely null.
 - **Force sync incorrectly triggered when `resets_at = 0`** (`useAgentUsage.js`): First-load with `resets_at = 0` auto-triggered force-sync, but this value means "no rate-limit event recorded in the 5h window" - the cache was read successfully. Fixed by removing this trigger; force-sync is now reserved exclusively for null results (unreadable or absent cache).
 
-#### Added
+### Added
 - **Build-time lint for SSH-delivered scripts** (`scripts/lint-remote-scripts.js`): Wired into `npm run dev` and `npm run tauri`; also callable as `npm run lint:scripts`. Intentionally excluded from `npm run build` (vite-only - does not compile shell scripts, running lint there was redundant and semantically wrong). Three checks per script: (1) regex scan for runtime bashisms `dash -n` won't catch - unguarded `set -o pipefail`, `[[ ]]`, `<<<`, `function name {`, `+=`, arrays (comment lines stripped to avoid false positives, guarded idiom whitelisted); (2) `dash -n` syntax check when dash is installed; (3) `shellcheck -s sh -S error` when shellcheck is installed. One bashism → build fails - the dash/pipefail bug can never ship again.
 - **SSH-script timeout + remote process cleanup** (`agent_usage.rs`): `run_remote_script_timeout()` drains stdout/stderr on dedicated threads (prevents pipe deadlock on large scripts), polls `try_wait()`, kills the local SSH process after **30 s**. On timeout: spawns a fire-and-forget `ssh host pkill -f 'claude -p'` to clean up the orphaned remote process - without this, `claude -p` keeps running in the background, consuming quota and creating unintended sessions.
 - **Force sync retry with backoff** (`useAgentUsage.js`): `forceSyncFailCount` tracks consecutive failures. On each failure under the cap: clears `initialSyncDone`/`staleResetSyncDone` so the next poll tick auto-retries (poll interval = backoff). After **3** consecutive failures: stops auto-retrying and shows a clear error. Manual refresh always resets the counter and tries again.
@@ -1060,24 +1085,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Auto port for `tauri dev`** (`scripts/tauri-runner.js`): TCP-probes ports from 1420 upward to find a free one; passes a `--config` override to Tauri CLI at runtime so no `tauri.conf.json` edit is needed. `vite.config.js` reads `TAURI_DEV_PORT` env with fallback to 1420. Allows multiple Tauri apps to run simultaneously without port conflict.
 - **Architecture docs**: `docs/arch/logger.md` (new - levels, truncation, API, level map). `docs/arch/usage-claudecode.md` §3b (mermaid flowchart of the update cycle, showing exactly where the dash bug broke the flow) + §3c (4-layer prevention architecture, all implemented).
 
-#### Changed
+### Changed
 - **Single ordered recovery flow - `provision` no longer races `forceSync`** (`useAgentUsage.js`): On a null result the composable previously fired `provision()` (fire-and-forget) *and* `forceSync()` at the same time, opening two concurrent SSH sessions to the same host (interleaved logs, extra load at the busiest moment). Now `provision()` runs **only** on the first-load-no-cache branch - the one case where the statusLine hook may be absent - and is `await`ed *before* `forceSync()`, giving one clean ordered flow (`PROVISION` fully completes before `FORCE_SYNC` starts). STALE_RESET no longer provisions at all: the cache was readable until that poll, so the hook is already installed. `forceSync` stays fire-and-forget by design (it ends by calling `checkUsage()`, which the outer `isChecking` guard would otherwise skip).
 - **Deterministic probe-transcript cleanup** (`force-sync-claudecode.sh`): The probe session's transcript is now deleted by its exact project path (`-tmp-aki-probe-$NOW_TS`) immediately after the post-probe `/usage` re-read - no time window, no globbing, zero risk to other runs. This was the real accumulator (one dir per reset event); the previous code only swept it via a 1-day orphan window. Blank-dir `/usage` transcripts are now bounded with `-mmin +1` (old enough never to race a concurrent sync's in-flight transcript), and the orphan-probe-dir sweep dropped from `-mtime +1` (1 day) to `-mmin +60` (1 hour) since each run now cleans its own.
 - **Correct probe cache-freshness diagnostic** (`force-sync-claudecode.sh`): The post-probe "did claude rewrite the cache?" check compared the cache mtime against the script start time, mis-labelling the pre-reset cache (written seconds earlier) as "fresh". It now compares mtime against the probe start (`written_after_probe=yes/no`). Diagnostic only - `usage_run2` remains the source of truth - but the log line no longer misleads.
 
 ---
 
-### [1.3.2] - 2026-06-25
+## [1.3.2] - 2026-06-25
 
-#### Added
+### Added
 - **`.icon-glow` utility class** (`main.css`): Single-source `filter: drop-shadow(0 0 2px rgba(255,255,255,0.18))` applied to all app icons - titlebar (`AppHeader.vue`), agent icons in usage section (`AgentUsage.vue`), project icon in table, and popup menu IDE icons (`ProjectTable.vue`). Popup insiders icon merges the glow into its existing `hue-rotate` filter chain. Removed the old per-element `box-shadow` on `.app-icon`. One edit in `main.css` now controls glow intensity everywhere.
 - **Antigravity pool color-coding** (`AgentUsage.vue`): Gemini fieldset gets a blue dashed border + legend (`rgba(96,165,250)` / `#93c5fd`); Claude/OSS gets orange (`rgba(251,146,60)` / `#fdba74`) - matches brand colors, eliminates cognitive load when scanning pools at a glance. Applied to both live and skeleton states.
 - **Tauri v2 project icon extraction** (`system.rs`): Added support for detecting Tauri v2 projects (by checking for `src-tauri/tauri.conf.json`) and extracting the smallest suitable standard icon file (e.g. `128x128.png`, `64x64.png`, `32x32.png`) under 150KB as a Base64 data URL for the project list.
 
-#### Changed
+### Changed
 - **CSS hygiene pass** (`main.css`, `AgentUsageSection.vue`, modals): Replaced 13 hardcoded `#9CA3AF` literals with `var(--text-muted)` across `main.css` and 4 Vue files. Removed 3 unused `:root` vars (`--accent-purple`, `--bg-card`, `--bg-secondary`). Deleted 3 dead rule blocks (`.col-dry`, `.log-command`, `.log-delete`). Promoted spacing utilities `.mb-3`, `.mt-2`, `.mt-3` to global `main.css`; removed scoped duplicates from `GitModal.vue` (`.mt-3`, `.mr-1`) and `IntroModal.vue` (`.mb-2`, `.mb-3`, `.mt-3`).
 
-#### Fixed
+### Fixed
 - **Open Remote Antigravity silent fail in production build** (`system.rs`, `ProjectTable.vue`): `antigravity-ide` installs to `~/.antigravity-ide/antigravity-ide/bin/` - outside Homebrew and `/usr/local/bin`, so `create_command` (v1.2.9 fix) could never find it in the GUI app's launchd PATH. Root cause confirmed: launching from Finder/Dock fails because `$SHELL -lc` (login non-interactive) reads `~/.zprofile` but NOT `~/.zshrc` - where all `antigravity-ide` PATH entries live (confirmed lines 98, 101, 113, 116). Launching via terminal works because the process inherits the full session PATH. Fixed by using `$SHELL -ilc` (interactive + login), which forces `~/.zshrc` to be sourced. Also added `Toast.fire({ icon: 'error' })` in `openIdeRemote` catch block so spawn failures surface to the user instead of silently logging to console only.
 - **`staleResetSyncDone` undeclared variable** (`useAgentUsage.js`): used in 4 places but never declared - caused a `ReferenceError` on app load that crashed `AgentUsageSection` entirely. Added `let staleResetSyncDone = false;` alongside the other plain-boolean guards. Removed the leftover `lastStaleResetSyncAt` from an earlier refactor.
 - **Claude Code force-sync probe bypassed after quota reset**: `force-sync-claudecode.sh` checked only for the presence of the string `"resets"` in `/usage` output to decide whether to skip the probe. After a quota reset, `/usage` echoes back the stale `resets_at` from `rate-limits-cache.json` - output contains `"resets [past time]"` - so the check passed and the probe never fired. Python then parsed the past timestamp and wrote it back to cache, causing `get-claudecode-usage.sh` to emit `|||STALE_RESET|||` again on every poll. UI remained stuck on "No data - waiting for next session" until the user manually opened a real Claude Code session. Fixed by adding a Python inline check that parses the reset time and verifies it is actually in the future; if past (or absent), the probe fires regardless.
@@ -1085,14 +1110,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.3.1] - 2026-06-24
+## [1.3.1] - 2026-06-24
 
-#### Added
+### Added
 - **`RefreshRing.vue` component**: Extracted SVG `stroke-dashoffset` countdown ring into a standalone reusable component with `inline` (flex row, 16px) and `overlay` (position absolute over button) modes and configurable `strokeColor`. Replaces the two inline SVG blocks in `AgentUsage.vue`.
 - **Countdown rings for Git & Diff** (`ProjectTable.vue`): GIT column header shows a green `RefreshRing` (git interval); ACTIONS column header shows an amber ring (remote diff interval) - both display-only, no interaction, animate to full each cycle. `useBackgroundRefresh.js` exports `gitRefreshKey` / `diffRefreshKey`, incrementing on every timer fire and on every timer restart (so ring resets immediately when interval setting changes).
 - **`ChangelogModal.vue`**: Replaced ad-hoc `Swal.fire()` inline HTML changelog with a proper `BaseModal`-based component. Uses themed scoped CSS matching app dark style, `renderMarkdown` computed once, `runMermaid()` via `watch` on body ref. `AppHeader.vue` no longer imports `Swal`, `changelogText`, or `renderMarkdown` directly.
 
-#### Changed
+### Changed
 - **Store extraction (`sshStore.js`, `logStore.js`)**: Module-scope `ref`s in `useSsh.js` and `useLogs.js` extracted into dedicated store files - HMR no longer creates fresh refs when a composable is edited, preserving correct singleton behavior.
 - **Dead CSS removal (`main.css`)**: Deleted 10 unused rule blocks - `.mr-2`, `.text-center`, `.badge-sync-git`, `.badge-push-special`, `.col-log`, `.btn-log-toggle` (+ `:hover`, `.log-active`), `.btn-action-terminal` (+ `:hover`, `:active`), `.btn-action-vscode` (+ `:hover`, `:active`), `.action-vscode-icon`, `.hooks-grid`. None referenced in any Vue template.
 - **`AgentUsage.vue` dead props removed**: `locationType` and `hostName` props deleted - never referenced in template or script body, were being passed from `AgentUsageSection.vue` for no purpose.
@@ -1105,7 +1130,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **`main.css` `--color-danger`**: Added to `:root` - was referenced in 2 rules but undefined, resolving to empty.
 - **Toast position**: Changed from `bottom-end` to `bottom` (center) - avoids overlapping ACTIONS column buttons on the last table row.
 
-#### Fixed
+### Fixed
 - **`sync.rs` Mutex poison panic**: Both `versions_map.lock().unwrap()` calls replaced with `.unwrap_or_else(|e| e.into_inner())` - prevents app crash if a thread panics while holding the `RSYNC_VERSIONS` lock.
 - **`ssh.rs` `.expect()` crash**: `config.parent().expect(...)` replaced with `ok_or(...)` and `?` propagation - hard panic in `save_ssh_config` eliminated.
 - **`useAgentUsage.js` concurrency guard**: Added `isChecking` boolean to `checkUsage()` - parallel poll ticks and `manualRefreshCount` watch can no longer spawn overlapping fetch calls. Guard resets on host change and in `finally`.
@@ -1117,9 +1142,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.3.0] - 2026-06-24
+## [1.3.0] - 2026-06-24
 
-#### Added
+### Added
 - **Parallel Quota Connect RPC (`get-antigravity-usage.js`)**: Upgraded the local Connect RPC backend script to execute `/GetUserStatus` (for email/status) and `/RetrieveUserQuotaSummary` (for quota summary details) concurrently, capturing 4 detailed model quota buckets of Gemini and Claude pools.
 - **Circular Progress SVG Gauge (`UsageCircle.vue`)**: Designed a new reusable SVG-based circular progress component rendering Used % in a radial style with automatic color state triggers (`<= 70%` safe green, `<= 90%` warning amber, `> 90%` danger red, and gray for `N/A`) and hover tooltips.
 - **Fieldset Grouping Panels (`AgentUsage.vue`)**: Structured Antigravity model circles under separate `<fieldset>` containers for Gemini and Claude/GPT pools, applying a dashed border layout with a `<legend>` header resting natively on the border line.
@@ -1128,12 +1153,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Claude Code Icon Alignment (`AgentUsage.vue`)**: Re-integrated the official `/claude-icon.png` image with `18x18px` boundaries in the Claude Code usage card header, ensuring symmetrical alignment with Antigravity.
 - **CC Auth Info Pipeline**: `provision-claudecode.sh` now runs `bash -lc 'claude auth status'` at the end of each provision call and writes the result to `~/.claude/auth-cache.json` on the remote host (runs once per host session - PATH-safe via login shell). `get-claudecode-usage.sh` reads this cache file on every poll (file read only, zero extra SSH overhead) and emits it via a new `|||AUTHINFO|||` delimiter. `agent_usage.rs` parses the delimiter and injects `email` and `orgName` into the payload JSON alongside the existing `subscriptionType`/`rateLimitTier` fields.
 
-#### Changed
+### Changed
 - **Zero Padding & Compact Grid**: Transparentized card backgrounds, eliminated inner card padding/margins, and reduced column/header spacing (gap from 12px to 4px, header padding from 6px to 4px) to optimize space.
 - **Theme CSS Variables (`main.css`)**: Defined missing `:root` CSS variables (`--text-light`, `--text-muted`, `--text-darker`, `--border-color`, `--bg-secondary`, `--bg-tertiary`) to correct reset time contrast.
 - **App Version Bump**: Updated app version to `1.3.0` globally in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`.
 
-#### Fixed
+### Fixed
 - **Claude Code STALE_RESET Indefinite Stuck**: `useAgentUsage.js` had no self-healing path when `get-claudecode-usage.sh` returned `|||STALE_RESET|||` (reset window expired): `data` became `null`, `UsageCircle` unmounted (killing the `@timeout` trigger), and `initialSyncDone` blocked the startup auto-sync - leaving the UI permanently stuck until manual action. Fixed by detecting the `data-present → null` transition and auto-triggering `forceSync()` once, guarded by `staleResetSyncDone` to prevent polling loops.
 - **Claude Code forceSync Concurrency**: Multiple trigger sources (5H and 7D `@timeout` both firing, rapid titlebar clicks) could invoke `forceSync()` concurrently, spawning parallel SSH sessions that race-wrote `rate-limits-cache.json`. Added `isSyncing` flag to drop duplicate calls while a sync is in-flight. Flag resets on host change.
 - **JSONL Session File Accumulation**: `~/.claude/projects/-tmp-aki-dev-sync-blank-dir/*.jsonl` and orphaned `~/.claude/projects/-tmp-aki-probe-*` dirs grew unboundedly (17+ files per day from force-sync runs, plus one orphan per probe). Added cleanup block at end of `force-sync-claudecode.sh` that removes JSONL files and probe dirs older than 7 days. Files inside both the 5h and 7d windows are unaffected.
@@ -1142,7 +1167,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Dead code removal**: Deleted `src/components/UsageProgressBar.vue` - superseded by `UsageCircle.vue`, no imports remained anywhere in the codebase.
 - **Dead computed removal (`AgentUsage.vue`)**: Removed three unused computed properties (`iconClass`, `locationIcon`, `locationName`) that had no references in the template.
 
-#### UI Improvements
+### UI Improvements
 - **Claude Code bars layout**: Replaced the two radial SVG circles for CC 5H/7D with compact horizontal progress bars (`cc-bars-block`). Labels and percentage sit on the header row; a thin 5px track fills left-to-right; reset time line appears below each bar. Saves vertical space and better utilizes the wide CC column.
 - **AG circle label left of ring**: Moved the `subLabel` ("5H", "7D") from below the circle to the left of it, forming a compact `circle-main-row` flex row. Reset time line stays centered below.
 - **Reset time line - single combined line**: The reset countdown and absolute time are now merged into one line: `Reset <bold>4h5m</bold> (22:15 Jun24)`. "Reset " is in muted normal weight; the relative time is white bold; the absolute time appended in round brackets is muted. This avoids a second line while preserving both data points.
@@ -1155,19 +1180,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Eye toggle per column** (`AgentUsageSection.vue`): Added a subtle eye icon button to each LOCAL/REMOTE column header to independently show/hide email. State persists in `localStorage` (`aki-show-local-email`, `aki-show-remote-email`). Implemented with plain toggle functions - no `watch`/`watchEffect` overhead.
 - **`selectedSshHost` computed refactor** (`useSsh.js`): Replaced `ref` + module-level `watch` (localStorage persist) + two component-level `watch` calls (async default) with a single writable `computed` - getter falls back to `sshHosts[0]` when no stored value, setter writes localStorage directly. Removed `watch`, `useProjects` import, and `sshHosts` destructure from `AgentUsageSection.vue`.
 
-#### Documentation
+### Documentation
 - **Architecture References**: Updated [usage-antigravity.md](docs/arch/usage-antigravity.md) with parallel Connect RPC sequence diagrams.
 - **Research Log**: Created [antigravity-usage-new-4line.md](docs/research/antigravity-usage-new-4line.md) logging local Connect RPC probe trials and endpoint findings.
 - **Claude Code Flow Fix**: Updated `docs/arch/usage-claudecode.md` with STALE_RESET trigger #3, concurrency guard, and JSONL cleanup notes. Completed plan moved to `docs/plan/done/`.
 - **Usage doc sync**: Updated `docs/arch/usage-claudecode.md` frontend file list - replaced stale `UsageProgressBar.vue` reference with `UsageCircle.vue`.
 
-### [1.2.9] - 2026-06-24
+## [1.2.9] - 2026-06-24
 
-#### Added
+### Added
 - **Dev Titlebar Indicator**: Display a subtle red "DEV" badge in the custom HTML titlebar when running the application in Vite development mode (`npm run tauri dev`).
 - **Claude Code Auto-Probe Session**: Integrated an automatic "Probe Session" (dummy session using Haiku with prompt "respond with ok" in a temporary directory) into `force-sync-claudecode.sh`. When a remote host has no active local Claude sessions in the current 5-hour window, `/usage` hides the `resets_at` time. The script now automatically runs a quick probe session if no reset time is found, forcing Claude CLI to output a valid `resets_at` timestamp for the UI cache.
 
-#### Fixed
+### Fixed
 - **Open Remote Antigravity**: Fixed a path issue where launching Antigravity remotely from the ACTIONS table button failed silently when running the app as a macOS `.app` bundle. Resolved by wrapping the `antigravity-ide` command in the `create_command` helper to correctly inject `/opt/homebrew/bin:/usr/local/bin` into the process environment PATH.
 - **Parser Crash on 0% Quota**: `force-sync-parse.py` regex was a single combined pattern requiring both `% used` AND `· resets <time>` together. When quota resets fully, `/usage` returns `Current session: 0% used` with **no reset timestamp**, causing parse failure → cache not updated → `STALE_RESET` loop → UI permanently stuck on "No data". Fixed by splitting into two independent regexes: `%` (required) + `resets_at` (optional, defaults to 0). Now correctly writes `{used_percentage: 0, resets_at: 0}` to cache on fresh quota.
 - **Force Sync Button in Empty State**: `AgentUsage.vue` empty state ("No data - waiting for next session") had no way to trigger Force Sync, leaving users stuck. Added a Force Sync button directly in the empty state for Claude Code cards.
@@ -1175,97 +1200,97 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Startup & Host Change Auto Force-Sync**: Fixed an issue where restarting the application or switching remote hosts left the UI stuck at `0%` without a reset line. Integrated an initial-load auto force-sync logic in `useAgentUsage.js` that automatically runs a remote sync when `resets_at` is 0 or cache is missing.
 - **Manual Refresh Full Force-Sync**: Wired up both the card header reload button and the titlebar global reload button to trigger a full remote `forceSync()` for Claude Code rather than just re-reading the remote cache file.
 
-#### Research
+### Research
 - Confirmed (2026-06-24): `claude -p /usage` **reads local JSONL session files** (`~/.claude/projects/**/*.jsonl`) and computes offline - output states *"does not include other devices or claude.ai"*. It is **P2, not P3** (OAuth API call). Previous assumption (2026-06-23) that it makes a live OAuth network call was **incorrect**. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.x-analyze.md`.
 - **Auto-Probe Breakthrough (2026-06-24)**: Solved the "missing reset time on inactive session" issue. When local Claude Code logs are inactive (past 5h window), `/usage` hides `resets_at`. We discovered that executing a dummy one-turn session (`claude --model haiku -p "respond with ok" < /dev/null`) inside a unique temporary directory forces the CLI to populate the local JSONL log. This safely and natively forces the `/usage` parser to output the correct server-synchronized `resets_at` time for the UI, consuming less than $0.0001 worth of tokens (approx. 100 Haiku tokens) without the safety risks of hitting undocumented Anthropic OAuth APIs.
 - Confirmed (2026-06-24): correct SSH invocation for manual testing is `ssh <host> "bash -lc 'claude --model haiku -p /usage < /dev/null'"`. Using `zsh` fails on hosts without zsh (e.g. `bien`); omitting `-lc` fails because PATH is not loaded.
 
 ---
 
-### [1.2.8] - 2026-06-24
+## [1.2.8] - 2026-06-24
 
-#### Fixed
+### Fixed
 - **Force Sync 3s Delay**: Added `< /dev/null` to the `claude --model haiku -p /usage` invocation in `force-sync-claudecode.sh`. Without it, Claude Code waited 3 seconds for stdin input before proceeding, making every Force Sync take >5s. Now completes in ~2s.
 - **Force Sync Context Isolation**: Changed working directory from generic `/tmp` to a dedicated empty directory `/tmp/aki-dev-sync-blank-dir` before running `claude -p /usage`, ensuring no stray files in `/tmp` are picked up as project context.
 - **Stale Cache After Reset**: `get-claudecode-usage.sh` now checks if `rate_limits.five_hour.resets_at` has already passed before serving the cache file. If the reset time is in the past, it emits a `|||STALE_RESET|||` signal instead of the stale file. The Rust backend interprets this as `Ok(None)`, causing the UI to show "No data - waiting for next session" instead of displaying a frozen progress bar with "Reset X hours ago".
 - **Stale Badge on Reset**: `useAgentUsage.js` stale detection now also triggers when `five_hour.resets_at` is in the past, complementing the existing 10-minute mtime check.
 - **Auto Force Sync on Reset**: `UsageProgressBar.vue` now emits a `timeout` event exactly once when the countdown timer crosses zero (reset time reached). For Claude Code bars, `AgentUsage.vue` maps `@timeout` to `force-sync` (previously mapped to `retry`), triggering an automatic quota refresh instead of just re-reading the stale cache file.
 
-#### Research
+### Research
 - Confirmed via live SSH testing (2026-06-23): `claude -p /usage` makes a real network call to the Anthropic OAuth API (`~/.claude/.credentials.json`) and does **not** require an active Claude Code session. Previous assumption that it read from RAM session was incorrect. Documented in `docs/arch/usage-claudecode.md` and `docs/research/claude-usage-1.2.7-analyze.md`.
 
 ---
 
-### [1.2.7] - 2026-06-23
+## [1.2.7] - 2026-06-23
 
-#### Added
+### Added
 - **Auto-Reveal DMG**: Automatically open and highlight the built `.dmg` file in Finder via `open -R` on macOS after the build completes.
 
-#### Changed
+### Changed
 - **Post-Build Script**: Renamed `rename-artifacts.js` to `post-build.js` to align with its broader post-build role.
 
-#### Fixed
+### Fixed
 - **Antigravity Inactive State**: Optimized the quota monitoring flow to return a clean `None` response instead of throwing a raw JSON error when the Antigravity IDE process is not running. The UI now displays a friendly status message: "IDE not running (Open Antigravity to monitor)".
 - **Rust Test Compilation**: Restored compilation of the Rust unit tests by adding the missing `ignore_hook_errors` field to the mock `SyncHooks` struct inside `projects.rs` tests.
 
 ---
 
-### [1.2.6] - 2026-06-23
+## [1.2.6] - 2026-06-23
 
-#### Added
+### Added
 - **Delete on Push Toggle**: Added `delete_on_push` per-project flag in the configuration modal. When enabled, pushing will use `--delete` to remove files on the Remote that no longer exist on the Local, keeping the Remote as a perfect mirror. Defaults to OFF for safety.
 - **Safety Guard for Push**: Added a protective confirmation dialog when attempting to Push with `delete_on_push` enabled while there are pending Pull changes. This prevents accidental deletion of AI-generated files on the Remote.
 
-#### Changed
+### Changed
 - **Native Antigravity Quota Flow**: Replaced the flaky third-party `antigravity-usage` NPM CLI tool with a custom Node.js script `scripts/get-antigravity-usage.js` compiled directly into the Tauri Rust binary. This resolves the process-matching conflict with Volar/CSS language servers and macOS command argument truncation. We also removed the legacy `50K Quota` badge (which displayed static/fake monthly credits) and simplified the Vue frontend code. Quota polling is now 100% stable, fast (takes ~40ms), runs entirely locally, and returns accurate active model telemetry. Added reference documentation in [usage-antigravity.md](docs/arch/usage-antigravity.md).
 
-#### Fixed
+### Fixed
 - **Sync Status Deletions**: Fixed an issue where locally deleted files were ignored by the sync status checker. The `count_rsync_changes` logic now correctly accounts for `deleting ` lines from the `rsync` dry-run, ensuring the Push button accurately reflects pending deletions.
 
 ---
 
-### [1.2.5] - 2026-06-23
+## [1.2.5] - 2026-06-23
 
-#### Added
+### Added
 - **Open Popup Header**: Added a project title header inside the Open Popup to prevent accidental clicks.
 - **Open Popup Animation**: Added a smooth fade/scale animation with dynamic `transform-origin` flipping based on the popup's vertical position.
 - **Brighter Popup UI**: Slightly brightened the popup's background color for better contrast.
 
-#### Changed
+### Changed
 - **Rebranding**: Renamed "Project Hub" to "Open Popup" across the UI, codebase, and documentation.
 - **Documentation**: Consolidated old planning docs and created a dedicated `docs/feat/open-popup.md` feature document.
 
-#### Fixed
+### Fixed
 - **Remote `$HOME` Resolution**: Fixed a bug where remote IDEs failed to launch if the path was configured using `$HOME` instead of `~/`.
 - **OpenSSH Argument Bug**: Fixed a backend issue where `Command::new("ssh")` passed separated arguments that OpenSSH incorrectly concatenated without quotes, causing remote bash scripts to fail. Scripts are now passed as a single quoted string.
 
 ---
 
-### [1.2.4] - 2026-06-23
+## [1.2.4] - 2026-06-23
 
-#### Added
+### Added
 - **Build Identifier**: Added `#HHMM` build identifier to the titlebar (e.g., `v1.2.4 (2026.06.23 #1430)`) to distinguish same-day builds.
 - **Bundle Metadata**: Added `category`, `description`, `copyright`, and `publisher` to `tauri.conf.json` for OS-level app metadata.
 
-#### Changed
+### Changed
 - **Push Special UI**: Renamed the `PUSH SPECIAL` button to `SELECT`.
 - **Build Date Format**: Replaced the `HH:MM` time in `buildDate` with the new `#HHMM` build identifier.
 
-#### Fixed
+### Fixed
 - **Special Push Git Sync**: Fixed empty modal issue by explicitly showing `.git/` when git sync is enabled, allowing manual git pushing even on a clean working tree.
 - **VSCode Remote SSH**: Fixed `~/` paths creating a literal `~` directory at the remote root. Paths are now automatically resolved to absolute paths via SSH before opening.
 - **Force Sync Diagnostics**: `force-sync-parse.py` now emits JSON diagnostics to stdout. If Force Sync fails silently, the exact reason is now logged in the browser console.
 
 ---
 
-### [1.2.3] - 2026-06-23
+## [1.2.3] - 2026-06-23
 
-#### Added
+### Added
 - **Background Sync Logging**: The application now intelligently logs state transitions from the background sync checker (which polls every 60s). It logs the initial state of each project upon startup, and subsequently only emits a log when it detects a *new* pending push or pull. This turns the project log into a linear timeline of when you (locally) or the AI (remotely) finished making changes, without spamming the log with redundant checks.
 - **Auto Version Sync**: Added `scripts/sync-version.js` and updated `package.json` scripts to automatically synchronize the application version from `package.json` into `src-tauri/Cargo.toml` before every `tauri dev` and `tauri build` execution.
 - **Intro Modal**: Added an interactive "INTRO" button to the header with a pulsing notification badge. The modal provides a comprehensive and visually appealing explanation of the Aki Dev Sync workflow, explicitly distinguishing between the author's primary use case (Security / Claude MAX sharing) and general use cases for other developers.
 
-#### Changed
+### Changed
 - **Changelog UI**: Reduced the global font size and line height of the changelog content for improved readability.
 - **Build Artifacts**: Modified the post-build artifact renaming script to map `aarch64` to `arm` and support `universal` in `.dmg` filenames for better clarity.
 
@@ -1273,7 +1298,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **Project Info Layout**: Reduced the width of the Project/Path column to save space. Full paths are now available via hover tooltips. The Production URL link was moved out of the hub back to the project row, right-aligned next to the project name.
 - **App Identifier**: Updated `tauri.conf.json` identifier from `com.aki.remotedevsync` to `aki.devsync`.
 
-#### Fixed
+### Fixed
 - **Remote Terminal Fallback Issue**: Fixed an issue where opening a remote terminal would fail with `No such file or directory` and fallback to the remote `$HOME` directory if the project's remote directory had not yet been created. A `mkdir -p` command is now automatically prepended before `cd` to ensure the directory exists.
 - **VSCode/Insiders Remote Open**: Fixed an issue causing a `Could not resolve hostname` error when opening a remote project in VS Code or VS Code Insiders. This was caused by a missing slash `/` separator between the hostname and the tilde-prefixed path (`~`) when constructing the `vscode-remote://` URI.
 - **Antigravity IDE Remote Open**: Added automatic tilde expansion (`~/` -> `$HOME/`) for remote paths passed to the Antigravity IDE CLI to ensure correct path resolution.
@@ -1287,32 +1312,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.2.2] - 2026-06-23
+## [1.2.2] - 2026-06-23
 
-#### Fixed
+### Fixed
 - **Push/Pull buttons no longer falsely light up on startup**: `hasPendingPush` and `hasPendingPull` are now initialized to `null` instead of `undefined`. Buttons display a visually distinct "checking" state (very faint outline) while the background sync-status check is in flight, then resolve to fully lit (pending changes) or muted (clean) once the live fetch completes. No disk caching needed - background fetch is the source of truth.
 
 ---
 
-### [1.2.1] - 2026-06-23
+## [1.2.1] - 2026-06-23
 
-#### Changed
+### Changed
 - **IPC open consolidation**: replaced 7 thin Rust wrapper commands (`open_url`, `open_local_dir`, `open_in_terminal`, `open_antigravity_app`, `open_ide_local`, `open_ide_remote` vscode arms, `open_remote_terminal`) with a single `macos_open(args: Vec<String>)` command. JS now builds the arg list directly (`['-a', 'Visual Studio Code', path]`, `[url]`, etc.) - macOS `open` is called once per intent, no Rust matching required. Subprocess-only cases (AppleScript SSH terminal, `antigravity-ide --remote`) remain in Rust as `open_remote_subprocess`.
 - **Removed dead command** `open_remote_terminal` - no callers since the hub refactor (v1.2.0).
 - **Test coverage updated**: `validate_ssh_host` tests replaced by equivalent `validate_remote_host` tests (the active validation function); `applescript_escape` tests unchanged.
 
 ---
 
-### [1.2.0] - 2026-06-23
+## [1.2.0] - 2026-06-23
 
-#### Added
+### Added
 - **Project Open Hub**: hovering over the project icon now reveals a floating menu with three sections - LOCAL (Finder, Terminal, VSCode, VSCode Insiders, Antigravity IDE), REMOTE SSH (SSH Terminal, VSCode Remote, VSCode Insiders Remote, Antigravity Remote), and LINKS (Open Production Site). IDE items are automatically greyed out when the application is not installed, checked once per session via the new `check_ide_availability` Tauri command.
 - **`check_ide_availability` command**: detects presence of VSCode, VSCode Insiders, and Antigravity in `/Applications/` on macOS. Result cached in-session - only one IPC call per app lifecycle regardless of how many projects are hovered.
 - **`open_ide_local` command**: unified local-open replacing separate `open_in_vscode` and `open_antigravity_app` commands. Accepts `ide_name` (`finder` | `terminal` | `vscode` | `vscode_insiders` | `antigravity`) and opens the given path with the matching application.
 - **`open_ide_remote` command**: opens a remote project via SSH. Terminal uses AppleScript, VSCode/Insiders use the `vscode://vscode-remote/ssh-remote+<host><path>` URL scheme, Antigravity uses `antigravity-ide --remote`. Host validated to allow `user@host` format.
 - **Remote Git URL in Git modal**: the project's remote git URL is now shown as a clickable link inside the Git modal, replacing the icon that was previously shown next to the project name.
 
-#### Changed
+### Changed
 - **ACTIONS column cleaned up**: removed standalone Terminal (`>_`) and VSCode buttons - these actions are now available through the Project Open Hub. Remaining actions: GIT, PUSH SPECIAL, PUSH/DRY/PULL group, LOG, CONFIG.
 - **Path labels no longer clickable**: local path and remote path text in the project row no longer have click handlers. All open actions are consolidated into the hub.
 - **Production URL moved to hub**: the globe icon (Open Production Site) is removed from the project name row and now lives in the hub's LINKS section.
@@ -1323,20 +1348,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.1.3] - 2026-06-23
+## [1.1.3] - 2026-06-23
 
-#### Added
+### Added
 - **Background Refresh**: a new settings panel (⚙ icon next to REFRESH) lets you configure independent auto-refresh intervals for Git Status, Remote Diff, and Agent Usage. Settings persist across sessions; set any interval to 0 to disable that type.
 - **REFRESH button** (renamed from RELOAD): triggers all three refresh types simultaneously - git status, remote diff, and agent usage - in one click. Grouped with the ⚙ settings icon as a paired control.
 
-#### Changed
+### Changed
 - **`BaseModal` component**: extracted shared modal scaffolding (overlay, drag handle, header, close button, ESC listener, backdrop click) into a single reusable `BaseModal.vue`. All 5 modals now use it, removing ~80 lines of duplicated boilerplate each.
 - **Log panel ESC**: pressing Escape in an expanded log panel now collapses the panel and returns to the Global Event Log in one keystroke. Has no effect when a modal is open - modal ESC takes priority.
 - **Push button dirty state**: the Push button no longer stays permanently lit when `sync_git` is enabled. Directory entries (e.g. `.git/`) are now filtered from the rsync dry-run change count - previously a routine `git status` call was enough to flip the button to dirty.
 - **UI language**: completed a full English pass - all remaining Vietnamese strings replaced across `AppHeader`, `UsageProgressBar`, `useSsh.js`, and `useSync.js`.
 - **Version display**: `package.json` is now the single source of truth for the app version. Version is injected at build time via Vite (same pattern as build date), replacing a `getVersion()` call that read from `Cargo.toml` and required manual updates in two separate files to stay in sync.
 
-#### Fixed
+### Fixed
 - **Agent Usage - percentage display**: fixed floating-point noise rendering values like `7.000000000000001%`. Percentages are now always displayed as whole numbers.
 - **Agent Usage - stale indicator**: the "Stale" badge now reflects the actual current age of the cached data rather than its age at the time of the last fetch. The badge also no longer flickers (disappearing and reappearing) on every refresh cycle.
 - **Agent Usage - auto-setup on first use**: when no usage cache is found on a remote host, the app now automatically provisions the host in the background - patching Claude Code's statusline hook so rate-limit data is cached on every session. No manual setup required.
@@ -1347,25 +1372,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.1.2] - 2026-06-23
+## [1.1.2] - 2026-06-23
 
-#### Added
+### Added
 - **`ignore_hook_errors` flag** on `SyncHooks`: when enabled, a hook that exits non-zero emits a `[WARN]` log line and allows the sync to continue instead of aborting. Useful for post-sync scripts that may fail on the first push (e.g. directory not yet created on remote, optional install steps). Toggle available in Project Config modal under the hooks section.
 - **Sync status indicator**: Push/Pull buttons now show visual state based on real-time rsync dry-run checks. Buttons appear muted (`.btn-sync-clean`) when no changes are pending in that direction. Background polling every 60s keeps status fresh. New `check_sync_status` Tauri command runs `rsync --dry-run` for both directions and returns `has_local_changes` / `has_remote_changes`.
 
-#### Fixed
+### Fixed
 - **Titlebar sacred boundary**: Modal overlays now start at `top: 42px` instead of `top: 0` to never cover the custom titlebar drag region. Added `--titlebar-h` CSS variable and documentation at `docs/ref/titlebar-sacred-boundary.md` to enforce the rule for all future fixed-position UI.
 
 ---
 
-### [1.1.1] - 2026-06-23
+## [1.1.1] - 2026-06-23
 
-#### Changed
+### Changed
 - Internal: major DRY pass on `sync.rs` (`spawn_and_stream`, `run_hook_phase`, `build_rsync_args`), `git.rs` (`git_capture`), `ssh.rs` (`ssh_config_path`), `projects.rs` (`validate_path_segment`).
 - `get_project_files` moved from `projects.rs` to `git.rs` (co-located with all git porcelain parsing).
 - All `scripts/` now fully external (`get-claudecode-usage.sh` extracted); `include_str!` at every call site.
 
-#### Fixed
+### Fixed
 - **UI freeze on Push/Pull**: `run_sync` restored to `async fn` with internal `spawn_blocking` for subprocess work. Previous patch incorrectly changed it to a sync `fn`, causing Tauri's IPC dispatch to block briefly before returning a Promise to JS - making the UI appear frozen on every sync action. Now truly non-blocking end-to-end.
 - **Corrupt projects.json now surfaces error**: previously a bad JSON file silently returned an empty project list, making users think all projects were lost. Now returns a clear error message.
 - **Remote mkdir failure now caught**: SSH `mkdir -p` exit status was not checked - a permission error would silently proceed into rsync and fail with a confusing message. Now reported immediately.
@@ -1373,9 +1398,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ---
 
-### [1.1.0] - 2026-06-23
+## [1.1.0] - 2026-06-23
 
-#### Added
+### Added
 - **Dry Run toggle** (default ON): each project has a `dry_run` flag persisted in config. Sync previews changes without writing until explicitly turned off.
 - **Delete on Pull toggle**: `delete_on_pull` per-project flag controls whether `--delete` is passed on PULL. Default on; opt-out to preserve local-only files.
 - **Parallel sync**: removed global sync lock. Each project tracks its own `syncing` state independently - multiple projects can sync simultaneously.
@@ -1385,7 +1410,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **External scripts**: `scripts/provision-claudecode.sh`, `scripts/force-sync-claudecode.sh`, `scripts/force-sync-parse.py` - embedded at compile time via `include_str!`.
 - **Frontend module split**: `useProjects.js` decomposed into `store/projectStore.js` (pure state), `useGit.js`, `useProjectConfig.js`, `useSync.js`. `useProjects.js` remains as a thin re-export facade - no component changes needed.
 
-#### Changed
+### Changed
 - **Rust backend split**: `lib.rs` god-module → 6 domain modules (`projects`, `ssh`, `git`, `sync`, `agent_usage`, `system`). `lib.rs` now only declares modules and wires the Tauri builder.
 - **`run_sync` is now a sync `fn`**: previously `async fn` with blocking `thread::spawn+join` inside, which starved the async executor. Tauri's thread pool handles blocking commands natively.
 - **Remote directory creation**: replaced `--rsync-path="mkdir -p ... && rsync"` string injection with a dedicated `ssh mkdir -p` call before rsync.
@@ -1393,29 +1418,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - **SSH undo/redo**: both operations now share `swap_ssh_state(from, to)` helper instead of duplicated logic.
 - **CSP**: `"csp": null` → `"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"`.
 
-#### Fixed
+### Fixed
 - **`include_str!` path**: scripts were referenced as `../scripts/` (resolved to `src-tauri/scripts/`) instead of `../../scripts/` (project root). Caused compile error.
 - **AppleScript injection**: `open_remote_terminal` now validates SSH host (allowlist chars) and escapes path via `applescript_escape()` before interpolating into AppleScript string.
 - **Path traversal check**: `validate_project()` now covers both `local_path` and `remote_path`; `validate_specific_paths()` covers partial-sync params.
 
 ---
 
-### [1.0.1] - 2026-06-22
+## [1.0.1] - 2026-06-22
 
-#### Fixed
+### Fixed
 - **PULL creates nested subdirectory**: rsync was receiving `host:path` without a trailing slash on the source, causing it to sync the *directory itself* into the destination instead of syncing its *contents*. Both local and remote paths are now normalized to always carry exactly one trailing slash at the Rust layer.
 
 ---
 
-### [1.0.0] - 2026-06-22
+## [1.0.0] - 2026-06-22
 
-#### Added
+### Added
 - **Global Logs**: Added explicit system logs when triggering manual Reload and when modifying Project/SSH Configurations.
 - **Environment Check**: Added `check-env.js` script to warn Linux users over SSH about Tauri's GUI restrictions during `npm run dev` or `build`.
 - **GUI Versioning**: Added dynamic version display and Build Date (`YYYY.MM.DD HH:MM`) directly to the App's Titlebar (`AppHeader.vue`).
 
-#### Changed
+### Changed
 - **Version SSOT**: Removed hardcoded `version` inside `tauri.conf.json`. `package.json` is now the Single Source of Truth for the App's version. Tauri CLI syncs the version from it during build.
 
-#### Architecture
+### Architecture
 - Added lightweight Markdown module with Mermaid support for rendering `CHANGELOG.md` in-app via `renderMarkdown` + `runMermaid`.

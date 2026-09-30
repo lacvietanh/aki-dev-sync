@@ -95,7 +95,7 @@
 
               <div class="project-text-col">
                 <div class="project-name">
-                  <span class="project-name-label">{{ p.name }}</span>
+                  <span class="project-name-label">{{ projectDisplayName(p) }}</span>
                   <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" class="project-prod-link">
                     <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i>
                   </a>
@@ -158,10 +158,10 @@
                 </button>
 
                 <div class="open-popup pin-left" popover :id="`open-popup-${p.id}`" :style="`position-anchor: --open-anchor-${p.id}`" @beforetoggle="onPopupOpen" @click="closeOnAction">
-                  <div class="popup-header popup-header-wrap" :title="p.name">
+                  <div class="popup-header popup-header-wrap" :title="projectDisplayName(p)">
                      <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
                      <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>
-                     <span class="popup-title-text">{{ p.name }}</span>
+                     <span class="popup-title-text">{{ projectDisplayName(p) }}</span>
                      <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
                        <i class="fa-solid fa-file-lines"></i> REPORT
                      </button>
@@ -208,6 +208,9 @@
                          </div>
                          <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getBuildCmd(p) }" @click="!localBlocked(p) && getBuildCmd(p) && runProjectCommand(p, getBuildCmd(p))" :title="runCmdTitle(p, getBuildCmd(p), 'build')">
                            <i class="fa-solid fa-hammer popup-item-icon popup-icon-amber"></i> BUILD
+                         </div>
+                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !resolveDeployCmd(p) || !!deployBlockedReason(p) }" @click="!localBlocked(p) && resolveDeployCmd(p) && !deployBlockedReason(p) && runProjectDeploy(p)" :title="deployCmdTitle(p)">
+                           <i class="fa-solid fa-rocket popup-item-icon popup-icon-cyan"></i> DEPLOY
                          </div>
                        </div>
                      </div>
@@ -264,41 +267,95 @@
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
               <div class="sync-cluster">
-                <!-- Sync actions fieldset disabled when sync check is globally off. -->
-                <fieldset :disabled="!syncCheckEnabled" class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
+                <!-- Sync check off disables each sync control itself, not the whole fieldset: a disabled fieldset would also disable the read-only count/conflict badges and their popup. -->
+                <fieldset class="remote-actions-fieldset" :title="!syncCheckEnabled ? 'Sync check is off' : ''">
                   <div class="dry-group" :class="[p.dry_run ? 'is-safe' : 'is-danger', projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull ? 'is-diverged' : '']">
                     <div class="dry-group-left">
                       <CountBadgeWrap :count="projectRuntime[p.id]?.pushCount || 0"
+                                       :count-title="pushTooltip(p)"
+                                       :popover-id="`conflict-popup-${p.id}`"
+                                       :anchor-name="`--conflict-anchor-${p.id}`"
                                        :delete-armed="p.delete_on_push && !isStop(p, 'push')"
                                        delete-side="left"
-                                       delete-title="Mirror: files on the remote that are not here will be deleted.">
+                                       delete-title="Mirror: files on the remote that are not here will be deleted."
+                                       :conflict-count="conflictCount(p)"
+                                       :conflict-title="conflictTooltip(p)"
+                                       :deploy-on-push="deployOffersOnPush(p)"
+                                       :deploy-title="deployOnPushTooltip(p)"
+                                       :has-hooks="hasSyncHooks(p)"
+                                       :hooks-title="hooksTooltip(p)">
                         <button
                                 class="btn-tech btn-tech-push"
                                 :class="{
                                   'btn-sync-clean': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === false,
                                   'btn-sync-checking': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush === null,
                                   'btn-sync-diverged': !isStop(p, 'push') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
-                                  'btn-sync-stop': isStop(p, 'push')
+                                  'btn-sync-stop': isStop(p, 'push'),
+                                  'btn-sync-stale': !!staleNote(p, 'push')
                                 }"
-                                :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'push')"
+                                :disabled="!syncCheckEnabled || (projectRuntime[p.id]?.syncing && !isStop(p, 'push')) || (!isStop(p, 'push') && configBlocked(p))"
                                 @click="isStop(p, 'push') ? requestCancelSync(p.id) : requestSync(p.id, 'push')"
-                                :title="isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))` : 'Push Local to Remote'">
+                                :title="staleNote(p, 'push') + (isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : configBlocked(p) ? CONFIG_NOT_READY_TITLE : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))${conflictCount(p) ? ' — ' + conflictTooltip(p) : ''}` : 'Push Local to Remote')">
                           <i class="fa-solid" :class="isStop(p, 'push') ? 'fa-stop' : 'fa-cloud-arrow-up'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'push') ? 'STOP' : 'PUSH' }}</span>
                         </button>
                       </CountBadgeWrap>
+
+                      <!-- Read-only breakdown popover shared by every lit badge; native Popover API + CSS anchor positioning, same mechanism as .open-popup above. -->
+                      <div v-if="anyBadgeLit(p)" class="conflict-popup" popover :id="`conflict-popup-${p.id}`" :style="`position-anchor: --conflict-anchor-${p.id}`" @toggle="onConflictPopoverToggle($event, p)">
+                        <div class="conflict-popup-header">Sync Changes</div>
+                        <div class="conflict-popup-sides">
+                          <div v-for="side in SYNC_SIDES" :key="side.key" class="conflict-popup-side" :class="`is-${side.key}`">
+                            <div class="conflict-popup-side-head"><i class="fa-solid" :class="side.icon"></i> {{ side.label }} <b>{{ projectRuntime[p.id]?.[side.countKey] || 0 }}</b></div>
+                            <div class="conflict-popup-side-sub">{{ side.sub }}</div>
+                            <div class="conflict-popup-rows">
+                              <div v-for="[dir, n] in sideDirRows(p, side.key)" :key="dir" class="conflict-popup-row" :title="dir">
+                                <span class="conflict-row-path">{{ dir }}</span>
+                                <span class="conflict-row-meta">{{ n }}</span>
+                              </div>
+                              <div v-if="!sideDirRows(p, side.key).length" class="conflict-row-empty">nothing</div>
+                            </div>
+                            <div v-if="side.key === 'push' && sidePushNote(p)" class="conflict-popup-side-note">{{ sidePushNote(p) }}</div>
+                          </div>
+                        </div>
+                        <div v-if="conflictCount(p)" class="conflict-popup-conflicts">
+                          <div class="conflict-popup-conflicts-head">⚠ {{ conflictCount(p) }} conflict{{ conflictCount(p) === 1 ? '' : 's' }} - left out of both</div>
+                          <div class="conflict-popup-rows">
+                            <div v-for="c in projectRuntime[p.id]?.conflicts || []" :key="c.path" class="conflict-popup-row" :title="c.path">
+                              <span class="conflict-row-path">{{ c.path }}</span>
+                              <span class="conflict-row-meta">{{ c.local_size }}B vs {{ c.remote_size }}B{{ c.verified === false ? ' · unverified' : '' }}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="conflict-explain-row">
+                          <button class="btn-tech btn-tech-secondary conflict-explain-btn"
+                                  :disabled="explainDisabled(p)"
+                                  :title="explainDisabledTitle(p)"
+                                  @click="requestExplain(p)">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> {{ explainState[p.id]?.loading ? 'Preparing…' : 'Explain' }}
+                          </button>
+                          <button class="btn-tech btn-tech-secondary" title="AI Settings - model and prompt" @click="showAiSettings = true">
+                            <i class="fa-solid fa-sliders"></i>
+                          </button>
+                        </div>
+                        <div v-if="explainState[p.id]?.error" class="conflict-explain-error">
+                          {{ explainAgyMissing(p) ? 'agy is not installed on this Mac' : explainState[p.id].error }}
+                        </div>
+                      </div>
                     </div>
 
                     <div class="dry-toggle-center" title="Toggle Dry Run">
                       <span class="dry-label">DRY</span>
-                      <label class="switch switch-sm">
+                      <label class="switch switch-sm" :class="{ 'is-sync-off': !syncCheckEnabled }">
                         <!-- DRY toggle change dispatches setDryRun to host. -->
-                        <input type="checkbox" :checked="p.dry_run" :disabled="projectRuntime[p.id]?.syncing" @change="setDryRun(p.id, $event.target.checked)" />
+                        <input type="checkbox" :checked="p.dry_run" :disabled="!syncCheckEnabled || projectRuntime[p.id]?.syncing" @change="setDryRun(p.id, $event.target.checked)" />
                         <span class="slider"></span>
                       </label>
                     </div>
 
                     <div class="dry-group-right">
                       <CountBadgeWrap :count="projectRuntime[p.id]?.pullCount || 0"
+                                       :count-title="pullTooltip(p)"
+                                       :popover-id="`conflict-popup-${p.id}`"
                                        :delete-armed="p.delete_on_pull && !isStop(p, 'pull')"
                                        delete-title="Mirror: files here that are not on the remote will be deleted.">
                         <button
@@ -307,11 +364,12 @@
                                   'btn-sync-clean': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === false,
                                   'btn-sync-checking': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPull === null,
                                   'btn-sync-diverged': !isStop(p, 'pull') && projectRuntime[p.id]?.hasPendingPush && projectRuntime[p.id]?.hasPendingPull,
-                                  'btn-sync-stop': isStop(p, 'pull')
+                                  'btn-sync-stop': isStop(p, 'pull'),
+                                  'btn-sync-stale': !!staleNote(p, 'pull')
                                 }"
-                                :disabled="projectRuntime[p.id]?.syncing && !isStop(p, 'pull')"
+                                :disabled="!syncCheckEnabled || (projectRuntime[p.id]?.syncing && !isStop(p, 'pull')) || (!isStop(p, 'pull') && configBlocked(p))"
                                 @click="isStop(p, 'pull') ? requestCancelSync(p.id) : requestSync(p.id, 'pull')"
-                                :title="isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local'">
+                                :title="staleNote(p, 'pull') + (isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : configBlocked(p) ? CONFIG_NOT_READY_TITLE : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local')">
                           <i class="fa-solid" :class="isStop(p, 'pull') ? 'fa-stop' : 'fa-cloud-arrow-down'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'pull') ? 'STOP' : 'PULL' }}</span>
                         </button>
                       </CountBadgeWrap>
@@ -339,18 +397,21 @@
         </div>
       </transition-group>
     </div>
+    <AiSettingsModal :show="showAiSettings" @close="showAiSettings = false" />
   </div>
 </template>
 
 <script setup>
 import { ref, watch } from 'vue';
 import { invoke } from '../utils/tauri';
+import { effectiveAgyModel, effectiveExplainPrompt } from '../store/aiSettingsStore';
+import AiSettingsModal from './modals/AiSettingsModal.vue';
 import { useProjects } from '../composables/useProjects';
 import { useLogs } from '../composables/useLogs';
 import { useSsh } from '../composables/useSsh';
 import { useTerminalTabs } from '../composables/useTerminalTabs';
 import { useAppWindow } from '../composables/useAppWindow';
-import { refreshIdeAvailability } from '../composables/useProjectConfig';
+import { refreshIdeAvailability, projectDisplayName } from '../composables/useProjectConfig';
 import { gitRefreshKey, diffRefreshKey } from '../composables/useBackgroundRefresh';
 import { refreshSettings } from '../store/refreshStore';
 import { scheduleExternalTermRescan } from '../composables/useExternalTerminals';
@@ -359,8 +420,11 @@ import { GLOBAL_SCOPE } from '../store/terminalTabsStore';
 import { projectIconSrc } from '../utils/projectIcon';
 import { copyText } from '../utils/clipboard';
 import { syncCheckEnabled, toggleSyncCheck } from '../store/syncCheckStore';
+import { getProjectConfigEntry } from '../store/projectConfigStore';
 // R-2 write side: these run the real action on the host whether clicked on the Mac or relayed from a phone. They take a project id (not the object) — see src/store/remoteActions.js.
 import { requestSync, requestSelectPush, setDryRun, setRemoteHost, requestRefresh, reorderProjects, requestCancelSync } from '../store/remoteActions';
+import { confirmAndDeploy, resolveDeployCmd } from '../composables/useDeploy';
+import { deployBlockedReason, deployTargetLabel, shouldOfferDeployAfterPush } from '../composables/projectConfigPure';
 import RefreshRing from './RefreshRing.vue';
 import TaskCell from './TaskCell.vue';
 import TerminalScopeButton from './TerminalScopeButton.vue';
@@ -369,7 +433,7 @@ import CountBadgeWrap from './CountBadgeWrap.vue';
 const { projects, projectRuntime, anySyncing, isReloading, setProjectDisabled, openConfig, openGitModal, createNewProject } = useProjects();
 const { activeLogProjectId, toggleProjectLog } = useLogs();
 const { sshHosts } = useSsh();
-const { openNewProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openRunCommand } = useTerminalTabs();
+const { openNewProjectTerminal, openProjectRemoteTerminal: openProjectRemoteTerminalTab, openExplainTerminal, openRunCommand } = useTerminalTabs();
 
 // `false` on a companion — see openReportHtml.
 const { nativeWindow } = useAppWindow();
@@ -397,6 +461,142 @@ function isPathMissing(p) {
   return projectRuntime.value[p.id]?.local_path_missing === true;
 }
 
+// Badge/popover breakdown (docs/plan/conflict-detection-and-agy-report.md §4) — read-only, never an action.
+// Reachable from any lit badge (push count, pull count or conflict), not only when conflicts > 0.
+function conflictCount(p) {
+  return projectRuntime.value[p.id]?.conflicts?.length || 0;
+}
+
+function anyBadgeLit(p) {
+  const rt = projectRuntime.value[p.id];
+  return !!(rt && (rt.pushCount > 0 || rt.pullCount > 0 || conflictCount(p) > 0));
+}
+
+// Last status check failed: counts on the buttons are from the last good check, so say so instead of letting them pose as current.
+function staleNote(p, dir) {
+  const err = projectRuntime.value[p.id]?.syncCheckError;
+  return err && syncCheckEnabled.value && !isStop(p, dir) ? `Status check failed - counts are from the last good check: ${err}\n\n` : '';
+}
+
+// Push-direction tooltip: local edits pending push, split from .git and from remote-behind noise so it never lumps push (local-side) and pull (remote-side) together as one "local edits" figure.
+function pushTooltip(p) {
+  const rt = projectRuntime.value[p.id];
+  if (!rt) return '';
+  const parts = [];
+  if (rt.pushCount) parts.push(`${rt.pushCount} to push`);
+  if (rt.gitCount) parts.push(`${rt.gitCount} .git`);
+  if (rt.remoteBehind) parts.push('remote is behind');
+  const n = conflictCount(p);
+  if (n) parts.push(`${n} conflict${n === 1 ? '' : 's'} excluded`);
+  return parts.join(' · ');
+}
+
+// Pull-direction tooltip: remote edits pending pull - remote-side, so never folded into "local edits".
+function pullTooltip(p) {
+  const rt = projectRuntime.value[p.id];
+  if (!rt) return '';
+  const parts = [];
+  if (rt.pullCount) parts.push(`${rt.pullCount} to pull`);
+  const n = conflictCount(p);
+  if (n) parts.push(`${n} conflict${n === 1 ? '' : 's'} excluded`);
+  return parts.join(' · ');
+}
+
+// One-line summary of everything behind the badges, for the conflict badge tooltip.
+function conflictTooltip(p) {
+  const rt = projectRuntime.value[p.id];
+  if (!rt) return '';
+  const parts = [];
+  if (rt.pushCount) parts.push(`${rt.pushCount} to push`);
+  if (rt.pullCount) parts.push(`${rt.pullCount} to pull`);
+  if (rt.gitCount) parts.push(`${rt.gitCount} .git`);
+  if (rt.remoteBehind) parts.push('remote is behind');
+  const n = conflictCount(p);
+  if (n) parts.push(`${n} conflict${n === 1 ? '' : 's'} excluded`);
+  return parts.join(' · ');
+}
+
+// The popup's two columns: push = local-side edits, pull = remote-side edits (colours come from --color-local / --color-remote).
+const SYNC_SIDES = [
+  { key: 'push', label: 'PUSH', sub: 'Local → Remote', icon: 'fa-cloud-arrow-up', countKey: 'pushCount' },
+  { key: 'pull', label: 'PULL', sub: 'Remote → Local', icon: 'fa-cloud-arrow-down', countKey: 'pullCount' },
+];
+
+// Top-level directories carrying changes for one side, biggest first: [[dirName, count]].
+function sideDirRows(p, side) {
+  const byTopDir = projectRuntime.value[p.id]?.byTopDir || {};
+  return Object.entries(byTopDir)
+    .map(([dir, c]) => [dir, c[side] || 0])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+}
+
+// Push-side extras that are not file rows: .git churn and a remote that is behind.
+function sidePushNote(p) {
+  const rt = projectRuntime.value[p.id];
+  return [rt?.gitCount && `+ ${rt.gitCount} .git`, rt?.remoteBehind && 'remote is behind'].filter(Boolean).join(' · ');
+}
+
+// Per-project Explain state, keyed by project id - never persisted, cleared on popover close is not needed (read-only, re-requestable).
+const explainState = ref({});
+const showAiSettings = ref(false);
+// Cheap pre-flight check: populated once per project on first popover open, so Explain is disabled with its reason BEFORE any click, not only after a failed invoke.
+const agyAvailable = ref({});
+
+async function ensureAgyAvailabilityChecked(p) {
+  if (agyAvailable.value[p.id] !== undefined) return;
+  try {
+    agyAvailable.value = { ...agyAvailable.value, [p.id]: await invoke('check_agy_available') };
+  } catch (_) {
+    agyAvailable.value = { ...agyAvailable.value, [p.id]: false };
+  }
+}
+
+function explainDisabled(p) {
+  return !syncCheckEnabled.value || explainState.value[p.id]?.loading || agyAvailable.value[p.id] === false;
+}
+
+function explainDisabledTitle(p) {
+  if (!syncCheckEnabled.value) return 'Sync check is off';
+  if (agyAvailable.value[p.id] === false) return 'agy is not installed on this Mac';
+  return '';
+}
+
+function onConflictPopoverToggle(e, p) {
+  if (e.newState !== 'open') return;
+  ensureAgyAvailabilityChecked(p);
+}
+
+function explainAgyMissing(p) {
+  return explainState.value[p.id]?.error === 'agy-missing';
+}
+
+async function requestExplain(p) {
+  explainState.value = { ...explainState.value, [p.id]: { loading: true } };
+  try {
+    const status = {
+      has_local_changes: projectRuntime.value[p.id]?.hasPendingPush || false,
+      has_remote_changes: projectRuntime.value[p.id]?.hasPendingPull || false,
+      push_count: projectRuntime.value[p.id]?.pushCount || 0,
+      pull_count: projectRuntime.value[p.id]?.pullCount || 0,
+      conflicts: projectRuntime.value[p.id]?.conflicts || [],
+      git_count: projectRuntime.value[p.id]?.gitCount || 0,
+      remote_behind: projectRuntime.value[p.id]?.remoteBehind || false,
+      by_top_dir: projectRuntime.value[p.id]?.byTopDir || {},
+    };
+    const agyCmd = await invoke('explain_sync_status', { project: p, status, model: effectiveAgyModel(), prompt: effectiveExplainPrompt() });
+    explainState.value = { ...explainState.value, [p.id]: { loading: false } };
+    document.getElementById(`conflict-popup-${p.id}`)?.hidePopover();
+    openExplainTerminal(p, agyCmd);
+  } catch (e) {
+    const msg = String(e);
+    explainState.value = {
+      ...explainState.value,
+      [p.id]: { loading: false, error: msg.includes('agy is not installed') ? 'agy-missing' : msg },
+    };
+  }
+}
+
 const failedIcons = ref({});
 watch([projects, iconTimestamp], () => {
   failedIcons.value = {};
@@ -420,6 +620,16 @@ function ideMissing(name) {
 }
 
 const PATH_MISSING_TITLE = 'Local folder missing on disk';
+const CONFIG_NOT_READY_TITLE = 'Project settings (.akidevsync/project.json) are not ready - fix before syncing';
+
+// Item 2 (docs/plan/settings-and-state-layout.md): PUSH/PULL/status-check must never run against a
+// project whose project.json is not the authoritative 'ok' (missing with nothing to seed, corrupt,
+// unavailable) - the excludes on `p` may be an empty or stale registry leftover otherwise. The actual
+// guard lives in `useSync.js::startSync`/`useSyncStatus.js::checkProjectSyncStatus`; this is the matching
+// UI-level disable + tooltip, reusing the same disabled/title idiom as `localBlocked`/`localTitle`.
+function configBlocked(p) {
+  return getProjectConfigEntry(p.id).status !== 'ok';
+}
 
 /** Every LOCAL popup item consumes the project's directory, so a missing volume blocks all of them */
 function localBlocked(p, ide) {
@@ -517,6 +727,45 @@ function runProjectCommand(project, cmd) {
 
 function runProjectDev(project, cmd) {
   openRunCommand(project, cmd, 'dev');
+}
+
+// DEPLOY (docs/plan/deploy-action.md): always asks first via confirmAndDeploy, then runs local/remote.
+// `resolveDeployCmd` (useDeploy.js) is the ONE impure resolver every caller here uses.
+function runProjectDeploy(project) {
+  const cmd = resolveDeployCmd(project);
+  if (!cmd) return;
+  confirmAndDeploy(project, cmd);
+}
+
+function deployCmdTitle(p) {
+  const cmd = resolveDeployCmd(p);
+  if (!cmd) return localTitle(p) || 'No deploy command detected — set one in Project Settings';
+  return localTitle(p) || deployBlockedReason(p) || `${cmd} → ${deployTargetLabel(p)}`;
+}
+
+// Hook badges (D/H overlays on PUSH, deploy plan § "Visibility without Settings").
+function hasSyncHooks(p) {
+  const h = p?.hooks;
+  return !!(h && (h.pre_pull_cmd || h.post_pull_cmd || h.pre_push_cmd || h.post_push_cmd));
+}
+
+function hooksTooltip(p) {
+  const h = p?.hooks || {};
+  const lines = [];
+  if (h.pre_pull_cmd) lines.push(`pre-pull: ${h.pre_pull_cmd}`);
+  if (h.post_pull_cmd) lines.push(`post-pull: ${h.post_pull_cmd}`);
+  if (h.pre_push_cmd) lines.push(`pre-push: ${h.pre_push_cmd}`);
+  if (h.post_push_cmd) lines.push(`post-push: ${h.post_push_cmd}`);
+  return lines.join('\n') || 'Sync hooks configured for this host';
+}
+
+// D badge: lit only when a push to the CURRENT host would actually offer the deploy (same decision the post-push offer uses).
+function deployOffersOnPush(p) {
+  return shouldOfferDeployAfterPush({ direction: 'push', isDryRun: false, specificPaths: [], project: p, deployCmd: resolveDeployCmd(p) });
+}
+
+function deployOnPushTooltip(p) {
+  return `Deploy after push: ${resolveDeployCmd(p)} → ${deployTargetLabel(p)}`;
 }
 
 // Cache remote resolved paths across repeated opens.
@@ -648,6 +897,8 @@ function formatTimeAgo(timestamp) {
 
 <style scoped>
 .projects-table-container {
+  flex: 1;
+  overflow-y: auto;
   width: 100%;
   /* Table layout columns */
   --grid-cols: minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr;
@@ -670,7 +921,7 @@ function formatTimeAgo(timestamp) {
   width: 100%;
   position: sticky;
   top: 0;
-  background: rgba(10, 15, 22, 0.95);
+  background: var(--glass-strong);
   border-bottom: 1px solid var(--border-card);
   z-index: 10;
   box-sizing: border-box;
@@ -711,7 +962,7 @@ html.fx-glass .grid-header {
   grid-template-columns: subgrid;
   align-items: center;
   width: 100%;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--surface-faint);
   transition: background 0.15s;
   box-sizing: border-box;
   -webkit-user-drag: element !important;
@@ -766,7 +1017,7 @@ html.fx-glass .grid-header {
 }
 
 .btn-new-project-inline:hover:not(:disabled) {
-  box-shadow: 0 0 12px rgba(0, 210, 255, 0.5);
+  box-shadow: 0 0 12px var(--accent-cyan-halo);
 }
 
 .grid-row-special {
@@ -830,7 +1081,7 @@ html.fx-glass .grid-header {
   inset: 0;
   background-color: rgba(0, 0, 0, 0.45);
   background-image:
-    radial-gradient(circle, rgba(255, 255, 255, 0.8) 1.2px, transparent 1.2px);
+    radial-gradient(circle, var(--text-soft) 1.2px, transparent 1.2px);
   background-size: 5px 5px;
   background-position: center;
   opacity: 0;
@@ -881,17 +1132,17 @@ html.fx-glass .grid-header {
   max-width: 100%;
 }
 
-/* Action status colors matching PUSH (amber) and PULL (cyan) variants. */
+/* Last-action colours follow the side each direction stands for. */
 .la-push {
-  color: var(--accent-amber);
+  color: var(--color-local);
 }
 
 .la-pull {
-  color: var(--accent-cyan);
+  color: var(--color-remote);
 }
 
 .la-host {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-faint);
 }
 
 /* Compact cell padding for sync cluster. */
@@ -920,7 +1171,7 @@ html.fx-glass .grid-header {
   padding: 0;
 }
 
-fieldset:disabled .switch {
+.switch.is-sync-off {
   opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
@@ -965,14 +1216,14 @@ fieldset:disabled .switch {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-faint);
   padding: 4px 12px 2px;
 }
 
 .popup-copy-btn {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-faint);
   cursor: pointer;
   padding: 0 2px;
   font-size: 9px;
@@ -991,7 +1242,7 @@ fieldset:disabled .switch {
 
 .popup-item.popup-run-btn.popup-disabled:hover {
   background: none;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-soft);
 }
 
 .popup-run-btn {
@@ -1007,11 +1258,11 @@ fieldset:disabled .switch {
   height: 14px;
   object-fit: contain;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.18));
+  filter: drop-shadow(0 0 2px var(--border-strong));
 }
 
 .popup-icon-insiders {
-  filter: hue-rotate(-50deg) saturate(2) brightness(1.2) drop-shadow(0 0 2px rgba(255, 255, 255, 0.18));
+  filter: hue-rotate(-50deg) saturate(2) brightness(1.2) drop-shadow(0 0 2px var(--border-strong));
 }
 
 .popup-project-icon {
@@ -1028,8 +1279,8 @@ fieldset:disabled .switch {
   background-color: var(--accent-red);
   border-color: #7f1d1d;
   color: var(--white);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  text-shadow: 0 1px 3px var(--shade-strong);
+  box-shadow: 0 0 10px var(--accent-red-halo);
 }
 
 .btn-tech.btn-sync-stop:hover:not(:disabled) {
@@ -1053,6 +1304,11 @@ fieldset:disabled .switch {
 
 .btn-sync-diverged {
   box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.6) !important;
+}
+
+.btn-sync-stale {
+  outline: 1px dashed var(--red-400);
+  outline-offset: 1px;
 }
 
 /* Narrow container layout adjustments (<=700px). */

@@ -560,8 +560,7 @@ pub fn load_and_cache_project_icons(projects: &[SyncProject]) {
             && !is_tauri
             && (path.join("package.json").exists() || path.join("index.html").exists());
 
-        // The PROJECT ICON help text in `src/components/modals/ProjectConfigModal.vue` states these
-        // lists, the smallest-wins rule and the 250 KB cap to the user; change both together.
+        // The PROJECT ICON help text in `src/components/modals/ProjectConfigModal.vue` states these lists, the smallest-wins rule and the 250 KB cap to the user; change both together.
         let candidates = if is_tauri {
             vec![
                 "src-tauri/icons/32x32.png",
@@ -804,6 +803,33 @@ pub struct ProjectStackInfo {
     pub cmd: String,
     pub dev_cmd: String,
     pub build_cmd: String,
+    /// Detected default for `commands.deploy` (deploy plan): unlike `dev_cmd`/`build_cmd` (assumed by
+    /// convention), this one actually reads `package.json`'s `scripts.deploy` - a project with no such
+    /// script has no safe default command to run, so this stays empty rather than guessing.
+    pub deploy_cmd: String,
+}
+
+/// Detects `commands.deploy`'s default (deploy plan § Design): true only when `package.json` declares a
+/// `scripts.deploy` entry - a missing/corrupt `package.json` or a project with no such script yields "",
+/// which the frontend renders as the DEPLOY button disabled with a reason, never a guessed command.
+fn detect_deploy_cmd(path: &std::path::Path, pm: &str, run_prefix: &str) -> String {
+    let raw = match std::fs::read_to_string(path.join("package.json")) {
+        Ok(raw) => raw,
+        Err(_) => return String::new(),
+    };
+    let json: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(json) => json,
+        Err(_) => return String::new(),
+    };
+    let has_deploy = json
+        .get("scripts")
+        .and_then(|s| s.get("deploy"))
+        .is_some();
+    if has_deploy {
+        format!("{pm} {run_prefix}deploy")
+    } else {
+        String::new()
+    }
 }
 
 /// True when `path` looks like a Nuxt project (config file or generated `.nuxt` dir present).
@@ -864,6 +890,12 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
         ("".to_string(), "".to_string())
     };
 
+    let deploy_cmd = if is_node {
+        detect_deploy_cmd(path, pm, run_prefix)
+    } else {
+        String::new()
+    };
+
     ProjectStackInfo {
         is_node,
         is_tauri,
@@ -872,7 +904,22 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
         cmd,
         dev_cmd,
         build_cmd,
+        deploy_cmd,
     }
+}
+
+/// Builds the `ssh <host> -t <cmd>` string for a remote deploy (deploy plan § Running it): `cd`s to the
+/// target's remote_path (kept expandable via `shell_quote_remote_path` for a leading `~/`), then runs
+/// `bash -lc '<cmd>'` so nvm/npm resolve through the login shell. Pure string building - no subprocess or
+/// network I/O here (the ssh process itself is spawned later by the terminal that receives this string,
+/// same as `build_remote_ssh_command`), so this stays a plain sync command (coding.C4: `cmd` is shell-quoted
+/// as a single argument, never interpolated raw).
+#[tauri::command]
+pub fn build_remote_deploy_command(host: String, path: String, cmd: String) -> Result<String, String> {
+    validate_remote_host(&host)?;
+    let qpath = shell_quote_remote_path(&path);
+    let remote_cmd = format!("cd {q} && bash -lc {c}", q = qpath, c = shell_quote(&cmd));
+    Ok(format!("ssh {} -t {}", host, shell_quote(&remote_cmd)))
 }
 
 // `run_project_command` (BUILD) and `run_project_dev` (DEV) removed 2026-07-30: replaced by in-app terminal launch (`docs/plan/done/dev-build-in-app-launch.md`).
@@ -1874,5 +1921,112 @@ mod tests {
         let path = "/usr/local/share".to_string();
         let result = resolve_remote_path("192.168.1.100".to_string(), path.clone()).await;
         assert_eq!(result.unwrap(), path);
+    }
+
+    #[test]
+    fn detect_deploy_cmd_finds_a_declared_deploy_script() {
+        let dir = std::env::temp_dir().join(format!("aki-deploy-detect-yes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("package.json"), r#"{"scripts":{"deploy":"wrangler deploy"}}"#).unwrap();
+        assert_eq!(detect_deploy_cmd(&dir, "npm", "run "), "npm run deploy");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_deploy_cmd_empty_when_no_deploy_script() {
+        let dir = std::env::temp_dir().join(format!("aki-deploy-detect-no-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("package.json"), r#"{"scripts":{"dev":"vite"}}"#).unwrap();
+        assert_eq!(detect_deploy_cmd(&dir, "npm", "run "), "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_deploy_cmd_empty_when_package_json_missing() {
+        let dir = std::env::temp_dir().join(format!("aki-deploy-detect-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(detect_deploy_cmd(&dir, "npm", "run "), "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_remote_deploy_command_quotes_path_and_cmd() {
+        let cmd = build_remote_deploy_command(
+            "bien".to_string(),
+            "~/aki/web/api.akitao.com".to_string(),
+            "npm run deploy".to_string(),
+        )
+        .unwrap();
+        // The remote_cmd is itself shell_quote'd as ssh's -t argument, so its own `'` chars come back escaped as `'\''` - build the expected string the same way rather than hardcoding it.
+        let expected_inner = format!(
+            "cd {} && bash -lc {}",
+            shell_quote_remote_path("~/aki/web/api.akitao.com"),
+            shell_quote("npm run deploy"),
+        );
+        assert_eq!(cmd, format!("ssh bien -t {}", shell_quote(&expected_inner)));
+        assert!(cmd.starts_with("ssh bien -t "));
+    }
+
+    #[test]
+    fn build_remote_deploy_command_quotes_remote_path_with_spaces() {
+        let cmd = build_remote_deploy_command(
+            "bien".to_string(),
+            "~/aki/my site".to_string(),
+            "npm run deploy".to_string(),
+        )
+        .unwrap();
+        let expected_inner = format!(
+            "cd {} && bash -lc {}",
+            shell_quote_remote_path("~/aki/my site"),
+            shell_quote("npm run deploy"),
+        );
+        assert_eq!(cmd, format!("ssh bien -t {}", shell_quote(&expected_inner)));
+    }
+
+    #[test]
+    fn build_remote_deploy_command_exact_string_survives_quote_and_subshell_in_cmd() {
+        // Golden test with its OWN quoting logic (not calling shell_quote/shell_quote_remote_path), so a
+        // regression like dropping the inner `shell_quote(&cmd)` call in production - which the
+        // start/end-only `_neutralizes_a_single_quote_in_cmd` test above would NOT catch - fails here.
+        fn sq(s: &str) -> String {
+            format!("'{}'", s.replace('\'', "'\\''"))
+        }
+        let path = "~/aki/site";
+        let cmd = "echo 'hi'; $(rm -rf /)";
+        let qpath = format!("\"$HOME\"/{}", sq("aki/site"));
+        let remote_cmd = format!("cd {} && bash -lc {}", qpath, sq(cmd));
+        let expected = format!("ssh bien -t {}", sq(&remote_cmd));
+
+        let result =
+            build_remote_deploy_command("bien".to_string(), path.to_string(), cmd.to_string())
+                .unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn build_remote_deploy_command_rejects_option_shaped_host() {
+        assert!(build_remote_deploy_command(
+            "-oProxyCommand=touch /tmp/pwned".to_string(),
+            "~/app".to_string(),
+            "npm run deploy".to_string(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn build_remote_deploy_command_neutralizes_a_single_quote_in_cmd() {
+        // coding.C4: a single quote in the deploy command must not break out of the outer shell_quote.
+        let cmd = build_remote_deploy_command(
+            "bien".to_string(),
+            "~/app".to_string(),
+            "echo 'hi'; rm -rf /".to_string(),
+        )
+        .unwrap();
+        // The whole remote command is one shell_quote'd argument to ssh -t; no unescaped `'` boundary.
+        assert!(cmd.starts_with("ssh bien -t '"));
+        assert!(cmd.ends_with('\''));
     }
 }

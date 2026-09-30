@@ -2,16 +2,27 @@
   <BaseModal :show="showConfigModal && !!editingProject" @close="closeConfig">
     <template #title>
       <i class="fa-solid fa-gear mr-1"></i> Configuration: {{ editingProject?.name }}
+      <!-- Read-only reason lives as a title suffix + tooltip without extra rows (Extreme Narrow), same as Tasks. -->
+      <span v-if="configBlocked" class="config-readonly-tag" :title="configEntry.error || undefined"> — {{ configEntry.status }}</span>
     </template>
     <div class="modal-body scrollable">
+      <div class="config-section-header"><span class="owner-badge owner-project">in the project</span></div>
       <div class="form-grid mb-1">
         <div class="form-group">
           <label>Project Name</label>
           <input type="text" v-model="editingProject.name" />
         </div>
+        <div class="form-group full-width">
+          <label>Production URL <i class="fa-solid fa-circle-info help-icon" title="Used by the web icon button next to the project name to open the production site in a browser"></i></label>
+          <input type="text" v-model="editingProject.production_url" placeholder="https://..." />
+        </div>
+      </div>
+
+      <div class="config-section-header"><span class="owner-badge owner-machine">on this Mac</span></div>
+      <div class="form-grid mb-1">
         <div class="form-group">
           <label>Remote Host</label>
-          <select v-model="editingProject.remote_host">
+          <select :value="editingProject.remote_host" @change="onRemoteHostChange">
             <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
           </select>
         </div>
@@ -30,17 +41,14 @@
                  :class="{ 'input-invalid': remotePathInvalid }"
                  :title="remotePathInvalid ? pathError : ''" />
         </div>
-        <div class="form-group full-width">
-          <label>Production URL <i class="fa-solid fa-circle-info help-icon" title="Used by the web icon button next to the project name to open the production site in a browser"></i></label>
-          <input type="text" v-model="editingProject.production_url" placeholder="https://..." />
-        </div>
       </div>
 
-      <!-- RUN COMMANDS - LOCAL MACHINE ONLY -->
+      <!-- RUN COMMANDS (runs on this machine's shell; the commands themselves are project facts stored in
+           project.json, per docs/research/akidevsync-project-config-scope-2.md). -->
       <div class="full-width config-group commands-group mb-1 mt-1">
         <h4 class="group-title commands-title">
           <i class="fa-solid fa-terminal mr-1"></i> RUN COMMANDS
-          <span class="local-badge">💻 LOCAL ONLY</span>
+          <span class="owner-badge owner-project">in the project</span>
         </h4>
         <p class="commands-hint">Chạy trên Mac Terminal của bạn. Để trống → dùng mặc định theo stack.</p>
         <div class="commands-row">
@@ -61,6 +69,43 @@
               :placeholder="buildCmdDefault || 'e.g. npm run build'"
               class="code-input"
             />
+          </div>
+          <div class="form-group">
+            <label class="text-cyan-dim">DEPLOY <span class="default-hint">{{ deployCmdDefault }}</span></label>
+            <input
+              type="text"
+              v-model="editingProject.deploy_cmd"
+              :placeholder="deployCmdDefault || 'e.g. npm run deploy'"
+              class="code-input"
+            />
+          </div>
+        </div>
+        <!-- Deploy target (docs/plan/deploy-action.md, amended 2026-09-28): a remote deploy names its own
+             host, never the sync host above - that one is a dropdown away from any other box. -->
+        <div class="deploy-target-row">
+          <div class="form-group">
+            <label class="text-cyan-dim">Deploy Runs On</label>
+            <select v-model="deployRunOn">
+              <option value="local">Local (this Mac)</option>
+              <option value="remote">Remote (SSH)</option>
+            </select>
+          </div>
+          <template v-if="deployRunOn === 'remote'">
+            <div class="form-group">
+              <label class="text-cyan-dim">Deploy Host</label>
+              <select v-model="deployHost" :class="{ 'input-invalid': !deployHost }" :title="deployHost ? '' : 'Remote deploy needs its own host - it never uses the sync host'">
+                <option value="" disabled>Pick a host</option>
+                <option v-for="h in sshHosts" :key="h" :value="h">{{ h }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="text-cyan-dim">Deploy Path</label>
+              <input type="text" v-model="deployPath" :placeholder="editingProject.remote_path || '~/app'" class="code-input" />
+            </div>
+          </template>
+          <div class="form-group checkbox-inline">
+            <input type="checkbox" id="deploy-on-push" v-model="deployOnPush" />
+            <label for="deploy-on-push">{{ deployRunOn === 'remote' ? 'Offer Deploy after a successful PUSH to the deploy host' : 'Offer Deploy after a successful PUSH' }}</label>
           </div>
         </div>
       </div>
@@ -93,25 +138,25 @@
       <div class="excludes-split full-width mt-1">
         <!-- PUSH GROUP -->
         <div class="config-group push-group">
-          <h4 class="group-title text-amber"><i class="fa-solid fa-arrow-up mr-1"></i> PUSH (Local → Remote)</h4>
+          <h4 class="group-title text-push"><i class="fa-solid fa-arrow-up mr-1"></i> PUSH (Local → Remote)</h4>
           <div class="form-group mb-1">
-            <label class="text-amber">Excludes (1 per line)</label>
+            <label class="text-push">Excludes (1 per line)</label>
             <textarea class="large-textarea border-push" v-model="pushExcludesText" rows="5"></textarea>
           </div>
           <div class="form-group">
             <div class="scripts-toggle" @click="togglePushScripts = !togglePushScripts">
-              <label :class="hasPushScripts ? 'text-amber' : 'text-muted'" :style="{ cursor: 'pointer', fontSize: '11px', fontWeight: hasPushScripts ? '800' : '600' }">
+              <label :class="hasPushScripts ? 'text-push' : 'text-muted'" :style="{ cursor: 'pointer', fontSize: '11px', fontWeight: hasPushScripts ? '800' : '600' }">
                 <i class="fa-solid fa-code mr-1"></i> Pre &amp; Post Scripts
                 <i :class="[togglePushScripts ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down', 'chevron-gap']"></i>
               </label>
             </div>
             <div v-show="togglePushScripts" class="col-gap-8">
               <div class="form-group">
-                <label class="text-amber label-dim">Pre-Push</label>
+                <label class="text-push label-dim">Pre-Push</label>
                 <textarea class="large-textarea code-font border-push" v-model="editingProject.hooks.pre_push_cmd" rows="2"></textarea>
               </div>
               <div class="form-group">
-                <label class="text-amber label-dim">Post-Push</label>
+                <label class="text-push label-dim">Post-Push</label>
                 <textarea class="large-textarea code-font border-push" v-model="editingProject.hooks.post_push_cmd" rows="2"></textarea>
               </div>
             </div>
@@ -120,25 +165,25 @@
 
         <!-- PULL GROUP -->
         <div class="config-group pull-group">
-          <h4 class="group-title text-blue"><i class="fa-solid fa-arrow-down mr-1"></i> PULL (Remote → Local)</h4>
+          <h4 class="group-title text-pull"><i class="fa-solid fa-arrow-down mr-1"></i> PULL (Remote → Local)</h4>
           <div class="form-group mb-1">
-            <label class="text-blue">Excludes (1 per line)</label>
+            <label class="text-pull">Excludes (1 per line)</label>
             <textarea class="large-textarea border-pull" v-model="pullExcludesText" rows="5"></textarea>
           </div>
           <div class="form-group">
             <div class="scripts-toggle" @click="togglePullScripts = !togglePullScripts">
-              <label :class="hasPullScripts ? 'text-blue' : 'text-muted'" :style="{ cursor: 'pointer', fontSize: '11px', fontWeight: hasPullScripts ? '800' : '600' }">
+              <label :class="hasPullScripts ? 'text-pull' : 'text-muted'" :style="{ cursor: 'pointer', fontSize: '11px', fontWeight: hasPullScripts ? '800' : '600' }">
                 <i class="fa-solid fa-code mr-1"></i> Pre &amp; Post Scripts
                 <i :class="togglePullScripts ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" class="chevron-gap"></i>
               </label>
             </div>
             <div v-show="togglePullScripts" class="col-gap-8">
               <div class="form-group">
-                <label class="text-blue label-dim">Pre-Pull</label>
+                <label class="text-pull label-dim">Pre-Pull</label>
                 <textarea class="large-textarea code-font border-pull" v-model="editingProject.hooks.pre_pull_cmd" rows="2"></textarea>
               </div>
               <div class="form-group">
-                <label class="text-blue label-dim">Post-Pull</label>
+                <label class="text-pull label-dim">Post-Pull</label>
                 <textarea class="large-textarea code-font border-pull" v-model="editingProject.hooks.post_pull_cmd" rows="2"></textarea>
               </div>
             </div>
@@ -184,7 +229,7 @@
       </button>
       <div>
         <button class="btn-secondary mr-1" @click="closeConfig">Cancel</button>
-        <button class="btn-save" :disabled="!!pathError" :title="pathError" @click="saveConfig"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Changes</button>
+        <button class="btn-save" :disabled="!!pathError || configBlocked" :title="pathError || (configBlocked ? `.akidevsync/project.json is ${configEntry.status} — cannot save` : '')" @click="saveConfig"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Changes</button>
       </div>
     </div>
   </BaseModal>
@@ -195,12 +240,22 @@ import { ref, computed, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useProjects } from '../../composables/useProjects'
 import { useSsh } from '../../composables/useSsh'
-import { projectPathIssue } from '../../composables/useProjectConfig'
-import { iconTimestamp, refreshProjectIcons } from '../../store/projectStore'
+import { projectPathIssue, resolveHostSwitch } from '../../composables/useProjectConfig'
+import { canSaveProjectConfig } from '../../composables/projectConfigPure'
+import { getProjectConfigEntry } from '../../store/projectConfigStore'
+import { projects, iconTimestamp, refreshProjectIcons } from '../../store/projectStore'
 import { projectIconSrc } from '../../utils/projectIcon'
 
 const { showConfigModal, editingProject, closeConfig, saveConfig, confirmRemove, Toast, projectRuntime } = useProjects()
 const { sshHosts } = useSsh()
+
+// The exact same decision `applyProjectConfig` (the writer) uses -
+// `canSaveProjectConfig` - so the button can never disagree with what a save would actually do. A brand-new
+// project (not yet in `projects.value`) is always allowed; an existing one is blocked whenever its
+// project.json read is not 'ok'/'missing' - 'unknown' (e.g. mid-Refresh) included, unlike before.
+const configEntry = computed(() => getProjectConfigEntry(editingProject.value?.id))
+const isNewProject = computed(() => !projects.value.some((p) => p.id === editingProject.value?.id))
+const configBlocked = computed(() => !canSaveProjectConfig(isNewProject.value, configEntry.value.status))
 
 const iconPreviewSrc = computed(() => projectIconSrc(editingProject.value?.id, iconTimestamp.value))
 const iconLoadFailed = ref(false)
@@ -220,6 +275,20 @@ async function reloadIcon() {
 
 const togglePushScripts = ref(false)
 const togglePullScripts = ref(false)
+
+// The dialog's own Remote Host select must use the same switch logic as the table dropdown
+// (remoteActions.setRemoteHost) - never keep the outgoing host's hooks on the new one. `remote_path` is a
+// project fact (1.32.1) and is left untouched by this switch. Mutates the draft `editingProject` only;
+// nothing is saved until the user hits Save.
+function onRemoteHostChange(event) {
+  const newHost = event.target.value
+  const project = editingProject.value
+  if (!project || project.remote_host === newHost) return
+  const next = resolveHostSwitch(project, newHost)
+  project.targets = next.targets
+  project.remote_host = next.remote_host
+  project.hooks = next.hooks
+}
 
 // Same predicate the sync path and saveConfig use, so the button state can never disagree with what the app will actually accept.
 const pathIssue = computed(() => projectPathIssue(editingProject.value))
@@ -258,6 +327,28 @@ const buildCmdDefault = computed(() => {
   return stack?.build_cmd || ''
 })
 
+const deployCmdDefault = computed(() => {
+  if (!editingProject.value) return ''
+  const stack = projectRuntime.value[editingProject.value.id]?.stack_info
+  return stack?.deploy_cmd || ''
+})
+
+// `editingProject.deploy` (docs/plan/deploy-action.md): one per project, untouched by a sync host switch.
+// `null` (never configured) reads as "local, off" rather than crashing the bindings.
+function deployField(key, fallback) {
+  return computed({
+    get() { return editingProject.value?.deploy?.[key] || fallback },
+    set(val) {
+      if (!editingProject.value) return
+      editingProject.value.deploy = { run_on: 'local', on_push: false, ...(editingProject.value.deploy || {}), [key]: val }
+    },
+  })
+}
+const deployRunOn = deployField('run_on', 'local')
+const deployOnPush = deployField('on_push', false)
+const deployHost = deployField('host', '')
+const deployPath = deployField('path', '')
+
 function applyPreset(stack) {
   if (!editingProject.value) return
   const common = [".DS_Store", "*.log", ".env", ".claude/", ".gemini/"]
@@ -288,8 +379,8 @@ function applyPreset(stack) {
 .project-icon-preview { width: 32px; height: 32px; border-radius: 6px; }
 .scripts-toggle { cursor: pointer; display: inline-block; margin-bottom: 6px; }
 .chevron-gap { margin-left: 4px; }
-.text-pull { color: var(--blue-400); }
-.text-push { color: var(--amber-400); }
+.text-pull { color: var(--color-remote); }
+.text-push { color: var(--color-local); }
 .label-dim { opacity: 0.8; }
 .excludes-split {
   display: flex;
@@ -327,15 +418,37 @@ function applyPreset(stack) {
   margin-bottom: 4px;
 }
 
-.local-badge {
-  font-size: 10px;
-  font-weight: 700;
-  background: var(--accent-green-wash);
+.config-section-header {
+  margin: 4px 0 2px;
+}
+
+/* Owner-scope tag (docs/plan/settings-and-state-layout.md § D): where a field is saved, not who can edit it. */
+.owner-badge {
+  font-size: 9px;
+  font-weight: 600;
+  font-style: normal;
+  padding: 0 5px;
+  border-radius: 3px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.owner-project {
   color: var(--emerald-300);
+  background: var(--accent-green-wash);
   border: 1px solid var(--accent-green-edge);
-  padding: 1px 6px;
-  border-radius: 4px;
-  letter-spacing: 0.3px;
+}
+
+.owner-machine {
+  color: var(--text-darker);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--border-color);
+}
+
+.config-readonly-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amber-400);
 }
 
 .commands-hint {
@@ -367,6 +480,32 @@ function applyPreset(stack) {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.text-cyan-dim {
+  color: var(--accent-cyan) !important;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deploy-target-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.checkbox-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+.checkbox-inline label {
+  font-size: 11px;
+  color: var(--text-darker);
 }
 
 .default-hint {
@@ -416,6 +555,11 @@ function applyPreset(stack) {
 
   .commands-row {
     flex-direction: column;
+  }
+
+  .deploy-target-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   /* Stacked, the label owns the full row - let the default-command hint use it instead of

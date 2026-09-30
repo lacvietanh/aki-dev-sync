@@ -2,10 +2,12 @@ mod agent_usage;
 mod app_paths;
 mod claude_cleanup;
 mod claude_profile;
+mod conflict;
 mod gemini_allowlist;
 mod git;
 mod global_note;
 mod logger;
+mod project_config;
 mod project_notes;
 mod projects;
 mod pty;
@@ -13,6 +15,7 @@ mod remote_shell;
 mod ssh;
 mod statusline;
 mod sync;
+mod sync_state;
 mod system;
 mod web_server;
 
@@ -22,8 +25,13 @@ pub fn run() {
         .setup(|app| {
             // Must run before logger::init: it moves usage.log itself, and the logger has not opened a file yet to log through.
             let migration_summary = app_paths::migrate_legacy_app_data(app.handle());
+            // docs/plan/settings-and-state-layout.md § Migration (B3): one-shot, idempotent, and run
+            // here rather than from JS on every load/Refresh so every path resolves deterministically
+            // before any sync command has had a chance to prime `sync::APP_DATA_DIR`.
+            let settings_state_summary = sync_state::migrate_settings_and_state_on_boot(app.handle());
             logger::init(app.handle());
             logger::info("MIGRATE", &migration_summary);
+            logger::info("MIGRATE", &settings_state_summary);
             // Remote Control relay (docs/plan/done/remote-control.md §7) — binds the axum server on Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
             web_server::init(app.handle());
             Ok(())
@@ -82,9 +90,17 @@ pub fn run() {
             // sync
             sync::run_sync,
             sync::check_sync_status,
+            sync::explain_sync_status,
+            sync::check_agy_available,
+            sync::list_agy_models,
             sync::get_sync_delete_preview,
+            sync::get_sync_overwrite_preview,
             sync::cancel_sync,
             sync::cleanup_legacy_baselines,
+            sync_state::write_last_sync,
+            sync_state::read_last_sync_all,
+            sync_state::read_last_sync_for_host,
+            sync_state::delete_project_state,
             // agent usage
             agent_usage::provision_agent_usage,
             agent_usage::get_agent_usage,
@@ -94,6 +110,7 @@ pub fn run() {
             system::open_local_terminal,
             system::open_remote_subprocess,
             system::build_remote_ssh_command,
+            system::build_remote_deploy_command,
             system::check_ide_availability,
             system::resolve_remote_path,
             system::resolve_report_html,
@@ -110,6 +127,11 @@ pub fn run() {
             project_notes::read_project_notes,
             project_notes::read_project_notes_map,
             project_notes::write_project_notes,
+            // per-project settings, stored in the repo (docs/plan/settings-and-state-layout.md)
+            project_config::read_project_config,
+            project_config::read_project_config_map,
+            project_config::write_project_config,
+            project_config::write_project_configs_if_missing,
             // claude profile switcher
             claude_profile::get_claude_mode,
             claude_profile::set_claude_profile,

@@ -268,15 +268,18 @@ export function useTerminalTabs() {
   }
 
   /**
-   * Dedicated DEV/BUILD launch handler deduplicating tabs by (scope, runKind).
-   * Focuses live tabs without re-typing, respawns dead tabs with re-armed commands, or allocates a new tab.
+   * Dedicated DEV/BUILD/DEPLOY launch handler deduplicating tabs by (scope, runKind).
+   * DEV/BUILD focus a live tab without re-typing (a long-running server, deploy plan's DEV/BUILD stay
+   * unchanged); DEPLOY is one-shot (docs/plan/deploy-action.md S1) and always opens a fresh tab so a
+   * confirmed deploy never silently focuses an already-finished tab and runs nothing.
+   * Dead tabs respawn with re-armed commands either way.
    */
   function openRunCommand(project, cmd, kind) {
     if (!project || !cmd) return
     const scope = project.id
     expandTerminalStack()
     activeTerminalScope.value = scope
-    const existing = terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === kind)
+    const existing = kind === 'deploy' ? null : terminalTabs.value.find((t) => scopeOf(t) === scope && t.runKind === kind)
     if (existing) {
       setActiveTab(existing.id)
       if (tabLiveness.value[existing.id] === false) {
@@ -291,8 +294,9 @@ export function useTerminalTabs() {
       }
       return
     }
+    const title = kind === 'dev' ? 'DEV' : kind === 'deploy' ? 'DEPLOY' : 'BUILD'
     const tab = addTerminalTab({
-      title: kind === 'dev' ? 'DEV' : 'BUILD',
+      title,
       projectId: scope,
       cwd: project.local_path,
       runKind: kind,
@@ -302,21 +306,25 @@ export function useTerminalTabs() {
     else setPendingClaim(scope) // companion fallback — same mechanism openScopeTerminal uses
   }
 
-  /** Spawns a dedicated SSH remote terminal tab using the backend-generated SSH command string. */
-  function openProjectRemoteTerminal(project, sshCmd) {
-    if (!project || !sshCmd) return
+  /** Always opens a fresh project-scoped tab that types `cmd` into its shell once (a one-shot: ssh session, agy explain). */
+  function openCommandTab(project, { title, runKind, cmd }) {
+    if (!project || !cmd) return
     const scope = project.id
     expandTerminalStack()
     activeTerminalScope.value = scope
-    const tab = addTerminalTab({
-      title: `${project.name} (SSH)`,
-      projectId: scope,
-      cwd: project.local_path,
-      runKind: 'ssh',
-      pendingCmd: sshCmd,
-    })
+    const tab = addTerminalTab({ title, projectId: scope, cwd: project.local_path, runKind, pendingCmd: cmd })
     if (tab) setActiveTab(tab.id)
     else setPendingClaim(scope)
+  }
+
+  /** Spawns a dedicated SSH remote terminal tab using the backend-generated SSH command string. */
+  function openProjectRemoteTerminal(project, sshCmd) {
+    openCommandTab(project, { title: `${project.name} (SSH)`, runKind: 'ssh', cmd: sshCmd })
+  }
+
+  /** Opens the `agy` sync explanation in its own tab, using the backend-built launch command. */
+  function openExplainTerminal(project, agyCmd) {
+    openCommandTab(project, { title: `${project.name} (Explain)`, runKind: 'explain', cmd: agyCmd })
   }
 
   return {
@@ -329,6 +337,7 @@ export function useTerminalTabs() {
     openProjectTerminal,   // scope-aware, reuses/focuses existing tab
     openNewProjectTerminal, // scope-aware, always creates a fresh tab
     openProjectRemoteTerminal,
+    openExplainTerminal,
     openGlobalTerminal,
     openRunCommand,
   }
