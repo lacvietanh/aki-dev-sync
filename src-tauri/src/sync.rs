@@ -2119,7 +2119,6 @@ mod tests {
         assert!(validate_agy_model("a b").is_err());
     }
 
-    // Test fixture builder: constructs a minimal SyncProject without making `projects.rs` test helper public.
     #[test]
     fn two_failing_steps_of_one_poll_are_each_logged_once_across_polls() {
         let mut p = make_test_project(vec![], vec![]);
@@ -2153,6 +2152,7 @@ mod tests {
         assert!(!record_status_anomaly(&other, "status", "b"), "another host's slot survives");
     }
 
+    // Test fixture builder: constructs a minimal SyncProject without making `projects.rs` test helper public.
     fn make_test_project(push_excludes: Vec<&str>, pull_excludes: Vec<&str>) -> SyncProject {
         SyncProject {
             id: "test".to_string(),
