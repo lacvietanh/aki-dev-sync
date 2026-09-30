@@ -41,11 +41,7 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 - `scythe.py` báo 623 `[WRAP]/[YAP]` toàn repo, chủ yếu `src-tauri/src/pty.rs` (121), `system.rs` (62), `statusline.rs` (37) và các doc trong `docs/plan/done/`. Số ngang baseline trước đợt hardening, nên là nợ cũ. Xử lý theo từng file khi chạm tới, không quét hàng loạt.
 - `cargo fmt --check` còn lệch ở vài file `src-tauri/src` (ví dụ `agent_usage/antigravity.rs`); chạy `cargo fmt` một lần trong commit riêng.
-- Từ `docs/plan/done/audit-akirule-2026-09-18.md` (đóng 2026-09-27, visual ledger đã qua bằng dùng thật):
-  - 34 hex cứng trong JS (xterm theme, `statuslineColors.js`, `useSync.js`, `remoteActions.js`, `projectStore.js`, `UsageCircle`, `TerminalView`) chưa ghi exception có owner+lý do trong `scripts/ui-audit.config.json`.
-  - Vài `rgba()` lẻ chưa có token vai trò (nền kính tối, glow, bóng đen `.8`) — thêm token khi một giá trị lặp ≥3 lần trong cùng vai trò.
-  - 22 inline style hợp lệ (HTML sinh runtime, prop `container-style` của `BaseModal`, `anchor-name`) chưa ghi exception để gate `npm run audit:ui` hết đỏ.
-  - Detector `scripts/audit-ui-architecture.mjs` báo nhầm selector trùng trong `@media`/`@keyframes` và đếm nhầm định nghĩa trong `:root`/fallback `var(--x, #hex)` là literal.
+- `npm run audit:ui` đã xanh (2026-09-29): detector sửa xong, literal lặp thành token, phần còn lại ghi exception có owner + lý do trong `scripts/ui-audit.config.json`. Không còn nợ từ `docs/plan/done/audit-akirule-2026-09-18.md`.
 
 ## Hoãn có chủ ý
 

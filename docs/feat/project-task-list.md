@@ -107,7 +107,9 @@ Writes are additionally **serialised per project id** (`queueNotesWrite` in `rem
 #[serde(default, skip_serializing_if = "Option::is_none")] pub notes: Option<String>,
 ```
 
-so a cleared key is never re-materialized, not even by a stale companion array (the `sync_git` precedent). An on-disk file with content **wins** over the legacy fields; an `unavailable`/`corrupt` directory is skipped entirely and retried next launch. Both fields and `ProjectTask` are still present in `projects.rs` — removal is pending, tracked in `docs/plan/project-state-into-akidevsync.md`, which rewrites `projects.rs`.
+so a cleared key is never re-materialized, not even by a stale companion array (the `sync_git` precedent). An on-disk file with content **wins** over the legacy fields; an `unavailable`/`corrupt` directory is skipped entirely and retried next launch. Both fields and `ProjectTask` were removed from `projects.rs` in 1.32.0 (`docs/plan/settings-and-state-layout.md` § C, F4) — the migration above had already made them permanently empty in practice, so the struct now matches what every project's data has looked like since 1.22.0.
+
+**`.akidevsync/` is ordinary project data on the wire, including `project.json` (1.32.0).** Like `notes.json`, a mirror direction (`--delete` ON) lets the remote's copy of `.akidevsync/project.json` win exactly as it would for any other source file the receiver no longer has locally — the file is counted by the sync badges and protected from `--delete` erasure (above), not given a second, separate transfer path. See `docs/plan/settings-and-state-layout.md` § A for the by-design reasoning and `docs/research/akidevsync-project-config-scope-2.md` for `project.json`'s own field-placement decision.
 
 ### Global tasks — `~/.aki/devsync/globalnote.json`
 
@@ -135,8 +137,13 @@ pub struct GlobalNoteFile {
 - `src-tauri/src/project_notes.rs` - the notes file: path, schema, tagged read status, locked read-modify-write, `read_project_notes` / `read_project_notes_map` / `write_project_notes`.
 - `src/store/projectNotesStore.js` - `projectNotes` (mirrored) + the three id-scoped accessors; the companion read path.
 - `src/composables/useProjectNotes.js` - hydrate/refresh, `isProjectNotesWritable`, `projectNotesFor`, `migrateLegacyProjectNotes`.
-- `src/store/remoteActions.js` - `applyTaskEdit` (the ONE writer) and `requestProjectNotesRefresh`.
-- `src-tauri/src/projects.rs` - `ProjectTask` struct and the DEPRECATED `notes`/`tasks` `Option` fields on `SyncProject` — still present, removal tracked in `docs/plan/project-state-into-akidevsync.md`.
+- `src/store/remoteActions.js` - `applyTaskEdit` (the ONE writer) and `requestProjectNotesRefresh`; also `applyProjectConfig` (below).
+- **The four-owner settings/state split (`project.json`, `projects.json`, `state/`, and this file's own `notes.json`) is documented in full in `docs/arch/settings-and-state.md`** — sole-owner modules (`project_config.rs`, `sync_state.rs`), read-through/write-through wiring, the boot-time migration order, and the deprecated-field table. This file only lists the source paths below; read the arch doc for how they fit together.
+- `src-tauri/src/project_config.rs` (1.32.0) - `<local_path>/.akidevsync/project.json`, sole owner. `read_project_config` / `read_project_config_map` / `write_project_config` / `write_project_configs_if_missing` (the migration seed entry point).
+- `src/store/projectConfigStore.js` - `projectConfigs` (mirrored) + the same id-scoped accessor/generation-counter shape as `projectNotesStore.js`.
+- `src/composables/useProjectConfig.js` - besides the config-dialog/registry logic it already owned, also `hydrateProjectConfig`/`refreshProjectConfig` for `project.json`, `hydrateRemoteFromTargets`/`resolveHostSwitch` for `targets.<host>`, `hydrateLastSyncFromState` for sync outcomes, and `saveProjectsList`'s payload-stripping funnel. The save-permission check itself is `projectConfigPure.js::canSaveProjectConfig` (shared by the writer and the dialog's Save button).
+- `src-tauri/src/sync_state.rs` (1.32.0) - `~/.aki/devsync/state/<id>/<host>/{baseline.json,last_sync.json}`, sole owner. `read_baseline`/`write_baseline`, `write_last_sync`/`read_last_sync_all`, `delete_project_state`, and the boot-time migration.
+- `src-tauri/src/projects.rs` - the DEPRECATED `notes`/`tasks` `Option<serde_json::Value>` fields on `SyncProject` (the typed `ProjectTask` struct itself is gone); removal timing tracked in `docs/arch/settings-and-state.md`'s deprecated-field table, not a separate plan doc.
 - `src-tauri/src/global_note.rs` - `GlobalNoteFile`, `read_global_note`/`write_global_note` commands.
 - `src/components/TaskCell.vue` - project row's trigger button, using `TaskCountBadges`.
 - `src/components/modals/ProjectTasksModal.vue`, `GlobalNoteModal.vue` - the two modals, each just header/footer + `NotesField` + `TaskListPanel`.

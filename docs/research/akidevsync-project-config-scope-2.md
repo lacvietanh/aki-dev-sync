@@ -1,5 +1,7 @@
 # Where each setting and state value lives — four owners, two kinds
 
+Status: amended 2026-09-28
+
 **Start time:** 2026-09-27
 
 ## Initial purpose
@@ -109,3 +111,9 @@ Classification: static (code + real `projects.json`). F2: code reading only, **u
 Rejected: `.akidevsync/local/` · everything travels · nothing travels (reasons under Critique).
 
 **Cross-references:** `docs/plan/backlog.md` #6; notes `task-1785676763350`, `task-1787393248179`, `task-1789390613266`, `task-1790401977743`, `task-1790490810608`.
+
+## Amendments
+
+**2026-09-28.** F5's field-placement column (`targets.<host>.remote_path`) was wrong. The finding itself — "the host dropdown keeps `remote_path` when the host changes" — was read as a bug to fix by making the path follow the host, when the owner's actual requirement (stated 2026-09-28) is the opposite: a project has exactly ONE remote directory regardless of host, so the path must NEVER change on a host switch. `hooks` (and `deploy`, added by plan 3) really are per-host — they were bundled with `remote_path` into the same `Target` struct on the assumption all three shared one placement rule, without re-checking that assumption against `remote_path` specifically. Checked against the real registry as part of the fix: no project has ever recorded two different paths across hosts, confirming the per-host storage was never actually exercised as designed, only as the friction it created (a new host prompting for a path that had never changed). Fixed directly in `docs/plan/settings-and-state-layout.md` § Amendments; this Decision's "three plans, in order" and the rejected alternatives above are otherwise unchanged.
+
+**2026-09-28 (2).** § Field placement, row `targets.<host>.deploy`: deploy is no longer per-host. It is one project-level `deploy` that names its own `host`, because a deploy that follows the active sync host runs wherever the one-click dropdown last pointed — `docs/research/sync-host-safety.md` § R4. The rest of this Decision stands.

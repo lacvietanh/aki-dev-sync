@@ -1,6 +1,6 @@
 # Kiến trúc Logger - `logger.rs`
 
-> updated 2026-08-19 · v1.27.0
+> updated 2026-09-28 · v1.31.0
 
 Module logging dùng chung cho toàn bộ usage-data pipeline. Ghi vào file cố định trên disk; không phụ thuộc thư viện ngoài.
 
@@ -10,15 +10,16 @@ Module logging dùng chung cho toàn bộ usage-data pipeline. Ghi vào file c�
 
 **Production im lặng, debug đầy đủ.**
 
-Log file mặc định chỉ chứa lỗi thật và session boundary - không có verbose output trong chế độ bình thường. Developer bật `--debug` khi cần truy vết chi tiết.
+Log file mặc định chỉ chứa lỗi thật, session boundary và audit (sync/deploy/đổi host) - không có verbose output trong chế độ bình thường. Developer bật `--debug` khi cần truy vết chi tiết.
 
 ---
 
-## Ba level
+## Bốn level
 
 | Level | Ghi file | Ghi stderr | Dùng cho |
 |-------|----------|------------|----------|
 | `error` | luôn | luôn | Lỗi thật: shell chết sớm, parse fail, write fail, SSH fail, data loss risk |
+| `audit` | luôn | luôn | Hành động làm file đi đâu đó: mỗi sync (`[sync]`, ghi trong `run_sync`), deploy đã confirm và đổi cấu hình deploy (`[deploy]`), đổi remote host từ bảng hoặc Settings (`[host]`). Là bản ghi duy nhất để truy lại một lần push đã đi tới host nào |
 | `info` | debug-only | debug-only | Key lifecycle: start, done, STALE_RESET, force-sync outcome |
 | `debug` | debug-only | debug-only | Per-poll detail, parse internals, shell stderr lines |
 
@@ -70,6 +71,7 @@ mỗi lần ghi → cộng dồn byte → qua 64KB thì kiểm → file > 1MB �
 
 ```rust
 logger::error(tag, msg)  // luôn ghi
+logger::audit(tag, msg)  // luôn ghi
 logger::info(tag, msg)   // chỉ khi debug
 logger::debug(tag, msg)  // chỉ khi debug
 ```
@@ -77,7 +79,7 @@ logger::debug(tag, msg)  // chỉ khi debug
 Ba IPC command cho frontend:
 - `is_debug_mode()` → `bool`
 - `get_log_path()` → `String`
-- `log_frontend(level, tag, msg)` → forward log từ frontend vào cùng pipeline (usage.log + stderr)
+- `log_frontend(level, tag, msg)` → forward log từ frontend vào cùng pipeline (usage.log + stderr); `level: 'audit'` qua `src/utils/auditLog.js`
 
 ---
 
@@ -123,7 +125,7 @@ Tag = `GET_USAGE` / `PROVISION` (Rust, cộng `SHELL:*` relay từ stderr của 
 
 ## Liên quan
 
-- `src-tauri/src/logger.rs` - implementation: `error`, `info`, `debug`, `log_frontend`
+- `src-tauri/src/logger.rs` - implementation: `error`, `audit`, `info`, `debug`, `log_frontend`
 - `src-tauri/src/remote_shell.rs` + `src-tauri/src/agent_usage/` — primary callers
 - `src/composables/usageMonitor.js` - frontend logger (`makeLogger`, `ulog`, dual-path); the tag carries the monitor's full identity (`USAGE:claudecode@hostB`) so two hosts are separable in one log
 - `docs/arch/usage-claudecode.md` - §“Cách đọc log khi debug”

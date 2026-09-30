@@ -10,8 +10,7 @@ Antigravity (IDE and `agy`) has every rule installed natively as `akirule-<topic
 
 ## GLOBAL TAURI STACK
 
-Generic Tauri v2 + Rust lessons, not specific to this project - copy this whole section verbatim
-into any new Tauri project's `CLAUDE.md`.
+Generic Tauri v2 + Rust lessons, not specific to this project - copy this whole section verbatim into any new Tauri project's `CLAUDE.md`.
 
 - **Titlebar sacred boundary**: `"decorations": false` + `"transparent": true` → no native titlebar. All `position: fixed/absolute` elements **must** start at `top: var(--titlebar-h)` (or your app's titlebar height), never `top: 0`. Window controls (drag/minimize/close) via JS `@tauri-apps/api/window`.
 - **Version SSOT**: `package.json` only. `tauri.conf.json` → `"version": "../package.json"`. Never hardcode version in `tauri.conf.json`. `Cargo.toml` has its own crate version (separate concern) and **must always be bumped to the same number in the same commit** - a mismatch between `package.json` and `Cargo.toml` is the same class of bug as a bad tag.
@@ -61,7 +60,7 @@ Root cause of the 1.9.3 regression that deleted the entire Antigravity multi-acc
 - **Feature changed?** Check `README.md` and `src/components/modals/IntroModal.vue` in the same task. English, terse.
 - **Titlebar height**: 42px (`var(--titlebar-h)`). Ref: `docs/ref/titlebar-sacred-boundary.md`
 - **Post-build rename**: `npm run build:app` (= `tauri build` + `scripts/post-build.js`), not raw `tauri build`. Output: `Aki-DevSync-vX.X.X.BUILD-arch.dmg` (e.g. `Aki-DevSync-v1.20.0.2346-uni.dmg`) - `BUILD` is `HHMM` at build time, or `$BUILD_NUM` if set. The `v` here is part of a *filename*, not a stored version value, so it does not conflict with the bare-semver rule above.
-- **Owner-local `build:app`**: run `./scripts/install-desktop.sh` (produce + sign + `/Applications`), identity `Aki Dev Sync Dev`, bundle id `aki.devsync`. `npm run build:app` is the produce step inside that script.
+- **Owner-local `build:app`**: run `npm run install:app` = `./scripts/install-desktop.sh` (produce + sign + `/Applications`), identity `Aki Dev Sync Dev`, bundle id `aki.devsync`. `npm run build:app` is the produce step inside that script.
 - **Testing a change**: `npm run tauri dev` (`npm run dev:debug` for `AKI_DEBUG` logs). It compiles Rust, so it is also the compile check - a release build is for shipping, never for verifying.
 - **Release build command**: when a release is requested on Mac, default to `npm run build:rmud` (universal dmg) - not `build:app`/`build:rmad` - unless the user asks for a different bundle.
 - **Release and tag via CLI**: check remote tags (`git ls-remote --tags origin | sort -V | tail -5`) and follow convention (`git tag X.Y.Z`), push (`git push && git push --tags`), then create GitHub release with DMG asset (`gh release create X.Y.Z <dmg_path> --title "X.Y.Z" --notes "<notes>"`).
