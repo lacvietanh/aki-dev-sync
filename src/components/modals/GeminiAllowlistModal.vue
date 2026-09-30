@@ -13,7 +13,7 @@
         file is touched, and re-running it is harmless.
       </p>
 
-      <div class="section-label">Target Hosts</div>
+      <div class="allowlist-section-label">Target Hosts</div>
       <div class="host-list">
         <label v-for="h in hostOptions" :key="h" class="host-chip" :class="{ active: selectedHosts.includes(h) }">
           <input type="checkbox" :value="h" v-model="selectedHosts" />
@@ -22,7 +22,7 @@
         <div v-if="hostOptions.length === 1" class="hint no-remotes">No remote hosts configured yet - add a project with a remote host to seed there too.</div>
       </div>
 
-      <div v-if="results.length" class="results-list">
+      <div v-if="results.length" class="results-list allowlist-results">
         <div v-for="r in results" :key="r.host" class="result-row" :class="r.ok ? 'ok' : 'err'">
           <i class="fa-solid" :class="r.ok ? 'fa-check-circle' : 'fa-triangle-exclamation'"></i>
           <span class="result-host">{{ r.host }}</span>
@@ -30,13 +30,13 @@
         </div>
       </div>
 
-      <div v-if="status.msg" class="status-msg" :class="status.err ? 'err' : 'ok'">
+      <div v-if="status.msg" class="status-msg allowlist-status" :class="status.err ? 'err' : 'ok'">
         <i class="fa-solid" :class="status.err ? 'fa-triangle-exclamation' : 'fa-check-circle'"></i>
         {{ status.msg }}
       </div>
     </div>
 
-    <div class="modal-footer">
+    <div class="modal-footer modal-footer-form">
       <button class="btn-modal-action btn-apply" @click="seedAllowlist" :disabled="busy || selectedHosts.length === 0" title="Merge the recommended allowlist into settings.json on the selected host(s). Only permissions.allow is touched.">
         <i class="fa-solid" :class="busy ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
         {{ busy ? 'Seeding…' : `Seed allowlist to ${selectedHosts.length} host${selectedHosts.length === 1 ? '' : 's'}` }}
@@ -103,7 +103,7 @@ async function seedAllowlist() {
 }
 .allowlist-blurb code { color: var(--slate-300); }
 
-.section-label {
+.allowlist-section-label {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -112,80 +112,10 @@ async function seedAllowlist() {
   margin-bottom: 6px;
 }
 
-.host-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.allowlist-results { margin-top: 10px; }
 
-.host-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: var(--slate-400);
-  background: var(--surface-faint);
-  border: 1px solid var(--border-color);
-  border-radius: 3px;
-  padding: 2px 5px;
-  cursor: pointer;
-}
-
-.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: var(--brand-wash); }
-
-.no-remotes { width: 100%; font-size: 10px; }
-
-.results-list { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
-
-.result-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  padding: 5px 8px;
-  border-radius: 5px;
-}
-
-.result-row.ok { background: var(--accent-green-wash); color: var(--emerald-400); }
-.result-row.err { background: var(--accent-red-wash); color: var(--red-400); }
-.result-host { font-weight: 700; flex-shrink: 0; }
-.result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.status-msg {
-  font-size: 11px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  line-height: 1.4;
+.allowlist-status {
   margin-top: 10px;
 }
 
-.status-msg i { margin-top: 1px; flex-shrink: 0; }
-
-.status-msg.ok {
-  background: var(--accent-green-wash);
-  color: var(--emerald-400);
-  border: 1px solid var(--accent-green-edge);
-}
-
-.status-msg.err {
-  background: var(--accent-red-wash);
-  color: var(--red-400);
-  border: 1px solid var(--accent-red-edge);
-}
-
-.modal-footer {
-  display: flex;
-  gap: 8px;
-  padding: 10px 16px 14px;
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.btn-apply {
-  flex: 1;
-  background: var(--brand-wash);
-  border-color: rgba(217, 119, 87, 0.45);
-  color: var(--brand);
-}
-
-.btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: var(--brand-light); }
 </style>

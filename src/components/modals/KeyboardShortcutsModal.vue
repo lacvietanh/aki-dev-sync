@@ -4,7 +4,7 @@
       <i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts
     </template>
 
-    <div class="modal-body">
+    <div class="modal-body shortcuts-body">
       <div class="shortcut-group" v-for="g in GROUPS" :key="g.title">
         <div class="shortcut-group-title">{{ g.title }}</div>
         <div class="shortcut-row" v-for="s in g.items" :key="s.key">
@@ -49,7 +49,7 @@ const GROUPS = [
 </script>
 
 <style scoped>
-.modal-body {
+.shortcuts-body {
   display: flex;
   flex-direction: column;
   gap: 12px;

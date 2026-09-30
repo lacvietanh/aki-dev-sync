@@ -2,12 +2,12 @@
   <div class="usage-column">
     <div class="column-header">
       <!-- Left: which category - LOCAL or REMOTE. -->
-      <div class="tab-group">
-        <button class="tab" :class="{ 'is-active': target.scope === 'local' }" title="Local" @click="setSlotTarget(slotId, { scope: 'local' })">
+      <div class="slot-tab-group">
+        <button class="slot-tab" :class="{ 'is-active': target.scope === 'local' }" title="Local" @click="setSlotTarget(slotId, { scope: 'local' })">
           <i class="fa-solid fa-laptop-code"></i> <span class="u-narrow-hide">LOCAL</span>
         </button>
         <button
-          class="tab"
+          class="slot-tab"
           :class="{ 'is-active': target.scope === 'remote' }"
           title="Remote"
           @click="setSlotTarget(slotId, { scope: 'remote' })"
@@ -17,11 +17,11 @@
       </div>
 
       <!-- Right: agent selection and remote host picker. -->
-      <div class="tab-group">
+      <div class="slot-tab-group">
         <button
           v-for="src in srcTabs"
           :key="src.key"
-          class="tab"
+          class="slot-tab"
           :class="{ 'is-active': activeAgentKey === src.key }"
           :title="powerTitle(src)"
           @click="setAgent(src.key)"
@@ -219,14 +219,14 @@ const slotAccountInfo = computed(() => {
   border-bottom: 1px dashed var(--border-color);
 }
 
-.tab-group {
+.slot-tab-group {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
 }
 
-.tab {
+.slot-tab {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -242,10 +242,10 @@ const slotAccountInfo = computed(() => {
   opacity: 0.6;
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
-.tab:hover {
+.slot-tab:hover {
   opacity: 0.9;
 }
-.tab.is-active {
+.slot-tab.is-active {
   opacity: 1;
   background: var(--blue-400-wash);
   color: var(--gray-200);
@@ -267,7 +267,7 @@ const slotAccountInfo = computed(() => {
 
 /* Tighten icon-only tab padding in narrow mode (labels hidden by .u-narrow-hide). */
 @container main-view (max-width: 700px) {
-  .tab {
+  .slot-tab {
     padding: 3px 5px;
     gap: 2px;
   }

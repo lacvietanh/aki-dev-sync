@@ -189,7 +189,7 @@ async function handleCommit() {
 .large-input {
   width: 100%;
   padding: 8px 12px;
-  background: rgba(5, 7, 12, 0.6);
+  background: var(--scrim);
   border: 1px solid var(--border-color);
   color: var(--text-light, var(--text-light));
   border-radius: 4px;

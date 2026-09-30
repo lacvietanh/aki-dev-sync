@@ -91,12 +91,38 @@
   --accent-red-edge: rgba(239, 68, 68, 0.25);
   --accent-red-glow: rgba(239, 68, 68, 0.35);
   --accent-red-wash: rgba(239, 68, 68, 0.12);
+  /* Side identity: local = amber (PUSH sends local out), remote = blue (PULL brings remote in). Every UI element that stands for "the local side / the remote side / push / pull" takes these, never the raw accent, so the pairing changes in one place. */
+  --color-local: var(--accent-amber);
+  --color-local-edge: var(--accent-amber-edge);
+  --color-local-glow: var(--accent-amber-glow);
+  --color-local-wash: var(--accent-amber-wash);
+  --color-remote: var(--accent-blue);
+  --color-remote-edge: rgba(0, 136, 255, 0.25);
+  --color-remote-glow: rgba(0, 136, 255, 0.35);
+  --color-remote-wash: var(--accent-blue-wash);
   --amber-500-edge: rgba(245, 158, 11, 0.25);
   --blue-400-edge: rgba(96, 165, 250, 0.25);
   --blue-400-wash: rgba(96, 165, 250, 0.12);
   --border-strong: rgba(255, 255, 255, 0.18);
   --brand-wash: rgba(217, 119, 87, 0.12);
   --shadow-ink: rgba(0, 0, 0, 0.5);
+  /* Role tokens minted for values used 3+ times in the same role (ui.A4); each keeps its exact original value, and those tinted from a base color mirror it - change both together. */
+  --glass-strong: rgba(10, 15, 22, 0.95); /* dark panel surface, near-opaque */
+  --glass: rgba(15, 20, 30, 0.6); /* dark panel surface, translucent */
+  --scrim: rgba(5, 7, 12, 0.6); /* dimming layer behind overlays */
+  --scrim-strong: rgba(5, 7, 12, 0.95); /* near-opaque dimming layer */
+  --text-faint: rgba(255, 255, 255, 0.35); /* faintest readable text on dark */
+  --text-soft: rgba(255, 255, 255, 0.8); /* secondary text on dark */
+  --border-bright: rgba(255, 255, 255, 0.4); /* emphasised hairline border */
+  --shade-strong: rgba(0, 0, 0, 0.8); /* black text halo / heavy dim */
+  --shade: rgba(0, 0, 0, 0.4); /* black light dim / soft drop */
+  --accent-red-halo: rgba(239, 68, 68, 0.5); /* strong red glow, mirrors --accent-red */
+  --accent-cyan-halo: rgba(0, 210, 255, 0.5); /* strong cyan glow, mirrors --accent-cyan */
+  --accent-cyan-line: rgba(0, 210, 255, 0.4); /* cyan line/border, mirrors --accent-cyan */
+  --blue-400-line: rgba(96, 165, 250, 0.55); /* blue line/border, mirrors --blue-400 */
+  --brand-line: rgba(217, 119, 87, 0.45); /* brand line/border, mirrors --brand */
+  --brand-edge: rgba(217, 119, 87, 0.25); /* brand tinted border, mirrors --brand */
+  --surface-panel: #1a1a24; /* settings-modal panel surface */
   --surface-faint: rgba(255, 255, 255, 0.03);
   --surface-hover: rgba(255, 255, 255, 0.08);
 }
@@ -137,7 +163,7 @@ a {
 }
 
 .icon-glow {
-  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.18));
+  filter: drop-shadow(0 0 2px var(--border-strong));
 }
 
 .ml-1 {
@@ -228,7 +254,7 @@ a {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: rgba(5, 7, 12, 0.95);
+  background: var(--scrim-strong);
   transition: height var(--dock-ease);
   border-top: 1px solid var(--accent-cyan-edge);
   box-shadow: 0 -4px 20px var(--shadow-ink);
@@ -328,7 +354,7 @@ a {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: rgba(5, 7, 12, 0.95);
+  background: var(--scrim-strong);
 }
 
 .top-header {
@@ -338,7 +364,7 @@ a {
   height: var(--titlebar-h);
   padding: 0 8px;
   background: linear-gradient(90deg, rgba(5, 7, 12, 1) 0%, rgba(15, 20, 30, 0.9) 100%);
-  border-bottom: 1px solid rgba(0, 210, 255, 0.4);
+  border-bottom: 1px solid var(--accent-cyan-line);
   -webkit-app-region: drag;
   box-shadow: 0 4px 15px rgba(0, 210, 255, 0.1);
 }
@@ -401,7 +427,7 @@ a {
 .close-btn:hover {
   background-color: rgba(239, 68, 68, 0.9);
   color: var(--white);
-  box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.5);
+  box-shadow: inset 0 0 8px var(--accent-red-halo);
 }
 
 /* Button System Pattern */
@@ -418,7 +444,7 @@ a {
   height: var(--control-h);
   box-sizing: border-box;
   border-radius: var(--radius-control);
-  background: rgba(15, 20, 30, 0.6);
+  background: var(--glass);
   border: 1px solid var(--border-color);
   color: var(--white);
   cursor: pointer;
@@ -439,7 +465,7 @@ a {
 }
 
 .btn-tech-primary {
-  border-color: rgba(0, 210, 255, 0.4);
+  border-color: var(--accent-cyan-line);
   color: var(--accent-cyan);
 }
 
@@ -457,15 +483,10 @@ a {
 .btn-tech-secondary:hover:not(:disabled) {
   color: var(--white);
   background: var(--surface-hover);
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: var(--border-bright);
 }
 
 /* Table */
-.projects-table-container {
-  flex: 1;
-  overflow-y: auto;
-}
-
 .row-syncing td {
   background: rgba(6, 182, 212, 0.05);
 }
@@ -599,7 +620,7 @@ input:checked+.slider:before {
 
 .dry-group.is-danger {
   background: rgba(239, 68, 68, 0.05);
-  border-color: rgba(239, 68, 68, 0.5);
+  border-color: var(--accent-red-halo);
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
 }
 
@@ -654,16 +675,16 @@ input:checked+.slider:before {
 }
 
 .btn-tech-pull {
-  background-color: var(--accent-blue);
+  background-color: var(--color-remote);
   border: 1px solid var(--black);
   color: var(--text-light);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 3px var(--shade-strong);
   box-shadow: 0 2px 5px var(--shadow-ink);
 }
 
 .btn-tech-pull:hover:not(:disabled) {
-  background-color: #1a9cff;
-  box-shadow: 0 0 10px rgba(0, 136, 255, 0.6), 0 2px 5px var(--shadow-ink);
+  background-color: color-mix(in srgb, var(--color-remote), white 12%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-remote) 60%, transparent), 0 2px 5px var(--shadow-ink);
   transform: translateY(-1px);
 }
 
@@ -673,39 +694,39 @@ input:checked+.slider:before {
 
 .btn-tech-pull.btn-sync-clean {
   background-color: transparent;
-  border-color: rgba(0, 136, 255, 0.5);
-  color: rgba(0, 136, 255, 0.75);
+  border-color: color-mix(in srgb, var(--color-remote) 50%, transparent);
+  color: color-mix(in srgb, var(--color-remote) 75%, transparent);
   text-shadow: none;
   box-shadow: none;
 }
 
 .btn-tech-pull.btn-sync-clean:hover:not(:disabled) {
-  background-color: var(--accent-blue-wash);
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-  box-shadow: 0 0 8px rgba(0, 136, 255, 0.3);
+  background-color: var(--color-remote-wash);
+  border-color: var(--color-remote);
+  color: var(--color-remote);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-remote) 30%, transparent);
   transform: translateY(-1px);
 }
 
 .btn-tech-pull.btn-sync-checking {
   background-color: transparent;
-  border-color: rgba(0, 136, 255, 0.2);
-  color: rgba(0, 136, 255, 0.35);
+  border-color: color-mix(in srgb, var(--color-remote) 20%, transparent);
+  color: color-mix(in srgb, var(--color-remote) 35%, transparent);
   text-shadow: none;
   box-shadow: none;
 }
 
 .btn-tech-push {
-  background-color: var(--accent-amber);
+  background-color: var(--color-local);
   border: 1px solid var(--black);
   color: var(--text-light);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 3px var(--shade-strong);
   box-shadow: 0 2px 5px var(--shadow-ink);
 }
 
 .btn-tech-push:hover:not(:disabled) {
-  background-color: #FFA500;
-  box-shadow: 0 0 10px rgba(255, 140, 0, 0.6), 0 2px 5px var(--shadow-ink);
+  background-color: color-mix(in srgb, var(--color-local), white 12%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-local) 60%, transparent), 0 2px 5px var(--shadow-ink);
   transform: translateY(-1px);
 }
 
@@ -715,24 +736,24 @@ input:checked+.slider:before {
 
 .btn-tech-push.btn-sync-clean {
   background-color: transparent;
-  border-color: rgba(255, 140, 0, 0.5);
-  color: rgba(255, 140, 0, 0.75);
+  border-color: color-mix(in srgb, var(--color-local) 50%, transparent);
+  color: color-mix(in srgb, var(--color-local) 75%, transparent);
   text-shadow: none;
   box-shadow: none;
 }
 
 .btn-tech-push.btn-sync-clean:hover:not(:disabled) {
-  background-color: var(--accent-amber-wash);
-  border-color: var(--accent-amber);
-  color: var(--accent-amber);
-  box-shadow: 0 0 8px var(--accent-amber-glow);
+  background-color: var(--color-local-wash);
+  border-color: var(--color-local);
+  color: var(--color-local);
+  box-shadow: 0 0 8px var(--color-local-glow);
   transform: translateY(-1px);
 }
 
 .btn-tech-push.btn-sync-checking {
   background-color: transparent;
-  border-color: var(--accent-amber-edge);
-  color: rgba(255, 140, 0, 0.35);
+  border-color: var(--color-local-edge);
+  color: color-mix(in srgb, var(--color-local) 35%, transparent);
   text-shadow: none;
   box-shadow: none;
 }
@@ -749,7 +770,7 @@ input:checked+.slider:before {
   box-sizing: border-box;
   border-radius: var(--radius-control);
   border: 1px solid var(--border-strong);
-  background: rgba(15, 20, 30, 0.6);
+  background: var(--glass);
   color: var(--text-muted);
   font-size: 13px;
   cursor: pointer;
@@ -758,7 +779,7 @@ input:checked+.slider:before {
 
 .btn-cell-trigger:hover {
   color: var(--accent-cyan);
-  border-color: rgba(0, 210, 255, 0.5);
+  border-color: var(--accent-cyan-halo);
   background: var(--accent-cyan-wash);
   box-shadow: 0 0 10px var(--accent-cyan-glow);
 }
@@ -772,7 +793,7 @@ input:checked+.slider:before {
 /* "This panel has something live in it", shown by the button's own colour, never an extra element (Extreme Narrow). Cyan is the neutral/terminal reading, amber the attention one (task in progress). */
 .btn-cell-trigger.is-live {
   color: var(--accent-cyan);
-  border-color: rgba(0, 210, 255, 0.5);
+  border-color: var(--accent-cyan-halo);
 }
 
 .btn-cell-trigger.is-attention {
@@ -860,7 +881,7 @@ input:checked+.slider:before {
   /* Extreme Narrow: 2px top/bottom is the whole vertical breathing room; the row's real height is set by its tallest child (.btn-terminal-action's inherited .btn-tech height, i.e. --control-h), not this padding. */
   padding: 2px 12px;
   border-bottom: 1px solid var(--border-card);
-  background: rgba(10, 15, 22, 0.95);
+  background: var(--glass-strong);
 }
 
 .terminal-title {
@@ -928,6 +949,138 @@ input:checked+.slider:before {
   top: calc(anchor(bottom) + 4px);
 }
 
+/* Read-only "Sync Changes" popover: native popover + anchor positioning below its badge, clamped 8px off both window edges (docs/plan/conflict-detection-and-agy-report.md §4 + Amendments). */
+.conflict-popup {
+  --conflict-popup-w: min(360px, calc(100vw - 16px));
+  position: fixed;
+  inset: auto;
+  top: calc(anchor(bottom) + 4px);
+  left: clamp(8px, calc(anchor(right) - var(--conflict-popup-w)), calc(100vw - var(--conflict-popup-w) - 8px));
+  translate: 0 0;
+  margin: 0;
+  width: var(--conflict-popup-w);
+  z-index: 80;
+  background: rgba(22, 30, 44, 0.98);
+  color: inherit;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  font-size: 11px;
+}
+
+.conflict-popup-header {
+  font-weight: 700;
+  color: var(--text-light);
+  margin-bottom: 6px;
+}
+
+/* Two equal columns: PUSH (local side) | PULL (remote side). */
+.conflict-popup-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.conflict-popup-side {
+  min-width: 0;
+  padding: 4px 6px;
+  border-top: 2px solid var(--side-color);
+  border-radius: 4px;
+  background: var(--side-wash);
+}
+
+.conflict-popup-side.is-push {
+  --side-color: var(--color-local);
+  --side-wash: var(--color-local-wash);
+}
+
+.conflict-popup-side.is-pull {
+  --side-color: var(--color-remote);
+  --side-wash: var(--color-remote-wash);
+}
+
+.conflict-popup-side-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: var(--side-color);
+}
+
+.conflict-popup-side-head b {
+  margin-left: auto;
+}
+
+.conflict-popup-side-sub {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.conflict-popup-side-note {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.conflict-popup-conflicts {
+  margin-bottom: 6px;
+}
+
+.conflict-popup-conflicts-head {
+  font-weight: 700;
+  color: var(--accent-amber);
+  margin-bottom: 2px;
+}
+
+.conflict-popup-rows {
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.conflict-popup-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border-card);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.conflict-row-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conflict-row-meta {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.conflict-row-empty {
+  color: var(--text-darker);
+  padding: 2px 0;
+}
+
+.conflict-explain-row {
+  display: flex;
+  gap: 4px;
+}
+
+.conflict-explain-btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.conflict-explain-error {
+  margin-top: 6px;
+  color: var(--accent-red);
+  overflow-wrap: anywhere;
+}
+
 .popup-item {
   display: flex;
   align-items: center;
@@ -935,7 +1088,7 @@ input:checked+.slider:before {
   padding: 5px 12px;
   cursor: pointer;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-soft);
   transition: background 0.12s;
 }
 
@@ -991,7 +1144,7 @@ input:checked+.slider:before {
   color: var(--cyan-200);
   white-space: pre-wrap;
   word-break: break-all;
-  background: rgba(5, 7, 12, 0.95);
+  background: var(--scrim-strong);
 }
 
 .log-line {
@@ -1002,7 +1155,7 @@ input:checked+.slider:before {
 .log-error {
   color: var(--accent-red);
   font-weight: 700;
-  text-shadow: 0 0 5px rgba(239, 68, 68, 0.5);
+  text-shadow: 0 0 5px var(--accent-red-halo);
 }
 
 
@@ -1025,7 +1178,7 @@ input:checked+.slider:before {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--shade-strong);
   backdrop-filter: blur(4px);
   display: flex;
   justify-content: center;
@@ -1057,7 +1210,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-card);
-  background: rgba(10, 15, 22, 0.95);
+  background: var(--glass-strong);
   backdrop-filter: blur(10px);
   border-radius: 8px 8px 0 0;
 }
@@ -1091,7 +1244,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   border-top: 1px solid var(--border-card);
   display: flex;
   justify-content: space-between;
-  background: rgba(10, 15, 22, 0.95);
+  background: var(--glass-strong);
   border-radius: 0 0 8px 8px;
 }
 
@@ -1138,7 +1291,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  background: rgba(15, 20, 30, 0.6);
+  background: var(--glass);
   padding: 6px 16px;
   border-radius: var(--radius-control);
   font-size: 11px;
@@ -1155,7 +1308,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 .btn-secondary:hover {
   color: var(--white);
   background: var(--surface-hover);
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: var(--border-bright);
 }
 
 .btn-save,
@@ -1165,7 +1318,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 
 .btn-save {
   color: var(--accent-cyan);
-  border: 1px solid rgba(0, 210, 255, 0.4);
+  border: 1px solid var(--accent-cyan-line);
 }
 
 .btn-save:hover:not(:disabled) {
@@ -1303,13 +1456,13 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
 }
 
 .pull-group {
-  border: 2px solid var(--accent-blue);
-  background: rgba(59, 130, 246, 0.08);
+  border: 2px solid var(--color-remote);
+  background: color-mix(in srgb, var(--color-remote) 8%, transparent);
 }
 
 .push-group {
-  border: 2px solid var(--accent-amber);
-  background: rgba(245, 158, 11, 0.08);
+  border: 2px solid var(--color-local);
+  background: color-mix(in srgb, var(--color-local) 8%, transparent);
   margin-top: 10px;
 }
 
@@ -1320,34 +1473,29 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   letter-spacing: 0.5px;
 }
 
-.text-blue {
-  color: var(--blue-400) !important;
-  font-weight: 700;
-}
-
 .text-amber {
   color: var(--amber-400) !important;
   font-weight: 700;
 }
 
 .border-pull {
-  border: 1px solid rgba(59, 130, 246, 0.5) !important;
-  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid color-mix(in srgb, var(--color-remote) 50%, transparent) !important;
+  background: var(--shade) !important;
 }
 
 .border-pull:focus {
-  border-color: var(--accent-blue) !important;
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  border-color: var(--color-remote) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-remote) 50%, transparent);
 }
 
 .border-push {
-  border: 1px solid rgba(245, 158, 11, 0.5) !important;
-  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid color-mix(in srgb, var(--color-local) 50%, transparent) !important;
+  background: var(--shade) !important;
 }
 
 .border-push:focus {
-  border-color: var(--accent-amber) !important;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+  border-color: var(--color-local) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-local) 50%, transparent);
 }
 
 .mb-1 {
@@ -1392,7 +1540,7 @@ body.swal2-toast-shown .swal2-container.swal2-top-end {
   font-size: 13px;
   line-height: 1.5;
   padding: 16px;
-  background: rgba(5, 7, 12, 0.6);
+  background: var(--scrim);
   border: 1px solid var(--border-color);
   color: var(--cyan-200);
   border-radius: 6px;
@@ -1564,3 +1712,191 @@ html.fx-glass .terminal-header {
 .modal-title-icon { width: 18px; height: 18px; border-radius: 3px; object-fit: contain; }
 .modal-title-glyph { font-size: 18px; }
 .row-gap-8 { display: flex; gap: 8px; }
+
+/* Terminal key row and compose bar - shared by TerminalView and SimpleView */
+/* Key row — same CSS as TerminalView.vue, shared class names. */
+.pty-key-row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 2px;
+  padding: 2px 4px;
+  border-top: 1px solid var(--border-color);
+  background: var(--surface-faint);
+  flex-shrink: 0;
+}
+
+.pty-key {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  font-size: 10px;
+  line-height: 1;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pty-key.is-armed {
+  color: var(--bg-primary);
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+/* Compose row — same CSS as TerminalView.vue. */
+.pty-compose-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border-color);
+  background: var(--surface-faint);
+  flex-shrink: 0;
+}
+
+.pty-compose-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-light);
+  resize: none;
+  overflow-y: auto;
+  max-height: 5.5em;
+  field-sizing: content;
+}
+
+.pty-compose-input::placeholder {
+  color: var(--text-muted);
+}
+
+.pty-compose-input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+}
+
+.pty-compose-send {
+  font-size: 12px;
+}
+
+/* Remote host picker, per-host result rows and apply button - shared by ClaudeSettingModal and GeminiAllowlistModal */
+.host-list { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Square, tight, data-dense - a pill with 10px side padding spent most of its width on air. */
+.host-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--slate-400);
+  background: var(--surface-faint);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 2px 5px;
+  cursor: pointer;
+}
+
+.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: var(--brand-wash); }
+
+.no-remotes { width: 100%; font-size: 10px; }
+
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  padding: 5px 8px;
+  border-radius: 5px;
+}
+
+.result-row.ok { background: var(--accent-green-wash); color: var(--emerald-400); }
+
+.result-row.err { background: var(--accent-red-wash); color: var(--red-400); }
+
+.result-host { font-weight: 700; flex-shrink: 0; }
+
+.result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.btn-apply {
+  flex: 1;
+  background: var(--brand-wash);
+  border-color: var(--brand-line);
+  color: var(--brand);
+}
+
+.btn-apply:hover:not(:disabled) { background: var(--brand-edge); color: var(--brand-light); }
+
+/* Scope tag - shared by ClaudeCleanupModal and ClaudeProfileModal */
+.scope-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--slate-400);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.3px;
+  margin-left: 2px;
+}
+
+.scope-tag i {
+  color: var(--slate-400);
+  font-size: 9px;
+}
+
+/* Intro note - shared by AiSettingsModal and RefreshSettingsModal */
+.intro-note { font-size: 12px; margin-bottom: 16px; }
+
+/* Modal status message variants - shared by the four Claude/Gemini modals; base rule follows */
+.status-msg i {
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.status-msg.ok {
+  background: var(--accent-green-wash);
+  color: var(--emerald-400);
+  border: 1px solid var(--accent-green-edge);
+}
+
+.status-msg.err {
+  background: var(--accent-red-wash);
+  color: var(--red-400);
+  border: 1px solid var(--accent-red-edge);
+}
+
+.status-msg {
+  font-size: 11px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  line-height: 1.4;
+  /* Rust errors come through here verbatim - a long unbroken path must not widen the modal. */
+  overflow-wrap: anywhere;
+}
+
+/* Footer of the form-style modals (Claude cleanup/profile/setting, Gemini allowlist): layered on the base .modal-footer, declared after it so it wins at equal specificity. */
+.modal-footer-form {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

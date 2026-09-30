@@ -438,44 +438,12 @@ defineExpose({
   scrollbar-width: thin;
 }
 
-/* Compact key bar for mobile and companion views. */
-.pty-key-row {
-  display: flex;
-  /* Prevents key row wrapping on narrow mobile screens. */
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 2px;
-  padding: 2px 4px;
-  border-top: 1px solid var(--border-color);
-  background: var(--surface-faint);
-  flex-shrink: 0;
-}
-
-.pty-key {
-  flex: 0 0 auto;
-  padding: 3px 5px;
-  font-size: 10px;
-  line-height: 1;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
 /* Restricts hover styles to pointer devices to avoid sticky hover states on touch screens. */
 @media (hover: hover) {
   .pty-key:hover {
     color: var(--text-light);
     border-color: var(--accent-cyan);
   }
-}
-
-/* Active state styling when modifier key is latched. */
-.pty-key.is-armed {
-  color: var(--bg-primary);
-  background: var(--accent-cyan);
-  border-color: var(--accent-cyan);
 }
 
 /* Hairline separator between key groups. */
@@ -486,45 +454,4 @@ defineExpose({
   background: var(--border-color);
 }
 
-/* Input row for IME composition under the key bar. */
-.pty-compose-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-top: 1px solid var(--border-color);
-  background: var(--surface-faint);
-  flex-shrink: 0;
-}
-
-/* Auto-sizing compose textarea supporting multi-line input up to max height. */
-.pty-compose-input {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 8px;
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-light);
-  resize: none;
-  overflow-y: auto;
-  max-height: 5.5em;
-  field-sizing: content;
-}
-
-.pty-compose-input::placeholder {
-  color: var(--text-muted);
-}
-
-.pty-compose-input:focus {
-  outline: none;
-  border-color: var(--accent-cyan);
-}
-
-.pty-compose-send {
-  font-size: 12px;
-}
 </style>

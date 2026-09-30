@@ -19,7 +19,7 @@
       </div>
     </template>
 
-    <div class="modal-body">
+    <div class="modal-body setting-body">
             <div class="preview-box">
               <!-- u-select-text (main.css): line opts out of app-wide no-selection default for easy copying. -->
               <pre class="preview-line u-select-text" v-html="previewHtml"></pre>
@@ -179,7 +179,7 @@
               <div v-if="hostOptions.length === 1" class="hint no-remotes">No remote hosts configured yet - add a project with a remote host to push there too.</div>
             </div>
 
-            <div v-if="results.length" class="results-list">
+            <div v-if="results.length" class="results-list setting-results">
               <div v-for="r in results" :key="r.host" class="result-row" :class="r.ok ? 'ok' : 'err'">
                 <i class="fa-solid" :class="r.ok ? 'fa-check-circle' : 'fa-triangle-exclamation'"></i>
                 <span class="result-host">{{ r.host }}</span>
@@ -193,7 +193,7 @@
             </div>
           </div>
 
-          <div class="modal-footer">
+          <div class="modal-footer modal-footer-form">
             <button class="btn-modal-action btn-reset" @click="resetToDefault" :disabled="busy" title="Reload the built-in default preset">
               <i class="fa-solid fa-arrow-rotate-left"></i> Reset
             </button>
@@ -911,7 +911,7 @@ const previewHtml = computed(() => {
 </script>
 
 <style scoped>
-.modal-body {
+.setting-body {
   padding: 14px 16px 10px;
   display: flex;
   flex-direction: column;
@@ -1330,24 +1330,6 @@ const previewHtml = computed(() => {
 .row-enter-from, .row-leave-to { opacity: 0; }
 .row-leave-active { position: absolute; }
 
-.host-list { display: flex; flex-wrap: wrap; gap: 4px; }
-
-/* Square, tight, data-dense - a pill with 10px side padding spent most of its width on air. */
-.host-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: var(--slate-400);
-  background: var(--surface-faint);
-  border: 1px solid var(--border-color);
-  border-radius: 3px;
-  padding: 2px 5px;
-  cursor: pointer;
-}
-
-.host-chip.active { color: var(--brand-light); border-color: rgba(217, 119, 87, 0.4); background: var(--brand-wash); }
-
 /* Per-CLI state inside chip: lit = renders line, hollow amber = unwired, distinct from swatch. */
 .cli-tag {
   font-size: 8px;
@@ -1361,55 +1343,7 @@ const previewHtml = computed(() => {
 .cli-tag.on { color: var(--slate-900); background: #4ade80; }
 .cli-tag.off { color: var(--amber-400); border-color: rgba(251, 191, 36, 0.55); background: transparent; }
 
-.no-remotes { width: 100%; font-size: 10px; }
-
-.results-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-
-.result-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  padding: 5px 8px;
-  border-radius: 5px;
-}
-
-.result-row.ok { background: var(--accent-green-wash); color: var(--emerald-400); }
-.result-row.err { background: var(--accent-red-wash); color: var(--red-400); }
-.result-host { font-weight: 700; flex-shrink: 0; }
-.result-msg { color: var(--slate-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.status-msg {
-  font-size: 11px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  line-height: 1.4;
-}
-
-.status-msg i { margin-top: 1px; flex-shrink: 0; }
-
-.status-msg.ok {
-  background: var(--accent-green-wash);
-  color: var(--emerald-400);
-  border: 1px solid var(--accent-green-edge);
-}
-
-.status-msg.err {
-  background: var(--accent-red-wash);
-  color: var(--red-400);
-  border: 1px solid var(--accent-red-edge);
-}
-
-.modal-footer {
-  display: flex;
-  gap: 8px;
-  padding: 10px 16px 14px;
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
+.setting-results { margin-top: 4px; }
 
 .btn-reset {
   background: var(--surface-faint);
@@ -1418,15 +1352,6 @@ const previewHtml = computed(() => {
 }
 
 .btn-reset:hover:not(:disabled) { background: var(--surface-hover); color: var(--slate-400); }
-
-.btn-apply {
-  flex: 1;
-  background: var(--brand-wash);
-  border-color: rgba(217, 119, 87, 0.45);
-  color: var(--brand);
-}
-
-.btn-apply:hover:not(:disabled) { background: rgba(217, 119, 87, 0.25); color: var(--brand-light); }
 
 .modal-title-wrap {
   display: inline-flex;

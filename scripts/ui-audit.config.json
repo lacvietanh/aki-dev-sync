@@ -1,0 +1,1691 @@
+{
+  "exceptions": [
+    {
+      "rule": "arbitrary-class-value",
+      "file": "scripts/fixtures/ui-audit/positive.vue",
+      "match": "w-[123px]",
+      "owner": "UI",
+      "reason": "audit fixture: the positive case the detector must flag"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "scripts/fixtures/ui-audit/positive.vue",
+      "match": "style=\"color:red\"",
+      "owner": "UI",
+      "reason": "audit fixture: the positive case the detector must flag"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "scripts/tests/audit-ui-architecture.test.mjs",
+      "match": "#abc",
+      "owner": "UI",
+      "reason": "test input asserting the detector flags this literal"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "#050508",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "#7928CA",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "#FF007A",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "#a7f3d0",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(0, 0, 0, 0.15)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(0, 0, 0, 0.3)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(0, 0, 0, 0.7)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(0, 210, 255, 0.1)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(0, 210, 255, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(0, 210, 255, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(121, 40, 202, 0.3)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(15, 20, 30, 0.9)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(16, 185, 129, 0.05)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(16, 185, 129, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(16, 185, 129, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(217, 119, 87, 0.4)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(22, 30, 44, 0.98)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(239, 68, 68, 0.05)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(239, 68, 68, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(239, 68, 68, 0.4)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(239, 68, 68, 0.9)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(255, 0, 122, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(255, 140, 0, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(255, 255, 255, 0.02)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(255, 255, 255, 0.15)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(255, 255, 255, 0.3)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(255, 255, 255, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(5, 7, 12, 1)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(59, 130, 246, 0.7)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/assets/main.css",
+      "match": "rgba(6, 182, 212, 0.05)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "#1a1d23",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "#93c5fd",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "#c084fc",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "#fdba74",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(147, 197, 253, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(192, 132, 252, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(251, 146, 60, 0.35)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(251, 146, 60, 0.55)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(251, 146, 60, 0.75)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(255, 255, 255, 0.04)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(255, 255, 255, 0.22)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(255, 255, 255, 0.88)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(34, 197, 94, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(34, 211, 238, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(37, 99, 235, 0.12)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsage.vue",
+      "match": "rgba(6, 182, 212, 0.1)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsageSection.vue",
+      "match": "rgba(22, 22, 26, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AgentUsageSection.vue",
+      "match": "rgba(255, 255, 255, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "#16161a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "#1a0f0f",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "#1a1d23",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "#2a1414",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "#fb7185",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "#fca5a5",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(0, 210, 255, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(0, 210, 255, 0.45)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(148, 163, 184, 0.55)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(239, 68, 68, 0)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(239, 68, 68, 0.4)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(239, 68, 68, 0.7)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(251, 113, 133, 0.12)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(251, 113, 133, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/AppHeader.vue",
+      "match": "rgba(255, 255, 255, 0.04)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/CountBadgeWrap.vue",
+      "match": "rgba(255, 255, 255, 0.85)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/CountBadgeWrap.vue",
+      "match": "rgba(255, 255, 255, 0.95)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/DialogHost.vue",
+      "match": "#131317",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/DialogHost.vue",
+      "match": "#374151",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/DialogHost.vue",
+      "match": "#F3F4F6",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#14161a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#1c1f26",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#2563eb",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#2c313b",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#4ea1ff",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#6b7482",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#98a1b0",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/PairingGate.vue",
+      "match": "#e6e8ec",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "#78350f",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "#7f1d1d",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "#b45309",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(0, 0, 0, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(0, 0, 0, 0.45)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(16, 185, 129, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(239, 68, 68, 0.75)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(245, 158, 11, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(245, 158, 11, 0.9)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(251, 146, 60, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(251, 146, 60, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(255, 140, 0, 0.6)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/ProjectTable.vue",
+      "match": "rgba(6, 182, 212, 0.05)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/RefreshRing.vue",
+      "match": "rgba(255, 255, 255, 0.06)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/RefreshRing.vue",
+      "match": "rgba(6, 182, 212, 0.55)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#0088ff",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#00d2ff",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#05070c",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#0A0F16",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#10b981",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#6B7280",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#F3F4F6",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#a855f7",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#ef4444",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "#ff8c00",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/TerminalView.vue",
+      "match": "rgba(0, 210, 255, 0.25)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/UsageCircle.vue",
+      "match": "rgba(18, 18, 22, 0.95)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/UsageCircle.vue",
+      "match": "rgba(255, 255, 255, 0.15)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/UsageCircle.vue",
+      "match": "rgba(255, 255, 255, 0.22)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/UsageCircle.vue",
+      "match": "rgba(255, 255, 255, 0.88)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/AiSettingsModal.vue",
+      "match": "container-style=\"max-width: 440px\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "#1a1a1a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "#3f4a5a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "#d19a4a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "#f5c4ae",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "rgba(217, 119, 87, 0.35)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "rgba(239, 68, 68, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "rgba(239, 68, 68, 0.3)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "match": "container-style=\"width: 440px; max-width: calc(100vw - 32px);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeProfileModal.vue",
+      "match": "rgba(217, 119, 87, 0.5)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeProfileModal.vue",
+      "match": "container-style=\"width: 360px; max-width: calc(100vw - 32px);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#000000",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#0087FF",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#080808",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#1e293b",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#334155",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#374151",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#38bdf8",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#4ade80",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#EEEEEE",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#FF8700",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "#d0d0d0",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "rgba(251, 191, 36, 0.55)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "rgba(255, 255, 255, 0.3)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "rgba(255, 255, 255, 0.45)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "rgba(255, 255, 255, 0.65)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "container-style=\"width: 90vw; max-width: 1100px;\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "style=\"background:${bgHex};color:${fgHex};padding:0 3px\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "style=\"background:${bg}\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "style=\"color:#374151\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "match": "style=\"color:${hex}${bold ? ';font-weight:700' : ''}\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/DonateModal.vue",
+      "match": "container-style=\"width: 340px; max-width: calc(100vw - 32px);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GeminiAllowlistModal.vue",
+      "match": "container-style=\"width: 440px; max-width: calc(100vw - 32px);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#06b6d4",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#0d1117",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#30363d",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#3b82f6",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#d946ef",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#e6edf3",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "#f59e0b",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "rgba(5, 7, 12, 0.8)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"color: #06b6d4;\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"color: #3b82f6;\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"color: #d946ef;\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"color: #f59e0b;\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"color: var(--accent-green, #10b981);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"color: var(--accent-red, #ef4444);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/GitModal.vue",
+      "match": "style=\"font-weight: bold;\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/GlobalNoteModal.vue",
+      "match": "#0d1117",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "#06b6d4",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "#14b8a6",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "#ec4899",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "#f97316",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(110, 231, 183, 0.04)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(110, 231, 183, 0.15)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(167, 139, 250, 0.05)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(167, 139, 250, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(255, 255, 255, 0.45)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(5, 7, 12, 0.4)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(59, 130, 246, 0.05)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/IntroModal.vue",
+      "match": "rgba(59, 130, 246, 0.2)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/KeyboardShortcutsModal.vue",
+      "match": "container-style=\"width: 360px; max-width: calc(100vw - 32px);\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ProjectConfigModal.vue",
+      "match": "#a7f3d0",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ProjectConfigModal.vue",
+      "match": "rgba(0, 0, 0, 0.3)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ProjectConfigModal.vue",
+      "match": "rgba(148, 163, 184, 0.08)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/ProjectConfigModal.vue",
+      "match": "rgba(16, 185, 129, 0.04)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/modals/RefreshSettingsModal.vue",
+      "match": "#1e2030",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/RefreshSettingsModal.vue",
+      "match": "container-style=\"max-width: 440px\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/modals/RemoteSettingsModal.vue",
+      "match": "container-style=\"max-width: 520px\"",
+      "owner": "UI",
+      "reason": "BaseModal container-style width prop, or runtime-generated HTML string (v-html) that has no scoped class"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/tasks/TaskCountBadges.vue",
+      "match": "#04121a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/tasks/TaskCountBadges.vue",
+      "match": "#1a1000",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/tasks/TaskListPanel.vue",
+      "match": "rgba(0, 0, 0, 0.15)",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/terminal/TerminalChromeMenu.vue",
+      "match": "style=\"anchor-name: --chrome-menu-anchor\"",
+      "owner": "UI",
+      "reason": "CSS anchor-positioning names must be set per element in the template"
+    },
+    {
+      "rule": "static-inline-style",
+      "file": "src/components/terminal/TerminalChromeMenu.vue",
+      "match": "style=\"position-anchor: --chrome-menu-anchor\"",
+      "owner": "UI",
+      "reason": "CSS anchor-positioning names must be set per element in the template"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/components/terminal/TerminalCountBadges.vue",
+      "match": "#04121a",
+      "owner": "UI",
+      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#0a0f16",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#1f2937",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#374151",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#9ca3af",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#e5e7eb",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#ef4444",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/composables/useSync.js",
+      "match": "#f59e0b",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/store/projectStore.js",
+      "match": "#131317",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/store/projectStore.js",
+      "match": "#e2e8f0",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/store/remoteActions.js",
+      "match": "#374151",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/store/remoteActions.js",
+      "match": "#e2e8f0",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/store/remoteActions.js",
+      "match": "#ef4444",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/store/remoteActions.js",
+      "match": "#f59e0b",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#00CDCD",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#00FF00",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#5C5CFF",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#5FFFD7",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#7F7F7F",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#CD0000",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#CD00CD",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#FF0000",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#FF8700",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#FFFF00",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    },
+    {
+      "rule": "hardcoded-visual-value",
+      "file": "src/utils/statuslineColors.js",
+      "match": "#FFFFFF",
+      "owner": "UI",
+      "reason": "JS color contract: xterm/canvas/string-built HTML cannot resolve var(); value is a fixed palette entry"
+    }
+  ],
+  "sfcResidents": [
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/AgentUsage.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/AgentUsageSection.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/AgentUsageSlot.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/AppHeader.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/CountBadgeWrap.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/PairingGate.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/ProjectTable.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/RefreshRing.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/SimpleView.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/TaskCell.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/TerminalTabStrip.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/TerminalView.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/UsageCircle.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/dock/LogStack.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/dock/TerminalStack.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/AiSettingsModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ChangelogModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ClaudeCleanupModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ClaudeProfileModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ClaudeSettingModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/DonateModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ExternalTerminalsModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/GeminiAllowlistModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/GitModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/GlobalNoteModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/IntroModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/KeyboardShortcutsModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ProjectConfigModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/ProjectTasksModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/RefreshSettingsModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/RemoteSettingsModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/SshConfigModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/modals/UpdateModal.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/tasks/NotesField.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/tasks/TaskCountBadges.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/tasks/TaskListPanel.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/terminal/TerminalChromeMenu.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    },
+    {
+      "rule": "sfc-css-resident",
+      "file": "src/components/terminal/TerminalCountBadges.vue",
+      "owner": "UI",
+      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
+    }
+  ],
+  "duplicateExceptions": []
+}

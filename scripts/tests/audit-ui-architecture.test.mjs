@@ -43,3 +43,41 @@ await test('owned SFC classification satisfies the ratio gate', () => {
   assert.equal(report.architectureViolation, false);
   assert.equal(report.unclassifiedSfcOrigins.length, 0);
 });
+
+await test('a token definition and a var() fallback are not hardcoded visual values, a bare literal is', () => {
+  const css = ':root { --a: #fff; --b: rgba(0, 0, 0, 0.5); }\n.x { color: var(--a, #000); background: var(--b, rgba(1, 2, 3, 0.4)); border: 1px solid #abc; }\n';
+  assert.deepEqual(scanSource(css, 'x.css').map(({ value }) => value), ['#abc']);
+});
+
+await test('selectors inside @media and keyframe steps are not duplicate definitions, a repeated @keyframes name across files is', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aki-ui-audit-'));
+  mkdirSync(join(root, 'src'));
+  writeFileSync(join(root, 'src', 'shared.css'), '.a { color: red; }\n@media (max-width: 1px) { .a { color: blue; } }\n@keyframes spin { 0% { opacity: 0; } 100% { opacity: 1; } }\n');
+  writeFileSync(join(root, 'src', 'View.vue'), '<style>\n@keyframes spin { 0% { opacity: 0; } 100% { opacity: 1; } }\n.a.b { color: green; }\n</style>\n');
+  const names = audit(root).duplicateSelectors.map(({ name }) => name);
+  assert.deepEqual(names, ['@keyframes spin']);
+});
+
+await test('a selector repeated only inside one file is a visible cascade, not a load-order duplicate', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aki-ui-audit-'));
+  mkdirSync(join(root, 'src'));
+  writeFileSync(join(root, 'src', 'shared.css'), '.a { color: red; }\n.a { background: blue; }\n');
+  assert.equal(audit(root).duplicateSelectors.length, 0);
+});
+
+await test('a duplicate selector with an owner and reason is reported as an exception, one without is still a violation', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aki-ui-audit-'));
+  mkdirSync(join(root, 'src'));
+  writeFileSync(join(root, 'src', 'shared.css'), '.a { color: red; }\n.b { color: red; }\n');
+  writeFileSync(join(root, 'src', 'View.vue'), '<style>\n.a { color: blue; }\n.b { color: blue; }\n</style>\n');
+  const report = audit(root, { duplicateExceptions: [{ name: '.a', owner: 'UI', reason: 'Two intentionally different variants.' }, { name: '.b', owner: 'UI' }] });
+  assert.deepEqual(report.duplicateSelectors.map(({ name }) => name), ['.b']);
+  assert(report.exceptions.some(({ rule, reason }) => rule === 'duplicate-selector' && reason.includes('intentionally')));
+});
+
+await test('a component-scoped token overridden in a media query is not a second theme source, a token defined twice in :root is', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aki-ui-audit-'));
+  mkdirSync(join(root, 'src'));
+  writeFileSync(join(root, 'src', 'shared.css'), ':root { --a: 1px; --b: 2px; }\n:root { --b: 3px; }\n.x { --k: 1; }\n@media (max-width: 1px) { .x { --k: 2; } }\n');
+  assert.deepEqual(audit(root).duplicateTokens.map(({ name }) => name), ['--b']);
+});

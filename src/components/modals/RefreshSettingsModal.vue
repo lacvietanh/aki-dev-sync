@@ -82,7 +82,6 @@ function save() {
 </script>
 
 <style scoped>
-.intro-note { font-size: 12px; margin-bottom: 16px; }
 .icon-slate { color: var(--slate-400); }
 .icon-amber { color: var(--amber-500); }
 .icon-indigo { color: var(--indigo-400); }
@@ -117,7 +116,7 @@ function save() {
 .refresh-input {
   width: 64px;
   text-align: right;
-  background: #1a1a24;
+  background: var(--surface-panel);
   border: 1px solid var(--gray-700);
   color: var(--slate-200);
   border-radius: 4px;

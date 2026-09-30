@@ -143,7 +143,7 @@ function commitRename(t, value) {
   justify-content: flex-start;
   /* Extreme Narrow: border separates tabs with minimal padding. */
   gap: 4px;
-  background: rgba(15, 20, 30, 0.6);
+  background: var(--glass);
   border: 1px solid var(--border-card);
   border-radius: 3px;
   padding: 1px 5px;
@@ -229,8 +229,8 @@ function commitRename(t, value) {
   text-align: left;
 }
 .tab-title-input {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: var(--shade);
+  border: 1px solid var(--blue-400-line);
   border-radius: 2px;
   color: inherit;
   font: inherit;
@@ -245,7 +245,7 @@ function commitRename(t, value) {
   opacity: 1;
   background: var(--blue-400-wash);
   color: var(--gray-200);
-  border-color: rgba(96, 165, 250, 0.55);
+  border-color: var(--blue-400-line);
 }
 
 /* 'unknown' renders like true (normal); only explicit exit (=== false) tints. */

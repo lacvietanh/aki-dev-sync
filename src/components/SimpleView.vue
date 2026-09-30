@@ -262,30 +262,6 @@ defineExpose({
   opacity: 0.7;
 }
 
-/* Key row — same CSS as TerminalView.vue, shared class names. */
-.pty-key-row {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 2px;
-  padding: 2px 4px;
-  border-top: 1px solid var(--border-color);
-  background: var(--surface-faint);
-  flex-shrink: 0;
-}
-
-.pty-key {
-  flex: 0 0 auto;
-  padding: 3px 5px;
-  font-size: 10px;
-  line-height: 1;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
 @media (hover: hover) {
   .pty-key:hover {
     color: var(--text-light);
@@ -293,50 +269,4 @@ defineExpose({
   }
 }
 
-.pty-key.is-armed {
-  color: var(--bg-primary);
-  background: var(--accent-cyan);
-  border-color: var(--accent-cyan);
-}
-
-/* Compose row — same CSS as TerminalView.vue. */
-.pty-compose-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-top: 1px solid var(--border-color);
-  background: var(--surface-faint);
-  flex-shrink: 0;
-}
-
-.pty-compose-input {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 8px;
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-light);
-  resize: none;
-  overflow-y: auto;
-  max-height: 5.5em;
-  field-sizing: content;
-}
-
-.pty-compose-input::placeholder {
-  color: var(--text-muted);
-}
-
-.pty-compose-input:focus {
-  outline: none;
-  border-color: var(--accent-cyan);
-}
-
-.pty-compose-send {
-  font-size: 12px;
-}
 </style>

@@ -7,6 +7,7 @@ const SOURCE_EXTENSIONS = new Set(['.vue', '.css', '.js', '.mjs', '.ts']);
 const DEFAULT_CONFIG = {
   exceptions: [],
   sfcResidents: [],
+  duplicateExceptions: [],
 };
 
 function lineNumber(source, offset) {
@@ -37,6 +38,29 @@ function matchingException(finding, exceptions) {
   });
 }
 
+function blank(text) {
+  return text.replace(/[^\n]/g, ' ');
+}
+
+function balancedEnd(source, open) {
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === '(') depth++;
+    else if (source[i] === ')' && --depth === 0) return i + 1;
+  }
+  return source.length;
+}
+
+/** A custom-property definition is where a literal belongs, and a `var(--x, literal)` fallback is not a second source of truth; neither counts as a hardcoded visual value. */
+function maskTokenSites(source) {
+  let masked = source.replace(/--[\w-]+\s*:[^;{}]*/g, blank);
+  for (const match of [...masked.matchAll(/\bvar\(\s*--[\w-]+\s*,/g)]) {
+    const end = balancedEnd(masked, match.index + 3);
+    masked = masked.slice(0, match.index) + blank(masked.slice(match.index, end)) + masked.slice(end);
+  }
+  return masked;
+}
+
 export function scanSource(source, file = 'fixture.vue') {
   const findings = [];
   const addMatches = (rule, regex, valueIndex = 0) => {
@@ -61,7 +85,10 @@ export function scanSource(source, file = 'fixture.vue') {
   }
 
   if (['.vue', '.css', '.js', '.mjs', '.ts'].includes(extname(file))) {
-    addMatches('hardcoded-visual-value', /(?:#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\s*\([^)]*\))/g);
+    const visual = /(?:#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\s*\([^)]*\))/g;
+    for (const match of maskTokenSites(source).matchAll(visual)) {
+      findings.push({ rule: 'hardcoded-visual-value', file, line: lineNumber(source, match.index), value: source.slice(match.index, match.index + match[0].length) });
+    }
   }
   return findings;
 }
@@ -70,30 +97,67 @@ function cssBlocks(source, file) {
   if (extname(file) === '.css') return [{ source, offset: 0 }];
   if (extname(file) !== '.vue') return [];
   return [...source.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)]
-    .map((match) => ({ source: match[1], offset: match.index }));
+    .map((match) => ({ source: match[1], offset: match.index + match[0].indexOf(match[1], match[0].indexOf('>')) }));
+}
+
+/** Rules at brace depth 0 only: a selector inside `@media`/`@supports` is a variant of its base rule and a `@keyframes` step (`0%`, `from`) is not a selector, so neither can be a duplicate definition. */
+function topLevelRules(css) {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, blank);
+  const rules = [];
+  let depth = 0;
+  let start = 0;
+  let quote = null;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '{') {
+      if (depth === 0) rules.push({ prelude: clean.slice(start, i), start, bodyStart: i + 1 });
+      depth++;
+    } else if (ch === '}') {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) {
+        start = i + 1;
+        rules[rules.length - 1].bodyEnd = i;
+      }
+    } else if (ch === ';' && depth === 0) start = i + 1;
+  }
+  return rules;
+}
+
+function ruleNames(prelude) {
+  const text = prelude.trim().replace(/\s+/g, ' ');
+  if (/^@(?:-\w+-)?keyframes\b/.test(text)) return [text];
+  if (text.startsWith('@')) return [];
+  return text.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
 function collectDefinitions(source, file) {
   const selectors = [];
   const tokens = [];
   for (const block of cssBlocks(source, file)) {
-    for (const match of block.source.matchAll(/(^|})\s*([^@{}][^{}]*)\s*\{/gm)) {
-      for (const selector of match[2].split(',').map((item) => item.trim()).filter(Boolean)) {
-        selectors.push({ name: selector, file, line: lineNumber(source, block.offset + match.index) });
-      }
+    for (const rule of topLevelRules(block.source)) {
+      const line = lineNumber(source, block.offset + rule.start + rule.prelude.search(/\S|$/));
+      for (const name of ruleNames(rule.prelude)) selectors.push({ name, file, line });
     }
-    for (const match of block.source.matchAll(/(--[\w-]+)\s*:/g)) {
-      tokens.push({ name: match[1], file, line: lineNumber(source, block.offset + match.index) });
+    for (const rule of topLevelRules(block.source)) {
+      if (!/^(?::root|html|@theme\b)/.test(rule.prelude.trim())) continue;
+      const body = block.source.slice(rule.bodyStart, rule.bodyEnd ?? block.source.length);
+      for (const match of body.matchAll(/(--[\w-]+)\s*:/g)) {
+        tokens.push({ name: match[1], file, line: lineNumber(source, block.offset + rule.bodyStart + match.index) });
+      }
     }
   }
   return { selectors, tokens };
 }
 
-function duplicates(items) {
+function duplicates(items, { acrossFiles = false } = {}) {
   const byName = new Map();
   for (const item of items) byName.set(item.name, [...(byName.get(item.name) || []), item]);
   return [...byName.entries()]
-    .filter(([, origins]) => origins.length > 1)
+    .filter(([, origins]) => (acrossFiles ? new Set(origins.map((origin) => origin.file)).size : origins.length) > 1)
     .map(([name, origins]) => ({ name, origins }));
 }
 
@@ -132,7 +196,12 @@ export function audit(root, config = DEFAULT_CONFIG) {
     exceptions.push({ ...exception, origin: `${finding.file}:${finding.line}` });
     return false;
   });
-  const duplicateSelectors = duplicates(selectors);
+  const allowedDuplicates = new Map((config.duplicateExceptions || []).filter((entry) => entry.name && entry.owner && entry.reason).map((entry) => [entry.name, entry]));
+  const duplicateSelectors = duplicates(selectors, { acrossFiles: true }).filter(({ name }) => !allowedDuplicates.has(name));
+  for (const { name, origins } of duplicates(selectors, { acrossFiles: true })) {
+    const allowed = allowedDuplicates.get(name);
+    if (allowed) exceptions.push({ rule: 'duplicate-selector', origin: origins.map(({ file, line }) => `${file}:${line}`).join(', '), owner: allowed.owner, reason: allowed.reason });
+  }
   const duplicateTokens = duplicates(tokens);
   const residents = config.sfcResidents || [];
   const residentFiles = new Set(residents.filter(validException).map((entry) => entry.file));

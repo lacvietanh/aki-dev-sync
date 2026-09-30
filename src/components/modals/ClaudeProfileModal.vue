@@ -7,7 +7,7 @@
       </span>
     </template>
 
-    <div class="modal-body">
+    <div class="modal-body profile-body">
             <div class="proxy-fields">
               <input v-model="cfg.endpoint" class="field-input" type="url" placeholder="Endpoint URL" title="env.ANTHROPIC_BASE_URL - proxy API base URL" spellcheck="false" />
               <div class="key-row">
@@ -27,7 +27,7 @@
             </div>
           </div>
 
-          <div class="modal-footer">
+          <div class="modal-footer modal-footer-form">
             <button
                     v-if="currentMode === 'native'"
                     class="btn-modal-action btn-proxy"
@@ -112,27 +112,7 @@ async function applyMode(mode) {
 </script>
 
 <style scoped>
-.scope-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--slate-400);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 2px 6px;
-  letter-spacing: 0.3px;
-  margin-left: 2px;
-}
-
-.scope-tag i {
-  color: var(--slate-400);
-  font-size: 9px;
-}
-
-.modal-body {
+.profile-body {
   padding: 14px 16px 10px;
   display: flex;
   flex-direction: column;
@@ -194,42 +174,6 @@ async function applyMode(mode) {
   background: var(--surface-hover);
 }
 
-.status-msg {
-  font-size: 11px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  line-height: 1.4;
-  /* Rust errors come through here verbatim - a long unbroken path must not widen the 360px modal. */
-  overflow-wrap: anywhere;
-}
-
-.status-msg i {
-  margin-top: 1px;
-  flex-shrink: 0;
-}
-
-.status-msg.ok {
-  background: var(--accent-green-wash);
-  color: var(--emerald-400);
-  border: 1px solid var(--accent-green-edge);
-}
-
-.status-msg.err {
-  background: var(--accent-red-wash);
-  color: var(--red-400);
-  border: 1px solid var(--accent-red-edge);
-}
-
-.modal-footer {
-  display: flex;
-  gap: 8px;
-  padding: 10px 16px 14px;
-  border-top: 1px solid var(--border-color);
-}
-
 .btn-native,
 .btn-proxy {
   flex: 1;
@@ -248,12 +192,12 @@ async function applyMode(mode) {
 
 .btn-proxy {
   background: var(--brand-wash);
-  border-color: rgba(217, 119, 87, 0.45);
+  border-color: var(--brand-line);
   color: var(--brand);
 }
 
 .btn-proxy:hover:not(:disabled) {
-  background: rgba(217, 119, 87, 0.25);
+  background: var(--brand-edge);
   color: var(--brand-light);
 }
 

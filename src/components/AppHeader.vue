@@ -1070,7 +1070,7 @@ function onViewShortcut(e) {
 
 .btn-refresh-main:hover:not(:disabled)+.btn-refresh-settings,
 .btn-refresh-settings:hover:not(:disabled) {
-  border-left-color: rgba(255, 255, 255, 0.4);
+  border-left-color: var(--border-bright);
 }
 
 .app-version {
@@ -1137,7 +1137,7 @@ function onViewShortcut(e) {
 }
 
 .update-badge:hover {
-  background: rgba(16, 185, 129, 0.25);
+  background: var(--accent-green-edge);
   color: var(--white);
 }
 

@@ -250,7 +250,7 @@ export default {
 
 .circle-bg {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.08);
+  stroke: var(--surface-hover);
 }
 
 .circle-fill {

@@ -1095,7 +1095,7 @@ async function handleIconClick() {
 }
 
 .zone-fieldset.zone-gemini:hover {
-  border-color: rgba(96, 165, 250, 0.55);
+  border-color: var(--blue-400-line);
 }
 
 .zone-fieldset.zone-gemini .zone-legend {
@@ -1156,13 +1156,13 @@ async function handleIconClick() {
   height: 40px;
   border-radius: 50%;
   background: var(--bg-tertiary);
-  animation: pulse 1.5s infinite ease-in-out;
+  animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
 .skeleton-text {
   border-radius: 2px;
   background: var(--bg-tertiary);
-  animation: pulse 1.5s infinite ease-in-out;
+  animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
 .skeleton-text-15 {
@@ -1178,7 +1178,7 @@ async function handleIconClick() {
   cursor: pointer;
 }
 
-@keyframes pulse {
+@keyframes usage-pulse {
   0% {
     opacity: 0.6;
   }
@@ -1335,7 +1335,7 @@ async function handleIconClick() {
   width: 50px;
   border-radius: 2px;
   background: var(--bg-tertiary);
-  animation: pulse 1.5s infinite ease-in-out;
+  animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
 .skeleton-bar-track {
@@ -1343,7 +1343,7 @@ async function handleIconClick() {
   width: 100%;
   border-radius: 3px;
   background: var(--bg-tertiary);
-  animation: pulse 1.5s infinite ease-in-out;
+  animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
 .skeleton-bar-time {
@@ -1351,7 +1351,7 @@ async function handleIconClick() {
   width: 130px;
   border-radius: 2px;
   background: var(--bg-tertiary);
-  animation: pulse 1.5s infinite ease-in-out;
+  animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
 /* Reload button - circular, hosts the countdown ring */

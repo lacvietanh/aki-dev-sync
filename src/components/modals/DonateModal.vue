@@ -4,7 +4,7 @@
       <i class="fa-solid fa-heart"></i> Donate to AkiDevSync
     </template>
 
-    <div class="modal-body">
+    <div class="modal-body donate-body">
       <p class="donate-blurb">If you find this tool helpful, consider supporting its development!</p>
       <p class="donate-note">Suggested note: <code>{{ donateNote }}</code></p>
 
@@ -41,7 +41,7 @@ function openLink(url) {
 </script>
 
 <style scoped>
-.modal-body {
+.donate-body {
   display: flex;
   flex-direction: column;
   align-items: center;
