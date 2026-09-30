@@ -278,7 +278,7 @@ const togglePullScripts = ref(false)
 
 // The dialog's own Remote Host select must use the same switch logic as the table dropdown
 // (remoteActions.setRemoteHost) - never keep the outgoing host's hooks on the new one. `remote_path` is a
-// project fact (1.32.1) and is left untouched by this switch. Mutates the draft `editingProject` only;
+// project fact (1.32.0) and is left untouched by this switch. Mutates the draft `editingProject` only;
 // nothing is saved until the user hits Save.
 function onRemoteHostChange(event) {
   const newHost = event.target.value

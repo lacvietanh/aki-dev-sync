@@ -79,7 +79,7 @@ test('empty remote_host project keeps hooks at the top level, never creates targ
   assert.equal(Object.prototype.hasOwnProperty.call(payload.targets, ''), false)
 })
 
-// 1.32.1 fix: remote_path is a project fact, fixed across every host - resolveHostSwitch no longer returns or touches it at all; the caller keeps the project's existing remote_path unchanged on any host switch.
+// 1.32.0 fix: remote_path is a project fact, fixed across every host - resolveHostSwitch no longer returns or touches it at all; the caller keeps the project's existing remote_path unchanged on any host switch.
 test('resolveHostSwitch to an unknown host yields empty hooks and leaves other hosts untouched', () => {
   const p = baseProject({
     remote_host: 'host-a',

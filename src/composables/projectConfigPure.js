@@ -32,12 +32,12 @@ export function canSaveProjectConfig(isNew, status) {
 
 /**
  * One project's `save_projects` payload (docs/plan/settings-and-state-layout.md § B1/B2, amended § Amendments
- * for the 1.32.1 remote_path fix). Project-owned fields (name, production_url, excludes, dev/build commands)
+ * for the 1.32.0 remote_path fix). Project-owned fields (name, production_url, excludes, dev/build commands)
  * are stripped ONLY once `project.json` already owns them (`configStatus === 'ok'`) - any other status
  * (missing/unavailable/corrupt/unknown) means the registry copy is still the only one and must round-trip
  * unchanged: a legacy copy is removed only once its new home holds it.
  *
- * `remote_path` is a PROJECT fact (one remote directory regardless of host, 1.32.1) and always round-trips
+ * `remote_path` is a PROJECT fact (one remote directory regardless of host, 1.32.0) and always round-trips
  * at the top level - it is never written into `targets[remote_host]` and never stripped. `deploy` is a
  * project fact that names its own host (2026-09-28) and round-trips at the top level too. `hooks` stay
  * genuinely host-specific and are written into `targets[remote_host]`, cleared from the top level ONLY
@@ -66,7 +66,7 @@ export function buildProjectSavePayload(project, configStatus) {
     push_excludes: stripProjectOwned ? undefined : (project.push_excludes || []),
     dev_cmd_override: stripProjectOwned ? undefined : (project.dev_cmd_override ?? undefined),
     build_cmd_override: stripProjectOwned ? undefined : (project.build_cmd_override ?? undefined),
-    // 1.32.1: remote_path always round-trips at the top level, regardless of remote_host/targets.
+    // 1.32.0: remote_path always round-trips at the top level, regardless of remote_host/targets.
     remote_path: project.remote_path,
     hooks: targetHoldsRemote ? undefined : project.hooks,
     deploy: project.deploy || undefined,
@@ -162,7 +162,7 @@ export function buildProjectListSavePayload(projectList, getConfigStatus) {
  * Pure host-switch resolution shared by the table dropdown (`remoteActions.setRemoteHost`) and the config
  * dialog's own Remote Host select (S3) - having this logic in two places is exactly the bug S3 describes.
  *
- * 1.32.1 fix: `remote_path` is a project fact (one remote directory regardless of host - see
+ * 1.32.0 fix: `remote_path` is a project fact (one remote directory regardless of host - see
  * `docs/plan/settings-and-state-layout.md` § Amendments), so a host switch never touches it; the caller
  * keeps `project.remote_path` unchanged, and `deploy` names its own host so it never follows. Only `hooks` are genuinely host-specific: the outgoing
  * host's current values are recorded into `targets` (so switching back restores them), then the incoming

@@ -184,7 +184,7 @@ function applyConfigToProject(project, entry) {
 }
 
 /**
- * B2 (docs/plan/settings-and-state-layout.md § B2, amended § Amendments for the 1.32.1 remote_path fix):
+ * B2 (docs/plan/settings-and-state-layout.md § B2, amended § Amendments for the 1.32.0 remote_path fix):
  * restores the active host's hooks/deploy from `targets.<remote_host>` onto the top-level fields — the ONE
  * persisted source for those (Rust never serializes the top-level copies, see projects.rs). Missing target
  * (never-used host) leaves the fields as loaded rather than inventing a value.

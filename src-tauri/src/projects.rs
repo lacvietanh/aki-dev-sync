@@ -47,7 +47,7 @@ pub struct ProjectDeploy {
 /// `hooks` are host-specific facts (real hooks embed that host's paths), so switching the active `remote_host` restores this entry instead of losing the
 /// previous host's settings (F5).
 ///
-/// `remote_path` is DEPRECATED here (docs/plan/settings-and-state-layout.md § Amendments, 1.32.1): a
+/// `remote_path` is DEPRECATED here (docs/plan/settings-and-state-layout.md § Amendments, 1.32.0): a
 /// project has exactly ONE remote directory regardless of which host serves it - storing it per-host made
 /// the first sync to a new host demand re-entering a path that was never actually different, which no real
 /// project in this app's own registry has ever needed. Kept only as a one-release migration source
@@ -76,7 +76,7 @@ pub struct SyncProject {
     pub name: String,
     pub local_path: String,
     pub remote_host: String,
-    // The project's one remote directory - fixed across every host that serves it, never per-host (1.32.1
+    // The project's one remote directory - fixed across every host that serves it, never per-host (1.32.0
     // fix; briefly lived in `targets.<host>.remote_path` in 1.32.0, see `Target`'s doc comment). Always the
     // single, authoritative copy; `targets.<remote_host>` never holds it going forward.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -455,7 +455,7 @@ mod tests {
         assert!(reloaded_stripped.dev_cmd_override.is_none());
     }
 
-    /// 1.32.1 fix: `remote_path` is a project fact, not a per-host one - it must keep serializing at the
+    /// 1.32.0 fix: `remote_path` is a project fact, not a per-host one - it must keep serializing at the
     /// top level regardless of whether a `targets.<host>` entry exists, and must never be read back FROM a
     /// target. `hooks` stays the opposite: still stripped from the top level once a target holds it (it
     /// really is host-specific). CLAUDE.md multi-entity guard: round-tripping project A must never affect
@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(reloaded[1].remote_path, "~/app-b", "project B's own path survives untouched by project A");
     }
 
-    /// A stale `targets.<host>.remote_path` left over from a pre-1.32.1 registry (the field is now
+    /// A stale `targets.<host>.remote_path` left over from a pre-fix registry (the field is now
     /// migration-only, see `Target`'s doc comment) must never leak back onto the project once a real
     /// top-level value exists - only the one-shot migration in `sync_state.rs` is allowed to lift it.
     #[test]

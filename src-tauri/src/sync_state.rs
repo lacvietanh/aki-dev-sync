@@ -198,9 +198,9 @@ pub fn delete_project_state(project_id: String) -> Result<(), String> {
 }
 
 /// One-shot, idempotent migration (docs/plan/settings-and-state-layout.md § Migration, amended § Amendments
-/// for the 1.32.1 remote_path fix):
+/// for the 1.32.0 remote_path fix):
 /// - `remote_host` + `hooks` -> `targets.<remote_host>` (only when that entry is absent).
-/// - a stale `targets.<host>.remote_path` left by a pre-1.32.1 run of this same migration is lifted back
+/// - a stale `targets.<host>.remote_path` left by a pre-fix run of this same migration is lifted back
 ///   onto the project's own top-level `remote_path` (only when that field is still empty), then cleared
 ///   from every target so it can never resurface - `remote_path` is a project fact now, never a per-host
 ///   one (see `Target`'s doc comment). Prefers the active `remote_host`'s own recorded value, else the
@@ -587,7 +587,7 @@ mod tests {
         assert!(write_last_sync_blocking("../escaped", "hostA", &entry).is_err());
     }
 
-    /// 1.32.1 fix: remote_path is a project fact, not per-host - migration creates the target entry (for
+    /// 1.32.0 fix: remote_path is a project fact, not per-host - migration creates the target entry (for
     /// hooks) but never copies remote_path into it, and never touches the project's own top-level value.
     #[test]
     fn migration_creates_a_target_entry_without_copying_remote_path_into_it() {
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(projects[0].remote_path, "~/app", "the project's own top-level path is untouched");
     }
 
-    /// The core 1.32.1 fix: a `targets.<host>.remote_path` left by a pre-1.32.1 run of this same migration
+    /// The core 1.32.0 fix: a `targets.<host>.remote_path` left by a pre-fix run of this same migration
     /// is lifted back onto the project's own top-level field (the only place it belongs now), then cleared
     /// from the target so a later host switch can never resurrect it.
     #[test]

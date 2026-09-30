@@ -94,7 +94,7 @@ export const setDryRun = action('remoteActions.setDryRun', (id, value) => {
   saveProjectsList()
 })
 
-// Updates remote host: `remote_path` is a project fact (1.32.1, one remote directory regardless of host)
+// Updates remote host: `remote_path` is a project fact (1.32.0, one remote directory regardless of host)
 // and `deploy` names its own host, so neither is touched here; only hooks restore from `targets` (F5).
 // Logged: nothing else records which host a project pointed at when a sync ran. Resets pending counts, bumps
 // epoch to invalidate old diffs, and triggers refresh. Shares its switch logic with the config dialog's own

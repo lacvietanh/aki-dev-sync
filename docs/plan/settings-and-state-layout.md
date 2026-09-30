@@ -13,7 +13,7 @@ Decision record and field-by-field reasoning: `docs/research/akidevsync-project-
 
 ~/.aki/devsync/                      this machine only
   projects.json                      registry: id, local_path, order, disabled, dry_run, delete_on_*,
-                                     remote_host (active target), remote_path (project fact, 1.32.1 § Amendments),
+                                     remote_host (active target), remote_path (project fact, 1.32.0 § Amendments),
                                      targets.<host>.hooks
   state/<project_id>/<host>/
     baseline.json                    { remote_path, files: {path → mtime} }
@@ -35,7 +35,7 @@ Decision record and field-by-field reasoning: `docs/research/akidevsync-project-
 
 - [x] `project_config.rs` (new, sole owner of `project.json`): read returns a status (`ok | missing | unavailable | corrupt` - same names as `read_project_notes`), never a defaulted struct. Write is read-modify-write + `write_atomic`, under the same per-project queue as notes.
 - [x] `sync_state.rs` (new, sole owner of `state/`): `read_baseline(id, host)`, `write_baseline(id, host, remote_path, files)`, `write_last_sync(id, host, …)`. Function names say their scope (1.9.3 guard). No function wipes more than one `(id, host)` dir. Deleting a project removes only its own `state/<id>/`.
-- [x] `SyncProject`: add `targets: BTreeMap<String, Target { remote_path, hooks }>` (`#[serde(default)]`); `remote_path` and `hooks` read through the active target. **Corrected 1.32.1, see § Amendments: `remote_path` is a project fact and no longer lives in `Target` going forward — `hooks` (and `deploy`, added by plan 3) still do.**
+- [x] `SyncProject`: add `targets: BTreeMap<String, Target { remote_path, hooks }>` (`#[serde(default)]`); `remote_path` and `hooks` read through the active target. **Corrected 1.32.0, see § Amendments: `remote_path` is a project fact and no longer lives in `Target` going forward — `hooks` (and `deploy`, added by plan 3) still do.**
 
 ### C. Migration (one shot, idempotent, before the logger opens)
 
@@ -52,7 +52,7 @@ Decision record and field-by-field reasoning: `docs/research/akidevsync-project-
 
 - [x] `useProjectConfig.js` reads `project.json` at load, on titlebar Refresh and when the config dialog opens; a late read never overwrites an edit (generation counter, as `projectNotesStore.js`).
 - [x] Every edit goes through the existing mirrored actions so a paired phone still works (Remote Control lesson).
-- [x] Host dropdown (`setRemoteHost`): switching restores `targets.<host>.remote_path`; a host without an entry asks for its path in the existing config dialog instead of silently reusing the old one (F5). **Corrected 1.32.1, see § Amendments: `remote_path` no longer changes on a host switch at all — only `hooks`/`deploy` restore per host.**
+- [x] Host dropdown (`setRemoteHost`): switching restores `targets.<host>.remote_path`; a host without an entry asks for its path in the existing config dialog instead of silently reusing the old one (F5). **Corrected 1.32.0, see § Amendments: `remote_path` no longer changes on a host switch at all — only `hooks`/`deploy` restore per host.**
 - [x] Config dialog: project-wide fields and this-machine fields in their existing sections, each section labeled by where it is saved (`in the project` / `on this Mac`). No new rows in the table (Extreme Narrow).
 - [x] Unreadable folder: row renders from the registry with `basename(local_path)`, config dialog read-only with the reason, the same as Tasks.
 
@@ -67,7 +67,7 @@ Decision record and field-by-field reasoning: `docs/research/akidevsync-project-
 The code and tests above can be written and run on Linux. These need the real app on the Mac. Leave them unticked until run there:
 
 - [ ] First launch of the new build against the real `~/.aki/devsync/`: every project still listed, same order, same host; no push/pull badge lights up that was dark before the upgrade.
-- [ ] Host dropdown on a project synced with both hosts: switching back and forth keeps the same remote path throughout, and restores each host's own hooks/deploy config (1.32.1 § Amendments).
+- [ ] Host dropdown on a project synced with both hosts: switching back and forth keeps the same remote path throughout, and restores each host's own hooks/deploy config (1.32.0 § Amendments).
 - [ ] Unmount an external volume holding a project: that row shows unavailable, others unaffected.
 
 ## Cross-references
@@ -78,7 +78,7 @@ The code and tests above can be written and run on Linux. These need the real ap
 
 ## Amendments
 
-**2026-09-28, 1.32.1 — `remote_path` moved back out of `targets.<host>`.** This plan's original design (§ B, § D above) put `remote_path` beside `hooks` in `targets.<remote_host>`, reasoning it was a per-host fact the same way a real hook's embedded path is. It is not: a project has exactly ONE remote directory regardless of which host serves it — the owner never actually uses two different paths for the same project across hosts (confirmed against the real registry: no project has ever recorded a second, different path).
+**2026-09-28, 1.32.0 — `remote_path` moved back out of `targets.<host>`.** This plan's original design (§ B, § D above) put `remote_path` beside `hooks` in `targets.<remote_host>`, reasoning it was a per-host fact the same way a real hook's embedded path is. It is not: a project has exactly ONE remote directory regardless of which host serves it — the owner never actually uses two different paths for the same project across hosts (confirmed against the real registry: no project has ever recorded a second, different path).
 Storing it per-host meant the first sync to a never-before-used host forced re-entering a path that had never actually changed, and blocked the switch behind a confirm dialog until the user did.
 
 Fix, applied directly to the files this plan already names — not a new plan, since the shape (four owners, `targets.<host>` for genuinely host-specific facts) is unchanged, only which field belongs where:
