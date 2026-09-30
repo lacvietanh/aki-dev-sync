@@ -53,10 +53,22 @@ async function activeHostLastSyncTime(project) {
   }
 }
 
-/** Has this (project, host) pair ever recorded a sync attempt? `null` = unknown (read failed) - callers treat it as "no". */
+/** A dry run changes nothing on either side, so it must not overwrite the record of the last real transfer (the in-memory fields still show it until the next Refresh). */
+function persistLastSync(project) {
+  invoke('write_last_sync', {
+    projectId: project.id,
+    host: project.remote_host,
+    action: project.last_sync_action,
+    time: project.last_sync_time,
+    status: project.last_sync_status,
+  }).catch((e) => console.error('write_last_sync failed:', e))
+}
+
+/** Has a real transfer to this (project, host) pair ever succeeded? A dry run moves nothing and a failed run proves nothing, so neither counts (a dry run of a wrong host must not switch the first-transfer confirm off). `null` = unknown (read failed) - callers treat it as "no". */
 async function hostHasSyncHistory(project) {
   try {
-    return !!(await invoke('read_last_sync_for_host', { projectId: project.id, host: project.remote_host }))
+    const entry = await invoke('read_last_sync_for_host', { projectId: project.id, host: project.remote_host })
+    return !!entry && entry.status === 'success' && !entry.action.includes('(Dry)')
   } catch (e) {
     console.error('[sync] read_last_sync_for_host failed', e)
     return null
@@ -283,13 +295,7 @@ export async function startSync(project, direction, specificPaths = []) {
     project.last_sync_time = Math.floor(Date.now() / 1000)
     project.last_sync_host = project.remote_host
     project.last_sync_status = "success"
-    invoke('write_last_sync', {
-      projectId: project.id,
-      host: project.remote_host,
-      action: project.last_sync_action,
-      time: project.last_sync_time,
-      status: project.last_sync_status,
-    }).catch((e) => console.error('write_last_sync failed:', e))
+    if (!isDryRun) persistLastSync(project)
     fetchGitStatus(project.id)
 
     if (!isDryRun && specificPaths.length === 0) {
@@ -339,13 +345,7 @@ export async function startSync(project, direction, specificPaths = []) {
     project.last_sync_time = Math.floor(Date.now() / 1000)
     project.last_sync_host = project.remote_host
     project.last_sync_status = "error"
-    invoke('write_last_sync', {
-      projectId: project.id,
-      host: project.remote_host,
-      action: project.last_sync_action,
-      time: project.last_sync_time,
-      status: project.last_sync_status,
-    }).catch((e) => console.error('write_last_sync failed:', e))
+    if (!isDryRun) persistLastSync(project)
     Toast.fire({ icon: 'error', title: 'Sync failed' })
   } finally {
     projectRuntime.value[project.id] = { ...projectRuntime.value[project.id], syncing: false }
