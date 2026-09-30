@@ -62,8 +62,20 @@ fn state_root() -> Result<PathBuf, String> {
 /// here (`validate_remote_host`), same guard as every other host-as-path-component use. `project_id` is
 /// validated here (N1) since every read/write path funnels through this one function.
 fn pair_dir(project_id: &str, host: &str) -> Result<PathBuf, String> {
-    crate::projects::validate_path_segment("project_id", project_id)?;
+    validate_state_id(project_id)?;
+    if host.is_empty() {
+        return Err("host must not be empty".to_string());
+    }
     Ok(state_root()?.join(project_id).join(host))
+}
+
+/// A project id becomes a directory name under `state/`, so it must be exactly one plain segment: `Path::join` with an absolute id REPLACES the base, which would aim `delete_project_state`'s `remove_dir_all` at an arbitrary directory.
+fn validate_state_id(id: &str) -> Result<(), String> {
+    crate::projects::validate_path_segment("project_id", id)?;
+    if id.is_empty() || id.starts_with('.') || !id.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.')) {
+        return Err(format!("Invalid project_id '{}': one plain path segment expected", id));
+    }
+    Ok(())
 }
 
 fn baseline_path(project_id: &str, host: &str) -> Result<PathBuf, String> {
@@ -177,7 +189,7 @@ pub async fn read_last_sync_all(
 /// (stack-tauri A1's "not this bug class" carve-out), so no `spawn_blocking` is required.
 #[tauri::command]
 pub fn delete_project_state(project_id: String) -> Result<(), String> {
-    crate::projects::validate_path_segment("project_id", &project_id)?;
+    validate_state_id(&project_id)?;
     let dir = state_root()?.join(&project_id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| format!("delete_project_state: {}", e))?;
@@ -207,7 +219,7 @@ pub fn delete_project_state(project_id: String) -> Result<(), String> {
 pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject]) -> bool {
     let mut changed = false;
     for p in projects.iter_mut() {
-        if crate::system::validate_remote_host(&p.remote_host).is_err() {
+        if p.remote_host.is_empty() || crate::system::validate_remote_host(&p.remote_host).is_err() {
             continue;
         }
         if !p.targets.contains_key(&p.remote_host) {
@@ -246,11 +258,13 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
         }
 
         let host = p.last_sync_host.clone().unwrap_or_else(|| p.remote_host.clone());
-        if crate::system::validate_remote_host(&host).is_err() {
+        if host.is_empty() || crate::system::validate_remote_host(&host).is_err() {
             continue;
         }
 
-        if let Some(files) = crate::sync::legacy_flat_baseline(&p.id) {
+        // `last_sync_host` moved on every action (dry runs, SELECT/git pushes, failures) while the flat baseline was written only by a full real sync, so it names the baseline's host only when that last action was itself one (or none is recorded); otherwise the baseline is left unfiled (reads as "no baseline", the safe degrade) rather than filed under a host it never described.
+        let last_action_wrote_baseline = p.last_sync_action.as_deref().is_none_or(|a| matches!(a, "PUSH" | "PULL") && p.last_sync_status.as_deref() == Some("success"));
+        if let Some(files) = crate::sync::legacy_flat_baseline(&p.id).filter(|_| last_action_wrote_baseline) {
             let already_had_state_baseline = read_baseline(&p.id, &host).is_some();
             let write_succeeded = !already_had_state_baseline
                 && write_baseline(
@@ -280,7 +294,8 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
                 time: p.last_sync_time.unwrap_or(0),
                 status: p.last_sync_status.clone().unwrap_or_default(),
             };
-            if write_last_sync_blocking(&p.id, &host, &entry).is_ok() {
+            let newer_already_recorded = read_last_sync(&p.id, &host).is_some_and(|existing| existing.time >= entry.time);
+            if newer_already_recorded || write_last_sync_blocking(&p.id, &host, &entry).is_ok() {
                 p.last_sync_action = None;
                 p.last_sync_time = None;
                 p.last_sync_status = None;
@@ -686,6 +701,44 @@ mod tests {
     /// docs/plan/settings-and-state-layout.md § Migration: "an existing state baseline is NEVER
     /// overwritten" - a fresher per-host baseline (e.g. written by a sync that already ran this launch)
     /// must survive a legacy flat baseline still sitting on disk.
+    #[test]
+    fn migration_leaves_a_legacy_baseline_unfiled_when_the_last_action_was_not_a_full_real_sync() {
+        let _s = Scratch::new("migrate-unfiled");
+        for (action, status) in [("PUSH (Dry)", "success"), ("PUSH SPECIAL", "success"), ("PUSH", "error")] {
+            write_legacy_baseline("proj-dry", &[("a.txt", 1)]);
+            let mut p = make_project("proj-dry", "hostB", "~/app");
+            p.last_sync_action = Some(action.to_string());
+            p.last_sync_time = Some(5);
+            p.last_sync_status = Some(status.to_string());
+            p.last_sync_host = Some("hostB".to_string());
+            migrate_settings_and_state(&mut [p]);
+            assert!(read_baseline("proj-dry", "hostB").is_none(), "{action}/{status}: baseline must not be filed under a host it never described");
+        }
+    }
+
+    #[test]
+    fn migration_skips_a_project_with_no_remote_host_entirely() {
+        let _s = Scratch::new("migrate-nohost");
+        let mut p = make_project("proj-nohost", "", "~/app");
+        p.last_sync_action = Some("PUSH".to_string());
+        p.last_sync_time = Some(5);
+        p.last_sync_status = Some("success".to_string());
+        let mut projects = [p];
+        migrate_settings_and_state(&mut projects);
+        assert!(projects[0].targets.is_empty(), "no targets[\"\"] entry");
+        assert_eq!(projects[0].last_sync_time, Some(5), "last_sync fields stay put until a host exists");
+    }
+
+    #[test]
+    fn a_project_id_must_be_one_plain_segment() {
+        assert!(validate_state_id("project-1788493482805").is_ok());
+        assert!(validate_state_id("www-akinet.me").is_ok());
+        for bad in ["", "/Users/aki", "a/b", "..", ".hidden", "a\\b"] {
+            assert!(validate_state_id(bad).is_err(), "{bad:?} must be rejected");
+        }
+        assert!(delete_project_state("/tmp".to_string()).is_err());
+    }
+
     #[test]
     fn migration_never_overwrites_an_existing_state_baseline() {
         let _s = Scratch::new("migrate-no-overwrite-state-baseline");
