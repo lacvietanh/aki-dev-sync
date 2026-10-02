@@ -14,14 +14,14 @@ const INFO = {
   'build:rmud': 'universal .dmg (Intel + Apple Silicon): the release file',
   'build:rmad:friend': '.dmg to hand to a person with an Apple Silicon Mac: the app plus a double-click installer and a readme',
   'build:rmud:friend': '.dmg to hand to a person with any Mac (Intel or Apple Silicon): the app plus a double-click installer and a readme',
-  'lint:scripts': 'lint the remote shell scripts',
-  'lint:simpleview': 'check the SimpleView boundary',
-  'audit:ui': 'UI architecture audit',
-  'test:statusline': 'Rust statusline tests',
-  'test:ui-audit': 'UI audit tests',
-  'test:replay': 'terminal replay hydration tests',
-  'test:config': 'project config store tests',
-  'gen-icon': 'regenerate icons from public/icon.png',
+  'lint:scripts': 'check the shell scripts the app runs on remote hosts still work under plain sh; run after editing one',
+  'lint:simpleview': 'check the simple terminal view stays text-only (no xterm, no cursor handling); run after editing it',
+  'audit:ui': 'report hardcoded colours/sizes and duplicated CSS rules in the UI; run before a UI cleanup',
+  'test:statusline': 'test the status-line script the app installs for Claude Code / Antigravity; run after changing it',
+  'test:ui-audit': 'test that audit:ui itself reports correctly; run after editing audit:ui',
+  'test:replay': 'test that in-app terminal tabs restore their content after a reload; run after terminal changes',
+  'test:config': 'test reading and saving per-project settings; run after changing project settings code',
+  'gen-icon': 'rebuild every app icon from public/icon.png; run after replacing that image',
 }
 
 const scripts = Object.keys(JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts)
