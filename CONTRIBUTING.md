@@ -46,7 +46,7 @@ npm run tauri dev    # dev (first run compiles Rust, ~5-10 min)
 ./scripts/install-desktop.sh # owner-local arm64 .app → /Applications, stable identity
 ```
 
-For the owner-local app, use `./scripts/install-desktop.sh`; its produce step calls `npm run build:app`. For artifacts, use the package scripts, **not** raw `tauri build` - see "Post-build artifact rename" below.
+For the owner-local app, use `npm run build:app` (= `./scripts/install-desktop.sh`: build, sign, quit the running app, install); `npm run build:rmaa` builds the `.app` without installing. To hand the app to someone, use `npm run build:rmad:friend` or `npm run build:rmud:friend` (the `.dmg` plus a double-click installer and a readme - `docs/ref/install-desktop.md`). For artifacts, use the package scripts, **not** raw `tauri build` - see "Post-build artifact rename" below.
 
 ## Tauri gotchas & conventions
 
@@ -64,7 +64,7 @@ Lessons from building a macOS-first Tauri v2 app. Recorded to avoid re-discovery
 
 ### Post-build artifact rename
 
-Raw `npm run tauri build` outputs filenames with spaces (e.g. `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:app` instead - it chains `tauri build` and `node scripts/post-build.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
+Raw `npm run tauri build` outputs filenames with spaces (e.g. `Aki Dev Sync_1.2.0_aarch64.dmg`). Use `npm run build:rmad` / `build:rmud` instead - each chains `tauri build` and `node scripts/post-build.js` to produce `Aki-DevSync-v1.2.0-arm.dmg` (or `-universal.dmg`).
 
 ### IPC capability: silent failures
 

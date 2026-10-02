@@ -6,7 +6,6 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IDENTITY="Aki Dev Sync Dev"
 PRODUCT="Aki Dev Sync"
-BUNDLE_ID="aki.devsync"
 DEST="/Applications/${PRODUCT}.app"
 
 fail() {
@@ -52,14 +51,14 @@ ensure_identity() {
 echo "== 1/4: codesigning identity =="
 ensure_identity
 
-echo "== 2/4: arm64 .app (npm run build:app) =="
+echo "== 2/4: arm64 .app (npm run build:rmaa) =="
 if [ "${SKIP_BUILD:-}" = "1" ]; then
   echo "SKIP_BUILD=1 — using existing bundle"
 else
   (
     cd "$REPO_ROOT"
-    NO_REVEAL=1 npm run build:app
-  ) || fail "npm run build:app failed"
+    NO_REVEAL=1 npm run build:rmaa
+  ) || fail "npm run build:rmaa failed"
 fi
 
 TARGET_ROOT="${CARGO_TARGET_DIR:-$REPO_ROOT/src-tauri/target}"
@@ -68,7 +67,6 @@ APP_SRC="$TARGET_ROOT/aarch64-apple-darwin/release/bundle/macos/${PRODUCT}.app"
 
 echo "== 3/4: sign $APP_SRC =="
 codesign --force --deep --sign "$IDENTITY" \
-  --identifier "$BUNDLE_ID" \
   --preserve-metadata=entitlements \
   "$APP_SRC" || fail "codesign failed (no sudo — identity must be in the login keychain)"
 xattr -cr "$APP_SRC" 2>/dev/null || true
@@ -81,12 +79,18 @@ if [ -e "$DEST" ]; then
     fail "$DEST is owned by $owner. Once: sudo chown -R $me $DEST — then re-run without sudo"
   fi
 fi
-killall "$PRODUCT" 2>/dev/null || true
+# Started from the app's own terminal, quitting the app hangs up this shell and closes its output: the swap must still finish.
+trap '' HUP
+was_running=""
+killall "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_SRC/Contents/Info.plist")" 2>/dev/null && was_running=1
 sleep 0.5
 rm -rf "$DEST"
 ditto "$APP_SRC" "$DEST"
 xattr -cr "$DEST" 2>/dev/null || true
+[ -z "$was_running" ] || open "$DEST" || true
 
-echo "installed: $DEST"
-echo "signed as: $IDENTITY"
-codesign -dv --verbose=2 "$DEST" 2>&1 | grep -E '^(Authority|Identifier|Signature)=' || true
+{
+  echo "installed: $DEST"
+  echo "signed as: $IDENTITY"
+  codesign -dv --verbose=2 "$DEST" 2>&1 | grep -E '^(Authority|Identifier|Signature)='
+} || true

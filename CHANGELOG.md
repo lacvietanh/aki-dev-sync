@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Added
+- **`npm run build:rmad:friend` / `build:rmud:friend`: the DMG to hand to a person.** The same DMG as `build:rmad` / `build:rmud`, background and layout kept, named `Aki-DevSync-Installer-v…` so it is never taken for a release artifact. `scripts/inject-dmg-file.js` (`injectIntoDmg`, `pinIconPositions`) copies in `scripts/installer/READ ME.txt` (Vietnamese and English, centred above the icons) and `Install Aki Dev Sync.command` (centred below), lets Finder create their icon records without taking the keyboard, then writes all four icon positions straight into the volume's `.DS_Store`, because Finder alone saved the whole window 12 points lower in 1 of 4 test runs. The `.command` creates the `Aki Dev Sync Dev` identity on the recipient's Mac, signs a copy, quits a running copy, installs to `/Applications` and opens it; it uses only tools that ship with macOS (no Xcode or Command Line Tools) and stops with a clear message when an arm64 DMG reaches an Intel Mac. Injection and positions were checked on copies of real DMGs; a full `:friend` build and a run of the installer on another Mac have not been done yet.
+
+### Changed
+- **`npm run build:app` now builds and installs.** It runs `./scripts/install-desktop.sh` (formerly `install:app`): build the arm64 `.app`, sign it as `Aki Dev Sync Dev`, quit the running app, replace `/Applications/Aki Dev Sync.app`, reopen it if it was running. `SKIP_BUILD=1` reuses the built `.app`. The build-only command is now `npm run build:rmaa`. Not yet run end to end after this change, because it quits the app.
+- **The release DMG carries the new installer and its readme** in place of `Install (double-click + password).command`, which signed ad-hoc, so every update changed the signature and macOS forgot the folder permissions granted to the app.
+- **Bundle metadata lives only in `src-tauri/tauri.conf.json`.** Copyright is `© Aki` with no year; the placeholder `description = "A Tauri App"` and `authors = ["you"]` are gone from `Cargo.toml`. The install scripts no longer repeat the bundle id: `codesign` reads it from the built app's `Info.plist`.
+
+### Removed
+- `npm run install:app` (now `npm run build:app`) and `scripts/Install (double-click + password).command`.
+
+### Fixed
+- **Installing a rebuilt app never quit the running one.** `killall "Aki Dev Sync"` matched no process (the process is named `aki-dev-sync`; `killall -s` dry run), so `/Applications` was replaced under a running app. The script now quits by the bundle's `CFBundleExecutable`, and ignores the hang-up first, so a run started from the app's own terminal or BUILD button still finishes the swap. The dry run proved the new name matches; the quit and the hang-up path have not been exercised yet.
+
 ## [1.32.0] - 2026-09-30
 
 ### Added

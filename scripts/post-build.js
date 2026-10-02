@@ -2,13 +2,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
-import { injectFileIntoDmg } from './inject-dmg-file.js'
+import { injectIntoDmg } from './inject-dmg-file.js'
 
 const BRAND_SLUG = 'Aki-DevSync'
+// Every DMG of this app carries the installer and its readme, the release one included. FRIEND=1 (build:rmad:friend / build:rmud:friend) only gives the DMG to hand to a person a name that can never be taken for a release artifact.
+const FRIEND = process.env.FRIEND === '1'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const version = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8')).version
-const productName = JSON.parse(fs.readFileSync(path.join(appRoot, 'src-tauri/tauri.conf.json'), 'utf8')).productName
+const tauriConf = JSON.parse(fs.readFileSync(path.join(appRoot, 'src-tauri/tauri.conf.json'), 'utf8'))
+const productName = tauriConf.productName
 const now = new Date()
 const buildNum = process.env.BUILD_NUM || `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
 const targetRoot = process.env.CARGO_TARGET_DIR || path.join(appRoot, 'src-tauri/target')
@@ -30,11 +33,19 @@ function reveal(absPath) {
 function renameNative(dmgDir, nativeName, arch) {
   const from = path.join(dmgDir, nativeName)
   if (!fs.existsSync(from)) return false
-  const to = path.join(dmgDir, `${BRAND_SLUG}-v${version}.${buildNum}-${arch}.dmg`)
+  const to = path.join(dmgDir, `${BRAND_SLUG}${FRIEND ? '-Installer' : ''}-v${version}.${buildNum}-${arch}.dmg`)
   fs.renameSync(from, to)
   console.log(`Renamed: ${from} → ${to}`)
-  injectFileIntoDmg(to, path.join(appRoot, 'scripts/Install (double-click + password).command'))
-  console.log('Injected: install helper')
+  const { windowSize, appPosition, applicationFolderPosition } = tauriConf.bundle.macOS.dmg
+  const centerX = Math.round(windowSize.width / 2)
+  injectIntoDmg(to, [
+    { src: path.join(appRoot, 'scripts/installer/READ ME.txt'), at: [centerX, 70] },
+    { src: path.join(appRoot, `scripts/installer/Install ${productName}.command`), at: [centerX, 288] },
+  ], [
+    { name: `${productName}.app`, at: [appPosition.x, appPosition.y] },
+    { name: 'Applications', at: [applicationFolderPosition.x, applicationFolderPosition.y] },
+  ])
+  console.log('Injected: installer + readme')
   reveal(to)
   return true
 }

@@ -95,7 +95,7 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 ## 📦 Install (macOS)
 
 1. Download the latest `.dmg` from the [**Releases**](https://github.com/lacvietanh/aki-dev-sync/releases) page (`Aki-DevSync-vX.X.X.BUILD-arm.dmg` for Apple Silicon, `-uni.dmg` for Intel + Apple Silicon).
-2. Open the `.dmg` and double-click **`Install (double-click + password).command`** in the middle of the window - it copies the app to `Applications`, strips quarantine, ad-hoc signs it, and launches it. It asks for your password only if plain copy isn't allowed on your account.
+2. Open the `.dmg` and double-click **`Install Aki Dev Sync.command`** below the app icon - it creates a self-signed `Aki Dev Sync Dev` certificate in your login keychain (first time only), signs the app with it, copies it to `Applications` and launches it. Signing with the same certificate every time keeps the folder permissions you granted across updates. If macOS blocks the file, `READ ME.txt` above the icons shows the way past it. Releases up to 1.32.0 carry the older `Install (double-click + password).command` instead, which signs ad-hoc.
 
 **Requirements:** `rsync` and `ssh` available on your `PATH` (preinstalled on macOS), plus an SSH host you can reach.
 
@@ -111,7 +111,9 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 npm install
 npm run tauri dev    # first run compiles Rust (~5-10 min)
 npm run build:rmud   # release build: universal (Intel + Apple Silicon) .dmg + artifact rename
-npm run install:app  # owner-local arm64 .app → /Applications, stable signing identity (= ./scripts/install-desktop.sh)
+npm run build:rmad:friend # arm64 .dmg to hand to someone: adds a double-click installer (signs with a stable identity on their Mac) and a readme
+npm run build:rmud:friend # the same, universal
+npm run build:app    # owner-local: build the arm64 .app, sign it, quit the running app, replace it in /Applications (= ./scripts/install-desktop.sh)
 npm run help         # every npm script with its purpose
 ```
 

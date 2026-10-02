@@ -1,0 +1,43 @@
+Aki Dev Sync — cài đặt trên macOS / installing on macOS
+
+
+TIẾNG VIỆT
+
+1. Bấm đúp file "Install Aki Dev Sync.command" trong cửa sổ này.
+   Đừng kéo app vào Applications bằng tay: bản kéo tay chưa được ký, macOS sẽ chặn không cho mở.
+
+2. Nếu macOS báo không mở được file vì không xác minh được nhà phát triển:
+   - macOS 15 trở lên: mở System Settings > Privacy & Security, kéo xuống cuối trang, bấm "Open Anyway", rồi bấm đúp lại file.
+   - macOS 14 trở xuống: bấm chuột phải vào file, chọn Open, rồi bấm Open lần nữa.
+   - Vẫn không được: mở app Terminal, gõ chữ bash và một dấu cách, kéo file .command thả vào cửa sổ Terminal, nhấn Enter.
+
+3. Một cửa sổ Terminal hiện ra và chạy vài giây. Xong thì Aki Dev Sync tự mở. Nếu máy hỏi mật khẩu đăng nhập hoặc xin dùng keychain, hãy cho phép.
+
+Trình cài đặt làm những gì
+   - Tạo một chứng chỉ tự ký tên "Aki Dev Sync Dev" trong keychain đăng nhập của bạn (chỉ lần đầu).
+   - Ký app bằng chứng chỉ đó, chép vào /Applications rồi mở app. Nếu app đang chạy thì nó được đóng trước khi thay bản mới.
+   - Lần cập nhật sau dùng lại đúng chứng chỉ này, nên các quyền bạn đã cấp cho app được giữ nguyên, macOS không hỏi lại.
+   - Không cần cài Xcode hay Command Line Tools: chỉ dùng công cụ có sẵn của macOS. Không gửi gì ra khỏi máy bạn.
+
+Gỡ cài đặt: xóa "Aki Dev Sync" trong thư mục Applications. Muốn xóa cả chứng chỉ thì mở Keychain Access, tìm "Aki Dev Sync Dev" và xóa.
+
+
+ENGLISH
+
+1. Double-click "Install Aki Dev Sync.command" in this window.
+   Do not drag the app into Applications yourself: a dragged copy is unsigned and macOS will refuse to open it.
+
+2. If macOS says the file cannot be opened because the developer cannot be verified:
+   - macOS 15 or later: open System Settings > Privacy & Security, scroll to the bottom, click "Open Anyway", then double-click the file again.
+   - macOS 14 or earlier: right-click the file, choose Open, then click Open again.
+   - Still blocked: open the Terminal app, type bash followed by a space, drag the .command file into the Terminal window, press Enter.
+
+3. A Terminal window appears and runs for a few seconds. When it finishes, Aki Dev Sync opens. If your Mac asks for your login password or for keychain access, allow it.
+
+What the installer does
+   - Creates a self-signed certificate named "Aki Dev Sync Dev" in your login keychain (first time only).
+   - Signs the app with that certificate, copies it into /Applications and opens it. If the app is running, it is closed before the new copy replaces it.
+   - Later updates reuse the same certificate, so the permissions you granted the app stay in place and macOS does not ask again.
+   - Xcode and the Command Line Tools are not needed: only tools that ship with macOS are used. Nothing leaves your Mac.
+
+Uninstall: delete "Aki Dev Sync" from the Applications folder. To remove the certificate too, open Keychain Access, find "Aki Dev Sync Dev" and delete it.
