@@ -43,7 +43,7 @@ sudo apt install -y \
 ```bash
 npm install
 npm run tauri dev    # dev (first run compiles Rust, ~5-10 min)
-./scripts/install-desktop.sh # owner-local arm64 .app → /Applications, stable identity
+npm run build:app    # INSTALL on this Mac: arm64 .app, signed with a stable identity, replaces /Applications
 ```
 
 For the owner-local app, use `npm run build:app` (= `./scripts/install-desktop.sh`: build, sign, quit the running app, install); `npm run build:rmaa` builds the `.app` without installing. To hand the app to someone, use `npm run build:rmad:friend` or `npm run build:rmud:friend` (the `.dmg` plus a double-click installer and a readme - `docs/ref/install-desktop.md`). For artifacts, use the package scripts, **not** raw `tauri build` - see "Post-build artifact rename" below.

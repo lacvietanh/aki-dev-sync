@@ -109,12 +109,12 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 
 ```bash
 npm install
+npm run build:app    # INSTALL on this Mac: build the arm64 .app (skipped when nothing changed), sign it, quit the running app, replace /Applications/Aki Dev Sync.app
 npm run tauri dev    # first run compiles Rust (~5-10 min)
 npm run build:rmud   # release build: universal (Intel + Apple Silicon) .dmg + artifact rename
 npm run build:rmad:friend # arm64 .dmg to hand to someone: adds a double-click installer (signs with a stable identity on their Mac) and a readme
 npm run build:rmud:friend # the same, universal
-npm run build:app    # owner-local: build the arm64 .app, sign it, quit the running app, replace it in /Applications (= ./scripts/install-desktop.sh)
-npm run help         # every npm script with its purpose
+npm run help         # every npm script with its purpose, install command first
 ```
 
 Full prerequisites (macOS & Linux), build conventions, and Tauri gotchas are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.

@@ -2,18 +2,18 @@
 import fs from 'node:fs'
 
 const INFO = {
-  help: 'this list',
-  dev: 'Vite frontend only (no Rust)',
-  'dev:debug': 'full app with AKI_DEBUG logs (= tauri dev)',
-  tauri: 'tauri CLI wrapper (use: npm run tauri dev)',
-  build: 'Vite frontend build only',
-  preview: 'preview the Vite build',
-  'build:app': 'build the arm64 .app (skipped when the built one is newer than every source; FORCE=1 rebuilds), sign it, quit the running app, replace /Applications/Aki Dev Sync.app',
-  'build:rmaa': 'arm64 .app only, nothing installed (Finder reveal unless NO_REVEAL=1)',
-  'build:rmad': 'arm64 .dmg',
-  'build:rmud': 'universal .dmg (release build)',
-  'build:rmad:friend': 'arm64 .dmg to hand to a person: same layout plus a double-click installer that signs on their Mac, and a readme',
-  'build:rmud:friend': 'universal .dmg to hand to a person (Intel + Apple Silicon), same installer and readme',
+  help: 'this list: the install command first, the build-name key last',
+  dev: 'frontend only, in the browser (no app window, no Rust)',
+  'dev:debug': 'run the full app window from source, with debug logs',
+  tauri: 'Tauri CLI (npm run tauri dev = run the full app window from source)',
+  build: 'build the frontend only (no app); build:app and the DMG builds run it for you',
+  preview: 'serve the built frontend in the browser',
+  'build:app': 'INSTALL on this Mac: build the arm64 .app (skipped when nothing changed; FORCE=1 rebuilds) + sign + quit the running app + replace /Applications/Aki Dev Sync.app',
+  'build:rmaa': 'build the arm64 .app without installing it, to check a change builds; the installed app is untouched (shows it in Finder unless NO_REVEAL=1)',
+  'build:rmad': 'arm64 .dmg (Apple Silicon only), not installed',
+  'build:rmud': 'universal .dmg (Intel + Apple Silicon): the release file',
+  'build:rmad:friend': '.dmg to hand to a person with an Apple Silicon Mac: the app plus a double-click installer and a readme',
+  'build:rmud:friend': '.dmg to hand to a person with any Mac (Intel or Apple Silicon): the app plus a double-click installer and a readme',
   'lint:scripts': 'lint the remote shell scripts',
   'lint:simpleview': 'check the SimpleView boundary',
   'audit:ui': 'UI architecture audit',
@@ -32,4 +32,6 @@ if (missing.length || stale.length) {
   process.exit(1)
 }
 const width = Math.max(...scripts.map((s) => s.length))
+console.log('Install Aki Dev Sync on this Mac: npm run build:app\n')
 for (const s of scripts) console.log(`npm run ${s.padEnd(width)}  ${INFO[s]}`)
+console.log('\nbuild:<mode><os><arch><pack>: mode r release · os m macOS · arch a arm64, u universal · pack a .app, d .dmg · :friend = the DMG plus an installer, for another person')
