@@ -2,7 +2,7 @@
 
 Bundle `aki.devsync`. In-app PTY: app → zsh → CLI (`claude`, `agy`, `find`, `fd`, `rg`). TCC charges this **bundle**, not Terminal.app.
 
-Apple switches, rebuild/CDHash, sticky denial: `~/.aki/akidevrule/docs/ref/macos-codesign-tcc.md` (concise rule: `tauri.B7`). Local `.app` install: [install-desktop.md](install-desktop.md).
+Apple switches, rebuild/CDHash, sticky denial: `~/.aki/akidevrule/docs/ref/fact-macos-codesign-tcc.md` (concise rule: `tauri.B7`). Local `.app` install: [install-desktop.md](install-desktop.md).
 
 ## Folder prompt for this app
 
@@ -20,7 +20,7 @@ Developer Tools does not stop this dialog.
 
 ## After a rebuild, grants look gone
 
-Not a `tccutil` loop. Run `./scripts/install-desktop.sh`; it reuses `Aki Dev Sync Dev` and replaces the launched `.app` with the same designated requirement. Mechanism: `~/.aki/akidevrule/docs/ref/macos-codesign-tcc.md`.
+Not a `tccutil` loop. Run `npm run build:app` (= `./scripts/install-desktop.sh`); it reuses `Aki Dev Sync Dev` and replaces the launched `.app` with the same designated requirement. Mechanism: `~/.aki/akidevrule/docs/ref/fact-macos-codesign-tcc.md`.
 
 ## Spawn scope
 

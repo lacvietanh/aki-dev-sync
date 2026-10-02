@@ -1,12 +1,3 @@
-# GEMINI.md - AG Rules Bootstrap
+# GEMINI.md — Aki Dev Sync (bootstrap)
 
-Shared rules are installed at `~/.aki/akidevrule/`. Read `~/.aki/akidevrule/index.md` and this repository's `CLAUDE.md` before acting.
-
-## 1. Single Source of Truth
-**You MUST read `CLAUDE.md` in this directory before performing any task.** 
-
-## 2. Separation of Concerns
-**[DO NOT ADD RULES HERE]**
-- **Project Rules**: `./CLAUDE.md`
-- **General Rules**: `~/.aki/akidevrule/` (referenced in `CLAUDE.md`)
-- **AG Overrides**: Global `~/.gemini/GEMINI.md`
+Gemini CLI and Antigravity auto-load this file. It is a pointer only: read `CLAUDE.md` in this directory before any work. `CLAUDE.md` is the single source of project facts and constraints and points at the shared Aki rules; add nothing here.
