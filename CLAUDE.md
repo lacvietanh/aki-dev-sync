@@ -35,7 +35,7 @@ Generic Tauri v2 + Rust lessons, not specific to this project - copy this whole 
 
 **Ships macOS-only** - the only bundle produced is a `.dmg` (`npm run build:rmud`). Treat mac as the sole runtime target when writing user-facing text or platform-specific code: print `⌘` in shortcut labels (no OS-detection branch), assume macOS paths first, and add a Windows/Linux branch only when a build for that platform actually ships. The Linux path in "Runtime log location" below is for running the dev build on the remote dev box, not a shipped target.
 
-**Desktop Aki-Tauri law (SSoT):** `/Volumes/DEV/Frameworks/Tauri/AkiTauri`.
+**UNIDOC (SSoT):** here UNIDOC means UNIDOC Tauri, the desktop standard: `/Volumes/DEV/Frameworks/Tauri/AkiTauri`.
 
 ### UI Principle - Extreme Narrow (ABSOLUTE, Never Violate)
 
