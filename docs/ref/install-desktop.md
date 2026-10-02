@@ -3,12 +3,14 @@
 Owner-local arm64 `.app` → `/Applications`, signed as `Aki Dev Sync Dev` so TCC grants survive rebuilds. Not a release, not a DMG, no sudo.
 
 ```sh
-npm run build:app                # = ./scripts/install-desktop.sh
-SKIP_BUILD=1 npm run build:app   # reuse the .app already built
-npm run build:rmaa               # the .app only: nothing signed, nothing installed, the running app untouched
+npm run build:app             # = ./scripts/install-desktop.sh
+FORCE=1 npm run build:app     # build even when the built .app is current
+npm run build:rmaa            # the .app only: nothing signed, nothing installed, the running app untouched
 ```
 
 `build:app` runs four steps: create or reuse the `Aki Dev Sync Dev` identity in the login keychain, build the arm64 `.app` (`NO_REVEAL=1 npm run build:rmaa`, so Finder does not pop up), sign it with that identity keeping its entitlements, then quit the running app and replace `/Applications/Aki Dev Sync.app`. An app that was running is reopened on the new build. If the destination is root-owned, it prints the one-time `chown` command and exits.
+
+The build step is skipped, and the run only signs and installs, when the built `.app` is current: its version equals `package.json` and its `Contents/Info.plist` is newer than every git-tracked or untracked-not-ignored file in the list `SOURCES` in `scripts/install-desktop.sh`: `src/`, `src-tauri/`, `public/`, `share/` (Markdown excluded under `src/` and `src-tauri/`), `index.html`, `vite.config.js`, `package.json`, `package-lock.json`, `CHANGELOG.md` (the in-app changelog), the build wrappers `scripts/tauri-runner.js` and `scripts/sync-version.js`, and the three `scripts/*.sh` the Rust crate embeds. Signing and `xattr -cr` do not touch `Info.plist`, so its time is the time of the last build. The script prints the reason it builds (`src/App.vue changed after the last build`) or that it skipped. A source file deleted without any other change is not detected; `FORCE=1` covers that.
 
 **It quits the running app**, and every in-app terminal with it. Started from one of those terminals or from the BUILD button, the script ignores the hang-up and still finishes the swap.
 

@@ -8,7 +8,7 @@ const INFO = {
   tauri: 'tauri CLI wrapper (use: npm run tauri dev)',
   build: 'Vite frontend build only',
   preview: 'preview the Vite build',
-  'build:app': 'build the arm64 .app, sign it, quit the running app, replace /Applications/Aki Dev Sync.app (SKIP_BUILD=1 reuses the built .app)',
+  'build:app': 'build the arm64 .app (skipped when the built one is newer than every source; FORCE=1 rebuilds), sign it, quit the running app, replace /Applications/Aki Dev Sync.app',
   'build:rmaa': 'arm64 .app only, nothing installed (Finder reveal unless NO_REVEAL=1)',
   'build:rmad': 'arm64 .dmg',
   'build:rmud': 'universal .dmg (release build)',

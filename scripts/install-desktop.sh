@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# `npm run build:app`: builds the arm64 .app unless the built one is current (NO_REVEAL=1: no Finder pop-up), signs it, quits the running app, replaces /Applications. FORCE=1 always builds.
 # Lookup: docs/ref/install-desktop.md
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -51,19 +52,39 @@ ensure_identity() {
 echo "== 1/4: codesigning identity =="
 ensure_identity
 
-echo "== 2/4: arm64 .app (npm run build:rmaa) =="
-if [ "${SKIP_BUILD:-}" = "1" ]; then
-  echo "SKIP_BUILD=1 — using existing bundle"
-else
+TARGET_ROOT="${CARGO_TARGET_DIR:-$REPO_ROOT/src-tauri/target}"
+APP_SRC="$TARGET_ROOT/aarch64-apple-darwin/release/bundle/macos/${PRODUCT}.app"
+# Signing and xattr -cr leave Info.plist untouched, so its mtime is the time of the last build.
+APP_STAMP="$APP_SRC/Contents/Info.plist"
+# Everything that ends up in the bundle: the in-app changelog reads CHANGELOG.md, and the Rust crate embeds the files outside src-tauri listed here.
+SOURCES=(src src-tauri public share index.html vite.config.js package.json package-lock.json CHANGELOG.md scripts/tauri-runner.js scripts/sync-version.js scripts/get-antigravity-usage.sh scripts/get-claudecode-usage.sh scripts/provision-claudecode.sh ':(exclude,glob)src/**/*.md' ':(exclude,glob)src-tauri/**/*.md')
+
+app_version() { /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_STAMP" 2>/dev/null || true; }
+
+build_reason() {
+  if [ "${FORCE:-}" = "1" ]; then echo "FORCE=1"; return 0; fi
+  if [ ! -f "$APP_STAMP" ]; then echo "no built .app yet"; return 0; fi
+  local want f
+  want="$(node -p "require('$REPO_ROOT/package.json').version")"
+  if [ "$(app_version)" != "$want" ]; then echo "built .app is $(app_version), package.json is $want"; return 0; fi
+  while IFS= read -r -d '' f; do
+    if [ "$REPO_ROOT/$f" -nt "$APP_STAMP" ]; then echo "$f changed after the last build"; return 0; fi
+  done < <(git -C "$REPO_ROOT" ls-files -co --exclude-standard -z -- "${SOURCES[@]}")
+  return 0
+}
+
+echo "== 2/4: arm64 .app =="
+reason="$(build_reason)"
+if [ -n "$reason" ]; then
+  echo "building ($reason): npm run build:rmaa"
   (
     cd "$REPO_ROOT"
     NO_REVEAL=1 npm run build:rmaa
   ) || fail "npm run build:rmaa failed"
+else
+  echo "build skipped: the built .app is $(app_version) and newer than every source file (FORCE=1 rebuilds)"
 fi
-
-TARGET_ROOT="${CARGO_TARGET_DIR:-$REPO_ROOT/src-tauri/target}"
-APP_SRC="$TARGET_ROOT/aarch64-apple-darwin/release/bundle/macos/${PRODUCT}.app"
-[ -d "$APP_SRC" ] || fail "built .app not found at $APP_SRC — run without SKIP_BUILD=1"
+[ -d "$APP_SRC" ] || fail "built .app not found at $APP_SRC"
 
 echo "== 3/4: sign $APP_SRC =="
 codesign --force --deep --sign "$IDENTITY" \
