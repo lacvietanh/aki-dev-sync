@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process'
 import { injectIntoDmg } from './inject-dmg-file.js'
 
 const BRAND_SLUG = 'Aki-DevSync'
-// Every DMG of this app carries the installer and its readme, the release one included. FRIEND=1 (build:rmad:friend / build:rmud:friend) only gives the DMG to hand to a person a name that can never be taken for a release artifact.
+// Every DMG carries the installer and its readme, the release one included; FRIEND=1 only renames it so it is never taken for a release artifact.
 const FRIEND = process.env.FRIEND === '1'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')

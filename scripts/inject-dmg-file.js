@@ -15,7 +15,7 @@ const PLACE_ICONS = `on run argv
   end tell
 end run`
 
-// Finder now and then saves the whole window a few points lower, or leaves a new file where it auto-placed it. Finder only has to create the position records; the coordinates are then written straight into the volume's .DS_Store.
+// Finder sometimes saves the window a few points lower or leaves a new file where it auto-placed it, so the coordinates are written straight into the volume's .DS_Store.
 export function pinIconPositions(dsStorePath, icons) {
   const store = fs.readFileSync(dsStorePath)
   for (const { name, at } of icons) {
@@ -33,7 +33,7 @@ export function pinIconPositions(dsStorePath, icons) {
   fs.writeFileSync(dsStorePath, store)
 }
 
-// Tauri's macOS.dmg bundler has no "extra files" option, so the built DMG is converted to read-write, the files are copied in, and it is resealed. A file with `at: [x, y]` gets that icon position in the window Tauri laid out; `pinned` restates the positions of the icons already there. Finder is scripted without `activate`, so it never takes the keyboard.
+// Tauri's dmg bundler has no "extra files" option: convert the DMG to read-write, copy the files in, reseal. Finder is scripted without `activate`, so it never takes the keyboard.
 export function injectIntoDmg(dmgPath, files, pinned = []) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmg-inject-'))
   const rwDmg = path.join(tmpDir, 'rw.dmg')
