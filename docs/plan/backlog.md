@@ -35,7 +35,6 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
-| 6 | Tách setting/state theo đúng chủ sở hữu; badge hai phía; Deploy | `task-1785676763350`, `task-1789390613266`, `task-1787393248179`, `task-1790401977743`, `task-1790490810608` | Thiết kế xong (`docs/research/akidevsync-project-config-scope-2.md`), ba plan cho 1.32.0: (1) `docs/plan/settings-and-state-layout.md` — project / máy / máy×host, `.akidevsync/` vẫn là data thường của project (không đi đường riêng), sửa F2 (baseline quên file đã xoá); (2) `docs/plan/conflict-detection-and-agy-report.md` — phân loại đụng độ, agy chỉ diễn giải; (3) `docs/plan/deploy-action.md` — DEPLOY cạnh DEV/BUILD, hook chỉ cho sync, F3 (3 hook deploy chạy nhầm trên Mac, lỗi bị nuốt). Thứ tự: 1 trước, 2 và 3 độc lập |
 
 ## Nợ kỹ thuật không chặn ship
 
@@ -50,5 +49,5 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 ## Ngoài backlog này
 
 - `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
-- **Release**: 1.32.0 ra 2026-09-30 (gồm phần từng gọi là 1.31.1/1.32.1). Tồn đọng chuyển sang 1.32.1: (a) chuỗi kiểm tra runtime trên Mac trong `docs/plan/1.32.0-mac-handoff.md` § 3 (chưa chạy; ba plan 1–3 giữ ở `docs/plan/` đến khi chuỗi này xong, các task note #6 giữ mở); (b) `scythe.py` báo 41 `[YAP]` (review, không có `[WRAP]`) ở file mới của đợt này — `conflict.rs`, `sync_state.rs`, `sync.rs`, `migrate-deploy-hooks.mjs`; (c) `cargo fmt` một commit riêng.
+- **Release**: 1.33.0 ra 2026-10-07. Chuỗi kiểm tra runtime của ba plan 1–3 đóng 2026-10-07: 1.32.0 chạy hằng ngày trên Mac từ hôm ra mà không lỗi, owner xác nhận; plan và `docs/plan/done/1.32.0-mac-handoff.md` đã vào `done/`, các task note #6 đã done. Dọn code chưa lên lịch, không chặn release: (b) `scythe.py` báo 150 `[YAP]` mức review (không có `[WRAP]`) có từ trước 1.32.0 ở các file đợt 1.32.0 — nhiều nhất `sync.rs`, `conflict.rs`, `sync_state.rs`, `projects.rs`, `useProjectConfig.js`; (c) `cargo fmt` một commit riêng.
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.

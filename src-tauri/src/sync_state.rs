@@ -1,6 +1,6 @@
 //! Per-(project, host) sync state: `~/.aki/devsync/state/<project_id>/<host>/{baseline.json,last_sync.json}`.
 //!
-//! THE DECISION THIS FILE IMPLEMENTS (docs/plan/settings-and-state-layout.md): sync state belongs to a
+//! THE DECISION THIS FILE IMPLEMENTS (docs/plan/done/settings-and-state-layout.md): sync state belongs to a
 //! (project, host) PAIR, not to a project alone - a baseline written against one host must never be read
 //! back against another (docs/research/akidevsync-project-config-scope-2.md § F1/Evidence). This is the
 //! sole owner of that directory: every function here is scoped to exactly one (id, host), per the
@@ -131,7 +131,7 @@ pub fn write_last_sync(
 /// actually ran against the host it is about to sync with NOW, never `read_last_sync_all`'s
 /// newest-across-every-host figure (correct for the table's last-action cell, wrong here: a more recent
 /// sync to a DIFFERENT host must never suppress a delete confirmation for this one - N-e,
-/// docs/plan/settings-and-state-layout.md).
+/// docs/plan/done/settings-and-state-layout.md).
 #[tauri::command]
 pub async fn read_last_sync_for_host(project_id: String, host: String) -> Result<Option<LastSync>, String> {
     crate::system::validate_remote_host(&host)?;
@@ -182,7 +182,7 @@ pub async fn read_last_sync_all(
     .map_err(|e| format!("read_last_sync_all task join error: {}", e))
 }
 
-/// B5 (docs/plan/settings-and-state-layout.md § B): removes only `state/<id>/` - every host's baseline
+/// B5 (docs/plan/done/settings-and-state-layout.md § B): removes only `state/<id>/` - every host's baseline
 /// and last_sync for exactly ONE project. Wired from `removeProject` in remoteActions.js. Scoped to a
 /// single project id (1.9.3 multi-entity guard): every OTHER project's `state/<other_id>/` must stay
 /// byte-identical, tested below across >=2 projects x >=2 hosts. Local, fast, app-data-only file I/O
@@ -197,7 +197,7 @@ pub fn delete_project_state(project_id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// One-shot, idempotent migration (docs/plan/settings-and-state-layout.md § Migration, amended § Amendments
+/// One-shot, idempotent migration (docs/plan/done/settings-and-state-layout.md § Migration, amended § Amendments
 /// for the 1.32.0 remote_path fix):
 /// - `remote_host` + `hooks` -> `targets.<remote_host>` (only when that entry is absent).
 /// - a stale `targets.<host>.remote_path` left by a pre-fix run of this same migration is lifted back
@@ -307,7 +307,7 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
     changed
 }
 
-/// Boot-time entrypoint (docs/plan/settings-and-state-layout.md § Migration): runs in `setup()` beside
+/// Boot-time entrypoint (docs/plan/done/settings-and-state-layout.md § Migration): runs in `setup()` beside
 /// `app_paths::migrate_legacy_app_data`, before the logger opens, so every path involved
 /// (`app_paths::app_data_dir`, `sync::baseline_dir`'s fallback) is resolved deterministically instead of
 /// depending on `sync::APP_DATA_DIR` being primed later by whichever sync command happens to run first.
@@ -698,7 +698,7 @@ mod tests {
         assert_eq!(snapshot(&projects), before, "a no-op second run must leave every file byte-identical");
     }
 
-    /// docs/plan/settings-and-state-layout.md § Migration: "an existing state baseline is NEVER
+    /// docs/plan/done/settings-and-state-layout.md § Migration: "an existing state baseline is NEVER
     /// overwritten" - a fresher per-host baseline (e.g. written by a sync that already ran this launch)
     /// must survive a legacy flat baseline still sitting on disk.
     #[test]
@@ -887,7 +887,7 @@ mod tests {
         assert!(reloaded.last_sync_action.is_none());
     }
 
-    /// Migration rehearsal seam (docs/plan/1.32.0-mac-handoff.md § 2, release.B5's "rehearse from the
+    /// Migration rehearsal seam (docs/plan/done/1.32.0-mac-handoff.md § 2, release.B5's "rehearse from the
     /// PREVIOUS state, never from empty"): runs the real `migrate_settings_and_state` against a COPY of a
     /// real `~/.aki/devsync` tree, never the original. `#[ignore]` so an ordinary `cargo test` never
     /// touches it; a missing/empty `AKI_REHEARSAL_DEVSYNC_COPY` PANICS rather than passing vacuously

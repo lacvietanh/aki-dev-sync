@@ -1,10 +1,10 @@
 // Pure, Vue/Tauri-free logic behind the registry save funnel, host-switch resolution and the config-seed
-// batch (docs/plan/settings-and-state-layout.md). Extracted so `node --test` can exercise the exact
+// batch (docs/plan/done/settings-and-state-layout.md). Extracted so `node --test` can exercise the exact
 // functions `useProjectConfig.js` calls, without dragging Vue reactivity or the Tauri IPC layer into the
 // test runner (same reasoning as `src/services/replayHydration.js`).
 
 /**
- * T2 (docs/plan/settings-and-state-layout.md): the one default-exclude list, shared by `createNewProject`
+ * T2 (docs/plan/done/settings-and-state-layout.md): the one default-exclude list, shared by `createNewProject`
  * (a brand-new project) and the config dialog's own missing-`project.json` prefill (an existing project
  * whose file was never seeded, or was deleted) - so the two "nothing to read from yet" paths never drift
  * apart into two different defaults.
@@ -31,7 +31,7 @@ export function canSaveProjectConfig(isNew, status) {
 }
 
 /**
- * One project's `save_projects` payload (docs/plan/settings-and-state-layout.md § B1/B2, amended § Amendments
+ * One project's `save_projects` payload (docs/plan/done/settings-and-state-layout.md § B1/B2, amended § Amendments
  * for the 1.32.0 remote_path fix). Project-owned fields (name, production_url, excludes, dev/build commands)
  * are stripped ONLY once `project.json` already owns them (`configStatus === 'ok'`) - any other status
  * (missing/unavailable/corrupt/unknown) means the registry copy is still the only one and must round-trip
@@ -78,7 +78,7 @@ export function buildProjectSavePayload(project, configStatus) {
 }
 
 /**
- * Deploy plan pure predicates (docs/plan/deploy-action.md). `getDeployCmd` is the pure resolver; its only
+ * Deploy plan pure predicates (docs/plan/done/deploy-action.md). `getDeployCmd` is the pure resolver; its only
  * production caller is `useDeploy.js::resolveDeployCmd`, which supplies the detected fallback read from the
  * `projectRuntime` store (`stack_info` never lives on the project object itself, so a truly
  * zero-arg resolver here would silently always return the saved value with no fallback). Every other
@@ -99,7 +99,7 @@ export function deployOnPush(project) {
 }
 
 /**
- *  (docs/plan/deploy-action.md): the ONE place the post-push `on_push` offer is decided - the
+ *  (docs/plan/done/deploy-action.md): the ONE place the post-push `on_push` offer is decided - the
  * caller (`useSync.js`, only reachable from `run_sync`'s try-block success path, so a failed sync never
  * gets here) resolves the deploy command once via `useDeploy.js::resolveDeployCmd` and passes it in as
  * `deployCmd`, rather than this function re-deriving it (that duplication was a real gap: two
@@ -163,7 +163,7 @@ export function buildProjectListSavePayload(projectList, getConfigStatus) {
  * dialog's own Remote Host select (S3) - having this logic in two places is exactly the bug S3 describes.
  *
  * 1.32.0 fix: `remote_path` is a project fact (one remote directory regardless of host - see
- * `docs/plan/settings-and-state-layout.md` § Amendments), so a host switch never touches it; the caller
+ * `docs/plan/done/settings-and-state-layout.md` § Amendments), so a host switch never touches it; the caller
  * keeps `project.remote_path` unchanged, and `deploy` names its own host so it never follows. Only `hooks` are genuinely host-specific: the outgoing
  * host's current values are recorded into `targets` (so switching back restores them), then the incoming
  * host's saved target is resolved if one exists. Never mutates `project`.
@@ -193,7 +193,7 @@ export function resolveHostSwitch(project, newHost) {
 }
 
 /**
- * T2 (docs/plan/settings-and-state-layout.md): whether the config dialog should prefill the default
+ * T2 (docs/plan/done/settings-and-state-layout.md): whether the config dialog should prefill the default
  * exclude lists instead of an empty one - only when project.json is genuinely `missing` (fresh clone, or
  * never seeded) AND nothing is already sitting in memory to keep (an unmigrated legacy value still wins).
  */
@@ -203,7 +203,7 @@ export function shouldUseDefaultExcludes(configStatus, pullExcludes, pushExclude
 }
 
 /**
- * `write_project_configs_if_missing` seed batch (docs/plan/settings-and-state-layout.md § C) - pure so the
+ * `write_project_configs_if_missing` seed batch (docs/plan/done/settings-and-state-layout.md § C) - pure so the
  * exact shape the Rust command receives can be asserted without a live invoke.
  */
 export function buildProjectConfigSeeds(loadedProjects) {

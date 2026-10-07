@@ -461,7 +461,7 @@ function isPathMissing(p) {
   return projectRuntime.value[p.id]?.local_path_missing === true;
 }
 
-// Badge/popover breakdown (docs/plan/conflict-detection-and-agy-report.md §4) — read-only, never an action.
+// Badge/popover breakdown (docs/plan/done/conflict-detection-and-agy-report.md §4) — read-only, never an action.
 // Reachable from any lit badge (push count, pull count or conflict), not only when conflicts > 0.
 function conflictCount(p) {
   return projectRuntime.value[p.id]?.conflicts?.length || 0;
@@ -622,7 +622,7 @@ function ideMissing(name) {
 const PATH_MISSING_TITLE = 'Local folder missing on disk';
 const CONFIG_NOT_READY_TITLE = 'Project settings (.akidevsync/project.json) are not ready - fix before syncing';
 
-// Item 2 (docs/plan/settings-and-state-layout.md): PUSH/PULL/status-check must never run against a
+// Item 2 (docs/plan/done/settings-and-state-layout.md): PUSH/PULL/status-check must never run against a
 // project whose project.json is not the authoritative 'ok' (missing with nothing to seed, corrupt,
 // unavailable) - the excludes on `p` may be an empty or stale registry leftover otherwise. The actual
 // guard lives in `useSync.js::startSync`/`useSyncStatus.js::checkProjectSyncStatus`; this is the matching
@@ -729,7 +729,7 @@ function runProjectDev(project, cmd) {
   openRunCommand(project, cmd, 'dev');
 }
 
-// DEPLOY (docs/plan/deploy-action.md): always asks first via confirmAndDeploy, then runs local/remote.
+// DEPLOY (docs/plan/done/deploy-action.md): always asks first via confirmAndDeploy, then runs local/remote.
 // `resolveDeployCmd` (useDeploy.js) is the ONE impure resolver every caller here uses.
 function runProjectDeploy(project) {
   const cmd = resolveDeployCmd(project);

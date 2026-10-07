@@ -1,6 +1,8 @@
 # Deploy as its own action, hooks back to sync-only
 
-**Order: plan 3 of 3.** Depends on `docs/plan/settings-and-state-layout.md` (plan 1): `commands.deploy` lives in `project.json`, `hooks` live under `targets.<host>` in `projects.json`, and `deploy` is one top-level field per project in `projects.json` (amended 2026-09-28, see § Amendments). Independent of plan 2. Target release: 1.32.0.
+**Closed 2026-10-07.** The open runtime checks below are settled by 1.32.0 running in daily use on the Mac since its 2026-09-30 release with no regression; the owner confirmed it.
+
+**Order: plan 3 of 3.** Depends on `docs/plan/done/settings-and-state-layout.md` (plan 1): `commands.deploy` lives in `project.json`, `hooks` live under `targets.<host>` in `projects.json`, and `deploy` is one top-level field per project in `projects.json` (amended 2026-09-28, see § Amendments). Independent of plan 2. Target release: 1.32.0.
 
 Why deploy settings are split between the project and the host: `docs/research/akidevsync-project-config-scope-2.md` § Field placement.
 
@@ -67,14 +69,14 @@ F3 (research doc): the first three have not been deploying from push at all if t
 ## Mac checks after the code is done
 
 - [x] ~~Before removing the three hooks: push one of them on the current build and read the sync console.~~ Settled without a push (2026-09-28): all three hooks had `run_hooks_on_remote: false`, and none of their `cd` targets exists on the Mac (`ls ~/aki/web/api.akitao.com ~/aki/run/aki-gegrok-bot ~/aki/AkiDevRule` → no such file), so every one failed silently under `ignore_hook_errors`. `[WARN] post_push hook failed (ignored)` confirms F3; a successful deploy means the hook ran somewhere this analysis missed, so stop and re-check `execute_hook`.
-- [ ] DEPLOY on `api.akitao.com` (remote, `bien`): confirm dialog shows `bien:~/aki/web/api.akitao.com`, the tab shows `npm run deploy` output, and production reflects it (`release.B11`: check a real endpoint, not only the exit code).
-- [ ] Push with `on_push` on: dialog appears once; Cancel deploys nothing.
-- [ ] `D`/`H` overlays in narrow and wide windows; the PUSH button does not grow.
+- [x] DEPLOY on `api.akitao.com` (remote, `bien`): confirm dialog shows `bien:~/aki/web/api.akitao.com`, the tab shows `npm run deploy` output, and production reflects it (`release.B11`: check a real endpoint, not only the exit code).
+- [x] Push with `on_push` on: dialog appears once; Cancel deploys nothing.
+- [x] `D`/`H` overlays in narrow and wide windows; the PUSH button does not grow.
 
 ## Cross-references
 
 - `docs/research/akidevsync-project-config-scope-2.md` — F3 and the field placement.
-- `docs/plan/settings-and-state-layout.md` — the stores this plan writes to.
+- `docs/plan/done/settings-and-state-layout.md` — the stores this plan writes to.
 - `docs/plan/backlog.md` #6 — notes `task-1790401977743`, `task-1790490810608`.
 
 ## Amendments

@@ -24,7 +24,7 @@ pub struct SyncHooks {
     pub ignore_hook_errors: bool,
 }
 
-/// `SyncProject.deploy` (docs/plan/deploy-action.md § Design, amended 2026-09-28): where a deploy runs and
+/// `SyncProject.deploy` (docs/plan/done/deploy-action.md § Design, amended 2026-09-28): where a deploy runs and
 /// whether a push offers it. A remote deploy names its OWN `host`/`path` - never the active sync host
 /// implicitly, because that is a table dropdown one click from any other box (docs/research/sync-host-safety.md).
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -47,7 +47,7 @@ pub struct ProjectDeploy {
 /// `hooks` are host-specific facts (real hooks embed that host's paths), so switching the active `remote_host` restores this entry instead of losing the
 /// previous host's settings (F5).
 ///
-/// `remote_path` is DEPRECATED here (docs/plan/settings-and-state-layout.md § Amendments, 1.32.0): a
+/// `remote_path` is DEPRECATED here (docs/plan/done/settings-and-state-layout.md § Amendments, 1.32.0): a
 /// project has exactly ONE remote directory regardless of which host serves it - storing it per-host made
 /// the first sync to a new host demand re-entering a path that was never actually different, which no real
 /// project in this app's own registry has ever needed. Kept only as a one-release migration source
@@ -89,7 +89,7 @@ pub struct SyncProject {
     pub push_excludes: Vec<String>,
     #[serde(default, skip_serializing_if = "is_default_hooks")]
     pub hooks: SyncHooks,
-    // DEPRECATED (1.32.0, docs/plan/settings-and-state-layout.md): moved to
+    // DEPRECATED (1.32.0, docs/plan/done/settings-and-state-layout.md): moved to
     // `~/.aki/devsync/state/<id>/<host>/last_sync.json` (a target · state fact, not project-on-machine config).
     // Kept as Option + skip_serializing_if for one release so the migration can read an old value once and
     // then never re-materializes it (1.13.0 sync_git lesson) - see sync_state::migrate_settings_and_state.
@@ -409,7 +409,7 @@ mod tests {
         assert!(validate_project(&p).is_ok());
     }
 
-    /// B1 (docs/plan/settings-and-state-layout.md § B): name/production_url/pull_excludes/push_excludes/
+    /// B1 (docs/plan/done/settings-and-state-layout.md § B): name/production_url/pull_excludes/push_excludes/
     /// dev_cmd_override/build_cmd_override are project-owned (`project.json`) from 1.32.0. A legacy entry
     /// still carrying them must load without error, and once the frontend's save funnel strips them to
     /// their empty/None equivalents, `skip_serializing_if` must keep them out of the saved registry for
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(reloaded.hooks.pre_pull_cmd.as_deref(), Some("echo hi"));
     }
 
-    /// B2 last-sync end-to-end (docs/plan/settings-and-state-layout.md § B2): `useSync.js` now calls
+    /// B2 last-sync end-to-end (docs/plan/done/settings-and-state-layout.md § B2): `useSync.js` now calls
     /// `write_last_sync` (state/<id>/<host>/last_sync.json, sync_state.rs) instead of leaving these fields
     /// Some on the project object for `save_projects` to persist. This is the same contract as B1's
     /// project-owned fields: `skip_serializing_if` only drops a None/empty value - it is the frontend's
@@ -543,7 +543,7 @@ mod tests {
         }
     }
 
-    /// B4 (docs/plan/settings-and-state-layout.md § C): `tasks`/`notes` are deprecated but opaque, not
+    /// B4 (docs/plan/done/settings-and-state-layout.md § C): `tasks`/`notes` are deprecated but opaque, not
     /// deleted - an unmigrated legacy record must survive a load -> save round trip so
     /// useProjectNotes.js's migrateLegacyProjectNotes still sees it, while a project that never had one
     /// must never gain the key back (1.13.0 sync_git lesson).

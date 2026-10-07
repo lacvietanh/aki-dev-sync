@@ -8,7 +8,7 @@ Status: amended 2026-09-28
 
 Successor to `docs/research/akidevsync-project-config-scope.md`, whose Decision ("keep everything in `projects.json`, no split") no longer holds. Three pressures reopened it the same day:
 
-1. **Sync state belongs to a (project, host) pair but is stored per project.** A baseline written against `akicloud` was compared against `bien` (`docs/plan/conflict-detection-and-agy-report.md` § Evidence). The host dropdown in the project table (note `task-1786480500476`, shipped) makes switching hosts a one-click action, so this is now routine.
+1. **Sync state belongs to a (project, host) pair but is stored per project.** A baseline written against `akicloud` was compared against `bien` (`docs/plan/done/conflict-detection-and-agy-report.md` § Evidence). The host dropdown in the project table (note `task-1786480500476`, shipped) makes switching hosts a one-click action, so this is now routine.
 2. **Owner direction:** a project's settings should live with the project.
 3. **A Deploy action beside DEV|BUILD** (notes `task-1790401977743`, `task-1790490810608`). Deploy is currently scattered: some projects deploy from an `npm` script, some from a push hook.
 
@@ -104,9 +104,9 @@ Classification: static (code + real `projects.json`). F2: code reading only, **u
 
 **Action.** Three plans, in order:
 
-1. `docs/plan/settings-and-state-layout.md` — the four-owner layout, F2, F4, F5.
-2. `docs/plan/conflict-detection-and-agy-report.md` — reads the per-host baseline from plan 1.
-3. `docs/plan/deploy-action.md` — Deploy beside DEV|BUILD, hooks per host, F3.
+1. `docs/plan/done/settings-and-state-layout.md` — the four-owner layout, F2, F4, F5.
+2. `docs/plan/done/conflict-detection-and-agy-report.md` — reads the per-host baseline from plan 1.
+3. `docs/plan/done/deploy-action.md` — Deploy beside DEV|BUILD, hooks per host, F3.
 
 Rejected: `.akidevsync/local/` · everything travels · nothing travels (reasons under Critique).
 
@@ -114,6 +114,6 @@ Rejected: `.akidevsync/local/` · everything travels · nothing travels (reasons
 
 ## Amendments
 
-**2026-09-28.** F5's field-placement column (`targets.<host>.remote_path`) was wrong. The finding itself — "the host dropdown keeps `remote_path` when the host changes" — was read as a bug to fix by making the path follow the host, when the owner's actual requirement (stated 2026-09-28) is the opposite: a project has exactly ONE remote directory regardless of host, so the path must NEVER change on a host switch. `hooks` (and `deploy`, added by plan 3) really are per-host — they were bundled with `remote_path` into the same `Target` struct on the assumption all three shared one placement rule, without re-checking that assumption against `remote_path` specifically. Checked against the real registry as part of the fix: no project has ever recorded two different paths across hosts, confirming the per-host storage was never actually exercised as designed, only as the friction it created (a new host prompting for a path that had never changed). Fixed directly in `docs/plan/settings-and-state-layout.md` § Amendments; this Decision's "three plans, in order" and the rejected alternatives above are otherwise unchanged.
+**2026-09-28.** F5's field-placement column (`targets.<host>.remote_path`) was wrong. The finding itself — "the host dropdown keeps `remote_path` when the host changes" — was read as a bug to fix by making the path follow the host, when the owner's actual requirement (stated 2026-09-28) is the opposite: a project has exactly ONE remote directory regardless of host, so the path must NEVER change on a host switch. `hooks` (and `deploy`, added by plan 3) really are per-host — they were bundled with `remote_path` into the same `Target` struct on the assumption all three shared one placement rule, without re-checking that assumption against `remote_path` specifically. Checked against the real registry as part of the fix: no project has ever recorded two different paths across hosts, confirming the per-host storage was never actually exercised as designed, only as the friction it created (a new host prompting for a path that had never changed). Fixed directly in `docs/plan/done/settings-and-state-layout.md` § Amendments; this Decision's "three plans, in order" and the rejected alternatives above are otherwise unchanged.
 
 **2026-09-28 (2).** § Field placement, row `targets.<host>.deploy`: deploy is no longer per-host. It is one project-level `deploy` that names its own `host`, because a deploy that follows the active sync host runs wherever the one-click dropdown last pointed — `docs/research/sync-host-safety.md` § R4. The rest of this Decision stands.

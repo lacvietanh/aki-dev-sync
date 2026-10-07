@@ -15,14 +15,14 @@
        class="fa-solid fa-trash cell-badge cell-badge-bottom sync-delete-badge"
        :class="deleteSide === 'left' ? 'cell-badge-left' : ''"
        :title="deleteTitle"></i>
-    <!-- Conflict overlay (docs/plan/conflict-detection-and-agy-report.md §4): free top-left corner, opens the read-only breakdown popover via the same native Popover API + CSS anchor positioning as the OPEN popup, without triggering the sync button underneath. -->
+    <!-- Conflict overlay (docs/plan/done/conflict-detection-and-agy-report.md §4): free top-left corner, opens the read-only breakdown popover via the same native Popover API + CSS anchor positioning as the OPEN popup, without triggering the sync button underneath. -->
     <button v-if="conflictCount > 0"
             type="button"
             class="cell-badge cell-badge-top cell-badge-left sync-conflict-badge"
             :title="conflictTitle"
             :popovertarget="popoverId"
             @click.stop>⚠ {{ conflictCount }}</button>
-    <!-- Deploy/hook overlays (docs/plan/deploy-action.md § "Visibility without Settings"): bottom-right,
+    <!-- Deploy/hook overlays (docs/plan/done/deploy-action.md § "Visibility without Settings"): bottom-right,
          stacked with the delete badge - tiny letter chips, tooltip-only (no click target), so PUSH never
          grows a row for them (Extreme Narrow). -->
     <span v-if="deployOnPush || hasHooks" class="cell-badge-cluster">

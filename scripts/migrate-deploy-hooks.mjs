@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Mac-only, one-shot: moves the three real post_push deploy hooks (docs/plan/deploy-action.md's last
+// Mac-only, one-shot: moves the three real post_push deploy hooks (docs/plan/done/deploy-action.md's last
 // execution step, held UNTICKED pending the Mac F3 console check) from sync hooks into
 // commands.deploy and the project-level `deploy`, each on its own named production host (docs/research/sync-host-safety.md). Never run against ~/.aki/devsync from this dev box - test only
 // against the fixtures this script builds itself (see runSelfTest below).
@@ -22,7 +22,7 @@ import { execSync } from 'node:child_process'
 // (measured 2026-09-28: aki-gegrok-bot's process runs on grokvm, not bien) - named, never "the sync host".
 const deployFor = (move) => ({ run_on: 'remote', on_push: true, host: move.host })
 
-// The three moves this step performs, and nothing else (docs/plan/deploy-action.md's own quoted text - aborts rather than guessing if the live hook text has drifted from this).
+// The three moves this step performs, and nothing else (docs/plan/done/deploy-action.md's own quoted text - aborts rather than guessing if the live hook text has drifted from this).
 const MOVES = [
   {
     slug: 'api.akitao.com',

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rehearses the 1.32.0 settings/state migration (docs/plan/settings-and-state-layout.md,
+# Rehearses the 1.32.0 settings/state migration (docs/plan/done/settings-and-state-layout.md,
 # sync_state.rs::migrate_settings_and_state) against a COPY of a real ~/.aki/devsync tree, never the
 # original (release.B5: "rehearse from the PREVIOUS state, never from empty"). The actual migration run
 # and its postcondition asserts live in the Rust test this script drives -
@@ -15,7 +15,7 @@
 #   ./scripts/rehearse-settings-migration.sh <dir> --keep                      # keep the temp copy always
 #
 # <source-devsync-dir> is REQUIRED and there is no default - pass a backup or a fixture, never the app's
-# own real data directory (docs/plan/1.32.0-mac-handoff.md § 1's backup command is what produces the path
+# own real data directory (docs/plan/done/1.32.0-mac-handoff.md § 1's backup command is what produces the path
 # you pass here). --legacy-baselines is likewise REQUIRED if the migration needs to read that directory -
 # there is no auto-detected default pointing at the live ~/.aki/devsync-baselines, for the same reason
 # there is none for the source. Both are only ever READ from, once, via `cp -R`.

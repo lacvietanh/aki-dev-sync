@@ -25,7 +25,7 @@ pub fn run() {
         .setup(|app| {
             // Must run before logger::init: it moves usage.log itself, and the logger has not opened a file yet to log through.
             let migration_summary = app_paths::migrate_legacy_app_data(app.handle());
-            // docs/plan/settings-and-state-layout.md § Migration (B3): one-shot, idempotent, and run
+            // docs/plan/done/settings-and-state-layout.md § Migration (B3): one-shot, idempotent, and run
             // here rather than from JS on every load/Refresh so every path resolves deterministically
             // before any sync command has had a chance to prime `sync::APP_DATA_DIR`.
             let settings_state_summary = sync_state::migrate_settings_and_state_on_boot(app.handle());
@@ -127,7 +127,7 @@ pub fn run() {
             project_notes::read_project_notes,
             project_notes::read_project_notes_map,
             project_notes::write_project_notes,
-            // per-project settings, stored in the repo (docs/plan/settings-and-state-layout.md)
+            // per-project settings, stored in the repo (docs/plan/done/settings-and-state-layout.md)
             project_config::read_project_config,
             project_config::read_project_config_map,
             project_config::write_project_config,

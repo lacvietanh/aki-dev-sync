@@ -369,7 +369,7 @@ export const removeProject = action('remoteActions.removeProject', async (id) =>
   // Drops memory notes/config entries; on-disk repo files are intentionally preserved.
   dropProjectNotesEntry(id)
   dropProjectConfigEntry(id)
-  // B5 (docs/plan/settings-and-state-layout.md § B): removes this project's own state/<id>/ tree (every
+  // B5 (docs/plan/done/settings-and-state-layout.md § B): removes this project's own state/<id>/ tree (every
   // host's baseline + last_sync) - scoped to this one id, never another project's (1.9.3 multi-entity
   // guard). Best-effort: a failure here must not block removing the project from the list.
   try {

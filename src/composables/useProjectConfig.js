@@ -83,7 +83,7 @@ async function seedProjectConfigsIfMissing(loadedProjects) {
   }
 }
 
-// Cut item (docs/plan/settings-and-state-layout.md, Slice E): a persisted per-project "already considered"
+// Cut item (docs/plan/done/settings-and-state-layout.md, Slice E): a persisted per-project "already considered"
 // marker, local to this machine - once a project's id is in this set, the pycache migration never looks at
 // it again, so a user who deliberately removes `__pycache__/` from their project.json does not get it
 // silently written back on the next load/Refresh (the old content-check-only version re-added it forever).
@@ -111,7 +111,7 @@ function markPycacheMigrated(ids) {
 }
 
 /**
- * C5 (docs/plan/settings-and-state-layout.md § C): adds `__pycache__/` to a project.json that already owns
+ * C5 (docs/plan/done/settings-and-state-layout.md § C): adds `__pycache__/` to a project.json that already owns
  * pull/push_excludes (`status === 'ok'`) through the same read-modify-write `write_project_config` path the
  * config dialog uses - never the registry copy, and through the same per-project write queue as the dialog
  * (`queueConfigWrite`) so this can never interleave with a concurrent Save. Once-only per project id (see
@@ -166,7 +166,7 @@ async function migrateProjectConfigPycacheExcludes(loadedProjects) {
 }
 
 /**
- * B1 (docs/plan/settings-and-state-layout.md § B1): copies the project-owned fields from a read `project.json`
+ * B1 (docs/plan/done/settings-and-state-layout.md § B1): copies the project-owned fields from a read `project.json`
  * onto the matching in-memory registry object — "a file already in the repo wins". Only applied when the
  * read actually succeeded (`status === 'ok'`); a Missing/Unavailable/Corrupt read must never blank out
  * whatever the registry object already holds (a brand-new project, or a folder that just went unreadable).
@@ -184,7 +184,7 @@ function applyConfigToProject(project, entry) {
 }
 
 /**
- * B2 (docs/plan/settings-and-state-layout.md § B2, amended § Amendments for the 1.32.0 remote_path fix):
+ * B2 (docs/plan/done/settings-and-state-layout.md § B2, amended § Amendments for the 1.32.0 remote_path fix):
  * restores the active host's hooks/deploy from `targets.<remote_host>` onto the top-level fields — the ONE
  * persisted source for those (Rust never serializes the top-level copies, see projects.rs). Missing target
  * (never-used host) leaves the fields as loaded rather than inventing a value.
@@ -204,7 +204,7 @@ export function hydrateRemoteFromTargets(loadedProjects) {
 }
 
 /**
- * B2 (docs/plan/settings-and-state-layout.md § B2): hydrates in-memory last_sync_action/time/status/host
+ * B2 (docs/plan/done/settings-and-state-layout.md § B2): hydrates in-memory last_sync_action/time/status/host
  * from `state/<id>/*\/last_sync.json` - the ONE persisted source now (`useSync.js` writes there directly
  * via `write_last_sync` instead of round-tripping through the registry). "Which host did I last sync
  * with" = the newest last_sync.json across that project's hosts (`read_last_sync_all` already resolves
@@ -379,7 +379,7 @@ export async function loadData(sshHosts, showToast = false) {
     // Hydrate last_sync_action/time/status/host from state/ before this window renders anything - both boot load and titlebar Refresh share loadData, so this covers both call sites at once.
     await hydrateLastSyncFromState(loaded)
     // Settings/state (remote_host/remote_path/hooks -> targets, legacy baselines/last_sync -> state/)
-    // migrates once in Rust setup() before this window even exists (docs/plan/settings-and-state-layout.md
+    // migrates once in Rust setup() before this window even exists (docs/plan/done/settings-and-state-layout.md
     // § Migration, B3) - `loaded` here already reflects it, and its own summary line is in usage.log.
     // Each migration below still logs its own line on fire so usage.log identifies which step ran.
     let migrated = false
@@ -391,7 +391,7 @@ export async function loadData(sshHosts, showToast = false) {
       migrated = true
       appendGlobalLog("MIGRATE", "Removed .akidevsync/ from the default pull/push exclude lists.")
     }
-    // Cut item (docs/plan/settings-and-state-layout.md, Slice E): seed only at boot, never on a titlebar
+    // Cut item (docs/plan/done/settings-and-state-layout.md, Slice E): seed only at boot, never on a titlebar
     // Refresh - `showToast` is already this function's only boot-vs-Refresh signal (App.vue's boot call
     // passes false, requestReloadConfig's Refresh call passes true). Once seeded (or explicitly refused,
     // NothingToSeed/Unavailable) a project has nothing left to retry mid-session; re-running the whole-folder
@@ -426,7 +426,7 @@ export async function loadData(sshHosts, showToast = false) {
     }
     // Reset every cached status to 'unknown' before the objects it describes are replaced - a stale
     // 'ok' must never outlive the fresh, freshly-stripped object during the window before
-    // `hydrateProjectConfig` below completes (docs/plan/settings-and-state-layout.md).
+    // `hydrateProjectConfig` below completes (docs/plan/done/settings-and-state-layout.md).
     markAllProjectConfigStatusesUnknown()
     projects.value = loaded
     setupGlobalListener()

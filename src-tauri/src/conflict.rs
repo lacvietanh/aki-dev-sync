@@ -1,4 +1,4 @@
-//! Sync conflict classification (docs/plan/conflict-detection-and-agy-report.md §2-3).
+//! Sync conflict classification (docs/plan/done/conflict-detection-and-agy-report.md §2-3).
 //!
 //! Pure logic only - no rsync/SSH/filesystem I/O. `sync.rs` gathers the (L, R, B, sizes) inputs (a local
 //! `fs::metadata` walk, the existing push dry-run, and the new `--out-format` pull dry-run) and calls this
@@ -28,7 +28,7 @@ fn mtime_lt(a: u64, b: u64) -> bool {
     b as i64 - a as i64 > MODIFY_WINDOW_SECS
 }
 
-/// One differing file's (L, R, B, sizes) - docs/plan/conflict-detection-and-agy-report.md §2's table
+/// One differing file's (L, R, B, sizes) - docs/plan/done/conflict-detection-and-agy-report.md §2's table
 /// columns, plus the `.git` carve-out and the no-ancestor carve-out.
 #[derive(Debug, Clone, Default)]
 pub struct ClassifyInput {
@@ -51,7 +51,7 @@ pub struct ClassifyInput {
 pub enum FileClass {
     Push,
     /// Same push direction, but specifically because the remote regressed relative to the common ancestor
-    /// (R < B - a stale/behind remote, docs/plan/conflict-detection-and-agy-report.md's evidence case).
+    /// (R < B - a stale/behind remote, docs/plan/done/conflict-detection-and-agy-report.md's evidence case).
     /// Counted into `push_count` exactly like `Push`; kept separate so the caller can surface the
     /// "remote is behind" signal (§4/§5) instead of that reason being invisible inside a plain push count.
     PushStaleRemote,
@@ -72,7 +72,7 @@ pub enum FileClass {
 }
 
 /// Pure classifier over (L, R, B, sizes) - one match arm per row of
-/// docs/plan/conflict-detection-and-agy-report.md §2's table, in the same order as the table itself.
+/// docs/plan/done/conflict-detection-and-agy-report.md §2's table, in the same order as the table itself.
 pub fn classify_file(input: &ClassifyInput) -> FileClass {
     if input.is_git {
         return FileClass::GitGroup;
@@ -129,7 +129,7 @@ pub fn classify_file(input: &ClassifyInput) -> FileClass {
 }
 
 /// One file from `rsync --out-format='%n\t%l\t%M'` (the pull dry-run's remote metadata,
-/// docs/plan/conflict-detection-and-agy-report.md § Execution steps).
+/// docs/plan/done/conflict-detection-and-agy-report.md § Execution steps).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteFileMeta {
     pub path: String,
@@ -185,7 +185,7 @@ pub fn parse_out_format_line(line: &str, offset_secs_at: &dyn Fn(i64) -> i64) ->
 /// rather than read from the process environment here so this function stays pure and parallel-test-safe
 /// (`agent.C5`'s scratchpad note re: process-global TZ mutation) - `local_utc_offset_secs_at` below is the
 /// one real caller. Whether the Mac's stock openrsync emits this exact date shape is unverified here - see
-/// docs/plan/conflict-detection-and-agy-report.md § Mac checks.
+/// docs/plan/done/conflict-detection-and-agy-report.md § Mac checks.
 fn parse_rsync_mtime(s: &str, offset_secs_at: &dyn Fn(i64) -> i64) -> Option<u64> {
     let (date, time) = s.split_once('-')?;
     let mut d = date.split('/');
@@ -235,7 +235,7 @@ pub struct ParsedRemoteDiff {
     pub files: Vec<RemoteFileMeta>,
     /// A line survived the status-line filter (so it looked like a file entry) but did not parse as
     /// `path\tsize\tmtime` - the unknown-format / missing-`%M` degrade path
-    /// (docs/plan/conflict-detection-and-agy-report.md § Execution steps).
+    /// (docs/plan/done/conflict-detection-and-agy-report.md § Execution steps).
     pub degraded: bool,
 }
 
@@ -285,7 +285,7 @@ pub fn local_utc_offset_secs_at(unix_ts_guess: i64) -> i64 {
 
 /// Recreates the old pull-side `-u` meaning now that the pull dry-run itself drops `-u` to get remote
 /// size/mtime for every differing file, not just the remote-newer ones
-/// (docs/plan/conflict-detection-and-agy-report.md § Execution steps: "reapply the -u filter in Rust").
+/// (docs/plan/done/conflict-detection-and-agy-report.md § Execution steps: "reapply the -u filter in Rust").
 /// `local_mtimes` maps every candidate path to its local mtime, or `None` when the file is absent locally.
 pub fn select_pull_after_u_filter<'a>(
     metas: &'a [RemoteFileMeta],
@@ -391,7 +391,7 @@ pub fn validate_conflict_rel_path(rel: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Minimal LCS-based unified-diff-style text between two excerpts (docs/plan/conflict-detection-and-agy-report.md
+/// Minimal LCS-based unified-diff-style text between two excerpts (docs/plan/done/conflict-detection-and-agy-report.md
 /// §5: "unified diff of local vs remote"). Not byte-exact GNU diff output (no hunk headers, no surrounding
 /// context window) - a compact, readable text for `agy` to narrate a conflict from, not a patch meant to be
 /// applied. No external diff crate added for this one call site (`pattern.A2`: Rule of Three).
@@ -436,7 +436,7 @@ pub fn unified_diff(local: &str, remote: &str) -> String {
 }
 
 /// A filename that must never have its content sent to `agy` on Explain
-/// (docs/plan/conflict-detection-and-agy-report.md § agy explanation: "binaries and secret-named files
+/// (docs/plan/done/conflict-detection-and-agy-report.md § agy explanation: "binaries and secret-named files
 /// send metadata only"). Name-based only - it does not inspect content, and the design note in that plan
 /// section accepts this as a known, explicit-click-scoped limit.
 pub fn is_secret_named(path: &str) -> bool {

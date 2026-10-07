@@ -50,7 +50,7 @@ Reproduce each failure with real rsync/ssh against the real hosts instead of rea
 ### Corroborating links
 
 - `CHANGELOG.md` history: "Delete preview error silently swallowed" — the same swallow-the-error class as R1.
-- `docs/plan/conflict-detection-and-agy-report.md` § Amendments — the overwrite preview this doc's R3 extends.
+- `docs/plan/done/conflict-detection-and-agy-report.md` § Amendments — the overwrite preview this doc's R3 extends.
 
 ## Decision
 
@@ -60,7 +60,7 @@ Owner-approved choices (2026-09-28): runtime data is never pushed; a remote depl
   - R1: `home_relative` (`sync.rs`) makes every `~/` remote path home-relative in `remote_rsync_arg`; a failing checksum step now reports its files as `verified: false` conflicts instead of failing the whole check, and each distinct status failure is logged once per (project, host) (`log_status_anomaly`). The UI keeps the last counts but marks both buttons `btn-sync-stale` with the error in the tooltip (`useSyncStatus.js`, `ProjectTable.vue`).
   - R2: `logger::audit` — always written to `usage.log`: every sync (`run_sync`), confirmed deploy and deploy-config change, and host switch from table or settings (`src/utils/auditLog.js`). `docs/arch/logger.md`.
   - R3: the first real PUSH/PULL between a project and a host with no `last_sync.json` asks first, naming `host:path`; unreadable history asks (`useSync.js::hostHasSyncHistory`). `docs/feat/sync-flow.md` § Safety Guard.
-  - R4: `deploy` is one project-level field `{ run_on, on_push, host, path }`; a remote deploy without `host` is disabled with its reason; the post-push offer and `D` badge fire only when the push went to `deploy.host`. `docs/feat/deploy.md`, `docs/plan/deploy-action.md` § Amendments, `scripts/migrate-deploy-hooks.mjs`.
+  - R4: `deploy` is one project-level field `{ run_on, on_push, host, path }`; a remote deploy without `host` is disabled with its reason; the post-push offer and `D` badge fire only when the push went to `deploy.host`. `docs/feat/deploy.md`, `docs/plan/done/deploy-action.md` § Amendments, `scripts/migrate-deploy-hooks.mjs`.
   - R5: `data/` added to `aki-gegrok-bot`'s `push_excludes` (project-owned `.akidevsync/project.json`).
 - **Rejected/closed**
   - Confirm on every host-dropdown change: taxes routine switching and still leaves the transfer itself unguarded; the first-sync confirm guards the actual write.

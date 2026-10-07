@@ -2,7 +2,7 @@
 
 > updated 2026-09-28 · v1.31.0
 
-Deploy ships the project to production. It is its own action, never a side effect of a sync hook - see `docs/plan/deploy-action.md` for the design and `docs/research/akidevsync-project-config-scope-2.md` § F3 for why hooks used to hide deploys and fail silently.
+Deploy ships the project to production. It is its own action, never a side effect of a sync hook - see `docs/plan/done/deploy-action.md` for the design and `docs/research/akidevsync-project-config-scope-2.md` § F3 for why hooks used to hide deploys and fail silently.
 
 ## Where each piece lives
 
@@ -48,7 +48,7 @@ Two tiny letter-badge overlays on the PUSH button (`CountBadgeWrap.vue`), `posit
 
 ## Cross-references
 
-- `docs/plan/deploy-action.md` - the plan this feature was built from.
+- `docs/plan/done/deploy-action.md` - the plan this feature was built from.
 - `docs/feat/sync-flow.md` § 3 - hooks stay sync-only.
 - `docs/research/akidevsync-project-config-scope-2.md` § Field placement, § F3.
 - `docs/research/sync-host-safety.md` - why deploy names its own host.

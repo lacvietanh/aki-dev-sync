@@ -18,7 +18,7 @@ pub struct ProjectConfigCommands {
     pub dev: String,
     #[serde(default)]
     pub build: String,
-    /// `commands.deploy` (docs/plan/deploy-action.md): same shape as `dev`/`build` - no `cd`, no machine
+    /// `commands.deploy` (docs/plan/done/deploy-action.md): same shape as `dev`/`build` - no `cd`, no machine
     /// path, the working directory is supplied by the app at run time.
     #[serde(default)]
     pub deploy: String,
@@ -151,7 +151,7 @@ pub async fn read_project_config_map(
     .map_err(|e| format!("read_project_config_map task join error: {}", e))
 }
 
-/// T1 (docs/plan/settings-and-state-layout.md): the ONE place `run_sync`/`check_sync_status`/
+/// T1 (docs/plan/done/settings-and-state-layout.md): the ONE place `run_sync`/`check_sync_status`/
 /// `get_sync_delete_preview` obtain rsync excludes - read fresh from `project.json` at call time, never
 /// trusted from the JS-passed `SyncProject` (which may be stale mid-Refresh, or already stripped by the
 /// save funnel). Refuses rather than falling back to empty/stale excludes whenever the file is not `Ok`.
@@ -230,7 +230,7 @@ pub async fn write_project_config(
 /// just from being loaded once; there is nothing there yet to seed.
 ///
 /// `pub(crate)` (not `pub`) so `sync_state.rs`'s migration rehearsal can predict the JS seeding step's
-/// count from the same rule instead of duplicating it (docs/plan/1.32.0-mac-handoff.md § 2) - the seeding
+/// count from the same rule instead of duplicating it (docs/plan/done/1.32.0-mac-handoff.md § 2) - the seeding
 /// itself still only runs from JS (`write_project_configs_if_missing`'s per-project caller).
 pub(crate) fn is_all_empty(file: &ProjectConfigFile) -> bool {
     file.name.trim().is_empty()
@@ -280,7 +280,7 @@ fn seed_one(local_path: &str, file: ProjectConfigFile) -> SeedOutcome {
     }
 }
 
-/// Migration entry point (docs/plan/settings-and-state-layout.md § C): writes `project.json` for every seed
+/// Migration entry point (docs/plan/done/settings-and-state-layout.md § C): writes `project.json` for every seed
 /// whose file is still missing, has a readable folder, and has at least one non-empty legacy value - never
 /// an all-empty file. Returns each project's outcome keyed by id, so the caller (JS) knows exactly which
 /// projects are now owned by `project.json` versus still need retrying or have nothing to seed at all.

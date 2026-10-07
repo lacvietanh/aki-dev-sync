@@ -85,7 +85,7 @@ export async function startSync(project, direction, specificPaths = []) {
     return
   }
 
-  // Boundary guard (item 2, docs/plan/settings-and-state-layout.md): sync must never run against a
+  // Boundary guard (item 2, docs/plan/done/settings-and-state-layout.md): sync must never run against a
   // project whose project.json is not the authoritative 'ok' - a missing/unavailable/corrupt read means
   // the excludes on `project` may be an empty or stale registry leftover, which must never reach rsync
   // (the plan's own "never a defaulted struct" contract). This is the actual funnel both PUSH/PULL button
@@ -286,7 +286,7 @@ export async function startSync(project, direction, specificPaths = []) {
       dryRun: isDryRun,
       specificPaths,
     })
-    // B2 (docs/plan/settings-and-state-layout.md § B2): persisted straight into
+    // B2 (docs/plan/done/settings-and-state-layout.md § B2): persisted straight into
     // state/<id>/<host>/last_sync.json - the ONE persisted source now (sync_state.rs) - rather than onto
     // the registry object for save_projects to carry. The in-memory fields are still set for immediate
     // UI feedback (ProjectTable's last-action cell, the auto-approval read below); the save funnel strips

@@ -1,4 +1,4 @@
-// Deploy as its own action (docs/plan/deploy-action.md): the ONE place that reads a project's deploy
+// Deploy as its own action (docs/plan/done/deploy-action.md): the ONE place that reads a project's deploy
 // config, builds the local/remote command, shows the confirm dialog, and launches the in-app terminal tab
 // - shared by the DEPLOY button (ProjectTable.vue) and the post-push `on_push` offer (useSync.js), so the
 // two call sites can never drift on what "deploy" means (Law 1).

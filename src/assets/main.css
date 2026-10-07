@@ -949,7 +949,7 @@ input:checked+.slider:before {
   top: calc(anchor(bottom) + 4px);
 }
 
-/* Read-only "Sync Changes" popover: native popover + anchor positioning below its badge, clamped 8px off both window edges (docs/plan/conflict-detection-and-agy-report.md §4 + Amendments). */
+/* Read-only "Sync Changes" popover: native popover + anchor positioning below its badge, clamped 8px off both window edges (docs/plan/done/conflict-detection-and-agy-report.md §4 + Amendments). */
 .conflict-popup {
   --conflict-popup-w: min(360px, calc(100vw - 16px));
   position: fixed;

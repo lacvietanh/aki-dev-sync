@@ -534,7 +534,7 @@ fn baseline_dir() -> PathBuf {
             return dir.join("baselines");
         }
     }
-    // Deterministic fallback (docs/plan/settings-and-state-layout.md § Migration, B3): resolve app-data
+    // Deterministic fallback (docs/plan/done/settings-and-state-layout.md § Migration, B3): resolve app-data
     // directly instead of the pre-1.7.1 legacy dir, so this is correct even when called before any Tauri
     // command has primed APP_DATA_DIR - e.g. the setup()-time boot migration, which runs before any IPC
     // command exists to serve that cache.
@@ -634,12 +634,12 @@ fn collect_local_files_with_mtime(
     }
 }
 
-/// Applies F2 (docs/plan/settings-and-state-layout.md § A): after a push without `--delete`, a file
+/// Applies F2 (docs/plan/done/settings-and-state-layout.md § A): after a push without `--delete`, a file
 /// deleted locally has not reached the remote, so it is not common yet - carry its previous baseline
 /// entry forward instead of letting the fresh local walk silently drop it (which the next status check
 /// would otherwise misread as "remote created" -> pull). Mirror pushes (deletion propagated) and every
 /// pull (a merge pull restores the file, a mirror pull matches the remote) need no carry-over.
-/// S1 (docs/plan/settings-and-state-layout.md: "a baseline whose recorded remote_path differs from the
+/// S1 (docs/plan/done/settings-and-state-layout.md: "a baseline whose recorded remote_path differs from the
 /// target's current one counts as NO baseline - the ancestor is someone else's"). The ONE place this
 /// filter is spelled, shared by the post-sync write path and the status-check read path - previously
 /// duplicated with the write path missing the filter entirely (S1).
@@ -821,7 +821,7 @@ fn run_sync_blocking(
     specific_paths: Vec<String>,
 ) -> Result<(), String> {
     let mut project = project;
-    // Excludes always come from project.json read fresh here, never the JS-passed object - refuses rather than syncing on stale or empty excludes (docs/plan/settings-and-state-layout.md).
+    // Excludes always come from project.json read fresh here, never the JS-passed object - refuses rather than syncing on stale or empty excludes (docs/plan/done/settings-and-state-layout.md).
     let (pull_excludes, push_excludes) =
         crate::project_config::require_ok_excludes(&project.local_path)?;
     project.pull_excludes = pull_excludes;
@@ -1045,7 +1045,7 @@ pub struct SyncStatusResult {
     pub push_count: u32,
     pub pull_count: u32,
     /// Files classified as a real (or unverified, above the checksum cap) conflict - already excluded from
-    /// `push_count`/`pull_count` (docs/plan/conflict-detection-and-agy-report.md §4).
+    /// `push_count`/`pull_count` (docs/plan/done/conflict-detection-and-agy-report.md §4).
     #[serde(default)]
     pub conflicts: Vec<ConflictEntry>,
     /// How many of `push_count + pull_count` are under `.git/` - tooltip breakdown only, never subtracted.
@@ -1227,7 +1227,7 @@ fn compute_sync_counts_with_push_files(
     let pull_files = rsync_change_files(project, false)?;
 
     // A baseline recorded against a different remote_path is someone else's ancestor - counts as no
-    // baseline at all (docs/plan/settings-and-state-layout.md: "the path changed, so the ancestor is
+    // baseline at all (docs/plan/done/settings-and-state-layout.md: "the path changed, so the ancestor is
     // someone else's"), never a guessed classification against the wrong tree.
     let baseline = baseline_for_target(
         crate::sync_state::read_baseline(&project.id, &project.remote_host),
@@ -1238,7 +1238,7 @@ fn compute_sync_counts_with_push_files(
     Ok(classify_sync_counts(push_files, pull_files, baseline.as_ref(), &project.local_path))
 }
 
-/// The pull-side dry-run for conflict detection (docs/plan/conflict-detection-and-agy-report.md §1):
+/// The pull-side dry-run for conflict detection (docs/plan/done/conflict-detection-and-agy-report.md §1):
 /// drops `-u` (so every differing file is listed, not just remote-newer ones) and adds `--out-format` to
 /// get the remote's size and mtime from the one existing SSH round-trip - the `-u` filter is reapplied in
 /// Rust (`conflict::select_pull_after_u_filter`) so `pull_count` keeps meaning "remote is newer."
@@ -1493,7 +1493,7 @@ fn classify_candidates(
     out
 }
 
-/// Full pipeline (docs/plan/conflict-detection-and-agy-report.md §§1-4): gathers (L, R, B, sizes) for every
+/// Full pipeline (docs/plan/done/conflict-detection-and-agy-report.md §§1-4): gathers (L, R, B, sizes) for every
 /// differing file, classifies each with `conflict::classify_file`, checksums the same-size residue, and
 /// returns push/pull counts with conflicts already excluded. Degrades to the pre-conflict-detection counts
 /// (`compute_sync_counts_with_push_files`, reusing the push dry-run already fetched here) when the pull
@@ -1847,7 +1847,7 @@ pub async fn get_sync_overwrite_preview(
     .map_err(|e| format!("get_sync_overwrite_preview task error: {}", e))?
 }
 
-// ─── agy explanation (Explain button, docs/plan/conflict-detection-and-agy-report.md § agy explanation) ──
+// ─── agy explanation (Explain button, docs/plan/done/conflict-detection-and-agy-report.md § agy explanation) ──
 
 const EXPLAIN_DIFF_LINE_CAP: usize = 400;
 
@@ -2643,7 +2643,7 @@ mod tests {
         assert!(!consume_cancelled("proj-d"));
     }
 
-    // F2 (docs/plan/settings-and-state-layout.md § A): "delete a file locally -> merge push -> next
+    // F2 (docs/plan/done/settings-and-state-layout.md § A): "delete a file locally -> merge push -> next
     // status check still classifies it as local deleted, not remote created." `carry_forward_local_deletions`
     // is the pure function that makes this true - tested directly, no SSH/rsync needed.
 
@@ -2921,7 +2921,7 @@ mod tests {
     // mirror `rsync_pull_diff_with_metadata`'s own pull dry-run: `-avz --dry-run --out-format=... --modify-window=2`,
     // no `-u`. Skips gracefully (does not fail) if `rsync` is absent from PATH - this box's rsync is GNU 3.2.7
     // at `/usr/bin/rsync` (not openrsync; the Mac check for openrsync's own `--out-format` shape is separate,
-    // docs/plan/conflict-detection-and-agy-report.md § Mac checks).
+    // docs/plan/done/conflict-detection-and-agy-report.md § Mac checks).
     #[test]
     fn real_rsync_out_format_reports_the_senders_size_and_mtime_in_a_dry_run_pull() {
         if Command::new("rsync").arg("--version").output().is_err() {

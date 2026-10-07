@@ -1,4 +1,4 @@
-// Pure-function coverage for src/composables/projectConfigPure.js (docs/plan/settings-and-state-layout.md,
+// Pure-function coverage for src/composables/projectConfigPure.js (docs/plan/done/settings-and-state-layout.md,
 // akiflow council slice D2, item 6 / S-c). Zero Vue/Tauri imports, same runner convention as
 // replay-hydration.test.mjs.
 
@@ -227,7 +227,7 @@ test('deployTargetLabel is "local" or "host:path"', () => {
 })
 
 // The pure decision behind the post-push `on_push` offer (useSync.js) - every branch named in
-// docs/plan/deploy-action.md's own test list. `deployCmd` is the already-resolved command the caller
+// docs/plan/done/deploy-action.md's own test list. `deployCmd` is the already-resolved command the caller
 // (`resolveDeployCmd`) hands in; `syncSucceeded` is gone - a failed sync never reaches this call site at
 // all (it lives inside `run_sync`'s try-block success branch), so there is nothing left here to test for it.
 test('shouldOfferDeployAfterPush never fires on a dry run', () => {

@@ -3,7 +3,7 @@
 > updated 2026-09-30 · v1.31.0
 
 Decision record and field-by-field reasoning: `docs/research/akidevsync-project-config-scope-2.md`.
-Execution plan and checklist: `docs/plan/settings-and-state-layout.md` (see its § Amendments for the 1.32.0 `remote_path` correction below). This doc is the current-state summary the two of them point at — read them for *why*, this for *what's true now*.
+Execution plan and checklist: `docs/plan/done/settings-and-state-layout.md` (see its § Amendments for the 1.32.0 `remote_path` correction below). This doc is the current-state summary the two of them point at — read them for *why*, this for *what's true now*.
 
 ## The four owners
 
@@ -19,7 +19,7 @@ A file's owning module is the only Rust code that reads or writes it directly. E
 ## Why a project fact and a machine fact never share a file
 
 `project.json` (#2) holds what stays true regardless of which Mac opens the repo — "a file already in the repo wins" over the registry, the same precedent `notes.json` set in 1.22.0. `projects.json` (#3) holds what is true only for *this* machine's copy: which local path it lives at, which host it's currently pointed at, whether background polling is on, and `remote_path` — a fact about the *project*, not the host:
-a project has exactly one remote directory regardless of which host serves it, so it stays a plain top-level field and a Remote Host switch never touches it (a corrected pre-release design; it briefly lived in `targets.<host>` before the fix, see `docs/plan/settings-and-state-layout.md` § Amendments). `hooks` genuinely ARE per-**host** — a real hook embeds that host's own shell paths — so they still sit in `targets` (#3's own field), restored on a Remote Host switch (`resolveHostSwitch`, `useProjectConfig.js`) while `remote_path` stays fixed throughout that same switch. `deploy` is a top-level field that names its own host and is never touched by that switch (`docs/research/sync-host-safety.md`).
+a project has exactly one remote directory regardless of which host serves it, so it stays a plain top-level field and a Remote Host switch never touches it (a corrected pre-release design; it briefly lived in `targets.<host>` before the fix, see `docs/plan/done/settings-and-state-layout.md` § Amendments). `hooks` genuinely ARE per-**host** — a real hook embeds that host's own shell paths — so they still sit in `targets` (#3's own field), restored on a Remote Host switch (`resolveHostSwitch`, `useProjectConfig.js`) while `remote_path` stays fixed throughout that same switch. `deploy` is a top-level field that names its own host and is never touched by that switch (`docs/research/sync-host-safety.md`).
 
 `state/` (#4) is neither — a baseline is a fact about what was last made common between exactly this project and exactly this host, and mixing hosts here would report false conflicts. Renaming an SSH alias therefore forfeits that host's baseline (the directory name is the alias itself, `validate_remote_host`), and a baseline whose recorded `remote_path` no longer matches the target's current one counts as **no baseline at all** — the ancestor is someone else's tree — enforced by one shared filter (`sync::baseline_for_target`) on both the post-sync write and the status-check read, so the two paths can never drift out of agreement with each other again (the write path was missing this filter until this release's S1 fix).
 

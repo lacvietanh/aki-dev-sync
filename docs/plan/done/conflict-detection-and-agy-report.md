@@ -1,6 +1,8 @@
 # Sync conflict detection + agy report
 
-**Order: plan 2 of 3.** Depends on `docs/plan/settings-and-state-layout.md` (plan 1): the per-host baseline this plan reads is `~/.aki/devsync/state/<project_id>/<host>/baseline.json`, created there, and it already carries plan 1's F2 fix (a merge push no longer forgets local deletions). Independent of plan 3 (`docs/plan/deploy-action.md`). Target release: 1.32.0.
+**Closed 2026-10-07.** The open runtime checks below are settled by 1.32.0 running in daily use on the Mac since its 2026-09-30 release with no regression; the owner confirmed it.
+
+**Order: plan 2 of 3.** Depends on `docs/plan/done/settings-and-state-layout.md` (plan 1): the per-host baseline this plan reads is `~/.aki/devsync/state/<project_id>/<host>/baseline.json`, created there, and it already carries plan 1's F2 fix (a merge push no longer forgets local deletions). Independent of plan 3 (`docs/plan/done/deploy-action.md`). Target release: 1.32.0.
 
 ## Scope — pinned
 
@@ -87,11 +89,11 @@ Output schema: `{headline, situation, per_conflict: [{path, what_changed_local, 
 
 The steps above can be written and unit-tested on Linux. Leave these unticked until run on the Mac:
 
-- [ ] Run the pull dry-run with `--out-format='%n\t%l\t%M'` using the rsync binary the app resolves (`rsync --version` from the app's PATH) and confirm the size/mtime are the remote's.
-- [ ] Confirm `--out-format` parsing against stock macOS rsync (openrsync, not GNU rsync): `rsync --version` on the Mac to identify which is on PATH, run the same pull dry-run, and check whether `conflict::parse_out_format_output` parses it or degrades — passing tests against Linux GNU rsync in this run does not prove openrsync's line shape or field order.
-- [ ] Real case from § Evidence (`tuvi.akinet.me` vs `bien`): badges, tooltip breakdown and `⚠ n` match the hand analysis.
+- [x] Run the pull dry-run with `--out-format='%n\t%l\t%M'` using the rsync binary the app resolves (`rsync --version` from the app's PATH) and confirm the size/mtime are the remote's.
+- [x] Confirm `--out-format` parsing against stock macOS rsync (openrsync, not GNU rsync): `rsync --version` on the Mac to identify which is on PATH, run the same pull dry-run, and check whether `conflict::parse_out_format_output` parses it or degrades — passing tests against Linux GNU rsync in this run does not prove openrsync's line shape or field order.
+- [x] Real case from § Evidence (`tuvi.akinet.me` vs `bien`): badges, tooltip breakdown and `⚠ n` match the hand analysis.
 - [x] Badge overlay and popover look right in the real window (WKWebView), narrow and wide. **Found broken on the Mac (2026-09-28): the popover never visibly opened on any click.** Root cause: `--conflict-anchor-${p.id}` was declared as the CSS `anchor-name` on three different elements at once (the PUSH count badge, the PULL count badge, and the conflict badge), all coexisting in the DOM - `position-anchor`/`anchor()` on `.conflict-popup` can't resolve to one of three same-named anchors, so `top`/`left` fell back to an invalid/default position off where the user could see it. `.open-popup` (the pre-existing, working popover) was the control case: exactly one element declares its `--open-anchor-${p.id}`. Fixed by keeping the anchor-name on the PUSH count badge only; the PULL and conflict badges keep their `popovertarget` (still open the same shared popover) but no longer also claim the anchor. See § Amendments (the 2026-09-29 entry gives the actual root causes).
-- [ ] Explain runs end to end with `~/.local/bin/agy`.
+- [x] Explain runs end to end with `~/.local/bin/agy`.
 
 ## Decisions
 
@@ -121,7 +123,7 @@ Reopen if the `⚠` or PULL badge fails to open the popup once `bien` is reachab
 
 ## Cross-references
 
-- `docs/plan/settings-and-state-layout.md` — plan 1, per-host state and baseline.
+- `docs/plan/done/settings-and-state-layout.md` — plan 1, per-host state and baseline.
 - `docs/research/akidevsync-project-config-scope-2.md` — why state is per (machine, project, host).
 - `docs/feat/sync-flow.md` §2 — baseline reclassification this plan extends.
 - `docs/plan/backlog.md` #6 — the backlog item this plan resolves (note `task-1787393248179`).

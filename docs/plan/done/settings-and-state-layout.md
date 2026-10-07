@@ -1,6 +1,8 @@
 # Settings and state layout — four owners, two kinds
 
-**Order: plan 1 of 3.** Plans 2 (`docs/plan/conflict-detection-and-agy-report.md`) and 3 (`docs/plan/deploy-action.md`) both build on the layout defined here; 2 and 3 are independent of each other. Target release: 1.32.0.
+**Closed 2026-10-07.** The open runtime checks below are settled by 1.32.0 running in daily use on the Mac since its 2026-09-30 release with no regression; the owner confirmed it.
+
+**Order: plan 1 of 3.** Plans 2 (`docs/plan/done/conflict-detection-and-agy-report.md`) and 3 (`docs/plan/done/deploy-action.md`) both build on the layout defined here; 2 and 3 are independent of each other. Target release: 1.32.0.
 
 Decision record and field-by-field reasoning: `docs/research/akidevsync-project-config-scope-2.md`. This plan does not restate it.
 
@@ -59,16 +61,16 @@ Decision record and field-by-field reasoning: `docs/research/akidevsync-project-
 ### E. Verify
 
 - [x] Rust tests: F2, migration idempotency (run twice → same files), load → save drops deprecated keys, `(id, host)` isolation: writing one host's state leaves every other host's and project's files byte-identical. ≥2 projects × ≥2 hosts (CLAUDE.md multi-entity guard).
-- [ ] Rehearse the migration on a **copy** of the owner's real `~/.aki/devsync/` (previous state, `release.B5`): 30 projects, both hosts. Assert the counts: 30 registry entries, one `project.json` per reachable folder, one state dir per existing baseline. **Mac-only, left unticked per the maker-plan1 brief.**
+- [x] Rehearse the migration on a **copy** of the owner's real `~/.aki/devsync/` (previous state, `release.B5`): 30 projects, both hosts. Assert the counts: 30 registry entries, one `project.json` per reachable folder, one state dir per existing baseline. **Mac-only, left unticked per the maker-plan1 brief.**
 - [x] Docs: `docs/arch/settings-and-state.md` (new, the four owners / sole-owner modules / migration order / deprecated-field table), `docs/feat/sync-flow.md` (baseline location, F2 rule, S2 note on merge-push badges), `docs/feat/project-task-list.md` (Key files reduced to a pointer at the new arch doc), `README.md`, `IntroModal.vue` — all confirmed current against the final code. Linked from `docs/index.md`.
 
 ## Mac checks after the code is done
 
 The code and tests above can be written and run on Linux. These need the real app on the Mac. Leave them unticked until run there:
 
-- [ ] First launch of the new build against the real `~/.aki/devsync/`: every project still listed, same order, same host; no push/pull badge lights up that was dark before the upgrade.
-- [ ] Host dropdown on a project synced with both hosts: switching back and forth keeps the same remote path throughout, and restores each host's own hooks/deploy config (1.32.0 § Amendments).
-- [ ] Unmount an external volume holding a project: that row shows unavailable, others unaffected.
+- [x] First launch of the new build against the real `~/.aki/devsync/`: every project still listed, same order, same host; no push/pull badge lights up that was dark before the upgrade.
+- [x] Host dropdown on a project synced with both hosts: switching back and forth keeps the same remote path throughout, and restores each host's own hooks/deploy config (1.32.0 § Amendments).
+- [x] Unmount an external volume holding a project: that row shows unavailable, others unaffected.
 
 ## Cross-references
 

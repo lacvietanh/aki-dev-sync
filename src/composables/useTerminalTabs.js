@@ -270,7 +270,7 @@ export function useTerminalTabs() {
   /**
    * Dedicated DEV/BUILD/DEPLOY launch handler deduplicating tabs by (scope, runKind).
    * DEV/BUILD focus a live tab without re-typing (a long-running server, deploy plan's DEV/BUILD stay
-   * unchanged); DEPLOY is one-shot (docs/plan/deploy-action.md S1) and always opens a fresh tab so a
+   * unchanged); DEPLOY is one-shot (docs/plan/done/deploy-action.md S1) and always opens a fresh tab so a
    * confirmed deploy never silently focuses an already-finished tab and runs nothing.
    * Dead tabs respawn with re-armed commands either way.
    */

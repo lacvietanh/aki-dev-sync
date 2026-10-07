@@ -80,7 +80,7 @@
             />
           </div>
         </div>
-        <!-- Deploy target (docs/plan/deploy-action.md, amended 2026-09-28): a remote deploy names its own
+        <!-- Deploy target (docs/plan/done/deploy-action.md, amended 2026-09-28): a remote deploy names its own
              host, never the sync host above - that one is a dropdown away from any other box. -->
         <div class="deploy-target-row">
           <div class="form-group">
@@ -333,7 +333,7 @@ const deployCmdDefault = computed(() => {
   return stack?.deploy_cmd || ''
 })
 
-// `editingProject.deploy` (docs/plan/deploy-action.md): one per project, untouched by a sync host switch.
+// `editingProject.deploy` (docs/plan/done/deploy-action.md): one per project, untouched by a sync host switch.
 // `null` (never configured) reads as "local, off" rather than crashing the bindings.
 function deployField(key, fallback) {
   return computed({
@@ -422,7 +422,7 @@ function applyPreset(stack) {
   margin: 4px 0 2px;
 }
 
-/* Owner-scope tag (docs/plan/settings-and-state-layout.md § D): where a field is saved, not who can edit it. */
+/* Owner-scope tag (docs/plan/done/settings-and-state-layout.md § D): where a field is saved, not who can edit it. */
 .owner-badge {
   font-size: 9px;
   font-weight: 600;

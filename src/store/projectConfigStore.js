@@ -1,4 +1,4 @@
-// Per-project settings mirrored in-memory copy of <local_path>/.akidevsync/project.json (docs/plan/settings-and-state-layout.md).
+// Per-project settings mirrored in-memory copy of <local_path>/.akidevsync/project.json (docs/plan/done/settings-and-state-layout.md).
 // Same shape and reasoning as projectNotesStore.js: a map of entities, one entry per project id.
 import { ref } from 'vue'
 
@@ -36,7 +36,7 @@ export function getProjectConfigEntry(id) {
 /**
  * Resets every already-known entry's status to 'unknown' - called by `loadData` right before it replaces
  * `projects.value` with a fresh load, so a cached 'ok' can never outlive the project object it was read
- * against (T1, docs/plan/settings-and-state-layout.md: a Refresh must not let PUSH/PULL/status-check run
+ * against (T1, docs/plan/done/settings-and-state-layout.md: a Refresh must not let PUSH/PULL/status-check run
  * against a stale-`ok`, freshly-stripped object during the window before `hydrateProjectConfig` completes).
  * Every id is touched because this runs once per whole-list reload, not as a scoped single-entity action.
  */
