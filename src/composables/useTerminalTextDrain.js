@@ -193,8 +193,7 @@ export function useTerminalTextDrain(term) {
     if (
       ev.type === 'keydown' &&
       WINDOW_FUNCTION_KEYS.includes(ev.key) &&
-      !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey &&
-      term?.buffer?.active?.type !== 'alternate' // alt-screen TUIs (vim, htop, mc) keep the F-keys for themselves
+      !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey
     ) {
       return false
     }
