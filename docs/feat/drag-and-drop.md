@@ -1,6 +1,6 @@
 # Drag & Drop Live Sorting
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-10-07 · v1.32.0
 
 Tài liệu chi tiết về tính năng kéo thả trực quan (Live Sorting) để sắp xếp thứ tự dự án trong Aki Dev Sync. Tính năng này được xây dựng thuần tuý bằng HTML5 Drag & Drop API kết hợp Vue 3 Transition Group và tối ưu hoá hệ thống ở lớp Tauri/WebKit mà không sử dụng bất kỳ thư viện bên thứ ba nào.
 
@@ -25,6 +25,7 @@ Tài liệu chi tiết về tính năng kéo thả trực quan (Live Sorting) đ
 ### 1. Tauri Native File Drop Conflict
 - **Vấn đề:** Tauri V2 mặc định kích hoạt bộ bắt sự kiện kéo thả file (`dragDropEnabled: true`) ở lớp cửa sổ Rust của hệ điều hành. Lớp này chặn bắt và nuốt chửng toàn bộ sự kiện kéo thả chuột, khiến WebView (Vue/JS) hoàn toàn không nhận được bất kỳ sự kiện HTML5 nào.
 - **Giải pháp:** Thiết lập `"dragDropEnabled": false` trong file cấu hình cửa sổ `src-tauri/tauri.conf.json`. Điều này tắt bộ chặn native của Tauri và trả lại toàn bộ quyền kiểm soát drag-and-drop cho WebView.
+- **Hệ quả phải chặn:** khi `dragDropEnabled` tắt, wry giao cú thả từ ngoài (file, link) cho WKWebView, và WKWebView mở luôn file đó thay cho trang app, không có đường quay lại. `src/main.js` nghe `dragover`/`drop` ở `window` và gọi `preventDefault()` khi `dataTransfer.types` có `Files` hoặc `text/uri-list`: mọi cú thả từ ngoài được nhận rồi bỏ. Kéo hàng project và hàng Claude settings dùng `text/plain` nên không đổi.
 
 ### 2. Sự hạn chế của WebKit Frameless Div
 - **Vấn đề:** Trình duyệt WebKit (Safari/macOS WebView) không cho phép kéo thả custom elements (thẻ `div` thông thường) một cách native chỉ bằng thuộc tính `draggable="true"`.

@@ -20,6 +20,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 - `npm run install:app` (now `npm run build:app`) and `scripts/Install (double-click + password).command`.
 
 ### Fixed
+- **Dropping a file or link onto the window no longer wipes the app.** With `dragDropEnabled` off, wry hands the drop to WKWebView, which loaded the file in place of the app page and left nothing to go back to. The page now takes every drop from outside and discards it; dragging project rows and Claude settings rows is unchanged.
 - `docs/ref/macos-terminal-tcc-permissions.md` links the installed `~/.aki/akidevrule/docs/ref/fact-macos-codesign-tcc.md`; the `macos-codesign-tcc.md` path it named no longer exists. `CLAUDE.md` no longer points at a rule index that does not exist, and `GEMINI.md` is only a pointer to `CLAUDE.md`.
 - **Installing a rebuilt app never quit the running one.** `killall "Aki Dev Sync"` matched no process (the process is named `aki-dev-sync`; `killall -s` dry run), so `/Applications` was replaced under a running app. The script now quits by the bundle's `CFBundleExecutable`, and ignores the hang-up first, so a run started from the app's own terminal or BUILD button still finishes the swap. The dry run proved the new name matches; the quit and the hang-up path have not been exercised yet.
 
