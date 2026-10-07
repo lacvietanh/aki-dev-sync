@@ -21,6 +21,7 @@ const INFO = {
   'test:ui-audit': 'test that audit:ui itself reports correctly; run after editing audit:ui',
   'test:replay': 'test that in-app terminal tabs restore their content after a reload; run after terminal changes',
   'test:config': 'test reading and saving per-project settings; run after changing project settings code',
+  'test:git-remote': 'test turning a git remote into the web page the Git dialog opens; run after changing that link',
   'gen-icon': 'rebuild every app icon from public/icon.png; run after replacing that image',
 }
 

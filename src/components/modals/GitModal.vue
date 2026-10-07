@@ -16,9 +16,12 @@
     <div class="modal-body scrollable">
       <div v-if="gitProject && projectRuntime[gitProject.id]?.remote_url" class="form-group full-width mb-2">
         <label>Remote Git URL</label>
-        <a @click.prevent="openUrl(projectRuntime[gitProject.id].remote_url)" class="git-url-link u-select-text">
-          <i class="fa-brands fa-git-alt mr-1"></i>{{ projectRuntime[gitProject.id].remote_url }}
+        <a v-if="remoteWebUrl" @click.prevent="openUrl(remoteWebUrl)" class="git-url-link u-select-text">
+          <i class="fa-brands fa-git-alt mr-1"></i>{{ remoteWebUrl }}
         </a>
+        <span v-else class="u-select-text">
+          <i class="fa-brands fa-git-alt mr-1"></i>{{ projectRuntime[gitProject.id].remote_url }}
+        </span>
       </div>
       
       <!-- Git Actions Panel -->
@@ -86,6 +89,7 @@ import { ref, computed, watch } from 'vue'
 import { invoke } from '../../utils/tauri'
 import { iconTimestamp } from '../../store/projectStore'
 import { projectIconSrc } from '../../utils/projectIcon'
+import { remoteToWebUrl } from '../../utils/gitRemote'
 import BaseModal from './BaseModal.vue'
 import ChangelogModal from './ChangelogModal.vue'
 import { useProjects } from '../../composables/useProjects'
@@ -113,6 +117,8 @@ const failedIcons = ref({})
 watch(gitProject, () => {
   showChangelog.value = false
 })
+
+const remoteWebUrl = computed(() => remoteToWebUrl(projectRuntime.value[gitProject.value?.id]?.remote_url))
 
 const formattedGitLog = computed(() => {
   if (!gitStatusText.value) return ''

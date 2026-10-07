@@ -23,7 +23,8 @@
     "audit:ui": "node scripts/audit-ui-architecture.mjs",
     "test:ui-audit": "node --test scripts/tests/audit-ui-architecture.test.mjs",
     "test:replay": "node --test scripts/tests/replay-hydration.test.mjs",
-    "test:config": "node --test scripts/tests/config-store.test.mjs"
+    "test:config": "node --test scripts/tests/config-store.test.mjs",
+    "test:git-remote": "node --test scripts/tests/git-remote.test.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",
