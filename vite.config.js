@@ -4,9 +4,9 @@ import { readFileSync } from "fs";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// RELAY_PORT: the companion relay's bind (web_server.rs), never Vite's (docs/plan/done/remote-control.md § PORT-1 corollary).
-// devPort: set by scripts/tauri-runner.js; 1420 under a standalone `npm run dev`.
+// The companion relay's bind (web_server.rs), never Vite's (docs/plan/done/remote-control.md § PORT-1 corollary).
 const RELAY_PORT = 1421;
+// Set by scripts/tauri-runner.js; 1420 under a standalone `npm run dev`.
 const devPort = parseInt(process.env.TAURI_DEV_PORT || '1420', 10);
 if (devPort === RELAY_PORT) {
   throw new Error(`[vite] dev port ${RELAY_PORT} is reserved by the companion relay — the axum bind would fail and remote control would die silently.`);

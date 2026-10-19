@@ -39,8 +39,7 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 ## Nợ kỹ thuật không chặn ship
 
-- `scythe.py --all` (2026-10-19) báo 776 `[WRAP]/[YAP]` toàn repo, chủ yếu `src-tauri/src/pty.rs` (128), `system.rs` (65), `statusline.rs` (37) và các doc trong `docs/plan/done/`; nợ cũ, không phải do đợt gần đây. Xử lý theo từng file khi chạm tới, không quét hàng loạt.
-- `cargo fmt --check` còn lệch ở `src-tauri/src` (2026-10-19): `sync.rs`, `sync_state.rs`, `conflict.rs`, `project_config.rs`, `projects.rs`, `system.rs`, `lib.rs`; chạy `cargo fmt` một lần trong commit riêng.
+- Code sạch `[WRAP]/[YAP]` và `cargo fmt`/`clippy --all-targets` (2026-10-20). `scythe.py --all` còn 9 `[YAP]`, toàn là code trích trong `docs/plan/done/` và `docs/research/`: bản ghi sự kiện, giữ nguyên có chủ ý.
 - `npm run audit:ui` đã xanh (2026-09-29): detector sửa xong, literal lặp thành token, phần còn lại ghi exception có owner + lý do trong `scripts/ui-audit.config.json`. Không còn nợ từ `docs/plan/done/audit-akirule-2026-09-18.md`.
 
 ## Hoãn có chủ ý
@@ -50,5 +49,5 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 ## Ngoài backlog này
 
 - `docs/plan/remote-ingress-rework.md` đã commit (`00f4e68`, 2026-09-10), qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
-- **Release**: 1.33.1 ra 2026-10-20, đóng `task-1789578897581` (usage AGY CLI). 1.33.0 ra 2026-10-07, đóng `task-1789604877926` (kéo-thả file từ ngoài làm app mất trang, commit `e37437c`). Chuỗi kiểm tra runtime của ba plan 1–3 đóng 2026-10-07: 1.32.0 chạy hằng ngày trên Mac từ hôm ra mà không lỗi, owner xác nhận; plan và `docs/plan/done/1.32.0-mac-handoff.md` đã vào `done/`, các task note #6 đã done. Dọn code chưa lên lịch, không chặn release: (b) `scythe.py` báo `[YAP]` mức review có từ trước 1.32.0 ở các file đợt 1.32.0 — nhiều nhất `sync.rs` (39), `conflict.rs` (22), `sync_state.rs` (20), `projects.rs` (13), `useProjectConfig.js` (12); (c) `cargo fmt` một commit riêng.
+- **Release**: 1.33.1 ra 2026-10-20, đóng `task-1789578897581` (usage AGY CLI). 1.33.0 ra 2026-10-07, đóng `task-1789604877926` (kéo-thả file từ ngoài làm app mất trang, commit `e37437c`). Chuỗi kiểm tra runtime của ba plan 1–3 đóng 2026-10-07: 1.32.0 chạy hằng ngày trên Mac từ hôm ra mà không lỗi, owner xác nhận; plan và `docs/plan/done/1.32.0-mac-handoff.md` đã vào `done/`, các task note #6 đã done.
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.
