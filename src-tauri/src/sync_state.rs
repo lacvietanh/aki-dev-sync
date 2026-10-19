@@ -62,9 +62,7 @@ fn state_root() -> Result<PathBuf, String> {
     Ok(crate::app_paths::app_data_dir()?.join("state"))
 }
 
-/// The ONE place `state/<id>/<host>/` is spelled. `host` is validated by callers before it ever reaches
-/// here (`validate_remote_host`), same guard as every other host-as-path-component use. `project_id` is
-/// validated here (N1) since every read/write path funnels through this one function.
+/// The one place `state/<id>/<host>/` is spelled; callers validate `host`, and `project_id` is validated here (N1) since every path funnels through.
 fn pair_dir(project_id: &str, host: &str) -> Result<PathBuf, String> {
     validate_state_id(project_id)?;
     if host.is_empty() {
@@ -73,7 +71,7 @@ fn pair_dir(project_id: &str, host: &str) -> Result<PathBuf, String> {
     Ok(state_root()?.join(project_id).join(host))
 }
 
-/// A project id becomes a directory name under `state/`, so it must be exactly one plain segment: `Path::join` with an absolute id REPLACES the base, which would aim `delete_project_state`'s `remove_dir_all` at an arbitrary directory.
+/// Exactly one plain segment: `Path::join` with an absolute id replaces the base, aiming `delete_project_state`'s `remove_dir_all` anywhere.
 fn validate_state_id(id: &str) -> Result<(), String> {
     crate::projects::validate_path_segment("project_id", id)?;
     if id.is_empty()
@@ -146,11 +144,7 @@ pub fn write_last_sync(
     )
 }
 
-/// Single (project, host) read - the delete-preview auto-approval path (`useSync.js`) needs the sync that
-/// actually ran against the host it is about to sync with NOW, never `read_last_sync_all`'s
-/// newest-across-every-host figure (correct for the table's last-action cell, wrong here: a more recent
-/// sync to a DIFFERENT host must never suppress a delete confirmation for this one - N-e,
-/// docs/plan/done/settings-and-state-layout.md).
+/// One (project, host) read for delete-preview auto-approval: a newer sync to another host must never suppress this host's confirmation (N-e, docs/plan/done/settings-and-state-layout.md).
 #[tauri::command]
 pub async fn read_last_sync_for_host(
     project_id: String,
@@ -204,11 +198,7 @@ pub async fn read_last_sync_all(
     .map_err(|e| format!("read_last_sync_all task join error: {}", e))
 }
 
-/// B5 (docs/plan/done/settings-and-state-layout.md § B): removes only `state/<id>/` - every host's baseline
-/// and last_sync for exactly ONE project. Wired from `removeProject` in remoteActions.js. Scoped to a
-/// single project id (1.9.3 multi-entity guard): every OTHER project's `state/<other_id>/` must stay
-/// byte-identical, tested below across >=2 projects x >=2 hosts. Local, fast, app-data-only file I/O
-/// (stack-tauri A1's "not this bug class" carve-out), so no `spawn_blocking` is required.
+/// Removes only `state/<id>/` (every host of ONE project; B5, docs/plan/done/settings-and-state-layout.md § B); other projects stay byte-identical. Fast local I/O, so a plain `fn`.
 #[tauri::command]
 pub fn delete_project_state(project_id: String) -> Result<(), String> {
     validate_state_id(&project_id)?;
@@ -219,25 +209,7 @@ pub fn delete_project_state(project_id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// One-shot, idempotent migration (docs/plan/done/settings-and-state-layout.md § Migration, amended § Amendments
-/// for the 1.32.0 remote_path fix):
-/// - `remote_host` + `hooks` -> `targets.<remote_host>` (only when that entry is absent).
-/// - a stale `targets.<host>.remote_path` left by a pre-fix run of this same migration is lifted back
-///   onto the project's own top-level `remote_path` (only when that field is still empty), then cleared
-///   from every target so it can never resurface - `remote_path` is a project fact now, never a per-host
-///   one (see `Target`'s doc comment). Prefers the active `remote_host`'s own recorded value, else the
-///   first non-empty one found across any target, since only one path per project has ever existed in
-///   practice.
-/// - the legacy flat `baselines/<id>.json` -> `state/<id>/<host>/baseline.json`, recording the current `remote_path`.
-///   An ancestor already present at that per-host location wins over the legacy file (e.g. a sync already
-///   ran there this launch) - the legacy file is only ever consulted when no state baseline exists yet.
-/// - `last_sync_action/time/status` -> `state/<id>/<host>/last_sync.json`, then cleared on the project
-///   (skip_serializing_if keeps them from coming back on the next save, per the 1.13.0 sync_git lesson).
-///
-/// Host used for the baseline/last_sync moves is `last_sync_host` if present, else `remote_host` - the best
-/// guess for which remote the recorded state actually belongs to (this plan is what makes that guess exact
-/// going forward). Runs entirely against app-data (never `local_path`), so no network-mount stall risk
-/// (stack-tauri A1).
+/// One-shot, idempotent migration of legacy targets, remote_path, baselines and last_sync into `state/<id>/<host>/`: docs/plan/done/settings-and-state-layout.md § Migration and § Amendments.
 pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject]) -> bool {
     let mut changed = false;
     for p in projects.iter_mut() {
@@ -288,7 +260,7 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
             continue;
         }
 
-        // `last_sync_host` moved on every action (dry runs, SELECT/git pushes, failures) while the flat baseline was written only by a full real sync, so it names the baseline's host only when that last action was itself one (or none is recorded); otherwise the baseline is left unfiled (reads as "no baseline", the safe degrade) rather than filed under a host it never described.
+        // `last_sync_host` names the baseline's host only if the last action was a full real sync (or none); otherwise the baseline stays unfiled, the safe degrade.
         let last_action_wrote_baseline = p.last_sync_action.as_deref().is_none_or(|a| {
             matches!(a, "PUSH" | "PULL") && p.last_sync_status.as_deref() == Some("success")
         });
@@ -309,10 +281,7 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
             if write_succeeded {
                 changed = true;
             }
-            // The legacy file is deleted only once its content is safely preserved elsewhere: either a
-            // fresher per-host baseline already existed and wins, or this write just landed it there. A
-            // failed write with no existing per-host baseline must leave the legacy file in place - deleting
-            // it then would discard the only copy of the baseline with nothing written to replace it.
+            // Delete the legacy file only once its content is safe elsewhere: a fresher per-host baseline exists or this write landed.
             if already_had_state_baseline || write_succeeded {
                 crate::sync::remove_legacy_flat_baseline(&p.id);
             }
@@ -341,13 +310,7 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
     changed
 }
 
-/// Boot-time entrypoint (docs/plan/done/settings-and-state-layout.md § Migration): runs in `setup()` beside
-/// `app_paths::migrate_legacy_app_data`, before the logger opens, so every path involved
-/// (`app_paths::app_data_dir`, `sync::baseline_dir`'s fallback) is resolved deterministically instead of
-/// depending on `sync::APP_DATA_DIR` being primed later by whichever sync command happens to run first.
-/// Loads `projects.json` directly rather than taking an already-loaded list over IPC - there is no
-/// frontend yet at this point in startup. Returns a one-line summary for the caller to log, same shape as
-/// `app_paths::migrate_legacy_app_data`.
+/// Boot entrypoint, run in `setup()` before the logger and any frontend, so every path resolves; returns a one-line summary (docs/plan/done/settings-and-state-layout.md § Migration).
 pub fn migrate_settings_and_state_on_boot(app: &tauri::AppHandle) -> String {
     // Load_projects_raw only, never load_projects_blocking - the latter stats/reads project icons under each project's local_path, which can stall on an unmounted/slow mount with no window open yet.
     let mut projects = match crate::projects::load_projects_raw(app) {
@@ -380,9 +343,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::{Mutex, MutexGuard};
 
-    // Serializes every test that overrides TEST_STATE_ROOT (a process-global), since cargo test runs
-    // tests in parallel threads within one process - without this lock two tests would race on the
-    // same global and read each other's scratch dir.
+    // Every test overriding the process-global TEST_STATE_ROOT takes this lock.
     static TEST_SERIAL: Mutex<()> = Mutex::new(());
 
     /// Self-cleaning scratch app-data dir so tests never touch the real `~/.aki/devsync`.
@@ -487,11 +448,7 @@ mod tests {
         assert!(read_baseline("no-such-project", "no-such-host").is_none());
     }
 
-    /// `#[serde(default)]` on every `LastSync` field - a `last_sync.json` missing a key (a future
-    /// build that dropped one, or a hand-trimmed file) must still read as Some with the default filled in,
-    /// not silently collapse to None the way a hard deserialize failure would (`read_last_sync` swallows
-    /// any parse error into None, so a missing-field-only file would otherwise be indistinguishable from
-    /// no file at all).
+    /// A `last_sync.json` missing a key reads as Some with defaults, not None (which `read_last_sync` would make indistinguishable from no file).
     #[test]
     fn last_sync_json_missing_a_key_still_reads() {
         let _s = Scratch::new("last-sync-missing-key");
@@ -605,9 +562,7 @@ mod tests {
         }
     }
 
-    /// Deleting one project's state must remove only `state/<id>/`, leaving every other project's
-    /// (and every other host's) files byte-identical - the same >=2 projects x >=2 hosts guard as the
-    /// write-isolation test above, applied to deletion.
+    /// Deleting one project's state removes only `state/<id>/`; every other project and host stays byte-identical (>=2 x >=2).
     #[test]
     fn deleting_one_project_state_leaves_every_other_project_and_host_byte_identical() {
         let _s = Scratch::new("delete-project-state");
@@ -716,9 +671,7 @@ mod tests {
         );
     }
 
-    /// The core 1.32.0 fix: a `targets.<host>.remote_path` left by a pre-fix run of this same migration
-    /// is lifted back onto the project's own top-level field (the only place it belongs now), then cleared
-    /// from the target so a later host switch can never resurrect it.
+    /// The 1.32.0 fix: a stale `targets.<host>.remote_path` is lifted onto the project's own field and cleared from the target.
     #[test]
     fn migration_lifts_a_stale_per_host_remote_path_back_onto_the_project() {
         let _s = Scratch::new("migrate-lift-remote-path");
@@ -830,9 +783,7 @@ mod tests {
         );
     }
 
-    /// docs/plan/done/settings-and-state-layout.md § Migration: "an existing state baseline is NEVER
-    /// overwritten" - a fresher per-host baseline (e.g. written by a sync that already ran this launch)
-    /// must survive a legacy flat baseline still sitting on disk.
+    /// An existing state baseline is never overwritten: a fresher per-host baseline survives a legacy flat one still on disk.
     #[test]
     fn migration_leaves_a_legacy_baseline_unfiled_when_the_last_action_was_not_a_full_real_sync() {
         let _s = Scratch::new("migrate-unfiled");
@@ -903,12 +854,7 @@ mod tests {
         );
     }
 
-    /// R1 sibling: a failed `write_baseline` must never let the legacy flat baseline
-    /// be deleted when no per-host baseline already exists - deleting it then would discard the only copy
-    /// with nothing written in its place. Forces the write to fail by pre-occupying the exact
-    /// `baseline.json` path with a directory (same technique as `system.rs`'s
-    /// `write_atomic_leaves_the_old_file_intact_when_the_write_cannot_land`), so `write_atomic`'s final
-    /// rename fails.
+    /// A failed `write_baseline` with no per-host baseline must keep the legacy one; a directory at `baseline.json` makes the rename fail.
     #[test]
     fn migration_keeps_the_legacy_baseline_when_the_state_write_fails() {
         let _s = Scratch::new("migrate-keep-legacy-on-failed-write");
@@ -917,9 +863,7 @@ mod tests {
         let blocked_path = baseline_path("proj-a", "hostA").unwrap();
         std::fs::create_dir_all(&blocked_path).unwrap();
 
-        // Pre-populate the target (with remote_path already cleared, the steady state going forward) so
-        // neither the `targets` creation branch nor the stale-remote_path clear-up branch flips `changed` -
-        // isolates this assertion to the baseline-write outcome only.
+        // Target pre-populated in its steady state, so only the baseline-write outcome can flip `changed`.
         let mut p = make_project("proj-a", "hostA", "~/app");
         p.targets.insert(
             "hostA".to_string(),
@@ -975,9 +919,7 @@ mod tests {
         );
     }
 
-    /// Each project already has real sync state on a SECOND host (e.g. it synced there before the
-    /// active host was switched) - migration only ever touches the ACTIVE host's pair, so that second-host
-    /// state must stay completely untouched, both on the first migration run and on a second, idempotent one.
+    /// State on a second host stays untouched across two runs: migration only touches the active host's pair.
     #[test]
     fn migration_leaves_pre_existing_second_host_state_byte_identical_across_two_runs() {
         let _s = Scratch::new("migrate-2x2-second-host-untouched");
@@ -1089,22 +1031,7 @@ mod tests {
         assert!(reloaded.last_sync_action.is_none());
     }
 
-    /// Migration rehearsal seam (docs/plan/done/1.32.0-mac-handoff.md § 2, release.B5's "rehearse from the
-    /// PREVIOUS state, never from empty"): runs the real `migrate_settings_and_state` against a COPY of a
-    /// real `~/.aki/devsync` tree, never the original. `#[ignore]` so an ordinary `cargo test` never
-    /// touches it; a missing/empty `AKI_REHEARSAL_DEVSYNC_COPY` PANICS rather than passing vacuously
-    /// - a bare `cargo test -- --ignored` sweep that forgets the env var must
-    /// fail loudly, not report a false "1 passed". Redirects every path this migration reads/writes via
-    /// the same test-only statics the unit tests above use (`TEST_STATE_ROOT`, `sync::set_test_dirs`), so
-    /// nothing here can resolve against the real home directory.
-    ///
-    /// `AKI_REHEARSAL_LEGACY_BASELINES_COPY` is optional: `sync::legacy_flat_baseline` falls back to the
-    /// pre-1.7.1 `~/.aki/devsync-baselines` directory when a project's new-location baseline is absent
-    /// (`sync.rs::read_baseline`'s `.or_else`), so a full rehearsal needs that directory copied too when it
-    /// exists on the real machine - `scripts/rehearse-settings-migration.sh` sets this whenever it finds one.
-    ///
-    /// Invoked by `scripts/rehearse-settings-migration.sh`, which owns the copy step; this test owns the
-    /// migration + postcondition assertions and prints its own counts to stdout (`--nocapture`).
+    /// Rehearsal against a COPY of a real `~/.aki/devsync` (release.B5), run by `scripts/rehearse-settings-migration.sh`; `#[ignore]`, panics without its env var.
     #[test]
     #[ignore]
     fn rehearse_migration_against_a_real_devsync_copy() {
@@ -1157,9 +1084,7 @@ mod tests {
                     .unwrap_or_else(|| p.remote_host.clone());
                 had_legacy_baseline.push((p.id.clone(), host));
             }
-            // Mirrors project_config.rs::is_all_empty against the exact six legacy fields the JS seeding
-            // step reads (`write_project_configs_if_missing`) - a *prediction*, since seeding itself only
-            // runs from JS and this Rust rehearsal cannot exercise it.
+            // A prediction mirroring `project_config.rs::is_all_empty`: seeding itself runs only from JS.
             let local_dir = PathBuf::from(&p.local_path);
             let already_owned = local_dir.join(".akidevsync").join("project.json").exists();
             if local_dir.is_dir() && !already_owned {
@@ -1201,9 +1126,7 @@ mod tests {
         let changed_first = migrate_settings_and_state(&mut projects);
         println!("first run changed: {}", changed_first);
 
-        // Persist and RE-READ from disk, same as the real boot path's load -> migrate -> save -> (next
-        // launch) load again - checking `projects.len()` against itself in memory proves nothing about
-        // what actually landed on disk.
+        // Persist and re-read from disk, as the boot path does; an in-memory count proves nothing about what landed.
         let projects_json_first =
             serde_json::to_string_pretty(&projects).expect("serialize migrated projects");
         std::fs::write(&projects_json_path, &projects_json_first)
@@ -1261,9 +1184,7 @@ mod tests {
         };
         let after_first = snapshot_state_files(&root);
 
-        // Second run reloads from disk too (the same file § "Persist and RE-READ" above just wrote), not
-        // the in-memory Vec left over from the first run - proves the round trip through disk is
-        // idempotent, not just the in-memory struct.
+        // The second run reloads from disk too, so idempotence covers the disk round trip.
         let mut projects_second: Vec<SyncProject> = serde_json::from_str(&reread_raw)
             .expect("second-run parse of the re-read projects.json");
         let changed_second = migrate_settings_and_state(&mut projects_second);

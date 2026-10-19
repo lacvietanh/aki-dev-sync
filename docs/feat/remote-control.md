@@ -1,6 +1,6 @@
 # Remote Control (companion) — feature
 
-> updated 2026-09-20 · v1.30.0
+> updated 2026-10-20 · v1.33.1
 
 Control the Mac app from a phone (or any browser) on the same LAN, over Tailscale, or through a public HTTPS origin the owner runs. The Mac webview stays the single source of truth; the phone is a thin mirror that shows the same state and sends intents back over one WebSocket. Full architecture: `docs/plan/done/remote-control.md`; how a request reaches the Mac at all (edges, the shared 443 mount, the pairing boundary): `docs/arch/remote-ingress.md`.
 
@@ -104,13 +104,14 @@ A phone on a weak link cannot always drain what the Mac produces. A runaway comm
 
 The rule is therefore **bounded, and drop by kind rather than by age**:
 
-- Each companion has an **8 MiB outbox** (1.21.1, up from 2 MiB — sized per INVARIANT R1 in `web_server.rs` so a single-tab recovery replay always fits with headroom; with many tabs the coalesce + resync path handles overflow without looping). Enqueue never blocks and never awaits.
+- Each companion has an **8 MiB outbox** (1.21.1, up from 2 MiB), per connection, so several tabs on one device share one budget but devices never share. Enqueue never blocks and never awaits. Sizing, asserted in `web_server.rs` tests as INVARIANT R1: one tab's replay is ~175 KB (128 KiB scrollback × 4/3 base64 + a ~128 B envelope) and must fit in half the budget, leaving headroom for frames that are never dropped.
 - Over budget → the **coalescible** backlog is dropped and the phone is flagged for re-sync. Once its queue has genuinely drained, the host re-issues the existing `companion-connected` frame for that device, which the normal join path answers with a full `init` plus a `reset` scrollback replay. No new frame type, no timer: re-hydrating only on a drained queue is what keeps it self-limiting.
+- **No coalesce/resync loop.** With many tabs the total replay can exceed the budget; a second overflow while a resync is still pending (no non-resync drain since) schedules no further resync, and live output keeps flowing until the connection makes progress.
 - If what remains still exceeds the budget, the socket closes **1013** (case B4c above).
 
 | Frame | Coalescible? | Why |
 | :-- | :-- | :-- |
-| `pty_output` | **yes** — the only one | Its entire content *is* the host's scrollback ring buffer, which `pty_get_scrollback` returns verbatim. Dropping a run leaves a screen **behind**, never **wrong**. |
+| `pty_output` | **yes** — the only one, and only without `reset` (a reset is a state transition) | Its entire content *is* the host's scrollback ring buffer, which `pty_get_scrollback` returns verbatim. Dropping a run leaves a screen **behind**, never **wrong**. |
 | `init` / `delta` | never | A delta is the only record that a value changed. Making that correctness depend on a second thing succeeding is how a "safe" drop becomes a silently stale project list. |
 | dialogs | never | They ride inside `delta`, and are called out separately here because "it is just a delta" is exactly how a delete-confirmation would get dropped. |
 | `invoke_result` | never | Not present in any snapshot — dropping it turns a working call into a 20 s timeout. |

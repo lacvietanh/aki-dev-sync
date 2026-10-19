@@ -68,16 +68,9 @@ const CLOSE_SERVER_DISABLED: u16 = 4002;
 /// `role=host` refused (non-loopback or invalid process-local secret).
 const CLOSE_HOST_ROLE_REJECTED: u16 = 4003;
 
-// ── Backpressure toward companions ────────────────────────────────────────────────────────────
-// Policy: Coalesce then re-hydrate. When an outbox blows `COMPANION_QUEUE_LIMIT_BYTES`, drop re-derivable `pty_output` frames and flag for resync. When the queue drains, re-issue `companion-connected` to trigger fresh `init` and `reset:true` scrollback replay.
-// Blocking the producer is unacceptable (would stall host loop and all clients), while dropping arbitrary frames causes visual corruption in xterm.
+// ── Backpressure toward companions: coalesce, then re-hydrate on a drained queue (docs/feat/remote-control.md § Backpressure) ──
 
-/// Per-companion outbound budget (asserted in tests below).
-///
-/// Sizing: one tab's replay is ~175 KB (128 KiB scrollback × base64 4/3 + ~128 B envelope). The budget holds at least 2× one tab's replay so a single-tab resync never triggers another coalesce. With unbounded tabs the total replay may exceed the budget; `coalesce` handles that gracefully: first overflow schedules a resync, a second overflow with no scrollback delivered since the last resync stops scheduling resyncs and keeps the connection alive for live output (avoiding an endless coalesce/resync loop).
-///
-/// INVARIANT R:
-/// - **R1**: `replay_frame_bytes(SCROLLBACK_CAP) <= COMPANION_QUEUE_LIMIT_BYTES / 2` (~175 KB <= 4 MiB). Ensures a single-tab recovery replay always fits with headroom for undroppable state frames. Budget is per-connection so multiple tabs on one device have isolated queues.
+/// Per-companion outbound budget; sizing and INVARIANT R1 (one tab's replay fits in half of it): docs/feat/remote-control.md § Backpressure.
 const COMPANION_QUEUE_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 
 /// Frame tag of the ONE coalescible kind (mirrors `FRAME_PTY_OUTPUT` in `src/constants/protocol.js`).
@@ -115,9 +108,7 @@ impl Outbox {
         }
     }
 
-    /// Queue one frame and enforce the budget. THE WHOLE POLICY LIVES HERE, not in the caller, so
-    /// there is exactly one answer to "what happens when a phone falls behind" no matter which
-    /// producer pushed the frame that tipped it over.
+    /// Queues one frame and enforces the budget: the one answer to a phone falling behind, whichever producer tipped it over.
     fn push_within_budget(&mut self, msg: Message) {
         if self.closed {
             return;
@@ -132,15 +123,7 @@ impl Outbox {
         }
     }
 
-    /// Drops every coalescible frame and flags the connection for a re-hydrate. Called only when
-    /// the budget is already blown, so the JSON parsing it does is off the hot path entirely: after
-    /// a collapse the queue is near-empty, so the next one cannot happen until another whole budget
-    /// has accumulated.
-    ///
-    /// A second overflow after a resync was already requested (resync_suppressed) does not schedule
-    /// another resync — that would loop forever when the total replay exceeds the budget. Instead,
-    /// live output continues to flow and the connection stays open until it makes enough progress
-    /// (a non-resync drain) to clear the suppression.
+    /// Drops every coalescible frame and flags a re-hydrate; a second overflow while a resync is pending schedules none, so many tabs cannot loop.
     fn coalesce(&mut self) {
         let before = self.queue.len();
         self.queue.retain(|m| !is_coalescible(m));
@@ -189,16 +172,7 @@ fn frame_bytes(msg: &Message) -> usize {
     }
 }
 
-/// DROP-SAFETY CHECK (routing is handled by `addressed_to` and `stamp_from`).
-///
-/// COALESCIBLE (re-derivable from host scrollback): non-reset `pty_output` chunks.
-/// Reset frames are authoritative state transitions and must never be dropped.
-///
-/// NEVER DROPPED (default-deny for unrecognized/binary):
-/// - `init` / `delta`: mirrored app state (including confirmation dialogs).
-/// - `invoke_result`: RPC reply matching companion request id.
-/// - `pty_exit`, `pty_resize`: terminal liveness and dimension edges.
-/// - `ping` / `pong`: connection health.
+/// Only a non-reset `pty_output` may be dropped (re-derivable from the scrollback); everything else, unknown frames included, never is (docs/feat/remote-control.md § Backpressure).
 fn is_coalescible(msg: &Message) -> bool {
     let Message::Text(text) = msg else {
         return false;
@@ -413,10 +387,7 @@ impl RelayState {
         }
     }
 
-    /// Routes one host frame to recipient connection named in `to`, or broadcasts to all companions if `to` is None.
-    ///
-    /// Broadcast is default for `pty_output` live stream, `delta`, `init`, and lifecycle events.
-    /// `to` is set for companion scrollback replays and `invoke_result` RPC responses.
+    /// Sends a host frame to the connection named in `to` (scrollback replays, `invoke_result`), or to every companion when `to` is None.
     fn dispatch(&self, msg: Message) {
         let to = addressed_to(&msg);
         let companions = self.companions.lock().unwrap_or_else(|e| e.into_inner());
@@ -461,11 +432,7 @@ impl RelayState {
         std::fs::write(&path, content).map_err(|e| e.to_string())
     }
 
-    /// Writes the whole `companion-server.json` from live state — the LAST EXPLICIT on/off choice
-    /// so a restart resumes it (see `init`), plus the ingress decision — so saving one can never
-    /// drop the other. Same blocking-write discipline as `persist_devices`: callers on the async
-    /// runtime must route it through `spawn_blocking`. Best-effort by design — failing to write
-    /// this preference must never fail the toggle the user just asked for.
+    /// Writes all of `companion-server.json` (last on/off choice + ingress), so saving one never drops the other. Blocking and best-effort: never fails the toggle.
     fn persist_server_state(&self) {
         let Some(path) = self
             .server_state_path
@@ -541,9 +508,7 @@ impl RelayState {
         PairVerdict::Accepted
     }
 
-    /// Mints the 6-digit code and its long-form twin together, so no path can hand out one without
-    /// the other. Both values are generated before any state is written, so a failure leaves the
-    /// existing state unchanged — no partially-written pair of secrets.
+    /// Mints the 6-digit code and its long-form twin together, both before any state is written, so a failure changes nothing.
     fn mint_pairing_secrets(&self) -> Result<String, String> {
         let code = generate_pairing_code()?;
         let link = generate_token()?;
@@ -555,7 +520,7 @@ impl RelayState {
         Ok(code)
     }
 
-    /// Turns the gate off and closes every registered companion. Registration checks the gate and inserts under the same `companions` lock this drains under, so once this returns no handshake that authenticated earlier can still insert.
+    /// Closes the gate and every companion; registration checks the gate under the same `companions` lock, so no earlier handshake can insert after this.
     fn disable_and_drain(&self) {
         self.set_enabled(false);
         self.connection_epoch.fetch_add(1, Ordering::SeqCst);
@@ -599,9 +564,7 @@ impl RelayState {
     }
 }
 
-/// `companion-server.json` — the relay state that outlives the process. `#[serde(default)]`
-/// per CLAUDE.md's serde rule, so an older/partial file degrades to "off" on the Tailscale ingress
-/// instead of failing the read.
+/// `companion-server.json`, the relay state that outlives the process; `serde(default)` so a partial file reads as off on the Tailscale ingress.
 #[derive(Serialize, Deserialize)]
 struct PersistedServerState {
     #[serde(default)]
@@ -643,9 +606,7 @@ struct PairedDevice {
     paired_at: u64,
 }
 
-/// What `list_paired_devices()` returns to the frontend — deliberately omits `token`. The host
-/// UI never needs the raw secret back once pairing has completed; not returning it is a small,
-/// free reduction of what a shoulder-surf or screen-share of the paired-devices modal can leak.
+/// What `list_paired_devices()` returns: no `token`, which the UI never needs after pairing and a screen share should not show.
 #[derive(Serialize)]
 pub struct PairedDeviceView {
     id: String,
@@ -784,9 +745,7 @@ async fn serve_forever(app: AppHandle) {
     }
 }
 
-// ── §7.2 PORT-1: axum on :1421 is the ONE LAN entry, dev and release alike ───────────────────
-// Release: Serves SPA from binary via Tauri embedded asset resolver.
-// Dev: Reverse-proxies non-relay requests to Vite dev server on localhost (HMR is not proxied).
+// ── §7.2 PORT-1: axum on :1421 is the one LAN entry; release serves the embedded SPA, dev proxies non-relay requests to Vite (no HMR) ──
 fn build_router(app: &AppHandle) -> Router {
     let router = Router::new()
         .route("/ws", get(ws_handler))
@@ -1425,9 +1384,7 @@ fn tailscale_https_url() -> Option<String> {
     }
 }
 
-/// Who holds the node's 443 `/` mount. `tailscale serve` and `tailscale funnel` share one per-node
-/// config, so a sibling app's Funnel and this app's serve compete for the same handler — see
-/// docs/research/remote-ingress-tailscale-conflict.md F1.
+/// Who holds the node's 443 `/` mount: `tailscale serve` and `funnel` share one per-node config (docs/research/remote-ingress-tailscale-conflict.md F1).
 #[derive(PartialEq, Debug)]
 enum MountOwner {
     Ours,
@@ -1467,9 +1424,7 @@ fn parse_mount_owner(status_json: &str, target: &str) -> MountOwner {
     MountOwner::Vacant
 }
 
-/// The ONE ownership check. Enable and disable both route through it, so the safety cannot be lost
-/// by a caller that forgets it (`pattern.A8`). A CLI that will not run reads as `Vacant`, which is
-/// the conservative answer for both: enable proceeds, disable does nothing.
+/// The one ownership check, for enable and disable alike; a CLI that will not run reads as `Vacant` (enable proceeds, disable does nothing).
 fn mount_owner() -> MountOwner {
     let target = format!("127.0.0.1:{}", PORT);
     match run_tailscale(&["serve", "status", "--json"]) {
@@ -1545,9 +1500,7 @@ pub async fn get_tailscale_https() -> Result<TailscaleHttps, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Mounts or unmounts THIS app's own 443 `/` handler and nothing else: it refuses to take a mount
-/// another app holds, and unmounting is a no-op unless the handler there proxies our port
-/// (docs/plan/remote-ingress-rework.md §3).
+/// Mounts or unmounts only this app's 443 `/` handler: never takes another app's mount, never unmounts one that does not proxy our port.
 #[tauri::command]
 pub async fn set_tailscale_https(enable: bool) -> Result<TailscaleHttps, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<TailscaleHttps, String> {
@@ -1597,9 +1550,7 @@ pub struct RemoteIngress {
     suggested_origin: Option<String>,
 }
 
-/// Best-effort hint from the sibling app `aki-mcp-sv`, which records its own edge in
-/// `~/.aki/mcpsv/ingress.json`. Every failure — no file, no permission, an unexpected shape — is
-/// `None`: Dev Sync must never need that file to work.
+/// Hint from `aki-mcp-sv`'s `~/.aki/mcpsv/ingress.json`; any failure is `None`, since Dev Sync must work without that file.
 fn suggested_public_origin() -> Option<String> {
     let path = dirs::home_dir()?
         .join(".aki")
@@ -1836,9 +1787,7 @@ mod tests {
         Message::Text(serde_json::json!({ "t": t, "data": "x".repeat(payload_bytes) }).to_string())
     }
 
-    /// The policy in one assertion per frame kind. If someone later widens what may be dropped,
-    /// this is where it fails — a `delta` carrying an unanswered delete-confirmation is the frame
-    /// this test exists to protect.
+    /// One assertion per frame kind; widening what may be dropped fails here (a `delta` can carry an unanswered delete confirmation).
     #[test]
     fn only_terminal_output_may_be_coalesced() {
         assert!(
@@ -1977,9 +1926,7 @@ mod tests {
 
     // ── Per-connection addressing ────────────────────────────────────────────────────────────
 
-    /// Registers a companion on a fresh relay state and hands back its outbox, so a test can read
-    /// exactly what `dispatch` decided to queue for it. Mints `conn_key` the same way
-    /// `handle_companion_socket` does, so the tests address connections by the real wire value.
+    /// Registers a companion and returns its outbox, minting `conn_key` as `handle_companion_socket` does, so tests use the real wire value.
     fn register(state: &RelayState, conn_id: u64, device_id: &str) -> CompanionOutbox {
         let outbox: CompanionOutbox = Arc::new((StdMutex::new(Outbox::new()), Notify::new()));
         state.companions.lock().unwrap().insert(
