@@ -108,7 +108,7 @@ Per `coding.B3`/`B5`, each item names the cheapest tier that settles it.
 | Phase | Settled by | Tier |
 | :-- | :-- | :-- |
 | W1 mount parsing | Unit test over recorded `serve status --json` fixtures — ours, foreign, empty. The parser is a pure function; a live tailnet proves nothing extra | `cargo test --lib` on the Mac |
-| W1 no blanket command | `grep -n '\-\-https=443' src-tauri/src/` returns nothing outside the fallback script | static |
+| W1 no blanket command | `grep -rn -e '--https=443' src-tauri/src/` returns one hit, `web_server.rs:1574` (`serve --https=443 --set-path=/ off`), reached only after `mount_owner()` reports `Ours` (`web_server.rs:1560-1569`); the fallback script keeps its own copy | static |
 | W2 penalty shape | New `RelayState` tests: bad-code storm leaves `enabled` true; an existing device token still authenticates after a lock | `cargo test --lib` |
 | W3 serde default | Load an existing `companion-server.json` with no ingress fields and assert the `tailscale` default | `cargo test --lib` |
 | W3 capability grant | **Settled, no change needed.** `capabilities/default.json` holds only `core:*`/`opener:*`/`dialog:*` — not one of the ten pre-existing `web_server::*` commands has an entry, and they work. Tauri v2 gates plugin permissions, not commands listed in `generate_handler!` | static — read `capabilities/default.json` + `lib.rs:128-139` |
@@ -144,7 +144,7 @@ Separation does not forbid consolidation: anyone wanting a single tunnel runs it
 
 ## 10. Mac hand-off
 
-Everything below needs a real phone; the dev box has none paired (`CLAUDE.local.md` — build boundary). Nothing is committed yet; the whole change sits in the working tree. It has now been through the Rust compiler on the Mac (§8, `cargo check` + `cargo test --lib` 211/211) — only the phone/edge runtime protocol below remains open. Layer architecture: `docs/arch/remote-ingress.md`.
+Everything below needs a real phone; the dev box has none paired (`CLAUDE.local.md` — build boundary). The change landed in `00f4e68` (2026-09-10, `feat(remote-control): swappable ingress, one-tap pairing link, paired device list`); the pairing-lock and entropy hardening followed in `a4be4ef` and `5752d1b` (2026-09-20). It has been through the Rust compiler on the Mac (§8, `cargo check` + `cargo test --lib` 211/211) — only the phone/edge runtime protocol below remains open. Layer architecture: `docs/arch/remote-ingress.md`.
 
 ### 10.1 Owner test protocol — the runtime claims nothing static could settle
 

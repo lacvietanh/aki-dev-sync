@@ -1,6 +1,6 @@
 # Backlog
 
-Snapshot từ `.akidevsync/notes.json` và trạng thái repo ngày 2026-09-20 (HEAD `d73d0e7`). Chỉ giữ việc còn mở; việc đã làm nằm trong `docs/plan/done/`, kết quả điều tra nằm trong `docs/research/`.
+Snapshot từ `.akidevsync/notes.json` và trạng thái repo ngày 2026-10-19 (HEAD `2d8567f`). Chỉ giữ việc còn mở; việc đã làm nằm trong `docs/plan/done/`, kết quả điều tra nằm trong `docs/research/`.
 
 ## Đã quyết (2026-09-20, /akithink tự chạy)
 
@@ -27,7 +27,6 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
-| 2 | Kéo-thả file làm app crash | `task-1789604877926` | Reproduce và lấy crash/log trước; ưu tiên cao vì làm mất phiên đang chạy |
 | 3 | AGY usage hỏng từ khoảng 1.29–1.30 | `task-1789578897581` | Đã sửa trong code (Unreleased): agy 1.4.x chạy language server ngay trong process `agy`, argv không có `--csrf_token` nên mọi RPC trả 401 (thấy cả trên Mac lẫn máy dev). Script giờ đọc quota CLI bằng `agy -p "/usage" --output-format json`, email lấy từ dòng log của agy, cache 1 phút; chi tiết `docs/arch/usage-antigravity.md` § 1b. R-AG1 đã chạy 2026-10-19 trên Mac (bản dev, 5 phiên agy + 2 IDE + desktop): script của 1.33.0 trả 401 cho mọi frame CLI, bản sửa trả frame CLI 200; app dev nhận `done: ok`, 2 tài khoản live, thẻ hiện đúng số của từng tài khoản. Desktop dùng chung tài khoản với CLI: `docs/ref/antigravity-multi-account-ram-credentials.md` § 4. Note đóng được khi bản sửa được phát hành |
 | 7 | Một nút PUSH sync từng làm đứng cả app: audit async | `task-1791428905665` | Quét tĩnh 2026-10-19: 0/86 command vi phạm quy tắc `spawn_blocking`; H1, H3, H4 không có bằng chứng; H2 (mỗi dòng `sync-log` gây một lần cập nhật store + cuộn) đã gộp theo lô 50 ms trong `useLogs.js`, chưa kiểm ở runtime. Note mở đến khi chạy xong R1 trên Mac (dev build, Safari Web Inspector, PUSH ≥1000 file rồi PUSH ~10 file). Chi tiết và R1–R3: `docs/research/push-freeze-diagnosis.md`. Bài học cho UNIDOC Tauri mới ở dạng đề xuất trong doc đó, chưa áp dụng |
 | 9 | Badge PULL 142 (aki-gegrok-bot) / 376 (akiprx) sau khi server `touch` hàng loạt | — | Đã sửa trong code (Unreleased): file cùng size được kiểm nội dung, file chỉ khác mtime tách ra `time_only_*`; probe thật gegrok PULL 142 → 3. Còn: (a) owner cài bản mới để xem tooltip/popover thật; (b) owner quyết có mở lại F1 không — `project.json` của gegrok trên server cũ hơn mà mtime mới hơn, PULL sẽ xoá exclude `data/` và lệnh deploy (`docs/research/akidevsync-project-config-scope-2.md` § Amendments 2026-10-19). Chi tiết: `docs/research/sync-badge-time-only.md` |
@@ -37,11 +36,12 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
+| 8 | Lấy usage thật của Claude Code qua API `/usage` (RE từ CLI), không cần probe hay phiên đang chạy | `task-1790294479640` | Debug/RE CLI để tìm API và cách xác thực; ghi kết quả vào `docs/research/`. Đối chiếu `docs/arch/usage-claudecode.md`: hiện statusLine hook là nguồn duy nhất, không có luồng active — đổi nguồn là đổi ràng buộc đó |
 
 ## Nợ kỹ thuật không chặn ship
 
-- `scythe.py` báo 623 `[WRAP]/[YAP]` toàn repo, chủ yếu `src-tauri/src/pty.rs` (121), `system.rs` (62), `statusline.rs` (37) và các doc trong `docs/plan/done/`. Số ngang baseline trước đợt hardening, nên là nợ cũ. Xử lý theo từng file khi chạm tới, không quét hàng loạt.
-- `cargo fmt --check` còn lệch ở vài file `src-tauri/src` (ví dụ `agent_usage/antigravity.rs`); chạy `cargo fmt` một lần trong commit riêng.
+- `scythe.py --all` (2026-10-19) báo 776 `[WRAP]/[YAP]` toàn repo, chủ yếu `src-tauri/src/pty.rs` (128), `system.rs` (65), `statusline.rs` (37) và các doc trong `docs/plan/done/`; nợ cũ, không phải do đợt gần đây. Xử lý theo từng file khi chạm tới, không quét hàng loạt.
+- `cargo fmt --check` còn lệch ở `src-tauri/src` (2026-10-19): `sync.rs`, `sync_state.rs`, `conflict.rs`, `project_config.rs`, `projects.rs`, `system.rs`, `lib.rs`; chạy `cargo fmt` một lần trong commit riêng.
 - `npm run audit:ui` đã xanh (2026-09-29): detector sửa xong, literal lặp thành token, phần còn lại ghi exception có owner + lý do trong `scripts/ui-audit.config.json`. Không còn nợ từ `docs/plan/done/audit-akirule-2026-09-18.md`.
 
 ## Hoãn có chủ ý
@@ -50,6 +50,6 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 ## Ngoài backlog này
 
-- `docs/plan/remote-ingress-rework.md` đã qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
-- **Release**: 1.33.0 ra 2026-10-07. Chuỗi kiểm tra runtime của ba plan 1–3 đóng 2026-10-07: 1.32.0 chạy hằng ngày trên Mac từ hôm ra mà không lỗi, owner xác nhận; plan và `docs/plan/done/1.32.0-mac-handoff.md` đã vào `done/`, các task note #6 đã done. Dọn code chưa lên lịch, không chặn release: (b) `scythe.py` báo 150 `[YAP]` mức review (không có `[WRAP]`) có từ trước 1.32.0 ở các file đợt 1.32.0 — nhiều nhất `sync.rs`, `conflict.rs`, `sync_state.rs`, `projects.rs`, `useProjectConfig.js`; (c) `cargo fmt` một commit riêng.
+- `docs/plan/remote-ingress-rework.md` đã commit (`00f4e68`, 2026-09-10), qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
+- **Release**: 1.33.0 ra 2026-10-07; bản này đóng `task-1789604877926` (kéo-thả file từ ngoài làm app mất trang, commit `e37437c`). Chuỗi kiểm tra runtime của ba plan 1–3 đóng 2026-10-07: 1.32.0 chạy hằng ngày trên Mac từ hôm ra mà không lỗi, owner xác nhận; plan và `docs/plan/done/1.32.0-mac-handoff.md` đã vào `done/`, các task note #6 đã done. Dọn code chưa lên lịch, không chặn release: (b) `scythe.py` báo `[YAP]` mức review có từ trước 1.32.0 ở các file đợt 1.32.0 — nhiều nhất `sync.rs` (39), `conflict.rs` (22), `sync_state.rs` (20), `projects.rs` (13), `useProjectConfig.js` (12); (c) `cargo fmt` một commit riêng.
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.
