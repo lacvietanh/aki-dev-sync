@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-10-20 · v1.33.1
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
@@ -236,7 +236,12 @@ The two CLIs also report reset time on **different scales**: Claude Code sends a
 - **5s local cap / 4s remote self-bound.** The remote shell wraps itself in `timeout`/`gtimeout`/a `perl -e alarm` fallback, so killing the local SSH client cannot leave an unbounded orphan process on the remote host.
 - **One lock per host** (`host_lock()`), taken inside `run_remote_shell()` — so *every* feature that talks to a host (statusline probe, Apply, usage polling, git info) serializes against the others on that host, while different hosts stay fully parallel.
 
-Each target's installer keeps a one-time `.aki-bak` of the script it replaces. `settings.json` is not backed up: it is patched key-by-key with `jq`, so everything else in the file survives untouched.
+**One installer per selected target, never one concatenated script.** Under a single shared `set -e` a Claude Code failure aborted the run before the AGY half was attempted, and the user heard about neither; now each target gets its own verdict, the host's `ok` is their AND, and the message names which half landed. An empty selection is an error, never an implicit AGY. Each installer is self-contained (its own `set -e`) and ordered against half-applied states:
+1. **Settings first.** `settings.json` is patched key-by-key with `jq` (everything else in the file survives) before the script is written: `jq` is the dependency a remote can lack, so such a host fails having changed nothing instead of holding a script no settings key points at.
+2. **A timestamped backup on every apply** (`<file>.aki-bak-<unix_ts>`, not pruned). The old one-time `.aki-bak` guard backed up once ever, so every hand-edit after the first Apply was lost.
+3. **Atomic script write**: a `mktemp` in the script's own directory, then `mv` over the target. `cat > "$FILE"` killed mid-write (4 s local cap, a dropped ssh) left a truncated script that `settings.json` already pointed at, so every CLI turn rendered nothing; a `/tmp` temp file would make `mv` a non-atomic cross-filesystem copy.
+
+Host lists come from the frontend (and a companion), so every host is checked by `validate_remote_host` before a script is built: a host `ssh` would read as an option (`-oProxyCommand=…`) runs that command on this Mac. Apply reports a refused host as an error; the probe, which has no per-host error channel, shows it as unreachable.
 
 The probe answers **per CLI** (`cc_present`/`cc_configured`, `ag_present`/`ag_configured`), and "configured" requires both halves - the script on disk *and* the settings key naming it. A host chip draws one tag per CLI it actually has: filled green = renders a line, hollow amber = the CLI is there with nothing wired up. A CLI the host does not have draws nothing, which is both the honest reading and the cheapest one in width.
 

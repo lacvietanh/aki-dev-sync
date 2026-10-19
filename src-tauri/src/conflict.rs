@@ -32,9 +32,7 @@ fn mtime_lt(a: u64, b: u64) -> bool {
 #[derive(Debug, Clone, Default)]
 pub struct ClassifyInput {
     pub is_git: bool,
-    /// A baseline exists for this (project, host) pair AND it was recorded against the target's CURRENT
-    /// `remote_path` - callers pass `false` whenever `sync.rs::baseline_for_target` already returned `None`
-    /// for that reason, so this module never re-derives the remote_path check itself.
+    /// A baseline exists AND was recorded against the target's current `remote_path`; the caller derives it from `baseline_for_target`, never this module.
     pub has_baseline: bool,
     pub baseline_mtime: Option<u64>,
     /// `None` = file does not exist locally at all.
@@ -49,10 +47,7 @@ pub struct ClassifyInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileClass {
     Push,
-    /// Same push direction, but specifically because the remote regressed relative to the common ancestor
-    /// (R < B - a stale/behind remote, docs/plan/done/conflict-detection-and-agy-report.md's evidence case).
-    /// Counted into `push_count` exactly like `Push`; kept separate so the caller can surface the
-    /// "remote is behind" signal (§4/§5) instead of that reason being invisible inside a plain push count.
+    /// A push because the remote regressed (R < B); counted like `Push`, kept separate to surface "remote is behind".
     PushStaleRemote,
     Pull,
     /// Never a conflict; counted in its own `.git` group for the tooltip breakdown, but still assigned to
@@ -63,10 +58,7 @@ pub enum FileClass {
     Conflict,
     /// Same size on both sides after both changed since the baseline - needs the checksum residue call (§3).
     NeedsChecksum,
-    /// Remote deleted the file and the local copy was never edited since the baseline - restores
-    /// `sync.rs::classify_sync_counts`'s PUSH-side suppression (docs/feat/sync-flow.md §2's "Remote deleted
-    /// X -> suppress from push_count" row) inside this classifier. Dropped from every count, never pushed
-    /// and never a conflict.
+    /// Remote deleted it and the local copy is unedited since the baseline (sync-flow.md §2's suppression row): in no count, never a conflict.
     Suppressed,
 }
 
@@ -94,9 +86,7 @@ pub fn classify_file(input: &ClassifyInput) -> FileClass {
 
     let r = match input.remote_mtime {
         Some(r) => r,
-        // Remote lacks the file entirely (the pull-side metadata diff never listed it) - the same case
-        // `classify_sync_counts`'s PUSH suppression table handles: unedited locally since the baseline means
-        // the remote deleted it (suppress), edited locally since the baseline means a real push.
+        // Absent on the remote: unedited locally since the baseline means a remote deletion (suppress), edited means a real push.
         None => {
             return if mtimes_equal(l, b) {
                 FileClass::Suppressed
@@ -151,16 +141,7 @@ const RSYNC_STATUS_PREFIXES: &[&str] = &[
     "Skip newer ",
 ];
 
-/// Parses one `path\tsize\tYYYY/MM/DD-HH:MM:SS` line. `None` on anything that does not match that exact
-/// shape - callers read a `None` on a line that survived the status-line filter as "this rsync's
-/// `--out-format` did not produce what we expect" (the plan's degrade path: unknown rsync, or `%M` missing),
-/// never as "a zero-size file at the epoch". `offset_secs_at` returns this machine's own UTC offset (seconds,
-/// positive east of UTC) for a given UTC-ish instant - `%M` is printed by whichever rsync process runs it, in
-/// that process's local time (rsync's `timestring()` calls `localtime()`), and the process running the
-/// dry-run is always local (sync.rs's pull dry-run runs rsync as the local client over ssh), so this
-/// machine's own offset is the correct one to undo it with, regardless of which side (local/remote) the file
-/// itself lives on. Evaluated per-line rather than once (DST-safe): a single offset borrowed
-/// from "now" is wrong for any file whose real mtime falls on the other side of a DST transition.
+/// Parses one `path\tsize\tYYYY/MM/DD-HH:MM:SS` line; `None` means this rsync's `--out-format` is not what we expect (degrade), never a zero-size epoch file.
 pub fn parse_out_format_line(
     line: &str,
     offset_secs_at: &dyn Fn(i64) -> i64,
@@ -182,16 +163,7 @@ pub fn parse_out_format_line(
     })
 }
 
-/// `YYYY/MM/DD-HH:MM:SS`, rsync's own `%M` format - naive (no timezone field exists in this format at all),
-/// interpreted as local wall-clock time and converted to a UTC unix timestamp by subtracting the offset
-/// valid AT THAT INSTANT, not at "now" (DST-safe): the wall-clock digits are first read as if they were UTC
-/// (`naive_local`) to get a same-day approximation - off by at most this zone's own offset, never enough to
-/// cross into a different DST period than the real instant - and `offset_secs_at(naive_local)` is queried
-/// with that approximation to pick the correct offset for the real date. `offset_secs_at` is a parameter
-/// rather than read from the process environment here so this function stays pure and parallel-test-safe
-/// (`agent.C5`'s scratchpad note re: process-global TZ mutation) - `local_utc_offset_secs_at` below is the
-/// one real caller. Whether the Mac's stock openrsync emits this exact date shape is unverified here - see
-/// docs/plan/done/conflict-detection-and-agy-report.md § Mac checks.
+/// `%M` (the local rsync client's wall-clock time) to UTC, with the offset valid at that instant, not now (DST-safe); the offset is injected to keep this pure.
 fn parse_rsync_mtime(s: &str, offset_secs_at: &dyn Fn(i64) -> i64) -> Option<u64> {
     let (date, time) = s.split_once('-')?;
     let mut d = date.split('/');
@@ -239,9 +211,7 @@ fn days_since_epoch(year: i64, month: u32, day: u32) -> Option<i64> {
 #[derive(Debug, Clone, Default)]
 pub struct ParsedRemoteDiff {
     pub files: Vec<RemoteFileMeta>,
-    /// A line survived the status-line filter (so it looked like a file entry) but did not parse as
-    /// `path\tsize\tmtime` - the unknown-format / missing-`%M` degrade path
-    /// (docs/plan/done/conflict-detection-and-agy-report.md § Execution steps).
+    /// A file-like line failed to parse as `path\tsize\tmtime`: the unknown-format degrade path (docs/plan/done/conflict-detection-and-agy-report.md § Execution steps).
     pub degraded: bool,
 }
 
@@ -256,10 +226,7 @@ pub fn parse_out_format_output(
         if l.is_empty() || RSYNC_STATUS_PREFIXES.iter().any(|p| l.starts_with(p)) {
             continue;
         }
-        // Split first so a directory entry (path column ends with `/`) can be skipped as VALID before
-        // `parse_out_format_line`'s stricter "None = degrade" contract would otherwise misclassify it -
-        // `parse_out_format_line` itself also returns `None` for a directory (its own single-line contract
-        // for a caller that has no separate "skip" outcome), so it is deliberately not reused here.
+        // Split first so a directory entry (path ends in `/`) is skipped as valid; `parse_out_format_line` would read it as a degrade.
         let parts: Vec<&str> = l.split('\t').collect();
         if parts.len() == 3 && parts[0].trim().ends_with('/') {
             continue; // a directory entry - valid, not a parse failure
@@ -272,12 +239,7 @@ pub fn parse_out_format_output(
     ParsedRemoteDiff { files, degraded }
 }
 
-/// This machine's own UTC offset in seconds (positive east of UTC) valid AT `unix_ts_guess`, via the OS's
-/// `tm_gmtoff` field for that instant - so a file whose mtime falls on the other side of a DST transition
-/// from "now" still gets its own period's offset, not the offset in effect when the poll
-/// happened to run. The one real (impure) caller of `parse_rsync_mtime`'s injected offset function. Never
-/// call this from a test; inject a literal closure instead (see the module tests) so parallel test runs
-/// never depend on, or race on, this process's actual TZ.
+/// This machine's UTC offset (seconds east) valid at `unix_ts_guess`, via `tm_gmtoff`; the one real caller of the injected offset. Never call it from a test.
 pub fn local_utc_offset_secs_at(unix_ts_guess: i64) -> i64 {
     #[cfg(unix)]
     unsafe {
@@ -292,10 +254,7 @@ pub fn local_utc_offset_secs_at(unix_ts_guess: i64) -> i64 {
     }
 }
 
-/// Recreates the old pull-side `-u` meaning now that the pull dry-run itself drops `-u` to get remote
-/// size/mtime for every differing file, not just the remote-newer ones
-/// (docs/plan/done/conflict-detection-and-agy-report.md § Execution steps: "reapply the -u filter in Rust").
-/// `local_mtimes` maps every candidate path to its local mtime, or `None` when the file is absent locally.
+/// Reapplies the pull side's `-u` in Rust, since the dry-run drops it to get every file's metadata (docs/plan/done/conflict-detection-and-agy-report.md). `None` in `local_mtimes` = absent locally.
 pub fn select_pull_after_u_filter<'a>(
     metas: &'a [RemoteFileMeta],
     local_mtimes: &HashMap<String, Option<u64>>,
@@ -303,10 +262,7 @@ pub fn select_pull_after_u_filter<'a>(
     metas
         .iter()
         .filter(|m| match local_mtimes.get(&m.path) {
-            // rsync `-u` skips a file only when the RECEIVER (local, for a pull) is strictly newer than the
-            // sender - it does NOT require the sender to be strictly newer. An equal-mtime, different-size
-            // pair (already known to differ, since it is in `metas` at all) is still pulled under real `-u`
-            // semantics; only "local is newer beyond the modify-window" is excluded.
+            // Real `-u` skips only when the receiver is strictly newer (beyond the modify-window); an equal-mtime, different-size pair is still pulled.
             Some(Some(local)) => !mtime_gt(*local, m.mtime),
             Some(None) | None => true, // absent locally - remote-created, always a pull candidate
         })
@@ -324,9 +280,7 @@ pub fn split_checksum_residue(residue: Vec<String>, cap: usize) -> (Vec<String>,
     }
 }
 
-/// After the real `rsync -c --dry-run --files-from=<checked>` call: a file rsync still lists as differing
-/// has different content despite equal size (a real conflict); a file it does NOT list converged (identical
-/// content, e.g. the same commit pulled via git on both sides) and drops out of every count.
+/// After the `rsync -c` call: a listed file differs in content (a real conflict); an unlisted one converged and leaves every count.
 pub fn classify_checksum_result(
     checked: &[String],
     differing: &std::collections::HashSet<String>,
@@ -364,11 +318,7 @@ fn default_true() -> bool {
     true
 }
 
-/// Resolves the `agy` binary via static, well-known install-directory candidates first - the same
-/// cold-start PATH-race pattern `agent_usage/claudecode.rs`'s `CLAUDE_BIN_RESOLVER_PREAMBLE` uses for
-/// `claude` (`stack-tauri.A2`), applied to `agy` instead. Pure over an injectable existence check so the
-/// candidate ORDER is unit-testable without touching the real filesystem; the real filesystem check and the
-/// `command -v` PATH fallback are the caller's job (sync.rs's thin I/O wrapper).
+/// Finds `agy` at static install dirs first (cold-start PATH race, tauri.A2), pure over `exists` so the order is testable; the caller adds `command -v`.
 pub fn resolve_agy_bin_with(home: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
     let candidates = [
         format!("{}/.local/bin/agy", home),
@@ -379,10 +329,7 @@ pub fn resolve_agy_bin_with(home: &str, exists: impl Fn(&str) -> bool) -> Option
     candidates.into_iter().find(|c| exists(c))
 }
 
-/// Validates a conflict `path` arriving over IPC (Explain's `status.conflicts`, frontend-controlled) before
-/// it is ever joined into a temp-dir path or a local file read (never trust an IPC `rel` to already
-/// be relative, `..`-free, and control-character-free just because it originated from this app's own last
-/// `check_sync_status` result - the IPC boundary is untrusted regardless of the usual origin, `coding.C4`).
+/// Checks an IPC-supplied conflict path (relative, no `..`, no control chars) before it joins a temp dir or a file read: IPC is untrusted whatever the origin.
 pub fn validate_conflict_rel_path(rel: &str) -> Result<(), String> {
     if rel.is_empty() {
         return Err("empty conflict path".to_string());
@@ -402,10 +349,7 @@ pub fn validate_conflict_rel_path(rel: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Minimal LCS-based unified-diff-style text between two excerpts (docs/plan/done/conflict-detection-and-agy-report.md
-/// §5: "unified diff of local vs remote"). Not byte-exact GNU diff output (no hunk headers, no surrounding
-/// context window) - a compact, readable text for `agy` to narrate a conflict from, not a patch meant to be
-/// applied. No external diff crate added for this one call site (`pattern.A2`: Rule of Three).
+/// Compact LCS diff of two excerpts for `agy` to narrate (no hunk headers, not a patch); no diff crate for one call site.
 pub fn unified_diff(local: &str, remote: &str) -> String {
     let a: Vec<&str> = local.lines().collect();
     let b: Vec<&str> = remote.lines().collect();
@@ -446,10 +390,7 @@ pub fn unified_diff(local: &str, remote: &str) -> String {
     out.join("\n")
 }
 
-/// A filename that must never have its content sent to `agy` on Explain
-/// (docs/plan/done/conflict-detection-and-agy-report.md § agy explanation: "binaries and secret-named files
-/// send metadata only"). Name-based only - it does not inspect content, and the design note in that plan
-/// section accepts this as a known, explicit-click-scoped limit.
+/// A name whose content never goes to `agy` on Explain (metadata only); name-based by design (docs/plan/done/conflict-detection-and-agy-report.md § agy explanation).
 pub fn is_secret_named(path: &str) -> bool {
     let lower = path.to_lowercase();
     let base = lower.rsplit('/').next().unwrap_or(&lower);
@@ -584,7 +525,7 @@ mod tests {
 
     #[test]
     fn r_lt_b_is_push_stale_remote_even_when_l_is_also_behind_baseline() {
-        // "anything else" (L < B) would otherwise apply, but R < B (stale remote) wins per the table order, and is tagged PushStaleRemote (not plain Push) so the caller can surface "remote is behind".
+        // R < B wins over the L < B row per table order, tagged `PushStaleRemote` so the caller can say "remote is behind".
         assert_eq!(
             classify_file(&input(
                 false,
@@ -601,9 +542,7 @@ mod tests {
 
     #[test]
     fn remote_absent_unedited_since_baseline_is_suppressed_remote_deleted() {
-        // docs/feat/sync-flow.md §2's PUSH-suppression row, restored inside the pure classifier:
-        // local mtime unchanged since the baseline and the remote has no metadata for this path at all
-        // (never appeared in the pull-side diff) means the remote deleted it - not a push.
+        // sync-flow.md §2's suppression row: unchanged locally and absent from the pull diff means a remote deletion, not a push.
         assert_eq!(
             classify_file(&input(
                 false,
@@ -701,9 +640,7 @@ mod tests {
 
     // --out-format parsing.
 
-    // Every test below injects a literal offset closure (never `std::env::set_var`/the process's real TZ),
-    // so running them in parallel with every other `cargo test` thread in this binary can never race - the
-    // whole point of injecting the offset function rather than reading `local_utc_offset_secs_at` here.
+    // Literal offset closures only, never the process TZ, so these tests cannot race other threads.
     const UTC: &dyn Fn(i64) -> i64 = &|_| 0;
 
     #[test]
@@ -743,10 +680,7 @@ mod tests {
     #[test]
     fn a_local_edit_at_the_same_instant_as_the_baseline_does_not_misclassify_as_a_conflict_under_utc_plus_7(
     ) {
-        // The exact bug shape #2 described: an unedited file (R == B in real UTC) must not read as R > B
-        // just because the offset used to parse %M was wrong. Baseline B was recorded (by this app, in UTC
-        // epoch seconds) at a real instant; rsync's %M for that SAME instant, printed in Asia/Ho_Chi_Minh
-        // wall-clock time, must parse back to the same UTC second when given the right offset.
+        // An unedited file (R == B in UTC) must not read as R > B: `%M` printed in Asia/Ho_Chi_Minh time parses back to the same UTC second.
         let baseline_utc_epoch: u64 = 1_700_000_000; // an arbitrary fixed real UTC instant
                                                      // The wall-clock digits a UTC+7 process would print for that exact instant.
         let local_wall_clock = "2023/11/15-05:13:20"; // 1_700_000_000 UTC + 7h, rendered as Y/M/D-H:M:S
@@ -759,11 +693,7 @@ mod tests {
 
     #[test]
     fn offset_is_looked_up_at_the_instant_being_decoded_not_at_a_fixed_moment_dst_safe() {
-        // a single offset borrowed from "now" is wrong for a file whose real mtime falls on
-        // the other side of a DST transition. This closure returns a DIFFERENT offset depending on which
-        // rough half of the naive-local guess it is asked about - a synthetic Europe/Paris-like zone (UTC+1
-        // winter, UTC+2 summer/DST) - proving `parse_rsync_mtime` re-queries the offset per value rather than
-        // reusing one offset across every line it parses.
+        // A synthetic Paris-like zone (UTC+1 winter, UTC+2 summer) proves the offset is queried per value, not reused across lines.
         const WINTER_OFFSET: i64 = 3600; // UTC+1
         const SUMMER_OFFSET: i64 = 7200; // UTC+2 (DST)
                                          // Strictly between the two fixtures below, so either branch alone would misclassify the wrong one.
@@ -776,10 +706,7 @@ mod tests {
             }
         };
 
-        // Winter: 2023-01-15 12:00:00 local, offset UTC+1 -> each instant must get its OWN season's offset,
-        // not one borrowed from the other (the exact bug: a single process-wide offset applied to every
-        // line regardless of that line's own date) - checked by comparing the seasonal closure's result
-        // against parsing the same digits with that season's fixed offset alone.
+        // Each instant must get its own season's offset, checked against parsing the same digits with that season's fixed offset.
         let winter_utc = parse_rsync_mtime("2023/01/15-12:00:00", &seasonal).unwrap();
         assert_eq!(
             winter_utc,
