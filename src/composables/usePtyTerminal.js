@@ -128,8 +128,7 @@ export function usePtyTerminal(term, tabId = 0) {
 
   async function ensureSpawned(cwd) {
     try {
-      // Current known ownership/title, so the backend's durable TabMeta stays in sync on every spawn
-      // call — including the idempotent no-op path — not just this tab's very first spawn.
+      // Current known ownership/title, so the backend's durable TabMeta stays in sync on every spawn call — including the idempotent no-op path — not just this tab's very first spawn.
       const tab = terminalTabs.value.find((t) => t.id === tabId)
       await invoke('pty_spawn', {
         tabId,

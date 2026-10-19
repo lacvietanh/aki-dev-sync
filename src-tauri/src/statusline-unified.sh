@@ -14,8 +14,7 @@
 # and testable on its own without ever going through the generator.
 input=$(cat)
 
-# Which CLI is running us. One physical script is installed at both paths, so the invocation path
-# is the identity: only AGY installs under ~/.gemini/. This never guesses from payload fields.
+# Which CLI is running us. One physical script is installed at both paths, so the invocation path is the identity: only AGY installs under ~/.gemini/. This never guesses from payload fields.
 case "$0" in
   */.gemini/*) CLI="AG" ;;
   *)           CLI="CC" ;;
@@ -121,8 +120,7 @@ if [ "$CLI" = "CC" ]; then
           fi
       fi
   elif [ -f "$RLCACHE" ]; then
-      # Nothing survived the account/expiry/staleness gates - do not leave the stale file
-      # behind to be re-read (and re-trusted) on the next call.
+      # Nothing survived the account/expiry/staleness gates - do not leave the stale file behind to be re-read (and re-trusted) on the next call.
       rm -f "$RLCACHE" 2>/dev/null
   fi
 fi
@@ -137,8 +135,7 @@ if [ -n "$input" ]; then
     (if (.model | type) == "object" then (.model.display_name // .model.id // "") else (.model // "") end | tostring) as $model_name
     | (if ($model_name | ascii_downcase | contains("gemini")) then "gemini" else "3p" end) as $pool
     | (if (.quota | type) == "object" then .quota else {} end) as $quota
-    # A quota entry is either an object or a bare number meaning "fraction remaining"; a bare
-    # number carries no reset time, so qreset yields 0 for it rather than reusing the fraction.
+    # A quota entry is either an object or a bare number meaning "fraction remaining"; a bare number carries no reset time, so qreset yields 0 for it rather than reusing the fraction.
     | def qfrac($k): $quota[$k] as $v
         | if ($v | type) == "object" then ($v.remaining_fraction // -1)
           elif ($v | type) == "number" then $v
@@ -190,8 +187,7 @@ BOLD_GREEN='\033[01;32m'
 BOLD_YELLOW='\033[01;33m'
 BOLD_ORANGE='\033[01;38;5;208m'
 BOLD_RED='\033[01;31m'
-# The bottom tier, named for its role rather than a hue: it was bold blue (01;34), too dark to read
-# on a dark terminal. xterm 86 aquamarine is brighter and still colder than the green tier above it.
+# The bottom tier, named for its role rather than a hue: it was bold blue (01;34), too dark to read on a dark terminal. xterm 86 aquamarine is brighter and still colder than the green tier above it.
 BOLD_CALM='\033[01;38;5;86m'
 WHITE='\033[97m'
 GREY='\033[90m'
@@ -479,8 +475,7 @@ if [ "$EN_cache" = 1 ]; then
   if [ "$cache_total" -gt 0 ]; then
     if [ "$EN_cache_pct" = 1 ]; then
       _pct=$(awk -v r="$cache_read" -v t="$cache_total" 'BEGIN{printf "%.0f", r/t*100}' 2>/dev/null)
-      # Static grey, deliberately off the ladder: a high cache hit rate is good news and must not
-      # shout in red the way a high quota reading should.
+      # Static grey, deliberately off the ladder: a high cache hit rate is good news and must not shout in red the way a high quota reading should.
       g_cache="$(colored "$WHITE" "↬")$(colored "$GREY" "${_pct}%")"
     fi
     if [ "$EN_cache_tokens" = 1 ]; then
@@ -502,8 +497,7 @@ g_cli_tag=""
 if [ "$EN_cli_tag" = 1 ]; then
   acc_name=""
   if [ "$EN_account" = 1 ]; then
-    # Each CLI reads its OWN on-disk account file. These must NOT be tried in sequence: on a machine
-    # that has both, whichever file exists would win and the tag would show the other CLI's account.
+    # Each CLI reads its OWN on-disk account file. These must NOT be tried in sequence: on a machine that has both, whichever file exists would win and the tag would show the other CLI's account.
     #
     # For Claude Code, ~/.claude.json's oauthAccount is NOT used here (nor in get-claudecode-usage.sh
     # - see that script's §5/§5c for the full story). It is a cache the CLI itself flushes on its own
@@ -554,8 +548,7 @@ if [ "$EN_cli_tag" = 1 ]; then
   fi
 
   g_cli_tag="\033[48;5;255m${cli_col}${cli_label}"
-  # \033[22m before the account color: the CLI label above turned bold on, and the account name is
-  # a secondary reading on a light plate - left bold it washes out whatever color is chosen.
+  # \033[22m before the account color: the CLI label above turned bold on, and the account name is a secondary reading on a light plate - left bold it washes out whatever color is chosen.
   [ -n "$acc_name" ] && g_cli_tag="${g_cli_tag}\033[48;5;252m\033[22m${COLOR_account} ${acc_name}"
   g_cli_tag="${g_cli_tag}${RESET_ALL}"
 fi
@@ -568,8 +561,7 @@ if [ "$EN_ram" = 1 ]; then
   elif [[ "$OSTYPE" == "linux-gnu"* ]] || [[ "$OSTYPE" == "linux" ]]; then
     mem_pct=$(free 2>/dev/null | awk '/Mem:/ {printf "%.0f", $3/$2 * 100}')
   fi
-  # Static grey like the cache reading: whole-machine RAM is context, not something the ladder
-  # should escalate about mid-session.
+  # Static grey like the cache reading: whole-machine RAM is context, not something the ladder should escalate about mid-session.
   [ -n "$mem_pct" ] && g_ram="$(colored "$WHITE" "⚅")$(colored "$GREY" "${mem_pct}%")"
 fi
 
