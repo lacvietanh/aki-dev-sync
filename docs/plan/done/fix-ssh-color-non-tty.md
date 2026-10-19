@@ -1,6 +1,6 @@
 # Plan: SSH color wrapper — tint only when stdout is a terminal
 
-Status: implemented 2026-10-19, uncommitted, not yet in a release — moves to `done/` when it ships.
+Status: done — shipped in 1.33.1 (2026-10-20).
 
 Finding this plan fixes: `docs/research/test-case-check-flow.md` § E16, 🟡 "Hàm `ssh()` override áp cho cả shell không tương tác" (line refs there predate the current `system.rs`).
 

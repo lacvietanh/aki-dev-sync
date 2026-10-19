@@ -411,7 +411,7 @@ const SSH_COLOR_MARKER_BEGIN: &str =
     "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
 const SSH_COLOR_MARKER_END: &str = "# --- Aki SSH remote color END ---";
 
-/// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is active, then resets on exit - the same OSC 11/111 background-swap trick the user already hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running strips any previously-installed block (between the markers) before writing a fresh one, so repeated installs never duplicate. The tint is skipped when stdout is not a terminal, so `ssh host cmd | …` output stays byte-clean (`docs/plan/fix-ssh-color-non-tty.md`).
+/// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is active, then resets on exit - the same OSC 11/111 background-swap trick the user already hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running strips any previously-installed block (between the markers) before writing a fresh one, so repeated installs never duplicate. The tint is skipped when stdout is not a terminal, so `ssh host cmd | …` output stays byte-clean (`docs/plan/done/fix-ssh-color-non-tty.md`).
 const SSH_COLOR_SNIPPET: &str = r#"
 ssh() {
   [[ -t 1 ]] && printf '\033]11;#1a0f0f\007'

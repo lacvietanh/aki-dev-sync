@@ -1766,4 +1766,4 @@ Không phát hiện vấn đề: host luôn `connect()` (`services/index.js:41`)
 
 ## Amendments
 
-- 2026-10-19 · § E16, 🟡 "Hàm `ssh()` override áp cho cả shell không tương tác": đã sửa — snippet chỉ in OSC khi stdout là terminal và giữ exit status của `ssh`; xem `docs/plan/fix-ssh-color-non-tty.md`.
+- 2026-10-19 · § E16, 🟡 "Hàm `ssh()` override áp cho cả shell không tương tác": đã sửa — snippet chỉ in OSC khi stdout là terminal và giữ exit status của `ssh`; xem `docs/plan/done/fix-ssh-color-non-tty.md`.

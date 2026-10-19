@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [Unreleased]
+## [1.33.1] - 2026-10-20
 
 ### Changed
 - **The sync log console takes rsync output in batches every 50 ms** instead of one store update and one scroll per line (`src/composables/useLogs.js`: `sync-log` lines are queued per project and flushed once per timer tick; an `appendLog` call or Clear first flushes or drops the pending lines, so order is kept). A push with thousands of files no longer triggers thousands of 2000-row log re-renders. This removes the one mechanism the code supports for the reported PUSH freeze; the freeze itself is not confirmed fixed, and the runtime check is R1 in `docs/research/push-freeze-diagnosis.md`.
