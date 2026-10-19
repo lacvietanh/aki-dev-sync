@@ -19,6 +19,9 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 1. **Điện thoại companion, nhiều tab** — mở app trên điện thoại, kết nối lại (reconnect) khi Mac đang có nhiều tab terminal mở, mở một tab đã "nguội" (không hoạt động gần đây) và xem nó có hiện lại lịch sử cũ (scrollback) hay màn hình trắng. Qua nếu tab nguội hiện đúng lịch sử.
 
+Đóng, 2026-10-20:
+- **Badge PULL 142 / 376 sau `touch` hàng loạt** (#9 cũ): ra trong 1.33.1, app trên Mac đang chạy 1.33.1; `project.json` của aki-gegrok-bot trên `grokvm` và trên Mac giờ giống hệt (`cmp`), nên ca F1 không còn.
+
 Đóng, 2026-09-27:
 - **Modal/màu token**: đợt đổi hex→`var()` đã chạy production 1 tuần (từ 1.31.0, 2026-09-20) qua dùng thật hàng ngày, owner xác nhận không thấy lệch màu — coi là đã qua ledger, không cần buổi duyệt riêng.
 - **Refresh all không mất terminal**: xác nhận bằng đọc code, không cần tay bấm — `loadData()` (`src/composables/useProjectConfig.js:138`) chỉ ghi vào `projects.value`/`projectRuntime`/notes, không chạm bất kỳ state hay lệnh PTY nào (terminal tab sống hoàn toàn ở phía Rust, độc lập với danh sách project). Nút **Refresh all** là icon vòng xoay (`.btn-refresh-main`) ở góc trên bên phải titlebar, có từ 1.31.0 (2026-09-20) — nó đã bao gồm cả việc đọc lại `projects.json`/SSH hosts từ đĩa (`handleRefresh()` gọi `loadData()` rồi mới `refreshAllProjects()`), không phải nút refresh-per-project riêng (nút đó là icon nhỏ trên từng dòng project, chỉ chạy `refreshProject(p)`, không đọc lại config).
@@ -27,8 +30,7 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
-| 7 | Một nút PUSH sync từng làm đứng cả app: audit async | `task-1791428905665` | Quét tĩnh 2026-10-19: 0/86 command vi phạm quy tắc `spawn_blocking`; H1, H3, H4 không có bằng chứng; H2 (mỗi dòng `sync-log` gây một lần cập nhật store + cuộn) đã gộp theo lô 50 ms trong `useLogs.js`, chưa kiểm ở runtime. Note mở đến khi chạy xong R1 trên Mac (dev build, Safari Web Inspector, PUSH ≥1000 file rồi PUSH ~10 file). Chi tiết và R1–R3: `docs/research/push-freeze-diagnosis.md`. Bài học cho UNIDOC Tauri mới ở dạng đề xuất trong doc đó, chưa áp dụng |
-| 9 | Badge PULL 142 (aki-gegrok-bot) / 376 (akiprx) sau khi server `touch` hàng loạt | — | Đã sửa trong code (Unreleased): file cùng size được kiểm nội dung, file chỉ khác mtime tách ra `time_only_*`; probe thật gegrok PULL 142 → 3. Còn: (a) owner cài bản mới để xem tooltip/popover thật; (b) owner quyết có mở lại F1 không — `project.json` của gegrok trên server cũ hơn mà mtime mới hơn, PULL sẽ xoá exclude `data/` và lệnh deploy (`docs/research/akidevsync-project-config-scope-2.md` § Amendments 2026-10-19). Chi tiết: `docs/research/sync-badge-time-only.md` |
+| 7 | Một nút PUSH sync từng làm đứng cả app: audit async | `task-1791428905665` | Quét tĩnh 2026-10-19: 0/86 command vi phạm quy tắc `spawn_blocking`; H1, H3, H4 không có bằng chứng; H2 (mỗi dòng `sync-log` gây một lần cập nhật store + cuộn) đã gộp theo lô 50 ms trong `useLogs.js`, chưa kiểm ở runtime. Note mở đến khi chạy xong R1 trên Mac (dev build, Safari Web Inspector, PUSH ≥1000 file rồi PUSH ~10 file). Chi tiết và R1–R3: `docs/research/push-freeze-diagnosis.md`. Owner bấm thử trên akiprx (2026-10-19) không đứng: một điểm dữ liệu, chưa phải R1. Bài học "event flood" là luật Tauri chung, không gắn app, nên thuộc `tauri.A` của AkiDevRule chứ không phải UNIDOC Tauri (UNIDOC chỉ giữ quy trình build/cài, STANDARD L0 §0.1); chưa áp dụng |
 
 ## Research / thiết kế
 
@@ -48,6 +50,6 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 
 ## Ngoài backlog này
 
-- `docs/plan/remote-ingress-rework.md` đã commit (`00f4e68`, 2026-09-10), qua build và Rust tests; chỉ còn protocol runtime trên Mac + điện thoại/edge. Owner hẹn bàn lại sau (2026-09-27) — nhắc lại khi quay lại plan này.
+- `docs/plan/remote-ingress-rework.md` đã commit (`00f4e68`, 2026-09-10), qua build và Rust tests. Hiện trạng 2026-10-20: Funnel mồ côi `443 → 127.0.0.1:9991` (không repo nào dùng, không tiến trình nào nghe) đã tắt, serve config trống; đường LAN `http://192.168.1.2:1421` trả 503 "remote control is off" đúng thiết kế. Còn: bật Remote Control rồi kiểm trên điện thoại cùng Wi-Fi; mode `public` đang trỏ `https://lvamac.akitao.com`, tên này chưa có DNS và chưa có tunnel (theo `docs/research/remote-ingress-shared-vs-separate.md`: tunnel riêng, không dùng chung `mba20`).
 - **Release**: 1.33.1 ra 2026-10-20, đóng `task-1789578897581` (usage AGY CLI). 1.33.0 ra 2026-10-07, đóng `task-1789604877926` (kéo-thả file từ ngoài làm app mất trang, commit `e37437c`). Chuỗi kiểm tra runtime của ba plan 1–3 đóng 2026-10-07: 1.32.0 chạy hằng ngày trên Mac từ hôm ra mà không lỗi, owner xác nhận; plan và `docs/plan/done/1.32.0-mac-handoff.md` đã vào `done/`, các task note #6 đã done.
 - Các pinned note đã `done: true` không phải backlog. Nếu cần dọn UI, unpin/xoá chúng trong Task Notes thay vì giữ lịch sử ở file này.
