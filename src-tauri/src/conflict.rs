@@ -161,7 +161,10 @@ const RSYNC_STATUS_PREFIXES: &[&str] = &[
 /// machine's own offset is the correct one to undo it with, regardless of which side (local/remote) the file
 /// itself lives on. Evaluated per-line rather than once (DST-safe): a single offset borrowed
 /// from "now" is wrong for any file whose real mtime falls on the other side of a DST transition.
-pub fn parse_out_format_line(line: &str, offset_secs_at: &dyn Fn(i64) -> i64) -> Option<RemoteFileMeta> {
+pub fn parse_out_format_line(
+    line: &str,
+    offset_secs_at: &dyn Fn(i64) -> i64,
+) -> Option<RemoteFileMeta> {
     let parts: Vec<&str> = line.split('\t').collect();
     if parts.len() != 3 {
         return None;
@@ -172,7 +175,11 @@ pub fn parse_out_format_line(line: &str, offset_secs_at: &dyn Fn(i64) -> i64) ->
     }
     let size: u64 = parts[1].trim().parse().ok()?;
     let mtime = parse_rsync_mtime(parts[2].trim(), offset_secs_at)?;
-    Some(RemoteFileMeta { path: path.to_string(), size, mtime })
+    Some(RemoteFileMeta {
+        path: path.to_string(),
+        size,
+        mtime,
+    })
 }
 
 /// `YYYY/MM/DD-HH:MM:SS`, rsync's own `%M` format - naive (no timezone field exists in this format at all),
@@ -238,7 +245,10 @@ pub struct ParsedRemoteDiff {
     pub degraded: bool,
 }
 
-pub fn parse_out_format_output(stdout: &str, offset_secs_at: &dyn Fn(i64) -> i64) -> ParsedRemoteDiff {
+pub fn parse_out_format_output(
+    stdout: &str,
+    offset_secs_at: &dyn Fn(i64) -> i64,
+) -> ParsedRemoteDiff {
     let mut files = Vec::new();
     let mut degraded = false;
     for line in stdout.lines() {
@@ -384,7 +394,10 @@ pub fn validate_conflict_rel_path(rel: &str) -> Result<(), String> {
         return Err(format!("conflict path '{}' contains '..'", rel));
     }
     if rel.chars().any(|c| c.is_control()) {
-        return Err(format!("conflict path '{}' contains control characters", rel));
+        return Err(format!(
+            "conflict path '{}' contains control characters",
+            rel
+        ));
     }
     Ok(())
 }
@@ -440,9 +453,7 @@ pub fn unified_diff(local: &str, remote: &str) -> String {
 pub fn is_secret_named(path: &str) -> bool {
     let lower = path.to_lowercase();
     let base = lower.rsplit('/').next().unwrap_or(&lower);
-    base.starts_with(".env")
-        || base.ends_with(".pem")
-        || base.contains("key")
+    base.starts_with(".env") || base.ends_with(".pem") || base.contains("key")
 }
 
 #[cfg(test)]
@@ -458,7 +469,15 @@ mod tests {
         local_size: Option<u64>,
         remote_size: Option<u64>,
     ) -> ClassifyInput {
-        ClassifyInput { is_git, has_baseline, baseline_mtime, local_mtime, remote_mtime, local_size, remote_size }
+        ClassifyInput {
+            is_git,
+            has_baseline,
+            baseline_mtime,
+            local_mtime,
+            remote_mtime,
+            local_size,
+            remote_size,
+        }
     }
 
     // §2 table, row by row.
@@ -470,7 +489,15 @@ mod tests {
             FileClass::GitGroup
         );
         assert_eq!(
-            classify_file(&input(true, true, Some(100), Some(200), Some(200), Some(1), Some(2))),
+            classify_file(&input(
+                true,
+                true,
+                Some(100),
+                Some(200),
+                Some(200),
+                Some(1),
+                Some(2)
+            )),
             FileClass::GitGroup
         );
     }
@@ -494,7 +521,15 @@ mod tests {
     #[test]
     fn no_baseline_for_this_host_is_unclassified() {
         assert_eq!(
-            classify_file(&input(false, false, None, Some(100), Some(200), Some(1), Some(1))),
+            classify_file(&input(
+                false,
+                false,
+                None,
+                Some(100),
+                Some(200),
+                Some(1),
+                Some(1)
+            )),
             FileClass::Unclassified
         );
     }
@@ -502,7 +537,15 @@ mod tests {
     #[test]
     fn not_in_baseline_with_both_sides_present_is_unclassified() {
         assert_eq!(
-            classify_file(&input(false, true, None, Some(100), Some(200), Some(1), Some(1))),
+            classify_file(&input(
+                false,
+                true,
+                None,
+                Some(100),
+                Some(200),
+                Some(1),
+                Some(1)
+            )),
             FileClass::Unclassified
         );
     }
@@ -510,7 +553,15 @@ mod tests {
     #[test]
     fn l_eq_b_r_gt_b_is_pull() {
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(100), Some(500), None, None)),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(100),
+                Some(500),
+                None,
+                None
+            )),
             FileClass::Pull
         );
     }
@@ -518,7 +569,15 @@ mod tests {
     #[test]
     fn l_gt_b_r_eq_b_is_push() {
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(500), Some(100), None, None)),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(500),
+                Some(100),
+                None,
+                None
+            )),
             FileClass::Push
         );
     }
@@ -527,7 +586,15 @@ mod tests {
     fn r_lt_b_is_push_stale_remote_even_when_l_is_also_behind_baseline() {
         // "anything else" (L < B) would otherwise apply, but R < B (stale remote) wins per the table order, and is tagged PushStaleRemote (not plain Push) so the caller can surface "remote is behind".
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(50), Some(10), None, None)),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(50),
+                Some(10),
+                None,
+                None
+            )),
             FileClass::PushStaleRemote
         );
     }
@@ -538,7 +605,15 @@ mod tests {
         // local mtime unchanged since the baseline and the remote has no metadata for this path at all
         // (never appeared in the pull-side diff) means the remote deleted it - not a push.
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(100), None, Some(1), None)),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(100),
+                None,
+                Some(1),
+                None
+            )),
             FileClass::Suppressed
         );
     }
@@ -547,7 +622,15 @@ mod tests {
     fn remote_absent_edited_since_baseline_is_a_real_push() {
         // Same "remote has no metadata" shape, but the local copy WAS edited since the baseline - a genuine local edit to push, not a suppressed remote deletion.
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(500), None, Some(1), None)),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(500),
+                None,
+                Some(1),
+                None
+            )),
             FileClass::Push
         );
     }
@@ -555,7 +638,15 @@ mod tests {
     #[test]
     fn l_gt_b_r_gt_b_sizes_differ_is_conflict() {
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(500), Some(600), Some(10), Some(20))),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(500),
+                Some(600),
+                Some(10),
+                Some(20)
+            )),
             FileClass::Conflict
         );
     }
@@ -563,7 +654,15 @@ mod tests {
     #[test]
     fn l_gt_b_r_gt_b_same_size_needs_checksum() {
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(500), Some(600), Some(10), Some(10))),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(500),
+                Some(600),
+                Some(10),
+                Some(10)
+            )),
             FileClass::NeedsChecksum
         );
     }
@@ -571,7 +670,15 @@ mod tests {
     #[test]
     fn l_gt_b_r_gt_b_missing_size_degrades_to_unclassified_never_guesses() {
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(500), Some(600), None, Some(10))),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(500),
+                Some(600),
+                None,
+                Some(10)
+            )),
             FileClass::Unclassified
         );
     }
@@ -579,11 +686,18 @@ mod tests {
     #[test]
     fn anything_else_l_lt_b_r_eq_b_is_unclassified() {
         assert_eq!(
-            classify_file(&input(false, true, Some(100), Some(50), Some(100), None, None)),
+            classify_file(&input(
+                false,
+                true,
+                Some(100),
+                Some(50),
+                Some(100),
+                None,
+                None
+            )),
             FileClass::Unclassified
         );
     }
-
 
     // --out-format parsing.
 
@@ -603,8 +717,14 @@ mod tests {
     #[test]
     fn known_epoch_anchors_round_trip_at_utc() {
         assert_eq!(parse_rsync_mtime("1970/01/01-00:00:00", UTC), Some(0));
-        assert_eq!(parse_rsync_mtime("2000/01/01-00:00:00", UTC), Some(946684800));
-        assert_eq!(parse_rsync_mtime("2038/01/19-03:14:07", UTC), Some(2147483647));
+        assert_eq!(
+            parse_rsync_mtime("2000/01/01-00:00:00", UTC),
+            Some(946684800)
+        );
+        assert_eq!(
+            parse_rsync_mtime("2038/01/19-03:14:07", UTC),
+            Some(2147483647)
+        );
     }
 
     // %M is printed by rsync's own `timestring()`, which calls `localtime()` - the SAME wall-clock digits parse to a DIFFERENT UTC instant depending on the machine's zone.
@@ -621,16 +741,20 @@ mod tests {
     }
 
     #[test]
-    fn a_local_edit_at_the_same_instant_as_the_baseline_does_not_misclassify_as_a_conflict_under_utc_plus_7() {
+    fn a_local_edit_at_the_same_instant_as_the_baseline_does_not_misclassify_as_a_conflict_under_utc_plus_7(
+    ) {
         // The exact bug shape #2 described: an unedited file (R == B in real UTC) must not read as R > B
         // just because the offset used to parse %M was wrong. Baseline B was recorded (by this app, in UTC
         // epoch seconds) at a real instant; rsync's %M for that SAME instant, printed in Asia/Ho_Chi_Minh
         // wall-clock time, must parse back to the same UTC second when given the right offset.
         let baseline_utc_epoch: u64 = 1_700_000_000; // an arbitrary fixed real UTC instant
-        // The wall-clock digits a UTC+7 process would print for that exact instant.
+                                                     // The wall-clock digits a UTC+7 process would print for that exact instant.
         let local_wall_clock = "2023/11/15-05:13:20"; // 1_700_000_000 UTC + 7h, rendered as Y/M/D-H:M:S
         let parsed_back = parse_rsync_mtime(local_wall_clock, ASIA_HO_CHI_MINH).unwrap();
-        assert_eq!(parsed_back, baseline_utc_epoch, "with the correct offset the round trip must be exact");
+        assert_eq!(
+            parsed_back, baseline_utc_epoch,
+            "with the correct offset the round trip must be exact"
+        );
     }
 
     #[test]
@@ -642,10 +766,14 @@ mod tests {
         // reusing one offset across every line it parses.
         const WINTER_OFFSET: i64 = 3600; // UTC+1
         const SUMMER_OFFSET: i64 = 7200; // UTC+2 (DST)
-        // Strictly between the two fixtures below, so either branch alone would misclassify the wrong one.
+                                         // Strictly between the two fixtures below, so either branch alone would misclassify the wrong one.
         const MID_YEAR_GUESS: i64 = 1_688_000_000; // 2023-06-29, between the winter and summer fixtures
         let seasonal = |naive_local_guess: i64| -> i64 {
-            if naive_local_guess < MID_YEAR_GUESS { WINTER_OFFSET } else { SUMMER_OFFSET }
+            if naive_local_guess < MID_YEAR_GUESS {
+                WINTER_OFFSET
+            } else {
+                SUMMER_OFFSET
+            }
         };
 
         // Winter: 2023-01-15 12:00:00 local, offset UTC+1 -> each instant must get its OWN season's offset,
@@ -653,11 +781,17 @@ mod tests {
         // line regardless of that line's own date) - checked by comparing the seasonal closure's result
         // against parsing the same digits with that season's fixed offset alone.
         let winter_utc = parse_rsync_mtime("2023/01/15-12:00:00", &seasonal).unwrap();
-        assert_eq!(winter_utc, parse_rsync_mtime("2023/01/15-12:00:00", &|_| WINTER_OFFSET).unwrap());
+        assert_eq!(
+            winter_utc,
+            parse_rsync_mtime("2023/01/15-12:00:00", &|_| WINTER_OFFSET).unwrap()
+        );
 
         // Summer: 2023/07/15 12:00:00 local, offset UTC+2 (DST).
         let summer_utc = parse_rsync_mtime("2023/07/15-12:00:00", &seasonal).unwrap();
-        assert_eq!(summer_utc, parse_rsync_mtime("2023/07/15-12:00:00", &|_| SUMMER_OFFSET).unwrap());
+        assert_eq!(
+            summer_utc,
+            parse_rsync_mtime("2023/07/15-12:00:00", &|_| SUMMER_OFFSET).unwrap()
+        );
     }
 
     #[test]
@@ -704,11 +838,27 @@ mod tests {
     #[test]
     fn select_pull_after_u_filter_matches_old_u_semantics_on_non_conflict_fixtures() {
         let metas = vec![
-            RemoteFileMeta { path: "remote-newer.txt".into(), size: 1, mtime: 1000 },
-            RemoteFileMeta { path: "local-newer.txt".into(), size: 1, mtime: 500 },
-            RemoteFileMeta { path: "remote-created.txt".into(), size: 1, mtime: 2000 },
+            RemoteFileMeta {
+                path: "remote-newer.txt".into(),
+                size: 1,
+                mtime: 1000,
+            },
+            RemoteFileMeta {
+                path: "local-newer.txt".into(),
+                size: 1,
+                mtime: 500,
+            },
+            RemoteFileMeta {
+                path: "remote-created.txt".into(),
+                size: 1,
+                mtime: 2000,
+            },
             // same mtime (within the modify-window), different size - real rsync `-u` only skips when the RECEIVER (local) is strictly newer, so this still counts as pull.
-            RemoteFileMeta { path: "equal-mtime-diff-size.txt".into(), size: 999, mtime: 700 },
+            RemoteFileMeta {
+                path: "equal-mtime-diff-size.txt".into(),
+                size: 999,
+                mtime: 700,
+            },
         ];
         let mut local = HashMap::new();
         local.insert("remote-newer.txt".to_string(), Some(400u64)); // remote (1000) newer -> pull
@@ -717,7 +867,11 @@ mod tests {
         local.insert("equal-mtime-diff-size.txt".to_string(), Some(700u64)); // equal mtime, still differs -> pull
         let selected = select_pull_after_u_filter(&metas, &local);
         let paths: Vec<&str> = selected.iter().map(|m| m.path.as_str()).collect();
-        assert_eq!(paths.len(), 3, "old -u semantics: local-strictly-newer is the only exclusion");
+        assert_eq!(
+            paths.len(),
+            3,
+            "old -u semantics: local-strictly-newer is the only exclusion"
+        );
         assert!(paths.contains(&"remote-newer.txt"));
         assert!(paths.contains(&"remote-created.txt"));
         assert!(paths.contains(&"equal-mtime-diff-size.txt"));
@@ -728,9 +882,21 @@ mod tests {
     fn select_pull_after_u_filter_pull_count_matches_the_old_behaviour_on_non_conflict_fixtures() {
         // Same fixture, read as a plain count rather than by path.
         let metas = vec![
-            RemoteFileMeta { path: "a".into(), size: 1, mtime: 1000 }, // remote newer -> pull
-            RemoteFileMeta { path: "b".into(), size: 1, mtime: 500 },  // local newer -> not pull
-            RemoteFileMeta { path: "c".into(), size: 5, mtime: 700 },  // equal mtime, diff size -> pull
+            RemoteFileMeta {
+                path: "a".into(),
+                size: 1,
+                mtime: 1000,
+            }, // remote newer -> pull
+            RemoteFileMeta {
+                path: "b".into(),
+                size: 1,
+                mtime: 500,
+            }, // local newer -> not pull
+            RemoteFileMeta {
+                path: "c".into(),
+                size: 5,
+                mtime: 700,
+            }, // equal mtime, diff size -> pull
         ];
         let mut local = HashMap::new();
         local.insert("a".to_string(), Some(400u64));

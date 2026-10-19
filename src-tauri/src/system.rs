@@ -823,10 +823,7 @@ fn detect_deploy_cmd(path: &std::path::Path, pm: &str, run_prefix: &str) -> Stri
         Ok(json) => json,
         Err(_) => return String::new(),
     };
-    let has_deploy = json
-        .get("scripts")
-        .and_then(|s| s.get("deploy"))
-        .is_some();
+    let has_deploy = json.get("scripts").and_then(|s| s.get("deploy")).is_some();
     if has_deploy {
         format!("{pm} {run_prefix}deploy")
     } else {
@@ -917,7 +914,11 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
 /// same as `build_remote_ssh_command`), so this stays a plain sync command (coding.C4: `cmd` is shell-quoted
 /// as a single argument, never interpolated raw).
 #[tauri::command]
-pub fn build_remote_deploy_command(host: String, path: String, cmd: String) -> Result<String, String> {
+pub fn build_remote_deploy_command(
+    host: String,
+    path: String,
+    cmd: String,
+) -> Result<String, String> {
     validate_remote_host(&host)?;
     let qpath = shell_quote_remote_path(&path);
     let remote_cmd = format!("cd {q} && bash -lc {c}", q = qpath, c = shell_quote(&cmd));
@@ -1927,10 +1928,15 @@ mod tests {
 
     #[test]
     fn detect_deploy_cmd_finds_a_declared_deploy_script() {
-        let dir = std::env::temp_dir().join(format!("aki-deploy-detect-yes-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("aki-deploy-detect-yes-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("package.json"), r#"{"scripts":{"deploy":"wrangler deploy"}}"#).unwrap();
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"scripts":{"deploy":"wrangler deploy"}}"#,
+        )
+        .unwrap();
         assert_eq!(detect_deploy_cmd(&dir, "npm", "run "), "npm run deploy");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1947,7 +1953,8 @@ mod tests {
 
     #[test]
     fn detect_deploy_cmd_empty_when_package_json_missing() {
-        let dir = std::env::temp_dir().join(format!("aki-deploy-detect-missing-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("aki-deploy-detect-missing-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(detect_deploy_cmd(&dir, "npm", "run "), "");

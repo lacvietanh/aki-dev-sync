@@ -51,7 +51,11 @@ static TEST_STATE_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::ne
 fn state_root() -> Result<PathBuf, String> {
     #[cfg(test)]
     {
-        if let Some(dir) = TEST_STATE_ROOT.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        if let Some(dir) = TEST_STATE_ROOT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             return Ok(dir);
         }
     }
@@ -72,8 +76,16 @@ fn pair_dir(project_id: &str, host: &str) -> Result<PathBuf, String> {
 /// A project id becomes a directory name under `state/`, so it must be exactly one plain segment: `Path::join` with an absolute id REPLACES the base, which would aim `delete_project_state`'s `remove_dir_all` at an arbitrary directory.
 fn validate_state_id(id: &str) -> Result<(), String> {
     crate::projects::validate_path_segment("project_id", id)?;
-    if id.is_empty() || id.starts_with('.') || !id.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.')) {
-        return Err(format!("Invalid project_id '{}': one plain path segment expected", id));
+    if id.is_empty()
+        || id.starts_with('.')
+        || !id
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err(format!(
+            "Invalid project_id '{}': one plain path segment expected",
+            id
+        ));
     }
     Ok(())
 }
@@ -93,8 +105,7 @@ pub fn read_baseline(project_id: &str, host: &str) -> Option<Baseline> {
 
 pub fn write_baseline(project_id: &str, host: &str, baseline: &Baseline) -> Result<(), String> {
     let path = baseline_path(project_id, host)?;
-    let json =
-        serde_json::to_string(baseline).map_err(|e| format!("baseline serialize: {}", e))?;
+    let json = serde_json::to_string(baseline).map_err(|e| format!("baseline serialize: {}", e))?;
     crate::system::write_atomic(&path, &json)
 }
 
@@ -124,7 +135,15 @@ pub fn write_last_sync(
     status: String,
 ) -> Result<(), String> {
     crate::system::validate_remote_host(&host)?;
-    write_last_sync_blocking(&project_id, &host, &LastSync { action, time, status })
+    write_last_sync_blocking(
+        &project_id,
+        &host,
+        &LastSync {
+            action,
+            time,
+            status,
+        },
+    )
 }
 
 /// Single (project, host) read - the delete-preview auto-approval path (`useSync.js`) needs the sync that
@@ -133,7 +152,10 @@ pub fn write_last_sync(
 /// sync to a DIFFERENT host must never suppress a delete confirmation for this one - N-e,
 /// docs/plan/done/settings-and-state-layout.md).
 #[tauri::command]
-pub async fn read_last_sync_for_host(project_id: String, host: String) -> Result<Option<LastSync>, String> {
+pub async fn read_last_sync_for_host(
+    project_id: String,
+    host: String,
+) -> Result<Option<LastSync>, String> {
     crate::system::validate_remote_host(&host)?;
     tauri::async_runtime::spawn_blocking(move || read_last_sync(&project_id, &host))
         .await
@@ -219,7 +241,8 @@ pub fn delete_project_state(project_id: String) -> Result<(), String> {
 pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject]) -> bool {
     let mut changed = false;
     for p in projects.iter_mut() {
-        if p.remote_host.is_empty() || crate::system::validate_remote_host(&p.remote_host).is_err() {
+        if p.remote_host.is_empty() || crate::system::validate_remote_host(&p.remote_host).is_err()
+        {
             continue;
         }
         if !p.targets.contains_key(&p.remote_host) {
@@ -257,14 +280,21 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
             }
         }
 
-        let host = p.last_sync_host.clone().unwrap_or_else(|| p.remote_host.clone());
+        let host = p
+            .last_sync_host
+            .clone()
+            .unwrap_or_else(|| p.remote_host.clone());
         if host.is_empty() || crate::system::validate_remote_host(&host).is_err() {
             continue;
         }
 
         // `last_sync_host` moved on every action (dry runs, SELECT/git pushes, failures) while the flat baseline was written only by a full real sync, so it names the baseline's host only when that last action was itself one (or none is recorded); otherwise the baseline is left unfiled (reads as "no baseline", the safe degrade) rather than filed under a host it never described.
-        let last_action_wrote_baseline = p.last_sync_action.as_deref().is_none_or(|a| matches!(a, "PUSH" | "PULL") && p.last_sync_status.as_deref() == Some("success"));
-        if let Some(files) = crate::sync::legacy_flat_baseline(&p.id).filter(|_| last_action_wrote_baseline) {
+        let last_action_wrote_baseline = p.last_sync_action.as_deref().is_none_or(|a| {
+            matches!(a, "PUSH" | "PULL") && p.last_sync_status.as_deref() == Some("success")
+        });
+        if let Some(files) =
+            crate::sync::legacy_flat_baseline(&p.id).filter(|_| last_action_wrote_baseline)
+        {
             let already_had_state_baseline = read_baseline(&p.id, &host).is_some();
             let write_succeeded = !already_had_state_baseline
                 && write_baseline(
@@ -288,13 +318,17 @@ pub fn migrate_settings_and_state(projects: &mut [crate::projects::SyncProject])
             }
         }
 
-        if p.last_sync_action.is_some() || p.last_sync_time.is_some() || p.last_sync_status.is_some() {
+        if p.last_sync_action.is_some()
+            || p.last_sync_time.is_some()
+            || p.last_sync_status.is_some()
+        {
             let entry = LastSync {
                 action: p.last_sync_action.clone().unwrap_or_default(),
                 time: p.last_sync_time.unwrap_or(0),
                 status: p.last_sync_status.clone().unwrap_or_default(),
             };
-            let newer_already_recorded = read_last_sync(&p.id, &host).is_some_and(|existing| existing.time >= entry.time);
+            let newer_already_recorded =
+                read_last_sync(&p.id, &host).is_some_and(|existing| existing.time >= entry.time);
             if newer_already_recorded || write_last_sync_blocking(&p.id, &host, &entry).is_ok() {
                 p.last_sync_action = None;
                 p.last_sync_time = None;
@@ -318,7 +352,12 @@ pub fn migrate_settings_and_state_on_boot(app: &tauri::AppHandle) -> String {
     // Load_projects_raw only, never load_projects_blocking - the latter stats/reads project icons under each project's local_path, which can stall on an unmounted/slow mount with no window open yet.
     let mut projects = match crate::projects::load_projects_raw(app) {
         Ok(p) => p,
-        Err(e) => return format!("settings/state migration skipped: could not load projects.json: {}", e),
+        Err(e) => {
+            return format!(
+                "settings/state migration skipped: could not load projects.json: {}",
+                e
+            )
+        }
     };
     if projects.is_empty() {
         return "settings/state migration: no projects".to_string();
@@ -383,8 +422,7 @@ mod tests {
     fn write_legacy_baseline(project_id: &str, files: &[(&str, u64)]) {
         let path = crate::sync::baseline_path_for_test(project_id);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let map: HashMap<String, u64> =
-            files.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        let map: HashMap<String, u64> = files.iter().map(|(k, v)| (k.to_string(), *v)).collect();
         std::fs::write(&path, serde_json::to_string(&map).unwrap()).unwrap();
     }
 
@@ -429,7 +467,15 @@ mod tests {
         let _s = Scratch::new("roundtrip");
         let mut files = HashMap::new();
         files.insert("a.txt".to_string(), 100u64);
-        write_baseline("proj-a", "hostA", &Baseline { remote_path: "~/app".into(), files: files.clone() }).unwrap();
+        write_baseline(
+            "proj-a",
+            "hostA",
+            &Baseline {
+                remote_path: "~/app".into(),
+                files: files.clone(),
+            },
+        )
+        .unwrap();
         let read = read_baseline("proj-a", "hostA").unwrap();
         assert_eq!(read.remote_path, "~/app");
         assert_eq!(read.files.get("a.txt"), Some(&100u64));
@@ -453,10 +499,14 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, r#"{"action":"PUSH","time":123}"#).unwrap();
 
-        let read = read_last_sync("proj-a", "hostA").expect("a file missing only `status` must still parse");
+        let read = read_last_sync("proj-a", "hostA")
+            .expect("a file missing only `status` must still parse");
         assert_eq!(read.action, "PUSH");
         assert_eq!(read.time, 123);
-        assert_eq!(read.status, "", "the missing key must default rather than fail the whole read");
+        assert_eq!(
+            read.status, "",
+            "the missing key must default rather than fail the whole read"
+        );
     }
 
     /// CLAUDE.md multi-entity guard: writing one (id, host) pair must leave every other pair's files
@@ -473,11 +523,23 @@ mod tests {
         for (id, host) in pairs {
             let mut files = HashMap::new();
             files.insert(format!("{}-{}.txt", id, host), 1u64);
-            write_baseline(id, host, &Baseline { remote_path: format!("~/{}", host), files }).unwrap();
+            write_baseline(
+                id,
+                host,
+                &Baseline {
+                    remote_path: format!("~/{}", host),
+                    files,
+                },
+            )
+            .unwrap();
             write_last_sync_blocking(
                 id,
                 host,
-                &LastSync { action: "PUSH".into(), time: 1, status: "success".into() },
+                &LastSync {
+                    action: "PUSH".into(),
+                    time: 1,
+                    status: "success".into(),
+                },
             )
             .unwrap();
         }
@@ -497,11 +559,23 @@ mod tests {
         // Mutate exactly one pair.
         let mut files = HashMap::new();
         files.insert("changed.txt".to_string(), 999u64);
-        write_baseline("proj-a", "hostA", &Baseline { remote_path: "~/hostA".into(), files }).unwrap();
+        write_baseline(
+            "proj-a",
+            "hostA",
+            &Baseline {
+                remote_path: "~/hostA".into(),
+                files,
+            },
+        )
+        .unwrap();
         write_last_sync_blocking(
             "proj-a",
             "hostA",
-            &LastSync { action: "PULL".into(), time: 999, status: "success".into() },
+            &LastSync {
+                action: "PULL".into(),
+                time: 999,
+                status: "success".into(),
+            },
         )
         .unwrap();
 
@@ -511,10 +585,22 @@ mod tests {
                 std::fs::read_to_string(last_sync_path(id, host).unwrap()).unwrap(),
             );
             if (id, host) == ("proj-a", "hostA") {
-                assert_ne!(b, before[&(id, host)].0, "the targeted pair should have changed");
+                assert_ne!(
+                    b,
+                    before[&(id, host)].0,
+                    "the targeted pair should have changed"
+                );
             } else {
-                assert_eq!(b, before[&(id, host)].0, "other pair's baseline must stay byte-identical");
-                assert_eq!(l, before[&(id, host)].1, "other pair's last_sync must stay byte-identical");
+                assert_eq!(
+                    b,
+                    before[&(id, host)].0,
+                    "other pair's baseline must stay byte-identical"
+                );
+                assert_eq!(
+                    l,
+                    before[&(id, host)].1,
+                    "other pair's last_sync must stay byte-identical"
+                );
             }
         }
     }
@@ -534,11 +620,23 @@ mod tests {
         for (id, host) in pairs {
             let mut files = HashMap::new();
             files.insert(format!("{}-{}.txt", id, host), 1u64);
-            write_baseline(id, host, &Baseline { remote_path: format!("~/{}", host), files }).unwrap();
+            write_baseline(
+                id,
+                host,
+                &Baseline {
+                    remote_path: format!("~/{}", host),
+                    files,
+                },
+            )
+            .unwrap();
             write_last_sync_blocking(
                 id,
                 host,
-                &LastSync { action: "PUSH".into(), time: 1, status: "success".into() },
+                &LastSync {
+                    action: "PUSH".into(),
+                    time: 1,
+                    status: "success".into(),
+                },
             )
             .unwrap();
         }
@@ -565,8 +663,16 @@ mod tests {
                 std::fs::read_to_string(baseline_path(id, host).unwrap()).unwrap(),
                 std::fs::read_to_string(last_sync_path(id, host).unwrap()).unwrap(),
             );
-            assert_eq!(b, untouched[&(id, host)].0, "other project's baseline must stay byte-identical");
-            assert_eq!(l, untouched[&(id, host)].1, "other project's last_sync must stay byte-identical");
+            assert_eq!(
+                b,
+                untouched[&(id, host)].0,
+                "other project's baseline must stay byte-identical"
+            );
+            assert_eq!(
+                l,
+                untouched[&(id, host)].1,
+                "other project's last_sync must stay byte-identical"
+            );
         }
     }
 
@@ -583,7 +689,11 @@ mod tests {
     #[test]
     fn write_last_sync_rejects_traversal_in_project_id() {
         let _s = Scratch::new("write-last-sync-traversal");
-        let entry = LastSync { action: "PUSH".into(), time: 1, status: "success".into() };
+        let entry = LastSync {
+            action: "PUSH".into(),
+            time: 1,
+            status: "success".into(),
+        };
         assert!(write_last_sync_blocking("../escaped", "hostA", &entry).is_err());
     }
 
@@ -596,8 +706,14 @@ mod tests {
         let changed = migrate_settings_and_state(&mut projects);
         assert!(changed);
         let target = projects[0].targets.get("hostA").unwrap();
-        assert_eq!(target.remote_path, "", "remote_path is never copied into a target");
-        assert_eq!(projects[0].remote_path, "~/app", "the project's own top-level path is untouched");
+        assert_eq!(
+            target.remote_path, "",
+            "remote_path is never copied into a target"
+        );
+        assert_eq!(
+            projects[0].remote_path, "~/app",
+            "the project's own top-level path is untouched"
+        );
     }
 
     /// The core 1.32.0 fix: a `targets.<host>.remote_path` left by a pre-fix run of this same migration
@@ -609,7 +725,10 @@ mod tests {
         let mut p = make_project("proj-a", "hostA", "");
         p.targets.insert(
             "hostA".to_string(),
-            Target { remote_path: "~/from-1.32.0".to_string(), hooks: None },
+            Target {
+                remote_path: "~/from-1.32.0".to_string(),
+                hooks: None,
+            },
         );
         let mut projects = vec![p];
         let changed = migrate_settings_and_state(&mut projects);
@@ -630,7 +749,10 @@ mod tests {
             "hostA".to_string(),
             Target {
                 remote_path: "~/stale-kept-path".to_string(),
-                hooks: Some(SyncHooks { pre_pull_cmd: Some("echo kept".to_string()), ..Default::default() }),
+                hooks: Some(SyncHooks {
+                    pre_pull_cmd: Some("echo kept".to_string()),
+                    ..Default::default()
+                }),
             },
         );
         migrate_settings_and_state(&mut projects);
@@ -640,7 +762,10 @@ mod tests {
             Some("echo kept"),
             "an existing target's hooks are never overwritten"
         );
-        assert_eq!(target.remote_path, "", "stale remote_path is cleared even on an existing target");
+        assert_eq!(
+            target.remote_path, "",
+            "stale remote_path is cleared even on an existing target"
+        );
     }
 
     #[test]
@@ -694,8 +819,15 @@ mod tests {
         let before = snapshot(&projects);
 
         let second = migrate_settings_and_state(&mut projects);
-        assert!(!second, "a second run must be a no-op once targets and state already exist");
-        assert_eq!(snapshot(&projects), before, "a no-op second run must leave every file byte-identical");
+        assert!(
+            !second,
+            "a second run must be a no-op once targets and state already exist"
+        );
+        assert_eq!(
+            snapshot(&projects),
+            before,
+            "a no-op second run must leave every file byte-identical"
+        );
     }
 
     /// docs/plan/done/settings-and-state-layout.md § Migration: "an existing state baseline is NEVER
@@ -704,7 +836,11 @@ mod tests {
     #[test]
     fn migration_leaves_a_legacy_baseline_unfiled_when_the_last_action_was_not_a_full_real_sync() {
         let _s = Scratch::new("migrate-unfiled");
-        for (action, status) in [("PUSH (Dry)", "success"), ("PUSH SPECIAL", "success"), ("PUSH", "error")] {
+        for (action, status) in [
+            ("PUSH (Dry)", "success"),
+            ("PUSH SPECIAL", "success"),
+            ("PUSH", "error"),
+        ] {
             write_legacy_baseline("proj-dry", &[("a.txt", 1)]);
             let mut p = make_project("proj-dry", "hostB", "~/app");
             p.last_sync_action = Some(action.to_string());
@@ -712,7 +848,10 @@ mod tests {
             p.last_sync_status = Some(status.to_string());
             p.last_sync_host = Some("hostB".to_string());
             migrate_settings_and_state(&mut [p]);
-            assert!(read_baseline("proj-dry", "hostB").is_none(), "{action}/{status}: baseline must not be filed under a host it never described");
+            assert!(
+                read_baseline("proj-dry", "hostB").is_none(),
+                "{action}/{status}: baseline must not be filed under a host it never described"
+            );
         }
     }
 
@@ -726,7 +865,11 @@ mod tests {
         let mut projects = [p];
         migrate_settings_and_state(&mut projects);
         assert!(projects[0].targets.is_empty(), "no targets[\"\"] entry");
-        assert_eq!(projects[0].last_sync_time, Some(5), "last_sync fields stay put until a host exists");
+        assert_eq!(
+            projects[0].last_sync_time,
+            Some(5),
+            "last_sync fields stay put until a host exists"
+        );
     }
 
     #[test]
@@ -778,12 +921,21 @@ mod tests {
         // neither the `targets` creation branch nor the stale-remote_path clear-up branch flips `changed` -
         // isolates this assertion to the baseline-write outcome only.
         let mut p = make_project("proj-a", "hostA", "~/app");
-        p.targets.insert("hostA".to_string(), Target { remote_path: String::new(), hooks: None });
+        p.targets.insert(
+            "hostA".to_string(),
+            Target {
+                remote_path: String::new(),
+                hooks: None,
+            },
+        );
         let mut projects = vec![p];
         let changed = migrate_settings_and_state(&mut projects);
 
         assert!(!changed, "a failed state write must not report a change");
-        assert!(read_baseline("proj-a", "hostA").is_none(), "the blocked path holds no readable baseline");
+        assert!(
+            read_baseline("proj-a", "hostA").is_none(),
+            "the blocked path holds no readable baseline"
+        );
         assert!(
             crate::sync::legacy_flat_baseline("proj-a").is_some(),
             "the legacy file must survive a failed write instead of being deleted with its content nowhere else"
@@ -813,8 +965,14 @@ mod tests {
         assert_eq!(bb.remote_path, "~/app-b");
         assert_eq!(bb.files.get("b.txt"), Some(&2u64));
 
-        assert!(crate::sync::legacy_flat_baseline("proj-a").is_none(), "legacy file must be removed after moving");
-        assert!(crate::sync::legacy_flat_baseline("proj-b").is_none(), "legacy file must be removed after moving");
+        assert!(
+            crate::sync::legacy_flat_baseline("proj-a").is_none(),
+            "legacy file must be removed after moving"
+        );
+        assert!(
+            crate::sync::legacy_flat_baseline("proj-b").is_none(),
+            "legacy file must be removed after moving"
+        );
     }
 
     /// Each project already has real sync state on a SECOND host (e.g. it synced there before the
@@ -830,17 +988,41 @@ mod tests {
         write_baseline(
             "proj-a",
             "hostB",
-            &Baseline { remote_path: "~/old-a".into(), files: HashMap::from([("old-a.txt".to_string(), 5u64)]) },
+            &Baseline {
+                remote_path: "~/old-a".into(),
+                files: HashMap::from([("old-a.txt".to_string(), 5u64)]),
+            },
         )
         .unwrap();
-        write_last_sync_blocking("proj-a", "hostB", &LastSync { action: "PULL".into(), time: 5, status: "success".into() }).unwrap();
+        write_last_sync_blocking(
+            "proj-a",
+            "hostB",
+            &LastSync {
+                action: "PULL".into(),
+                time: 5,
+                status: "success".into(),
+            },
+        )
+        .unwrap();
         write_baseline(
             "proj-b",
             "hostA",
-            &Baseline { remote_path: "~/old-b".into(), files: HashMap::from([("old-b.txt".to_string(), 6u64)]) },
+            &Baseline {
+                remote_path: "~/old-b".into(),
+                files: HashMap::from([("old-b.txt".to_string(), 6u64)]),
+            },
         )
         .unwrap();
-        write_last_sync_blocking("proj-b", "hostA", &LastSync { action: "PUSH".into(), time: 6, status: "success".into() }).unwrap();
+        write_last_sync_blocking(
+            "proj-b",
+            "hostA",
+            &LastSync {
+                action: "PUSH".into(),
+                time: 6,
+                status: "success".into(),
+            },
+        )
+        .unwrap();
 
         let untouched_snapshot = || {
             (
@@ -856,14 +1038,34 @@ mod tests {
             make_project("proj-a", "hostA", "~/app-a"),
             make_project("proj-b", "hostB", "~/app-b"),
         ];
-        assert!(migrate_settings_and_state(&mut projects), "first run must move the active-host legacy baselines");
-        assert_eq!(untouched_snapshot(), before, "pre-existing second-host state must survive the first run byte-identical");
+        assert!(
+            migrate_settings_and_state(&mut projects),
+            "first run must move the active-host legacy baselines"
+        );
+        assert_eq!(
+            untouched_snapshot(),
+            before,
+            "pre-existing second-host state must survive the first run byte-identical"
+        );
 
-        assert!(!migrate_settings_and_state(&mut projects), "a second run must be a no-op");
-        assert_eq!(untouched_snapshot(), before, "pre-existing second-host state must survive the second run byte-identical too");
+        assert!(
+            !migrate_settings_and_state(&mut projects),
+            "a second run must be a no-op"
+        );
+        assert_eq!(
+            untouched_snapshot(),
+            before,
+            "pre-existing second-host state must survive the second run byte-identical too"
+        );
 
-        assert_eq!(read_baseline("proj-a", "hostA").unwrap().files.get("a.txt"), Some(&1u64));
-        assert_eq!(read_baseline("proj-b", "hostB").unwrap().files.get("b.txt"), Some(&2u64));
+        assert_eq!(
+            read_baseline("proj-a", "hostA").unwrap().files.get("a.txt"),
+            Some(&1u64)
+        );
+        assert_eq!(
+            read_baseline("proj-b", "hostB").unwrap().files.get("b.txt"),
+            Some(&2u64)
+        );
     }
 
     /// Load -> save must never bring `last_sync_*` back once migrated (1.13.0 sync_git lesson).
@@ -912,7 +1114,11 @@ mod tests {
                 "AKI_REHEARSAL_DEVSYNC_COPY must be set to a devsync COPY directory - never run this test bare; use scripts/rehearse-settings-migration.sh"
             ),
         };
-        assert!(root.is_dir(), "AKI_REHEARSAL_DEVSYNC_COPY does not exist or is not a directory: {}", root.display());
+        assert!(
+            root.is_dir(),
+            "AKI_REHEARSAL_DEVSYNC_COPY does not exist or is not a directory: {}",
+            root.display()
+        );
         let legacy_baselines_dir = match std::env::var("AKI_REHEARSAL_LEGACY_BASELINES_COPY") {
             Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
             _ => root.join("no-such-legacy-baselines-dir"),
@@ -924,8 +1130,14 @@ mod tests {
         let projects_json_path = root.join("projects.json");
         let backup_raw = std::fs::read_to_string(&projects_json_path)
             .unwrap_or_else(|e| panic!("cannot read {}: {}", projects_json_path.display(), e));
-        let mut projects: Vec<SyncProject> = serde_json::from_str(&backup_raw)
-            .unwrap_or_else(|e| panic!("{} did not parse as Vec<SyncProject>: {}", projects_json_path.display(), e));
+        let mut projects: Vec<SyncProject> =
+            serde_json::from_str(&backup_raw).unwrap_or_else(|e| {
+                panic!(
+                    "{} did not parse as Vec<SyncProject>: {}",
+                    projects_json_path.display(),
+                    e
+                )
+            });
 
         let backup_total = projects.len();
         let mut per_host: HashMap<String, u32> = HashMap::new();
@@ -939,7 +1151,10 @@ mod tests {
                 *per_host.entry(p.remote_host.clone()).or_insert(0) += 1;
             }
             if crate::sync::legacy_flat_baseline(&p.id).is_some() {
-                let host = p.last_sync_host.clone().unwrap_or_else(|| p.remote_host.clone());
+                let host = p
+                    .last_sync_host
+                    .clone()
+                    .unwrap_or_else(|| p.remote_host.clone());
                 had_legacy_baseline.push((p.id.clone(), host));
             }
             // Mirrors project_config.rs::is_all_empty against the exact six legacy fields the JS seeding
@@ -968,7 +1183,10 @@ mod tests {
         }
         let legacy_baseline_files = had_legacy_baseline.len();
 
-        println!("--- rehearsal: pre-migration counts (source of truth: {}) ---", projects_json_path.display());
+        println!(
+            "--- rehearsal: pre-migration counts (source of truth: {}) ---",
+            projects_json_path.display()
+        );
         println!("projects total: {}", backup_total);
         for (host, n) in &per_host {
             println!("  remote_host={}: {}", host, n);
@@ -988,8 +1206,10 @@ mod tests {
         // what actually landed on disk.
         let projects_json_first =
             serde_json::to_string_pretty(&projects).expect("serialize migrated projects");
-        std::fs::write(&projects_json_path, &projects_json_first).expect("write migrated projects.json");
-        let reread_raw = std::fs::read_to_string(&projects_json_path).expect("re-read projects.json");
+        std::fs::write(&projects_json_path, &projects_json_first)
+            .expect("write migrated projects.json");
+        let reread_raw =
+            std::fs::read_to_string(&projects_json_path).expect("re-read projects.json");
         let reread: Vec<SyncProject> =
             serde_json::from_str(&reread_raw).expect("re-read projects.json must still parse");
         assert_eq!(
@@ -1007,7 +1227,12 @@ mod tests {
                 id
             );
             let b = read_baseline(id, host);
-            assert!(b.is_some(), "project {} host {} should have a per-host baseline.json after migration", id, host);
+            assert!(
+                b.is_some(),
+                "project {} host {} should have a per-host baseline.json after migration",
+                id,
+                host
+            );
             assert!(pair_dir(id, host).unwrap().is_dir());
             with_state_dir += 1;
         }
@@ -1023,7 +1248,8 @@ mod tests {
                         for host_entry in host_walker.flatten() {
                             if let Ok(file_walker) = std::fs::read_dir(host_entry.path()) {
                                 for f in file_walker.flatten() {
-                                    let content = std::fs::read_to_string(f.path()).unwrap_or_default();
+                                    let content =
+                                        std::fs::read_to_string(f.path()).unwrap_or_default();
                                     out.push((f.path(), content));
                                 }
                             }
@@ -1038,19 +1264,28 @@ mod tests {
         // Second run reloads from disk too (the same file § "Persist and RE-READ" above just wrote), not
         // the in-memory Vec left over from the first run - proves the round trip through disk is
         // idempotent, not just the in-memory struct.
-        let mut projects_second: Vec<SyncProject> =
-            serde_json::from_str(&reread_raw).expect("second-run parse of the re-read projects.json");
+        let mut projects_second: Vec<SyncProject> = serde_json::from_str(&reread_raw)
+            .expect("second-run parse of the re-read projects.json");
         let changed_second = migrate_settings_and_state(&mut projects_second);
         assert!(!changed_second, "a second run against already-migrated data must be a no-op (release.B5 rehearsal must prove idempotency, not just assume it)");
-        let projects_json_second = serde_json::to_string_pretty(&projects_second).expect("serialize second-run projects");
-        std::fs::write(&projects_json_path, &projects_json_second).expect("write second-run projects.json");
+        let projects_json_second =
+            serde_json::to_string_pretty(&projects_second).expect("serialize second-run projects");
+        std::fs::write(&projects_json_path, &projects_json_second)
+            .expect("write second-run projects.json");
         let after_second = snapshot_state_files(&root);
-        assert_eq!(after_first, after_second, "second run must leave every state file byte-identical to the first run's output");
+        assert_eq!(
+            after_first, after_second,
+            "second run must leave every state file byte-identical to the first run's output"
+        );
         assert_eq!(
             projects_json_second, projects_json_first,
             "second run must leave projects.json byte-identical to the first run's output"
         );
-        println!("second run changed: {} (expected false) - {} state files byte-compared identical", changed_second, after_second.len());
+        println!(
+            "second run changed: {} (expected false) - {} state files byte-compared identical",
+            changed_second,
+            after_second.len()
+        );
 
         println!("--- rehearsal PASSED: {} projects (re-read from disk matches backup), {} per-host counts, {} legacy baselines migrated into {} state dirs, predicted {} project.json seeds, idempotent on re-run ---", backup_total, per_host.len(), legacy_baseline_files, with_state_dir, predicted_seed);
     }

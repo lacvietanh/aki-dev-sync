@@ -501,7 +501,8 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 
 // Test-only path injection (S5): so a test exercising the pre-1.32.0 baseline formats never resolves a path under the real home directory. Both are set/cleared together by sync_state.rs's `Scratch` guard.
 #[cfg(test)]
-pub(crate) static TEST_APP_DATA_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+pub(crate) static TEST_APP_DATA_DIR: std::sync::Mutex<Option<PathBuf>> =
+    std::sync::Mutex::new(None);
 #[cfg(test)]
 pub(crate) static TEST_LEGACY_BASELINE_DIR: std::sync::Mutex<Option<PathBuf>> =
     std::sync::Mutex::new(None);
@@ -509,14 +510,20 @@ pub(crate) static TEST_LEGACY_BASELINE_DIR: std::sync::Mutex<Option<PathBuf>> =
 #[cfg(test)]
 pub(crate) fn set_test_dirs(app_data: Option<PathBuf>, legacy: Option<PathBuf>) {
     *TEST_APP_DATA_DIR.lock().unwrap_or_else(|e| e.into_inner()) = app_data;
-    *TEST_LEGACY_BASELINE_DIR.lock().unwrap_or_else(|e| e.into_inner()) = legacy;
+    *TEST_LEGACY_BASELINE_DIR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = legacy;
 }
 
 // Pre-appDataDir (<1.7.1) baseline location - sole source of truth for that path, used by baseline_dir()'s fallback, legacy_baseline_path(), and cleanup_legacy_baselines().
 fn legacy_baseline_dir() -> PathBuf {
     #[cfg(test)]
     {
-        if let Some(dir) = TEST_LEGACY_BASELINE_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        if let Some(dir) = TEST_LEGACY_BASELINE_DIR
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             return dir;
         }
     }
@@ -530,7 +537,11 @@ fn baseline_dir() -> PathBuf {
     }
     #[cfg(test)]
     {
-        if let Some(dir) = TEST_APP_DATA_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        if let Some(dir) = TEST_APP_DATA_DIR
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
             return dir.join("baselines");
         }
     }
@@ -786,8 +797,17 @@ pub async fn run_sync(
     let project_id = project.id.clone();
     let audit_head = format!(
         "{} {}{} {} <-> {}:{}{}",
-        project.id, direction, if dry_run { " (dry)" } else { "" }, project.local_path, project.remote_host, project.remote_path,
-        if specific_paths.is_empty() { String::new() } else { format!(" [{} path(s)]", specific_paths.len()) },
+        project.id,
+        direction,
+        if dry_run { " (dry)" } else { "" },
+        project.local_path,
+        project.remote_host,
+        project.remote_path,
+        if specific_paths.is_empty() {
+            String::new()
+        } else {
+            format!(" [{} path(s)]", specific_paths.len())
+        },
     );
     // Held until this command returns, so a second invoke (companion seam included) is refused rather than run concurrently against the same tree.
     let _slot = SyncSlot::acquire(&project_id)?;
@@ -806,10 +826,13 @@ pub async fn run_sync(
         Err(_) if consume_cancelled(&project_id) => Err("Sync stopped".to_string()),
         other => other,
     };
-    crate::logger::audit("sync", &match &result {
-        Ok(()) => format!("{audit_head} => ok"),
-        Err(e) => format!("{audit_head} => {e}"),
-    });
+    crate::logger::audit(
+        "sync",
+        &match &result {
+            Ok(()) => format!("{audit_head} => ok"),
+            Err(e) => format!("{audit_head} => {e}"),
+        },
+    );
     result
 }
 
@@ -966,7 +989,9 @@ fn run_sync_blocking(
             remote_path: project.remote_path.clone(),
             files,
         };
-        if let Err(e) = crate::sync_state::write_baseline(&project.id, &project.remote_host, &baseline) {
+        if let Err(e) =
+            crate::sync_state::write_baseline(&project.id, &project.remote_host, &baseline)
+        {
             emit_log(
                 &window,
                 &project.id,
@@ -1240,18 +1265,28 @@ fn compute_sync_counts_with_push_files(
     )
     .map(|b| b.files);
 
-    Ok(classify_sync_counts(push_files, pull_files, baseline.as_ref(), &project.local_path))
+    Ok(classify_sync_counts(
+        push_files,
+        pull_files,
+        baseline.as_ref(),
+        &project.local_path,
+    ))
 }
 
 /// The pull-side dry-run for conflict detection (docs/plan/done/conflict-detection-and-agy-report.md §1):
 /// drops `-u` (so every differing file is listed, not just remote-newer ones) and adds `--out-format` to
 /// get the remote's size and mtime from the one existing SSH round-trip - the `-u` filter is reapplied in
 /// Rust (`conflict::select_pull_after_u_filter`) so `pull_count` keeps meaning "remote is newer."
-fn rsync_pull_diff_with_metadata(project: &SyncProject) -> Result<conflict::ParsedRemoteDiff, String> {
+fn rsync_pull_diff_with_metadata(
+    project: &SyncProject,
+) -> Result<conflict::ParsedRemoteDiff, String> {
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
     let remote = format!(
         "{}/",
-        remote_rsync_arg(&project.remote_host, project.remote_path.trim_end_matches('/'))?
+        remote_rsync_arg(
+            &project.remote_host,
+            project.remote_path.trim_end_matches('/')
+        )?
     );
 
     let mut args: Vec<String> = vec![
@@ -1279,7 +1314,10 @@ fn rsync_pull_diff_with_metadata(project: &SyncProject) -> Result<conflict::Pars
         return Err(format!("rsync exited non-zero: {}", stderr.trim()));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(conflict::parse_out_format_output(&stdout, &conflict::local_utc_offset_secs_at))
+    Ok(conflict::parse_out_format_output(
+        &stdout,
+        &conflict::local_utc_offset_secs_at,
+    ))
 }
 
 /// Local mtime (secs) and size for one project-relative path, or `(None, None)` when it does not exist -
@@ -1302,14 +1340,20 @@ fn local_file_stat(local_path: &str, rel: &str) -> (Option<u64>, Option<u64>) {
 /// Checksums exactly the given residue (§3: same-size files that both changed since the baseline) with one
 /// `rsync -c --dry-run --files-from=<residue>` call, and returns the subset it still lists as differing
 /// (real content conflicts) - an empty residue makes no rsync call at all.
-fn rsync_checksum_residue(project: &SyncProject, residue: &[String]) -> Result<HashSet<String>, String> {
+fn rsync_checksum_residue(
+    project: &SyncProject,
+    residue: &[String],
+) -> Result<HashSet<String>, String> {
     if residue.is_empty() {
         return Ok(HashSet::new());
     }
     let local = format!("{}/", project.local_path.trim_end_matches('/'));
     let remote = format!(
         "{}/",
-        remote_rsync_arg(&project.remote_host, project.remote_path.trim_end_matches('/'))?
+        remote_rsync_arg(
+            &project.remote_host,
+            project.remote_path.trim_end_matches('/')
+        )?
     );
     let list_path = std::env::temp_dir().join(format!(
         "aki-devsync-checksum-{}-{}.txt",
@@ -1360,10 +1404,22 @@ struct ContentCheck {
 }
 
 /// Cache first, then one capped `rsync -c` call; a failure leaves paths unchecked instead of failing the status (it froze every badge).
-fn check_content(project: &SyncProject, paths: Vec<String>, meta: &HashMap<String, (u64, u64, u64)>) -> ContentCheck {
+fn check_content(
+    project: &SyncProject,
+    paths: Vec<String>,
+    meta: &HashMap<String, (u64, u64, u64)>,
+) -> ContentCheck {
     let cache_key = |path: &String| {
-        meta.get(path)
-            .map(|(l, r, s)| (project.id.clone(), project.remote_host.clone(), path.clone(), *l, *r, *s))
+        meta.get(path).map(|(l, r, s)| {
+            (
+                project.id.clone(),
+                project.remote_host.clone(),
+                path.clone(),
+                *l,
+                *r,
+                *s,
+            )
+        })
     };
     let mut differing = HashSet::new();
     let mut uncached = Vec::new();
@@ -1397,19 +1453,28 @@ fn check_content(project: &SyncProject, paths: Vec<String>, meta: &HashMap<Strin
             log_status_anomaly(
                 project,
                 "checksum",
-                &format!("checksum residue failed, {} file(s) left unverified: {}", to_check.len(), e),
+                &format!(
+                    "checksum residue failed, {} file(s) left unverified: {}",
+                    to_check.len(),
+                    e
+                ),
             );
             failed = true;
             unchecked.extend(to_check);
         }
     }
-    ContentCheck { differing, unchecked, failed }
+    ContentCheck {
+        differing,
+        unchecked,
+        failed,
+    }
 }
 
 /// Last status-check anomaly logged per (project, host, kind): one poll can fail in several independent steps
 /// with different messages, so a single slot per host would be overwritten by the sibling step and every poll
 /// would log both again. An unchanged failure of one kind is logged once, not once a minute.
-static LAST_STATUS_ANOMALY: OnceLock<Mutex<HashMap<(String, String, &'static str), String>>> = OnceLock::new();
+static LAST_STATUS_ANOMALY: OnceLock<Mutex<HashMap<(String, String, &'static str), String>>> =
+    OnceLock::new();
 
 fn status_anomalies() -> &'static Mutex<HashMap<(String, String, &'static str), String>> {
     LAST_STATUS_ANOMALY.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1430,7 +1495,10 @@ fn log_status_anomaly(project: &SyncProject, kind: &'static str, msg: &str) {
     if record_status_anomaly(project, kind, msg) {
         crate::logger::error(
             "sync",
-            &format!("status check {} ({}) @ {}: {}", project.id, project.local_path, project.remote_host, msg),
+            &format!(
+                "status check {} ({}) @ {}: {}",
+                project.id, project.local_path, project.remote_host, msg
+            ),
         );
     }
 }
@@ -1496,18 +1564,32 @@ impl ClassificationOutcome {
     }
 
     /// `size_matched` is the checksum-cache (local mtime, remote mtime, size), present only when both sizes match.
-    fn route_move(&mut self, path: &str, side: MoveSide, dir: String, size_matched: Option<(u64, u64, u64)>) {
+    fn route_move(
+        &mut self,
+        path: &str,
+        side: MoveSide,
+        dir: String,
+        size_matched: Option<(u64, u64, u64)>,
+    ) {
         match size_matched {
             Some(meta) => {
                 self.needs_checksum_meta.insert(path.to_string(), meta);
-                self.size_matched_moves.push(SizeMatchedMove { path: path.to_string(), side, dir });
+                self.size_matched_moves.push(SizeMatchedMove {
+                    path: path.to_string(),
+                    side,
+                    dir,
+                });
             }
             None => self.count_move(side, dir),
         }
     }
 }
 
-fn tally_size_matched(out: &mut ClassificationOutcome, differing: &HashSet<String>, unchecked: &HashSet<String>) {
+fn tally_size_matched(
+    out: &mut ClassificationOutcome,
+    differing: &HashSet<String>,
+    unchecked: &HashSet<String>,
+) {
     for m in std::mem::take(&mut out.size_matched_moves) {
         if differing.contains(&m.path) || unchecked.contains(&m.path) {
             out.count_move(m.side, m.dir);
@@ -1575,7 +1657,9 @@ fn classify_candidates(
                 }
             }
             FileClass::Push => out.route_move(path, MoveSide::Push, dir, size_matched),
-            FileClass::PushStaleRemote => out.route_move(path, MoveSide::PushStaleRemote, dir, size_matched),
+            FileClass::PushStaleRemote => {
+                out.route_move(path, MoveSide::PushStaleRemote, dir, size_matched)
+            }
             FileClass::Pull => out.route_move(path, MoveSide::Pull, dir, size_matched),
             FileClass::Suppressed => {} // remote-deleted, unedited locally - drops from every count.
             FileClass::Unclassified => {
@@ -1594,7 +1678,9 @@ fn classify_candidates(
                 verified: true,
             }),
             FileClass::NeedsChecksum => {
-                if let (Some(l), Some(r), Some(s)) = (local_mtime, remote_meta.map(|m| m.mtime), local_size) {
+                if let (Some(l), Some(r), Some(s)) =
+                    (local_mtime, remote_meta.map(|m| m.mtime), local_size)
+                {
                     out.needs_checksum_meta.insert(path.clone(), (l, r, s));
                 }
                 out.needs_checksum.push(path.clone());
@@ -1623,9 +1709,13 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
             log_status_anomaly(
                 project,
                 "metadata",
-                &format!("conflict-detect metadata pull failed, no conflicts reported this poll: {}", e),
+                &format!(
+                    "conflict-detect metadata pull failed, no conflicts reported this poll: {}",
+                    e
+                ),
             );
-            let (push_count, pull_count) = compute_sync_counts_with_push_files(project, push_files)?;
+            let (push_count, pull_count) =
+                compute_sync_counts_with_push_files(project, push_files)?;
             return Ok(SyncStatusResult {
                 has_local_changes: push_count > 0,
                 has_remote_changes: pull_count > 0,
@@ -1674,15 +1764,18 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         .iter()
         .map(|p| (p.clone(), local_file_stat(&project.local_path, p)))
         .collect();
-    let local_mtimes: HashMap<String, Option<u64>> =
-        local_stats.iter().map(|(p, (mtime, _))| (p.clone(), *mtime)).collect();
+    let local_mtimes: HashMap<String, Option<u64>> = local_stats
+        .iter()
+        .map(|(p, (mtime, _))| (p.clone(), *mtime))
+        .collect();
     // Reapplies the pull-side `-u` meaning (§ Execution steps) since the metadata call above dropped it -
     // used only as the direction fallback for files the classifier could not attribute to push or pull
     // (GitGroup/Unclassified with no baseline to compare against).
-    let pull_after_u_set: HashSet<&str> = conflict::select_pull_after_u_filter(&parsed.files, &local_mtimes)
-        .into_iter()
-        .map(|m| m.path.as_str())
-        .collect();
+    let pull_after_u_set: HashSet<&str> =
+        conflict::select_pull_after_u_filter(&parsed.files, &local_mtimes)
+            .into_iter()
+            .map(|m| m.path.as_str())
+            .collect();
 
     let mut outcome = classify_candidates(
         &candidates,
@@ -1705,8 +1798,9 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
     tally_size_matched(&mut outcome, &content.differing, &content.unchecked);
 
     // Unchecked residue stays an unverified conflict, never "converged" (a guess).
-    let (checked, unverified): (Vec<String>, Vec<String>) =
-        residue.into_iter().partition(|p| !content.unchecked.contains(p));
+    let (checked, unverified): (Vec<String>, Vec<String>) = residue
+        .into_iter()
+        .partition(|p| !content.unchecked.contains(p));
     let (_, real_conflicts) = conflict::classify_checksum_result(&checked, &content.differing);
 
     let ClassificationOutcome {
@@ -1773,7 +1867,8 @@ pub async fn check_sync_status(
             crate::project_config::require_ok_excludes(&project.local_path)?;
         project.pull_excludes = pull_excludes;
         project.push_excludes = push_excludes;
-        compute_sync_status_full(&project).inspect_err(|e| log_status_anomaly(&project, "status", e))
+        compute_sync_status_full(&project)
+            .inspect_err(|e| log_status_anomaly(&project, "status", e))
     })
     .await
     .map_err(|e| format!("check_sync_status task error: {}", e))?
@@ -1845,7 +1940,10 @@ pub async fn get_sync_delete_preview(
 /// drops `-u`) would transfer even though the destination already holds a newer-or-equal copy - the
 /// destructive effect `get_sync_delete_preview` never sees, since that one only catches destination-only
 /// files, never destination-newer ones. Pure: the caller has already run both dry-runs.
-fn files_overwritten_by_mirror(mirror_files: &[String], update_only_files: &[String]) -> Vec<String> {
+fn files_overwritten_by_mirror(
+    mirror_files: &[String],
+    update_only_files: &[String],
+) -> Vec<String> {
     let update_only: HashSet<&str> = update_only_files.iter().map(String::as_str).collect();
     mirror_files
         .iter()
@@ -1905,12 +2003,16 @@ pub async fn get_sync_overwrite_preview(
             let stderr = String::from_utf8_lossy(&mirror_output.stderr);
             return Err(format!("rsync exited non-zero: {}", stderr.trim()));
         }
-        let mirror_files = filter_file_change_lines(&String::from_utf8_lossy(&mirror_output.stdout));
+        let mirror_files =
+            filter_file_change_lines(&String::from_utf8_lossy(&mirror_output.stdout));
 
         // The same transfer under real `-u` semantics (`rsync_change_files` always forces -avzu) - whatever mirror sends that this list omits is destination-newer-or-equal, silently overwritten.
         let update_only_files = rsync_change_files(&project, is_push)?;
 
-        Ok(files_overwritten_by_mirror(&mirror_files, &update_only_files))
+        Ok(files_overwritten_by_mirror(
+            &mirror_files,
+            &update_only_files,
+        ))
     })
     .await
     .map_err(|e| format!("get_sync_overwrite_preview task error: {}", e))?
@@ -1954,7 +2056,12 @@ fn read_local_excerpt(local_path: &str, rel: &str) -> Option<String> {
         return None;
     }
     let text = String::from_utf8_lossy(&bytes);
-    Some(text.lines().take(EXPLAIN_DIFF_LINE_CAP).collect::<Vec<_>>().join("\n"))
+    Some(
+        text.lines()
+            .take(EXPLAIN_DIFF_LINE_CAP)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 /// Fetches one conflict file to a throwaway temp dir and reads its excerpt the same way as the local side;
@@ -1973,7 +2080,10 @@ fn fetch_remote_excerpt(host: &str, remote_path: &str, rel: &str) -> Option<Stri
     push_transport_args(&mut args);
     args.push(remote_src);
     args.push(dest.to_string_lossy().to_string());
-    let out = crate::system::create_command("rsync").args(&args).output().ok()?;
+    let out = crate::system::create_command("rsync")
+        .args(&args)
+        .output()
+        .ok()?;
     let result = if out.status.success() {
         read_local_excerpt(tmp_dir.to_str()?, rel)
     } else {
@@ -1989,7 +2099,9 @@ fn fetch_remote_excerpt(host: &str, remote_path: &str, rel: &str) -> Option<Stri
 fn validate_agy_model(model: &str) -> Result<(), String> {
     let ok = !model.is_empty()
         && !model.starts_with('-')
-        && model.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+        && model
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
     if ok {
         Ok(())
     } else {
@@ -2008,7 +2120,10 @@ fn parse_agy_models(stdout: &str) -> Vec<AgyModel> {
     stdout
         .lines()
         .filter_map(|l| l.split_once('\t'))
-        .map(|(id, label)| AgyModel { id: id.trim().to_string(), label: label.trim().to_string() })
+        .map(|(id, label)| AgyModel {
+            id: id.trim().to_string(),
+            label: label.trim().to_string(),
+        })
         .collect()
 }
 
@@ -2021,7 +2136,10 @@ pub async fn list_agy_models() -> Result<Vec<AgyModel>, String> {
             .output()
             .map_err(|e| format!("agy models failed: {}", e))?;
         if !out.status.success() {
-            return Err(format!("agy models exited non-zero: {}", String::from_utf8_lossy(&out.stderr).trim()));
+            return Err(format!(
+                "agy models exited non-zero: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
         }
         Ok(parse_agy_models(&String::from_utf8_lossy(&out.stdout)))
     })
@@ -2086,10 +2204,14 @@ pub async fn explain_sync_status(
     tauri::async_runtime::spawn_blocking(move || {
         validate_agy_model(&model)?;
         if prompt.trim().is_empty() || prompt.len() > EXPLAIN_PROMPT_MAX_BYTES {
-            return Err(format!("explain prompt must be 1..{} bytes", EXPLAIN_PROMPT_MAX_BYTES));
+            return Err(format!(
+                "explain prompt must be 1..{} bytes",
+                EXPLAIN_PROMPT_MAX_BYTES
+            ));
         }
-        let agy_bin = resolve_agy_bin()
-            .ok_or_else(|| "agy is not installed - no ~/.local/bin/agy and no agy on PATH".to_string())?;
+        let agy_bin = resolve_agy_bin().ok_or_else(|| {
+            "agy is not installed - no ~/.local/bin/agy and no agy on PATH".to_string()
+        })?;
 
         for c in &status.conflicts {
             conflict::validate_conflict_rel_path(&c.path)?;
@@ -2117,7 +2239,12 @@ pub async fn explain_sync_status(
                 ExplainConflictPayload {
                     path: c.path.clone(),
                     local_full: format!("{}/{}", project.local_path.trim_end_matches('/'), c.path),
-                    remote_full: format!("{}:{}/{}", project.remote_host, project.remote_path.trim_end_matches('/'), c.path),
+                    remote_full: format!(
+                        "{}:{}/{}",
+                        project.remote_host,
+                        project.remote_path.trim_end_matches('/'),
+                        c.path
+                    ),
                     local_size: c.local_size,
                     remote_size: c.remote_size,
                     local_mtime: c.local_mtime,
@@ -2129,7 +2256,10 @@ pub async fn explain_sync_status(
             .collect();
 
         let payload = ExplainPayload {
-            now: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+            now: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
             project: project.name.clone(),
             local_root: project.local_path.clone(),
             remote_root: format!("{}:{}", project.remote_host, project.remote_path),
@@ -2142,13 +2272,16 @@ pub async fn explain_sync_status(
             last_sync,
             conflicts,
         };
-        let payload_json =
-            serde_json::to_string(&payload).map_err(|e| format!("explain payload serialize: {}", e))?;
+        let payload_json = serde_json::to_string(&payload)
+            .map_err(|e| format!("explain payload serialize: {}", e))?;
 
         let prompt_file = std::env::temp_dir().join(format!(
             "aki-devsync-explain-{}-{}.txt",
             std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
         ));
         std::fs::write(&prompt_file, format!("{}\n\n{}", prompt, payload_json))
             .map_err(|e| format!("explain prompt write failed: {}", e))?;
@@ -2175,9 +2308,14 @@ mod tests {
 
     #[test]
     fn parse_agy_models_skips_the_header_and_splits_id_from_label() {
-        let m = parse_agy_models("Fetching available models...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n");
+        let m = parse_agy_models(
+            "Fetching available models...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\n",
+        );
         assert_eq!(m.len(), 1);
-        assert_eq!((m[0].id.as_str(), m[0].label.as_str()), ("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"));
+        assert_eq!(
+            (m[0].id.as_str(), m[0].label.as_str()),
+            ("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)")
+        );
     }
 
     #[test]
@@ -2200,10 +2338,17 @@ mod tests {
             if _poll == 0 {
                 assert_eq!(logged, [true, true]);
             } else {
-                assert_eq!(logged, [false, false], "an unchanged failure must not be logged again");
+                assert_eq!(
+                    logged,
+                    [false, false],
+                    "an unchanged failure must not be logged again"
+                );
             }
         }
-        assert!(record_status_anomaly(&p, "status", "connection closed"), "a changed message logs again");
+        assert!(
+            record_status_anomaly(&p, "status", "connection closed"),
+            "a changed message logs again"
+        );
     }
 
     #[test]
@@ -2218,7 +2363,10 @@ mod tests {
         clear_status_anomaly(&p);
         assert!(record_status_anomaly(&p, "metadata", "a"));
         assert!(record_status_anomaly(&p, "status", "b"));
-        assert!(!record_status_anomaly(&other, "status", "b"), "another host's slot survives");
+        assert!(
+            !record_status_anomaly(&other, "status", "b"),
+            "another host's slot survives"
+        );
     }
 
     // Test fixture builder: constructs a minimal SyncProject without making `projects.rs` test helper public.
@@ -2260,7 +2408,11 @@ mod tests {
 
     #[test]
     fn files_overwritten_by_mirror_keeps_only_the_destination_newer_residue() {
-        let mirror = vec!["a.txt".to_string(), "b.txt".to_string(), "c.txt".to_string()];
+        let mirror = vec![
+            "a.txt".to_string(),
+            "b.txt".to_string(),
+            "c.txt".to_string(),
+        ];
         // -u would still send a.txt and c.txt (source is newer there) - only b.txt is mirror-only, meaning destination held a newer/equal copy that -u would have protected.
         let update_only = vec!["a.txt".to_string(), "c.txt".to_string()];
         assert_eq!(
@@ -2583,7 +2735,10 @@ mod tests {
         assert_eq!(remote_rsync_arg("host", "~/app").unwrap(), "host:app");
         assert_eq!(remote_rsync_arg("host", "~/a/~/b").unwrap(), "host:a/~/b");
         assert_eq!(remote_rsync_arg("host", "~").unwrap(), "host:.");
-        assert_eq!(remote_rsync_arg("host", "~user/app").unwrap(), "host:~user/app");
+        assert_eq!(
+            remote_rsync_arg("host", "~user/app").unwrap(),
+            "host:~user/app"
+        );
     }
 
     #[test]
@@ -2796,7 +2951,8 @@ mod tests {
     // `classify_sync_counts` uses, not only the pure carry-forward helper.
 
     #[test]
-    fn n_b_a_carried_baseline_entry_missing_locally_classifies_as_local_deleted_not_remote_created() {
+    fn n_b_a_carried_baseline_entry_missing_locally_classifies_as_local_deleted_not_remote_created()
+    {
         let scratch = std::env::temp_dir().join(format!("aki-sync-n-b-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).unwrap();
@@ -2814,8 +2970,14 @@ mod tests {
             scratch.to_str().unwrap(),
         );
 
-        assert_eq!(push_count, 1, "a baseline entry missing locally must classify as local-deleted -> push");
-        assert_eq!(pull_count, 0, "it must never also count as remote-created -> pull");
+        assert_eq!(
+            push_count, 1,
+            "a baseline entry missing locally must classify as local-deleted -> push"
+        );
+        assert_eq!(
+            pull_count, 0,
+            "it must never also count as remote-created -> pull"
+        );
 
         let _ = std::fs::remove_dir_all(&scratch);
     }
@@ -2827,7 +2989,14 @@ mod tests {
     // actually triggers it (`conflict::tests::parse_output_degrades_on_a_plain_filename_line_no_out_format_support`).
 
     fn candidate_meta(path: &str, size: u64, mtime: u64) -> (String, RemoteFileMeta) {
-        (path.to_string(), RemoteFileMeta { path: path.to_string(), size, mtime })
+        (
+            path.to_string(),
+            RemoteFileMeta {
+                path: path.to_string(),
+                size,
+                mtime,
+            },
+        )
     }
 
     #[test]
@@ -2851,7 +3020,10 @@ mod tests {
             &pull_after_u_set,
         );
 
-        assert_eq!(out.push_count, 0, "remote-deleted + locally unedited must be suppressed, never counted as push");
+        assert_eq!(
+            out.push_count, 0,
+            "remote-deleted + locally unedited must be suppressed, never counted as push"
+        );
         assert_eq!(out.pull_count, 0);
         assert!(out.conflicts.is_empty());
     }
@@ -2859,8 +3031,11 @@ mod tests {
     #[test]
     fn classify_candidates_remote_deleted_but_locally_edited_is_a_real_push() {
         let candidates = vec!["edited-then-remote-deleted.txt".to_string()];
-        let local_stats: HashMap<String, (Option<u64>, Option<u64>)> =
-            [("edited-then-remote-deleted.txt".to_string(), (Some(200), Some(10)))].into();
+        let local_stats: HashMap<String, (Option<u64>, Option<u64>)> = [(
+            "edited-then-remote-deleted.txt".to_string(),
+            (Some(200), Some(10)),
+        )]
+        .into();
         let remote_by_path: HashMap<&str, &RemoteFileMeta> = HashMap::new();
         let mut baseline_files = HashMap::new();
         baseline_files.insert("edited-then-remote-deleted.txt".to_string(), 100u64); // local moved past baseline -> real edit
@@ -2903,7 +3078,10 @@ mod tests {
             &pull_after_u_set,
         );
 
-        assert_eq!(out.push_count, 0, "a push-excluded file must never be counted as push");
+        assert_eq!(
+            out.push_count, 0,
+            "a push-excluded file must never be counted as push"
+        );
         assert_eq!(out.pull_count, 1);
     }
 
@@ -3013,8 +3191,16 @@ mod tests {
     #[test]
     fn tally_size_matched_counts_differing_and_unchecked_and_sets_identical_aside() {
         let mut out = ClassificationOutcome::default();
-        for (path, side) in [("same.txt", MoveSide::Pull), ("edited.txt", MoveSide::Pull), ("over-cap.txt", MoveSide::Push)] {
-            out.size_matched_moves.push(SizeMatchedMove { path: path.to_string(), side, dir: ".".to_string() });
+        for (path, side) in [
+            ("same.txt", MoveSide::Pull),
+            ("edited.txt", MoveSide::Pull),
+            ("over-cap.txt", MoveSide::Push),
+        ] {
+            out.size_matched_moves.push(SizeMatchedMove {
+                path: path.to_string(),
+                side,
+                dir: ".".to_string(),
+            });
         }
         let differing: HashSet<String> = ["edited.txt".to_string()].into();
         let unchecked: HashSet<String> = ["over-cap.txt".to_string()].into();
@@ -3023,7 +3209,10 @@ mod tests {
 
         assert_eq!((out.pull_count, out.push_count), (1, 1));
         assert_eq!((out.time_only_pull, out.time_only_push), (1, 0));
-        assert_eq!(out.by_top_dir.get(".").map(|c| (c.pull, c.push)), Some((1, 1)));
+        assert_eq!(
+            out.by_top_dir.get(".").map(|c| (c.pull, c.push)),
+            Some((1, 1))
+        );
         assert!(out.size_matched_moves.is_empty());
     }
 
@@ -3043,7 +3232,8 @@ mod tests {
             return;
         }
 
-        let root = std::env::temp_dir().join(format!("aki-sync-rsync-fixture-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("aki-sync-rsync-fixture-{}", std::process::id()));
         let sender = root.join("sender");
         let receiver = root.join("receiver");
         let _ = std::fs::remove_dir_all(&root);
@@ -3085,11 +3275,19 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
 
-        assert!(output.status.success(), "local-to-local dry-run rsync must succeed: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "local-to-local dry-run rsync must succeed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        let parsed = conflict::parse_out_format_output(&stdout, &conflict::local_utc_offset_secs_at);
-        assert!(!parsed.degraded, "this GNU rsync's --out-format output must parse, not degrade: {stdout:?}");
+        let parsed =
+            conflict::parse_out_format_output(&stdout, &conflict::local_utc_offset_secs_at);
+        assert!(
+            !parsed.degraded,
+            "this GNU rsync's --out-format output must parse, not degrade: {stdout:?}"
+        );
         let meta = parsed
             .files
             .iter()

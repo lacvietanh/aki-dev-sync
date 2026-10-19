@@ -28,7 +28,8 @@ pub fn run() {
             // docs/plan/done/settings-and-state-layout.md § Migration (B3): one-shot, idempotent, and run
             // here rather than from JS on every load/Refresh so every path resolves deterministically
             // before any sync command has had a chance to prime `sync::APP_DATA_DIR`.
-            let settings_state_summary = sync_state::migrate_settings_and_state_on_boot(app.handle());
+            let settings_state_summary =
+                sync_state::migrate_settings_and_state_on_boot(app.handle());
             logger::init(app.handle());
             logger::info("MIGRATE", &migration_summary);
             logger::info("MIGRATE", &settings_state_summary);

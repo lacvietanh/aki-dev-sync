@@ -71,16 +71,32 @@ pub struct ProjectConfigRead {
 
 impl ProjectConfigRead {
     fn ok(file: ProjectConfigFile) -> Self {
-        Self { status: ProjectConfigStatus::Ok, file: Some(file), error: None }
+        Self {
+            status: ProjectConfigStatus::Ok,
+            file: Some(file),
+            error: None,
+        }
     }
     fn missing() -> Self {
-        Self { status: ProjectConfigStatus::Missing, file: None, error: None }
+        Self {
+            status: ProjectConfigStatus::Missing,
+            file: None,
+            error: None,
+        }
     }
     fn unavailable(e: impl std::fmt::Display) -> Self {
-        Self { status: ProjectConfigStatus::Unavailable, file: None, error: Some(e.to_string()) }
+        Self {
+            status: ProjectConfigStatus::Unavailable,
+            file: None,
+            error: Some(e.to_string()),
+        }
     }
     fn corrupt(e: impl std::fmt::Display) -> Self {
-        Self { status: ProjectConfigStatus::Corrupt, file: None, error: Some(e.to_string()) }
+        Self {
+            status: ProjectConfigStatus::Corrupt,
+            file: None,
+            error: Some(e.to_string()),
+        }
     }
 }
 
@@ -93,7 +109,9 @@ pub struct ProjectConfigTarget {
 
 /// The ONE place `.akidevsync/project.json` is spelled in the Rust tree.
 fn config_path(local_path: &str) -> PathBuf {
-    Path::new(local_path).join(".akidevsync").join("project.json")
+    Path::new(local_path)
+        .join(".akidevsync")
+        .join("project.json")
 }
 
 /// Validates local_path segment against traversal/control chars (untrusted input from projects.json / paired companion).
@@ -175,7 +193,10 @@ pub(crate) fn require_ok_excludes(local_path: &str) -> Result<(Vec<String>, Vec<
 /// overwrite, only the five fields the dialog actually edits are replaced - `extra` (and `commands.extra`)
 /// are always carried forward from the file already on disk, since the dialog never round-trips a key it
 /// does not know about (a hand-added key, or a newer build's field this one predates).
-fn write_blocking(local_path: &str, incoming: ProjectConfigFile) -> Result<ProjectConfigFile, String> {
+fn write_blocking(
+    local_path: &str,
+    incoming: ProjectConfigFile,
+) -> Result<ProjectConfigFile, String> {
     check_path(local_path)?;
     if !Path::new(local_path).is_dir() {
         return Err(format!(
@@ -309,8 +330,11 @@ mod tests {
     struct Scratch(PathBuf);
     impl Scratch {
         fn new(tag: &str) -> Self {
-            let dir = std::env::temp_dir()
-                .join(format!("aki-project-config-test-{}-{}", tag, std::process::id()));
+            let dir = std::env::temp_dir().join(format!(
+                "aki-project-config-test-{}-{}",
+                tag,
+                std::process::id()
+            ));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
             Scratch(dir)
@@ -372,7 +396,11 @@ mod tests {
             production_url: "https://demo.example.com".into(),
             pull_excludes: vec![".git/".into()],
             push_excludes: vec![".git/".into()],
-            commands: ProjectConfigCommands { dev: "npm run dev".into(), build: "npm run build".into(), ..Default::default() },
+            commands: ProjectConfigCommands {
+                dev: "npm run dev".into(),
+                build: "npm run build".into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         write_blocking(&d.path(), file.clone()).unwrap();
@@ -420,7 +448,13 @@ mod tests {
     fn seed_does_not_overwrite_an_existing_file() {
         let d = Scratch::new("no-overwrite");
         write_raw(&d, r#"{"name":"kept"}"#);
-        let outcome = seed_one(&d.path(), ProjectConfigFile { name: "new".into(), ..Default::default() });
+        let outcome = seed_one(
+            &d.path(),
+            ProjectConfigFile {
+                name: "new".into(),
+                ..Default::default()
+            },
+        );
         assert_eq!(outcome, SeedOutcome::AlreadyOwned);
         let r = read_blocking(&d.path());
         assert_eq!(r.file.unwrap().name, "kept");
@@ -429,7 +463,13 @@ mod tests {
     #[test]
     fn seed_writes_when_absent_and_non_empty() {
         let d = Scratch::new("write-missing");
-        let outcome = seed_one(&d.path(), ProjectConfigFile { name: "seeded".into(), ..Default::default() });
+        let outcome = seed_one(
+            &d.path(),
+            ProjectConfigFile {
+                name: "seeded".into(),
+                ..Default::default()
+            },
+        );
         assert_eq!(outcome, SeedOutcome::Written);
         let r = read_blocking(&d.path());
         assert_eq!(r.file.unwrap().name, "seeded");
@@ -437,7 +477,11 @@ mod tests {
 
     #[test]
     fn write_refuses_a_directory_that_is_not_there() {
-        assert!(write_blocking("/definitely/not/a/real/mount/point", ProjectConfigFile::default()).is_err());
+        assert!(write_blocking(
+            "/definitely/not/a/real/mount/point",
+            ProjectConfigFile::default()
+        )
+        .is_err());
     }
 
     /// Read-modify-write refuses to overwrite a corrupt file, mirroring project_notes.rs's contract
@@ -447,8 +491,19 @@ mod tests {
         let d = Scratch::new("write-refuse-corrupt");
         let body = "<<<<<<< HEAD\n{\"name\":\"mine\"}\n=======\n";
         write_raw(&d, body);
-        assert!(write_blocking(&d.path(), ProjectConfigFile { name: "new".into(), ..Default::default() }).is_err());
-        assert_eq!(fs::read_to_string(config_path(&d.path())).unwrap(), body, "a refused write must leave the corrupt bytes untouched");
+        assert!(write_blocking(
+            &d.path(),
+            ProjectConfigFile {
+                name: "new".into(),
+                ..Default::default()
+            }
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(config_path(&d.path())).unwrap(),
+            body,
+            "a refused write must leave the corrupt bytes untouched"
+        );
     }
 
     /// CLAUDE.md multi-entity guard: writing one project's config must leave every other project's
@@ -457,21 +512,48 @@ mod tests {
     fn writing_one_project_leaves_another_projects_config_byte_identical() {
         let a = Scratch::new("multi-a");
         let b = Scratch::new("multi-b");
-        write_blocking(&a.path(), ProjectConfigFile { name: "a-original".into(), ..Default::default() }).unwrap();
-        write_blocking(&b.path(), ProjectConfigFile { name: "b-original".into(), ..Default::default() }).unwrap();
+        write_blocking(
+            &a.path(),
+            ProjectConfigFile {
+                name: "a-original".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        write_blocking(
+            &b.path(),
+            ProjectConfigFile {
+                name: "b-original".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let b_before = fs::read_to_string(config_path(&b.path())).unwrap();
 
-        write_blocking(&a.path(), ProjectConfigFile { name: "a-changed".into(), ..Default::default() }).unwrap();
+        write_blocking(
+            &a.path(),
+            ProjectConfigFile {
+                name: "a-changed".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let a_after = read_blocking(&a.path()).file.unwrap();
         let b_after = fs::read_to_string(config_path(&b.path())).unwrap();
         assert_eq!(a_after.name, "a-changed");
-        assert_eq!(b_after, b_before, "project B's file must stay byte-identical after project A's write");
+        assert_eq!(
+            b_after, b_before,
+            "project B's file must stay byte-identical after project A's write"
+        );
     }
 
     #[test]
     fn traversal_in_local_path_is_refused_on_both_paths() {
-        assert_eq!(read_blocking("/tmp/../etc").status, ProjectConfigStatus::Unavailable);
+        assert_eq!(
+            read_blocking("/tmp/../etc").status,
+            ProjectConfigStatus::Unavailable
+        );
         assert!(write_blocking("/tmp/../etc", ProjectConfigFile::default()).is_err());
     }
 
@@ -480,10 +562,23 @@ mod tests {
     #[test]
     fn write_preserves_an_unknown_top_level_key() {
         let d = Scratch::new("unknown-top-level-key");
-        write_raw(&d, r#"{"name":"kept-name","future_field":"do-not-drop-me"}"#);
-        write_blocking(&d.path(), ProjectConfigFile { name: "edited".into(), ..Default::default() }).unwrap();
+        write_raw(
+            &d,
+            r#"{"name":"kept-name","future_field":"do-not-drop-me"}"#,
+        );
+        write_blocking(
+            &d.path(),
+            ProjectConfigFile {
+                name: "edited".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let raw = fs::read_to_string(config_path(&d.path())).unwrap();
-        assert!(raw.contains("future_field"), "an unknown top-level key must survive a write");
+        assert!(
+            raw.contains("future_field"),
+            "an unknown top-level key must survive a write"
+        );
         assert!(raw.contains("do-not-drop-me"));
         assert_eq!(read_blocking(&d.path()).file.unwrap().name, "edited");
     }
@@ -493,17 +588,32 @@ mod tests {
     fn write_preserves_an_unknown_commands_key() {
         let d = Scratch::new("unknown-commands-key");
         // `deploy` is now a named field on `ProjectConfigCommands` (deploy plan) - use a genuinely unknown key here instead, so this test still exercises the `extra` flatten path it was written for.
-        write_raw(&d, r#"{"commands":{"dev":"npm run dev","lint":"npm run lint"}}"#);
+        write_raw(
+            &d,
+            r#"{"commands":{"dev":"npm run dev","lint":"npm run lint"}}"#,
+        );
         write_blocking(
             &d.path(),
-            ProjectConfigFile { commands: ProjectConfigCommands { dev: "npm run dev2".into(), ..Default::default() }, ..Default::default() },
+            ProjectConfigFile {
+                commands: ProjectConfigCommands {
+                    dev: "npm run dev2".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         )
         .unwrap();
         let raw = fs::read_to_string(config_path(&d.path())).unwrap();
-        assert!(raw.contains("\"lint\""), "an unknown commands.x key must survive a write");
+        assert!(
+            raw.contains("\"lint\""),
+            "an unknown commands.x key must survive a write"
+        );
         assert!(raw.contains("npm run lint"));
         let reread = read_blocking(&d.path()).file.unwrap();
-        assert_eq!(reread.commands.dev, "npm run dev2", "the dialog's own edit still applies");
+        assert_eq!(
+            reread.commands.dev, "npm run dev2",
+            "the dialog's own edit still applies"
+        );
     }
 
     /// deploy plan: `commands.deploy` round-trips through the same read-modify-write path as `dev`/`build`.
@@ -511,7 +621,10 @@ mod tests {
     fn write_then_read_round_trips_commands_deploy() {
         let d = Scratch::new("deploy-roundtrip");
         let file = ProjectConfigFile {
-            commands: ProjectConfigCommands { deploy: "npm run deploy".into(), ..Default::default() },
+            commands: ProjectConfigCommands {
+                deploy: "npm run deploy".into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         write_blocking(&d.path(), file).unwrap();
@@ -529,22 +642,54 @@ mod tests {
         let empty = Scratch::new("seed-empty");
 
         assert_eq!(
-            seed_one(&has_values.path(), ProjectConfigFile { name: "Legacy".into(), ..Default::default() }),
+            seed_one(
+                &has_values.path(),
+                ProjectConfigFile {
+                    name: "Legacy".into(),
+                    ..Default::default()
+                }
+            ),
             SeedOutcome::Written
         );
-        assert_eq!(read_blocking(&has_values.path()).file.unwrap().name, "Legacy");
+        assert_eq!(
+            read_blocking(&has_values.path()).file.unwrap().name,
+            "Legacy"
+        );
 
         assert_eq!(
-            seed_one(&already_owned.path(), ProjectConfigFile { name: "would-be-ignored".into(), ..Default::default() }),
+            seed_one(
+                &already_owned.path(),
+                ProjectConfigFile {
+                    name: "would-be-ignored".into(),
+                    ..Default::default()
+                }
+            ),
             SeedOutcome::AlreadyOwned
         );
-        assert_eq!(read_blocking(&already_owned.path()).file.unwrap().name, "existing", "an existing file must never be overwritten by a seed");
-
-        assert_eq!(seed_one(&empty.path(), ProjectConfigFile::default()), SeedOutcome::NothingToSeed);
-        assert_eq!(read_blocking(&empty.path()).status, ProjectConfigStatus::Missing, "refusing to seed an all-empty file must leave it Missing, not create an empty one");
+        assert_eq!(
+            read_blocking(&already_owned.path()).file.unwrap().name,
+            "existing",
+            "an existing file must never be overwritten by a seed"
+        );
 
         assert_eq!(
-            seed_one("/definitely/not/a/real/mount/point", ProjectConfigFile { name: "x".into(), ..Default::default() }),
+            seed_one(&empty.path(), ProjectConfigFile::default()),
+            SeedOutcome::NothingToSeed
+        );
+        assert_eq!(
+            read_blocking(&empty.path()).status,
+            ProjectConfigStatus::Missing,
+            "refusing to seed an all-empty file must leave it Missing, not create an empty one"
+        );
+
+        assert_eq!(
+            seed_one(
+                "/definitely/not/a/real/mount/point",
+                ProjectConfigFile {
+                    name: "x".into(),
+                    ..Default::default()
+                }
+            ),
             SeedOutcome::Unavailable
         );
     }

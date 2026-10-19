@@ -426,7 +426,10 @@ mod tests {
 
         let json = serde_json::to_string(&legacy).unwrap();
         let reloaded: SyncProject = serde_json::from_str(&json).unwrap();
-        assert_eq!(reloaded.name, "Legacy Name", "an old registry entry must still load its project-owned fields");
+        assert_eq!(
+            reloaded.name, "Legacy Name",
+            "an old registry entry must still load its project-owned fields"
+        );
 
         // Simulate the frontend's save funnel stripping these six fields once project.json owns them.
         let mut stripped = legacy.clone();
@@ -446,7 +449,11 @@ mod tests {
             "\"dev_cmd_override\"",
             "\"build_cmd_override\"",
         ] {
-            assert!(!stripped_json.contains(key), "{} must never be persisted once stripped", key);
+            assert!(
+                !stripped_json.contains(key),
+                "{} must never be persisted once stripped",
+                key
+            );
         }
         let reloaded_stripped: SyncProject = serde_json::from_str(&stripped_json).unwrap();
         assert_eq!(reloaded_stripped.name, "");
@@ -463,22 +470,49 @@ mod tests {
     #[test]
     fn top_level_remote_path_always_persists_regardless_of_targets() {
         let mut a = make_project("/local/a", "~/app-a", "hostA");
-        a.targets.insert("hostA".into(), Target { remote_path: String::new(), hooks: None });
+        a.targets.insert(
+            "hostA".into(),
+            Target {
+                remote_path: String::new(),
+                hooks: None,
+            },
+        );
         let mut b = make_project("/local/b", "~/app-b", "hostB");
-        b.targets.insert("hostB".into(), Target { remote_path: String::new(), hooks: None });
+        b.targets.insert(
+            "hostB".into(),
+            Target {
+                remote_path: String::new(),
+                hooks: None,
+            },
+        );
         let all = vec![a, b];
 
         let json = serde_json::to_string(&all).unwrap();
         let values: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(values[0].get("remote_path").and_then(|v| v.as_str()), Some("~/app-a"));
-        assert_eq!(values[1].get("remote_path").and_then(|v| v.as_str()), Some("~/app-b"));
+        assert_eq!(
+            values[0].get("remote_path").and_then(|v| v.as_str()),
+            Some("~/app-a")
+        );
+        assert_eq!(
+            values[1].get("remote_path").and_then(|v| v.as_str()),
+            Some("~/app-b")
+        );
         for v in &values {
-            assert!(v.get("hooks").is_none(), "default hooks must not be persisted at the top level");
+            assert!(
+                v.get("hooks").is_none(),
+                "default hooks must not be persisted at the top level"
+            );
         }
 
         let reloaded: Vec<SyncProject> = serde_json::from_str(&json).unwrap();
-        assert_eq!(reloaded[0].remote_path, "~/app-a", "project A's own path survives untouched by project B");
-        assert_eq!(reloaded[1].remote_path, "~/app-b", "project B's own path survives untouched by project A");
+        assert_eq!(
+            reloaded[0].remote_path, "~/app-a",
+            "project A's own path survives untouched by project B"
+        );
+        assert_eq!(
+            reloaded[1].remote_path, "~/app-b",
+            "project B's own path survives untouched by project A"
+        );
     }
 
     /// A stale `targets.<host>.remote_path` left over from a pre-fix registry (the field is now
@@ -487,7 +521,13 @@ mod tests {
     #[test]
     fn stale_target_remote_path_never_overrides_the_top_level_value() {
         let mut p = make_project("/local/half-configured", "~/real-path", "hostA");
-        p.targets.insert("hostA".into(), Target { remote_path: "~/stale-old-path".into(), hooks: None });
+        p.targets.insert(
+            "hostA".into(),
+            Target {
+                remote_path: "~/stale-old-path".into(),
+                hooks: None,
+            },
+        );
 
         let json = serde_json::to_string(&p).unwrap();
         let reloaded: SyncProject = serde_json::from_str(&json).unwrap();
@@ -503,8 +543,14 @@ mod tests {
 
         let json = serde_json::to_string(&p).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert!(value.get("hooks").is_some(), "non-default hooks with no target to hold them must still serialize");
-        assert!(!p.targets.contains_key(""), "an empty remote_host must never gain a targets[\"\"] entry");
+        assert!(
+            value.get("hooks").is_some(),
+            "non-default hooks with no target to hold them must still serialize"
+        );
+        assert!(
+            !p.targets.contains_key(""),
+            "an empty remote_host must never gain a targets[\"\"] entry"
+        );
 
         let reloaded: SyncProject = serde_json::from_str(&json).unwrap();
         assert_eq!(reloaded.remote_path, "~/still-here");
@@ -528,7 +574,10 @@ mod tests {
 
         // A Some value straight from hydration DOES persist if sent as-is - this is what makes the frontend's stripping in saveProjectsList load-bearing, not optional.
         let unstripped_json = serde_json::to_string(&vec![hydrated.clone()]).unwrap();
-        assert!(unstripped_json.contains("last_sync_action"), "sanity: Some values do serialize when sent");
+        assert!(
+            unstripped_json.contains("last_sync_action"),
+            "sanity: Some values do serialize when sent"
+        );
 
         // Simulate saveProjectsList's payload construction (useProjectConfig.js): reset to null before invoke.
         let mut stripped = hydrated.clone();
@@ -538,8 +587,17 @@ mod tests {
         stripped.last_sync_status = None;
 
         let json = serde_json::to_string(&vec![stripped]).unwrap();
-        for key in ["last_sync_action", "last_sync_time", "last_sync_host", "last_sync_status"] {
-            assert!(!json.contains(key), "{} must never be persisted once the save funnel strips it", key);
+        for key in [
+            "last_sync_action",
+            "last_sync_time",
+            "last_sync_host",
+            "last_sync_status",
+        ] {
+            assert!(
+                !json.contains(key),
+                "{} must never be persisted once the save funnel strips it",
+                key
+            );
         }
     }
 
@@ -555,13 +613,19 @@ mod tests {
 
         let json = serde_json::to_string(&with_legacy).unwrap();
         let reloaded: SyncProject = serde_json::from_str(&json).unwrap();
-        assert_eq!(reloaded.tasks, with_legacy.tasks, "a Some legacy value must survive load -> save");
+        assert_eq!(
+            reloaded.tasks, with_legacy.tasks,
+            "a Some legacy value must survive load -> save"
+        );
         assert_eq!(reloaded.notes, with_legacy.notes);
 
         let without_legacy = make_project("/home/user/app2", "~/app2", "server");
         assert!(without_legacy.tasks.is_none());
         let json2 = serde_json::to_string(&without_legacy).unwrap();
-        assert!(!json2.contains("\"tasks\""), "a project with no legacy value must never gain the key back");
+        assert!(
+            !json2.contains("\"tasks\""),
+            "a project with no legacy value must never gain the key back"
+        );
         assert!(!json2.contains("\"notes\""));
         let reloaded2: SyncProject = serde_json::from_str(&json2).unwrap();
         assert!(reloaded2.tasks.is_none());
@@ -570,7 +634,8 @@ mod tests {
     /// deploy plan: an old projects.json entry with no `deploy` key must load as None, not error.
     #[test]
     fn project_deploy_defaults_to_none_when_absent() {
-        let p: SyncProject = serde_json::from_str(r#"{"id":"a","local_path":"/l","remote_host":"h"}"#).unwrap();
+        let p: SyncProject =
+            serde_json::from_str(r#"{"id":"a","local_path":"/l","remote_host":"h"}"#).unwrap();
         assert!(p.deploy.is_none());
     }
 
@@ -579,13 +644,31 @@ mod tests {
     #[test]
     fn project_deploy_round_trips_and_leaves_other_projects_untouched() {
         let mut a = make_project("/local/a", "~/app-a", "hostA");
-        a.deploy = Some(ProjectDeploy { run_on: "remote".into(), on_push: true, host: "prod".into(), path: String::new() });
+        a.deploy = Some(ProjectDeploy {
+            run_on: "remote".into(),
+            on_push: true,
+            host: "prod".into(),
+            path: String::new(),
+        });
         let b = make_project("/local/b", "~/app-b", "hostB");
         let json = serde_json::to_string(&vec![a, b]).unwrap();
-        assert!(!json.contains("\"path\":\"\""), "empty deploy path must be omitted");
+        assert!(
+            !json.contains("\"path\":\"\""),
+            "empty deploy path must be omitted"
+        );
         let reloaded: Vec<SyncProject> = serde_json::from_str(&json).unwrap();
         let a_deploy = reloaded[0].deploy.clone().unwrap();
-        assert_eq!((a_deploy.run_on.as_str(), a_deploy.on_push, a_deploy.host.as_str()), ("remote", true, "prod"));
-        assert!(reloaded[1].deploy.is_none(), "project B must stay untouched by project A's deploy config");
+        assert_eq!(
+            (
+                a_deploy.run_on.as_str(),
+                a_deploy.on_push,
+                a_deploy.host.as_str()
+            ),
+            ("remote", true, "prod")
+        );
+        assert!(
+            reloaded[1].deploy.is_none(),
+            "project B must stay untouched by project A's deploy config"
+        );
     }
 }
