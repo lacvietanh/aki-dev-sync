@@ -1,6 +1,6 @@
 # Terminal stack — architecture
 
-> updated 2026-09-25 · v1.31.0
+> updated 2026-10-20 · v1.33.1
 
 How the in-app terminal's frontend is layered, and how terminal v2's SCOPES (tab groups) sit on top of it without touching Rust. User-facing behaviour: `docs/feat/in-app-terminal.md`.
 
@@ -89,7 +89,7 @@ Terminal bytes ride five top-level frames on the existing socket (`pty_input`, `
 
 ## Never-block-the-UI, and the one place the usual rule inverts
 
-`pty_spawn` / `pty_write` / `pty_resize` / `pty_get_scrollback` are all `async fn` wrapping their work in `spawn_blocking`, per the ABSOLUTE rule in `CLAUDE.md`.
+`pty_spawn` / `pty_resize` / `pty_get_scrollback` are all `async fn` wrapping their work in `spawn_blocking`, per the ABSOLUTE rule in `CLAUDE.md`. `pty_write` is the deliberate exception: synchronous, because it waits on nothing and being async would break input order (§ Input: one queue, a synchronous `pty_write`). `pty_rename_tab` / `pty_set_tab_pinned` are plain `fn` too: one in-memory map insert.
 
 The **read loop is a dedicated `std::thread`, and must stay one.** `spawn_blocking`'s pool is sized for bounded one-shot work; parking one of its threads forever in a `read()` loop for the app's whole lifetime starves every other blocking command (remote path resolution, update check, git info) of a slot. A tokio task would be just as wrong — `portable-pty`'s reader is a synchronous `Read`, so it would block a worker identically. This is the one spot in the app where "just wrap it in `spawn_blocking`" is the bug rather than the fix.
 
@@ -107,13 +107,45 @@ A kill cannot reach a shell that is still being created, so `spawn_inflight` car
 
 ### Killing the shell means killing its process group
 
-`portable_pty`'s `Child::kill()` signals only the direct child — the login shell. Everything the user started *inside* that shell is a separate process in the shell's process group and receives nothing from it. `kill_current` therefore sends SIGHUP to the whole group first (`killpg`, the same signal closing a real terminal window sends) and escalates to SIGKILL only for what survives the grace period. `portable-pty` puts the child in its own session on unix, so the child's pid is its process-group id and one `killpg` reaches every descendant.
+`portable_pty`'s `Child::kill()` signals only the direct child — the login shell. Everything the user started *inside* that shell (`ssh host`, a dev server) is a separate process in the shell's process group, and a signal aimed at the shell alone need not reach it; a surviving `ssh` keeps the remote `sshd` session and whatever runs under it (`agy`, `claude`, 300–500 MB each) alive. `kill_process_group` therefore sends SIGHUP to the whole group first (`killpg`, the same signal closing a real terminal window sends) and escalates to SIGKILL only for what survives a 300 ms grace (12 × 25 ms, polled with signal 0 so the common case returns in ~25 ms, which matters because app exit pays it once per live tab). `portable-pty` puts the child in its own session on unix (`setsid` + `TIOCSCTTY`), so the child's pid is its process-group id and one `killpg` reaches every descendant. `terminate_child` runs the group kill, then `child.kill()` as the backstop for a child that is not a group leader, then `wait`; it blocks up to the grace, so it never runs under a session lock. What `killpg` buys is narrower than it looks: `killing_the_shell_takes_processes_started_inside_it_with_it` also passes with a plain `kill` on the shell (verified by mutation), because the kernel SIGHUPs the foreground group when a session leader with a controlling terminal dies. `killpg` covers what the kernel does not: a process that left the foreground group, and a teardown where the ctty is not revoked.
 
-The bigger half of the fix is *when* teardown runs: it is also wired to `RunEvent::Exit` in `lib.rs`. Every other path into `kill_current` is a user gesture (KILL, RESTART), so before that hook existed, quitting the app ran no teardown whatsoever.
+The bigger half of the fix is *when* teardown runs: `pty::shutdown` is wired to `RunEvent::Exit` in `lib.rs`. Every other path into a kill is a user gesture (KILL, RESTART, close), so before that hook existed, quitting the app ran no teardown whatsoever. `kill_all_sessions`, reachable only from `shutdown`, is the module's only whole-map operation: quitting is the one "close everything" the owner asks for.
 
 **How much `killpg` itself buys, stated honestly.** The unit test `killing_the_shell_takes_processes_started_inside_it_with_it` still passes with `killpg` swapped for a plain `kill` on the shell — verified by mutation, not assumed. When a session leader holding a controlling terminal dies, the kernel SIGHUPs the foreground process group on its own, so an ordinary foreground child dies either way. `killpg` covers what the kernel does not: a process that has left the foreground group, and any teardown path where the ctty is not revoked.
 
-The app-exit teardown investigation (orphaned `ssh` clients on the dev Mac) is tracked separately and not resolved by this mechanism — the evidence does not fit the in-app terminal's spawn shape.
+The orphaned `ssh` clients investigated in 1.20.0 were not caused by this code: they matched, to the second, hand-typed `ssh` commands in `Terminal.app` tabs later closed (`~/.zsh_history`), and the app binary installed then contained no PTY symbols at all.
+
+## PTY backend internals (`pty.rs`)
+
+### Lock order
+
+`sessions` → `inputs`, `scrollbacks` → `min_accepted`, `sessions` → `spawn_inflight`, `OutBuf` → `min_accepted`. `min_accepted`, `spawn_inflight` and `tab_meta` are leaf locks; no path holds both `OutBuf` and `scrollbacks`. A slow operation (process-group kill, spawn) never runs under `sessions`: `kill_session` removes the session under the lock and kills after releasing it, `kill_all_sessions` snapshots ids first, `pty_list_tabs` takes `tab_meta` per id.
+
+### Output: coalescing with a deadline
+
+Each live session has one `OutBuf` (accumulator + last-flush clock + `done`), shared by its reader thread and a flusher thread. Bytes flush at 20 ms (`FLUSH_INTERVAL`) or 16 KB (`FLUSH_BYTES`), whichever comes first. The deadline needs its own thread: when the test lived only in the read loop, the next flush could only come from the next `read()` returning, so a keystroke echo arriving within 20 ms of the previous flush stayed invisible on an idle shell until unrelated output arrived. `flusher_loop` sleeps on a condvar while nothing is pending (an idle shell costs no wakeups), waits out only the rest of the current window in a predicate loop (a single `wait_timeout` would be cut short by the next chunk's `notify_one` and defeat coalescing), and exits when its reader sets `done`. `flush_locked` runs with the `OutBuf` mutex held and drains the whole accumulator per call, so payload order is byte order with nothing duplicated or dropped. The reader emits its own tail before the exit notice, so the shell's last line always precedes it. The emit goes to the Mac's `TerminalView` directly and to `services/ptyBridge.js`, which relays it as a `pty_output` frame.
+
+### Input: one queue, a synchronous `pty_write`
+
+`pty_write` used to lock the session and write; two keystrokes are two independent commands, so the mutex kept the writes apart but did not order them (`ls` could arrive as `sl`, certain under a paste or companion replay). Now each session has an mpsc queue drained by one writer thread (`writer_loop` → `drain_input_queue`, flushed per chunk because a chunk is a keystroke or a paste). `pty_write` is synchronous on purpose: it only decodes base64 and sends on the channel, so it cannot block, and a sync command runs inline on the IPC dispatch thread in the order the webview posted the calls; an async one could be polled on two workers and race to the enqueue. The cost: a write error cannot be returned to the caller. It surfaces as the writer retiring its channel (the next keystroke returns "no PTY session") and the reader emitting `pty-exit`. The writer retires only its own tab's channel and only at its own generation, so it never removes the channel a `pty_restart` already installed. Killing a session drops the sender, which ends the writer and makes a late `pty_write` fail instead of queueing for a dead shell.
+
+### Generations fence bytes, not only the slot
+
+A killed shell's reader lives up to one `FLUSH_INTERVAL` longer and can still flush bytes; on a restart those landed above the fresh prompt, in a scrollback just cleared for the new shell. `min_accepted` is a per-tab floor: `kill_session` raises it past the killed generation (`retire_generation`, kill-only, since a shell that hits EOF has no late writer to fence), and both the scrollback append and the emit drop bytes from a generation below it. The append tests the floor under the `scrollbacks` lock, the same lock `retire_generation` publishes under, so an append either finishes before the retirement (and is cleared by the restart that follows) or sees the new floor. The emit path reads the floor through the leaf lock only, because it already holds `OutBuf`. The floor is per tab because generations are global: one global floor would let retiring tab 10's generation silence tab 11's older, still-live one. Text that is not session output (`append_scrollback(.., None)`) always lands.
+
+### Liveness rides the output channel
+
+`PtyOutputPayload.alive` is `Some(x)` only on the payloads where liveness changes (spawn, kill, EOF) and is absent from the JSON otherwise; the frontend's `typeof alive === 'boolean'` test is the whole protocol. The hot byte path never takes `sessions` to stamp it. Before it existed, a screen that saw the shell exit stayed convinced it was dead, and its next keystroke tore down the shell another screen had just restarted. `pty_restart`'s three emits are ordered: `reset` while the slot is empty (so it cannot wipe the new prompt), then the spawn, then `emit_alive` (so it reports the new session). One combined payload is wrong in one direction or the other. `pty_spawn` broadcasts liveness on its no-op path too, because the other screen may still believe the shell is dead. The exit notice carries `alive: false` as well as the separate `pty-exit`, since the two reach a companion on different frames. `reset` wipes one tab on every screen at once; `pty_clear` uses it to empty the host's ring buffer, which the shell's own `clear` leaves full for the next phone that reconnects. `tab_id` is mandatory on every payload: every `TerminalView` filters on it.
+
+### Tab metadata survives a reload
+
+`TabMeta` (`project_id`, `title`, `pinned`) outlives the shell and a webview reload, and is forgotten only by `drop_tab_state` on close; `adoptTabs` (`terminalTabsStore.js`) rebuilds scope, title and pin from `pty_list_tabs`, which returns the union of tabs with a session and tabs with a scrollback (an exited tab still has one a phone may read). `upsert_tab_meta` patches: `None` leaves a field alone, so an older companion calling `pty_spawn` without ownership cannot erase it. `project_id` is set at the first spawn and never moved.
+
+### The spawned shell
+
+`$SHELL -l` (fallback `/bin/zsh`): a login shell sources `.zprofile`, so nvm, rbenv and `path_helper` give the same PATH as any `Terminal.app` window. The child's PATH is seeded with the well-known macOS install dirs before rc sourcing starts (R-1, `docs/plan/done/dev-build-in-app-launch.md`), so a DEV/BUILD command written right after spawn does not race `.zprofile` into `exit=127`; an nvm-managed node is not covered. `CLAUDE_CODE_CHILD_SESSION` is stripped from the inherited env so `claude` in a tab still saves transcripts. `cwd` applies only on a tab's first real spawn; the initial size is 80x24 until the host's first `pty_resize`. The host is the only caller of `pty_resize`; a companion is resized by the echoed frame, a frontend-side discipline the command cannot enforce. `pty_get_scrollback` returns the size and liveness with the buffer, so a screen joining mid-session applies the right size and state without waiting for the next host resize. `pty_cwd` reads the shell's current directory through `lsof` (macOS has no `/proc`); on failure the caller falls back to `$HOME`.
+
+The end-of-session notice names only a control that is on screen (it once said "click RESTART" after that button was gone), and it is written into the scrollback so a screen that opens the tab later still sees why the terminal is idle.
 
 ## Mount semantics
 
