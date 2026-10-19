@@ -139,10 +139,7 @@ fn local_rsync_version_line() -> String {
     v
 }
 
-/// `~/x` → `x`, `~` → `.`: rsync over SSH resolves a relative remote path from the login home - the directory
-/// `~` names - but a literal `~` is only expanded when the remote shell parses the arg, which `--files-from`
-/// and `--secluded-args` bypass (`change_dir "/home/u/~/x"`). Never returns "" - callers append `/`, and
-/// `host:/` is the remote root.
+/// `~/x` → `x`, `~` → `.`: `--files-from`/`--secluded-args` bypass the remote shell, so a literal `~` is never expanded. Never "": callers append `/`.
 fn home_relative(remote_path: &str) -> &str {
     let rest = if remote_path == "~" {
         ""
@@ -499,7 +496,7 @@ fn validate_specific_paths(paths: &[String]) -> Result<(), String> {
 // * PUSH: in baseline + mtime unchanged -> remote deleted (suppress); mtime changed -> local edit (push_count).
 // * Baseline mtime comparison avoids extra SSH roundtrips to resolve deletion vs edit ambiguity.
 
-// Test-only path injection (S5): so a test exercising the pre-1.32.0 baseline formats never resolves a path under the real home directory. Both are set/cleared together by sync_state.rs's `Scratch` guard.
+// Test-only path injection, set and cleared with `sync_state.rs`'s `Scratch` guard, so no test resolves a path under the real home.
 #[cfg(test)]
 pub(crate) static TEST_APP_DATA_DIR: std::sync::Mutex<Option<PathBuf>> =
     std::sync::Mutex::new(None);
@@ -545,10 +542,7 @@ fn baseline_dir() -> PathBuf {
             return dir.join("baselines");
         }
     }
-    // Deterministic fallback (docs/plan/done/settings-and-state-layout.md § Migration, B3): resolve app-data
-    // directly instead of the pre-1.7.1 legacy dir, so this is correct even when called before any Tauri
-    // command has primed APP_DATA_DIR - e.g. the setup()-time boot migration, which runs before any IPC
-    // command exists to serve that cache.
+    // Resolve app-data directly: the setup()-time boot migration runs before any command primed APP_DATA_DIR (docs/plan/done/settings-and-state-layout.md § Migration).
     crate::app_paths::app_data_dir()
         .map(|d| d.join("baselines"))
         .unwrap_or_else(|_| legacy_baseline_dir())
@@ -563,9 +557,7 @@ fn legacy_baseline_path(project_id: &str) -> PathBuf {
     legacy_baseline_dir().join(format!("{}.json", project_id))
 }
 
-/// Test-only accessor so sync_state.rs's migration tests can seed a pre-1.32.0 per-project baseline file
-/// at the exact path `legacy_flat_baseline`/`remove_legacy_flat_baseline` resolve, without duplicating
-/// this module's private path logic (S5/S7).
+/// Test-only: the exact path `legacy_flat_baseline` resolves, so `sync_state.rs` tests seed a pre-1.32.0 baseline without copying the path logic.
 #[cfg(test)]
 pub(crate) fn baseline_path_for_test(project_id: &str) -> PathBuf {
     baseline_path(project_id)
@@ -645,15 +637,7 @@ fn collect_local_files_with_mtime(
     }
 }
 
-/// Applies F2 (docs/plan/done/settings-and-state-layout.md § A): after a push without `--delete`, a file
-/// deleted locally has not reached the remote, so it is not common yet - carry its previous baseline
-/// entry forward instead of letting the fresh local walk silently drop it (which the next status check
-/// would otherwise misread as "remote created" -> pull). Mirror pushes (deletion propagated) and every
-/// pull (a merge pull restores the file, a mirror pull matches the remote) need no carry-over.
-/// S1 (docs/plan/done/settings-and-state-layout.md: "a baseline whose recorded remote_path differs from the
-/// target's current one counts as NO baseline - the ancestor is someone else's"). The ONE place this
-/// filter is spelled, shared by the post-sync write path and the status-check read path - previously
-/// duplicated with the write path missing the filter entirely (S1).
+/// The one place a baseline is chosen: one from another remote_path is no baseline (S1); a merge push carries local deletions forward (F2, docs/plan/done/settings-and-state-layout.md § A).
 fn baseline_for_target(
     baseline: Option<crate::sync_state::Baseline>,
     remote_path: &str,
@@ -1076,9 +1060,7 @@ pub struct SyncStatusResult {
     /// How many of `push_count + pull_count` are under `.git/` - tooltip breakdown only, never subtracted.
     #[serde(default)]
     pub git_count: u32,
-    /// At least one push file was classified `PushStaleRemote` (R < B - the remote regressed relative to
-    /// the common ancestor) - the plan's "whether the remote is behind" signal (§4/§5), surfaced instead of
-    /// being folded silently into `push_count`.
+    /// Some push file is `PushStaleRemote` (remote older than the common ancestor): the "remote is behind" signal, kept out of `push_count`.
     #[serde(default)]
     pub remote_behind: bool,
     /// Per-top-directory, per-class breakdown of both lists (§4: "per-class, per-top-directory counts for
@@ -1092,12 +1074,7 @@ pub struct SyncStatusResult {
     pub time_only_pull: u32,
 }
 
-/// One top-level directory's class breakdown (`SyncStatusResult.by_top_dir`'s value). `.git` files land in
-/// `git` only, even though a `.git` file is ALSO folded into the top-level `push_count`/`pull_count` on
-/// `SyncStatusResult` (so `push + pull + git + stale_remote` here is NOT the same total as
-/// `push_count + pull_count + git_count`, whose `.git` share is double-counted across two fields there).
-/// `stale_remote` counts a `PushStaleRemote` file instead of `push`, so it is also excluded from `push` here.
-/// Conflicts are not represented in this struct at all - they live only in `SyncStatusResult.conflicts`.
+/// One top-level dir's breakdown: `.git` files count only in `git`, `PushStaleRemote` only in `stale_remote`, conflicts not at all, so totals differ from the top level.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct TopDirCounts {
     #[serde(default)]
@@ -1164,9 +1141,7 @@ fn rsync_change_files(project: &SyncProject, is_push: bool) -> Result<Vec<String
     Ok(filter_file_change_lines(&stdout))
 }
 
-/// Lines a raw (non `--out-format`) rsync dry-run stdout carries that are summary/status text, never an
-/// actual file path - shared by every place that reads plain rsync dry-run output for file names
-/// (`rsync_change_files`'s push side and `rsync_checksum_residue`'s `-c` residue check).
+/// Drops the summary/status lines a plain rsync dry-run prints, leaving file paths; shared by every reader of plain dry-run output.
 fn filter_file_change_lines(stdout: &str) -> Vec<String> {
     stdout
         .lines()
@@ -1193,11 +1168,7 @@ fn filter_file_change_lines(stdout: &str) -> Vec<String> {
         .collect()
 }
 
-/// The baseline reclassification (EC-3): a PULL entry the baseline already knew about but that no longer
-/// exists locally is a LOCAL deletion that has not reached the remote yet - push_count, never pull_count
-/// (N-b: decomposed out of `compute_sync_counts` purely so this is testable without a real rsync/SSH round
-/// trip). A PUSH entry whose local mtime still matches the baseline was never touched locally, so it is a
-/// REMOTE deletion and is suppressed rather than pushed.
+/// Baseline reclassification (EC-3): a known PULL entry missing locally is a local deletion (push); a PUSH entry with unchanged local mtime is a remote deletion (suppressed).
 fn classify_sync_counts(
     push_files: Vec<String>,
     pull_files: Vec<String>,
@@ -1245,20 +1216,13 @@ fn classify_sync_counts(
     )
 }
 
-/// Computes (push_count, pull_count) with Tier-2 baseline reclassification (EC-3: local deletion -> push_count; remote deletion without local edit -> suppress push_count).
-/// Takes an already-fetched `push_files` list instead of re-running the
-/// push dry-run - the degrade paths in `compute_sync_status_full` always already have one, so reusing it
-/// halves the redundant SSH round-trips on a degrade ("degraded path reuses outputs already
-/// fetched").
+/// (push_count, pull_count) with EC-3 reclassification, from an already-fetched `push_files`, so a degrade path never repeats the push dry-run.
 fn compute_sync_counts_with_push_files(
     project: &SyncProject,
     push_files: Vec<String>,
 ) -> Result<(u32, u32), String> {
     let pull_files = rsync_change_files(project, false)?;
 
-    // A baseline recorded against a different remote_path is someone else's ancestor - counts as no
-    // baseline at all (docs/plan/done/settings-and-state-layout.md: "the path changed, so the ancestor is
-    // someone else's"), never a guessed classification against the wrong tree.
     let baseline = baseline_for_target(
         crate::sync_state::read_baseline(&project.id, &project.remote_host),
         &project.remote_path,
@@ -1273,10 +1237,7 @@ fn compute_sync_counts_with_push_files(
     ))
 }
 
-/// The pull-side dry-run for conflict detection (docs/plan/done/conflict-detection-and-agy-report.md §1):
-/// drops `-u` (so every differing file is listed, not just remote-newer ones) and adds `--out-format` to
-/// get the remote's size and mtime from the one existing SSH round-trip - the `-u` filter is reapplied in
-/// Rust (`conflict::select_pull_after_u_filter`) so `pull_count` keeps meaning "remote is newer."
+/// Pull dry-run with no `-u`, plus `--out-format` for remote size/mtime; `-u` is reapplied in Rust so `pull_count` means remote-newer (docs/plan/done/conflict-detection-and-agy-report.md §1).
 fn rsync_pull_diff_with_metadata(
     project: &SyncProject,
 ) -> Result<conflict::ParsedRemoteDiff, String> {
@@ -1337,9 +1298,7 @@ fn local_file_stat(local_path: &str, rel: &str) -> (Option<u64>, Option<u64>) {
     }
 }
 
-/// Checksums exactly the given residue (§3: same-size files that both changed since the baseline) with one
-/// `rsync -c --dry-run --files-from=<residue>` call, and returns the subset it still lists as differing
-/// (real content conflicts) - an empty residue makes no rsync call at all.
+/// One `rsync -c --dry-run --files-from` over the residue, returning what still differs; an empty residue makes no call.
 fn rsync_checksum_residue(
     project: &SyncProject,
     residue: &[String],
@@ -1385,9 +1344,7 @@ fn rsync_checksum_residue(
     Ok(filter_file_change_lines(&stdout).into_iter().collect())
 }
 
-/// Cache key for a same-size checksum residue result: (project, host, path, local mtime, remote mtime,
-/// size). Any change to L/R/size naturally misses the cache and re-checksums - correctness never depends on
-/// eviction. "converged checksum results cached in memory ... so they don't re-run every poll."
+/// (project, host, path, local mtime, remote mtime, size): any change misses the cache, so correctness never depends on eviction.
 type ChecksumCacheKey = (String, String, String, u64, u64, u64);
 
 static CHECKSUM_CACHE: OnceLock<Mutex<HashMap<ChecksumCacheKey, bool>>> = OnceLock::new();
@@ -1472,9 +1429,7 @@ fn check_content(
 
 type StatusAnomalyKey = (String, String, &'static str);
 
-/// Last status-check anomaly logged per (project, host, kind): one poll can fail in several independent steps
-/// with different messages, so a single slot per host would be overwritten by the sibling step and every poll
-/// would log both again. An unchanged failure of one kind is logged once, not once a minute.
+/// Last anomaly per (project, host, kind): one poll can fail in several steps, and each unchanged failure is logged once, not once a minute.
 static LAST_STATUS_ANOMALY: OnceLock<Mutex<HashMap<StatusAnomalyKey, String>>> = OnceLock::new();
 
 fn status_anomalies() -> &'static Mutex<HashMap<StatusAnomalyKey, String>> {
@@ -1511,10 +1466,7 @@ fn clear_status_anomaly(project: &SyncProject) {
         .retain(|(id, host, _), _| !(id == &project.id && host == &project.remote_host));
 }
 
-/// Pure output of `classify_candidates` - everything `compute_sync_status_full` needs before the checksum
-/// residue round-trip. Extracted as its own function (no rsync/SSH call inside) so the classification,
-/// direction-fallback, and remote-deletion-suppression logic is unit-testable without a real
-/// rsync/SSH round-trip - `compute_sync_status_full` remains the impure caller that gathers the inputs.
+/// Output of the pure `classify_candidates`: everything `compute_sync_status_full` needs before the checksum round trip.
 #[derive(Debug, Default)]
 struct ClassificationOutcome {
     push_count: u32,
@@ -1602,10 +1554,7 @@ fn tally_size_matched(
     }
 }
 
-/// Classifies every candidate path via `conflict::classify_file` and accumulates counts, the per-top-directory
-/// breakdown, the remote-behind signal, and the residue that still needs a checksum. Pure: no I/O, no rsync,
-/// no SSH - `local_stats`/`remote_by_path`/`baseline_files`/`push_set`/`pull_after_u_set` are all pre-gathered
-/// by the caller.
+/// Classifies every candidate (counts, per-top-dir breakdown, remote-behind, checksum residue). Pure: the caller gathers every input.
 fn classify_candidates(
     candidates: &[String],
     local_stats: &HashMap<String, (Option<u64>, Option<u64>)>,
@@ -1633,11 +1582,7 @@ fn classify_candidates(
             remote_size: remote_meta.map(|m| m.size),
         };
 
-        // Direction for a file the classifier did not resolve to push/pull itself: ONLY whichever raw
-        // dry-run actually reported it - a file reported by neither side (e.g. excluded from push and
-        // excluded from the reapplied pull `-u` because local is strictly newer) is dropped entirely rather
-        // than defaulted into push, since nothing would actually transfer it in either direction (
-        // "push counting comes only from the push dry-run set").
+        // Unresolved direction comes only from the dry-run that reported the file; one reported by neither would transfer nowhere, so it is dropped, not pushed.
         let is_push_side = push_set.contains(path.as_str());
         let is_pull_side = !is_push_side && pull_after_u_set.contains(path.as_str());
         let dir = top_dir_of(path);
@@ -1692,21 +1637,13 @@ fn classify_candidates(
     out
 }
 
-/// Full pipeline (docs/plan/done/conflict-detection-and-agy-report.md §§1-4): gathers (L, R, B, sizes) for every
-/// differing file, classifies each with `conflict::classify_file`, checksums every same-size file, and
-/// returns push/pull counts with conflicts and time-only files excluded. Degrades to the pre-conflict-detection counts
-/// (`compute_sync_counts_with_push_files`, reusing the push dry-run already fetched here) when the pull
-/// dry-run's `--out-format` did not parse, OR when the metadata call itself exits non-zero (e.g. this
-/// rsync build rejects `--out-format` outright) - either way, never a guessed classification
-/// (§ Execution steps). A genuine connectivity failure surfaces again from the degrade path's own calls.
+/// Counts with conflicts and time-only files excluded (docs/plan/done/conflict-detection-and-agy-report.md §§1-4); an unparsed or failed metadata call degrades to plain counts, never a guess.
 fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, String> {
     let push_files = rsync_change_files(project, true)?;
     let parsed = match rsync_pull_diff_with_metadata(project) {
         Ok(p) => p,
         Err(e) => {
-            // Unlike `parsed.degraded` below (an rsync build that never understands `--out-format`), a
-            // failing metadata call is an anomaly - silent conflict-detection loss is the bug class of
-            // CHANGELOG "Delete preview error silently swallowed".
+            // Unlike `parsed.degraded` (an rsync without `--out-format`), a failing metadata call is an anomaly: silent conflict-detection loss must be logged.
             log_status_anomaly(
                 project,
                 "metadata",
@@ -1750,9 +1687,7 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         parsed.files.iter().map(|m| (m.path.as_str(), m)).collect();
     let push_set: HashSet<&str> = push_files.iter().map(|s| s.as_str()).collect();
 
-    // Candidate set: every path either dry-run saw differing. In practice the pull-side diff (no `-u`)
-    // already lists every differing file regardless of direction; the union guards against a push-only
-    // edge case (e.g. an exclude that differs between directions) rather than assuming that always holds.
+    // Union of both dry-runs: the no-`-u` pull diff usually lists everything, but an exclude can differ between directions.
     let mut candidates: Vec<String> = parsed.files.iter().map(|m| m.path.clone()).collect();
     for f in &push_files {
         if !candidates.iter().any(|c| c == f) {
@@ -1769,9 +1704,7 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         .iter()
         .map(|(p, (mtime, _))| (p.clone(), *mtime))
         .collect();
-    // Reapplies the pull-side `-u` meaning (§ Execution steps) since the metadata call above dropped it -
-    // used only as the direction fallback for files the classifier could not attribute to push or pull
-    // (GitGroup/Unclassified with no baseline to compare against).
+    // The pull side's `-u` meaning, reapplied: only the direction fallback for files the classifier could not attribute (no baseline).
     let pull_after_u_set: HashSet<&str> =
         conflict::select_pull_after_u_filter(&parsed.files, &local_mtimes)
             .into_iter()
@@ -1937,10 +1870,7 @@ pub async fn get_sync_delete_preview(
     .map_err(|e| format!("get_sync_delete_preview task error: {}", e))?
 }
 
-/// Files a mirror-mode sync (this direction has `delete_on_push`/`delete_on_pull` on, so `build_rsync_args`
-/// drops `-u`) would transfer even though the destination already holds a newer-or-equal copy - the
-/// destructive effect `get_sync_delete_preview` never sees, since that one only catches destination-only
-/// files, never destination-newer ones. Pure: the caller has already run both dry-runs.
+/// Files a mirror sync (no `-u`) would overwrite although the destination copy is newer or equal, which `get_sync_delete_preview` never sees. Pure.
 fn files_overwritten_by_mirror(
     mirror_files: &[String],
     update_only_files: &[String],
@@ -1953,10 +1883,7 @@ fn files_overwritten_by_mirror(
         .collect()
 }
 
-/// Returns paths a mirror sync would silently overwrite on the destination (source is NOT newer there),
-/// used by the JS confirm dialog alongside `get_sync_delete_preview` before a destructive `--delete` run.
-/// Merge-mode directions (no `--delete`) already keep `-u` for real, so nothing here is ever silently
-/// overwritten - returns empty without spending a second rsync round-trip.
+/// Paths a mirror sync would overwrite, for the confirm dialog beside the delete preview; merge mode keeps `-u`, so it returns empty without an rsync call.
 #[tauri::command]
 pub async fn get_sync_overwrite_preview(
     project: SyncProject,
@@ -2038,10 +1965,7 @@ fn resolve_agy_bin() -> Option<String> {
     })
 }
 
-/// Cheap pre-flight check the frontend calls to disable Explain with its reason before any click, instead of
-/// only surfacing "agy is not installed" after a failed invoke. Wraps the same `command -v`
-/// subprocess fallback `resolve_agy_bin` may take, so per stack-tauri.A1 this stays async + `spawn_blocking`
-/// even though the static-candidate fast path usually settles it with no subprocess at all.
+/// Lets the frontend disable Explain with its reason before a click; async because `resolve_agy_bin` may fall back to a `command -v` subprocess.
 #[tauri::command]
 pub async fn check_agy_available() -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(|| resolve_agy_bin().is_some())
@@ -2094,9 +2018,8 @@ fn fetch_remote_excerpt(host: &str, remote_path: &str, rel: &str) -> Option<Stri
     result
 }
 
-/// agy needs an explicit `--model` slug (`agy models`); it carries its thinking tier in the slug, so there is no separate effort dial.
-/// Facts: https://github.com/lacvietanh/akidevrule/blob/79fb6695a64254df91fd61e1318b3b8ec5d5eac3/skills/akiflow/references/harness-facts.md#model-tiers (read 2026-09-29).
-/// The value reaches argv (no shell) shell-quoted, so the only hazard is it being read as a flag.
+/// agy needs an explicit `--model` slug carrying its thinking tier; it reaches argv shell-quoted, so the only hazard is a value read as a flag.
+/// Source: akidevrule `skills/akiflow/references/harness-facts.md` § Model tiers (read 2026-09-29).
 fn validate_agy_model(model: &str) -> Result<(), String> {
     let ok = !model.is_empty()
         && !model.starts_with('-')
@@ -2159,9 +2082,7 @@ struct ExplainConflictPayload {
     local_mtime: u64,
     remote_mtime: u64,
     verified: bool,
-    /// Unified diff (`conflict::unified_diff`) of the local excerpt against the remote excerpt - `None` for
-    /// a binary file, a secret-named file, or a fetch failure on either side (§5: "unified diff of local vs
-    /// remote"; metadata-only degrade stays the same safe fallback either way).
+    /// Local vs remote excerpt diff; `None` for a binary or secret-named file or a failed fetch on either side (metadata only, §5).
     #[serde(skip_serializing_if = "Option::is_none")]
     diff: Option<String>,
 }
@@ -2190,11 +2111,7 @@ struct ExplainPayload {
     conflicts: Vec<ExplainConflictPayload>,
 }
 
-/// On-demand only (never on the 60s poll, § agy explanation): builds the whole-picture payload behind both
-/// lit badges into a temp prompt file and returns the shell command that opens interactive `agy --mode plan` (read-only) on it; the frontend
-/// runs that command in an in-app terminal tab, so the owner watches agy work and stream its answer, and can steer or quit it.
-/// Read-only - no rsync/git mutation. Resolving `agy` and the SSH fetches for conflict excerpts run inside
-/// `spawn_blocking` so a slow host never freezes the window (stack-tauri.A1).
+/// On demand only: writes the payload behind both lit badges to a temp prompt and returns the `agy --mode plan` command an in-app tab runs. Read-only.
 #[tauri::command]
 pub async fn explain_sync_status(
     project: SyncProject,
@@ -2287,8 +2204,8 @@ pub async fn explain_sync_status(
         std::fs::write(&prompt_file, format!("{}\n\n{}", prompt, payload_json))
             .map_err(|e| format!("explain prompt write failed: {}", e))?;
         let file_q = crate::system::shell_quote(&prompt_file.to_string_lossy());
-        // `-i` opens agy's own TUI with the prompt as its first turn (the owner watches it work and can steer); `--mode plan` keeps it read-only by mechanism. The prompt is the last token because `-i` takes the next one as its value, and the file is read and removed in the same substitution so the temp file never outlives the launch.
-        // Facts: https://github.com/lacvietanh/akidevrule/blob/79fb6695a64254df91fd61e1318b3b8ec5d5eac3/skills/akiflow/references/harness-facts.md#cross-cli-worker-claude-code-lead--agy-headless (read 2026-09-29); `-i` = `--prompt-interactive` per `agy --help`.
+        // `-i` opens agy's TUI with the prompt as first turn, `--mode plan` keeps it read-only; the prompt goes last and the temp file is removed as it is read.
+        // Source: akidevrule `skills/akiflow/references/harness-facts.md` § cross-CLI worker (read 2026-09-29); `-i` is `--prompt-interactive`.
         let command = format!(
             "{} --model {} --mode plan -i \"$(cat {}; rm -f {})\"",
             crate::system::shell_quote(&agy_bin),
@@ -2868,9 +2785,7 @@ mod tests {
         assert!(!consume_cancelled("proj-d"));
     }
 
-    // F2 (docs/plan/done/settings-and-state-layout.md § A): "delete a file locally -> merge push -> next
-    // status check still classifies it as local deleted, not remote created." `carry_forward_local_deletions`
-    // is the pure function that makes this true - tested directly, no SSH/rsync needed.
+    // F2: a local delete followed by a merge push still classifies as local deleted, not remote created.
 
     #[test]
     fn f2_merge_push_carries_forward_a_file_missing_from_the_fresh_local_walk() {
@@ -2917,9 +2832,6 @@ mod tests {
         );
     }
 
-    // A baseline recorded against a different remote_path is someone else's ancestor - counts as no
-    // baseline at all. `baseline_for_target` is the one place this filter is spelled (previously
-    // duplicated, with the write path missing it entirely).
 
     #[test]
     fn s1_baseline_for_same_remote_path_is_kept() {
@@ -2947,9 +2859,7 @@ mod tests {
         assert!(baseline_for_target(None, "~/app").is_none());
     }
 
-    // F2's own scenario ("delete a file locally -> merge push -> next status check still classifies
-    // it as local deleted, not remote created") exercised through the actual status classification function
-    // `classify_sync_counts` uses, not only the pure carry-forward helper.
+    // F2 through `classify_sync_counts` itself, not only the carry-forward helper.
 
     #[test]
     fn n_b_a_carried_baseline_entry_missing_locally_classifies_as_local_deleted_not_remote_created()
@@ -2958,9 +2868,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
         std::fs::create_dir_all(&scratch).unwrap();
 
-        // Baseline still remembers the file (it was common before); it was rsync-reported on the pull side
-        // (the fresh remote listing still has it) but is genuinely absent from the local walk, exactly as
-        // F2's carry-forward would have left it after a merge push.
+        // Known to the baseline and to the remote listing, absent locally: what F2's carry-forward leaves after a merge push.
         let mut baseline = HashMap::new();
         baseline.insert("deleted-locally.txt".to_string(), 100u64);
 
@@ -2983,11 +2891,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
-    // `classify_candidates` is the pure core `compute_sync_status_full`
-    // calls - exercised directly here without a real rsync/SSH round-trip, per the brief's own escape hatch
-    // ("the pure core it calls - extract a pure seam if needed"). Covers push, pull, conflict, .git, and the
-    // restored remote-deletion suppression; the degraded path itself is exercised at the parser boundary that
-    // actually triggers it (`conflict::tests::parse_output_degrades_on_a_plain_filename_line_no_out_format_support`).
+    // Drives the pure `classify_candidates`: push, pull, conflict, `.git`, remote-deletion suppression. The degrade path is tested at the parser in `conflict.rs`.
 
     fn candidate_meta(path: &str, size: u64, mtime: u64) -> (String, RemoteFileMeta) {
         (
@@ -3058,9 +2962,7 @@ mod tests {
 
     #[test]
     fn classify_candidates_push_excluded_file_reported_only_on_pull_side_never_counts_as_push() {
-        // "push counting comes only from the push dry-run set" - a file excluded from push but
-        // reported by the pull-side diff (no baseline, so the classifier itself can't resolve a direction)
-        // must be attributed by set membership only, never defaulted into push.
+        // Excluded from push, reported by the pull diff, no baseline: attributed by set membership, never defaulted into push.
         let (path, meta) = candidate_meta("push-excluded.txt", 12, 500);
         let candidates = vec![path.clone()];
         let local_stats: HashMap<String, (Option<u64>, Option<u64>)> =
@@ -3217,15 +3119,7 @@ mod tests {
         assert!(out.size_matched_moves.is_empty());
     }
 
-    // real fixture running the local `rsync` binary this app
-    // resolves, asserting `%l`/`%M` report the SENDER's size/mtime - not the receiver's - in a dry-run pull's
-    // `--out-format` output. The receiver holds a DIFFERENT-size, DIFFERENT-mtime copy of the same path so a
-    // parser that (wrongly) reported the receiver's attributes would fail this assertion instead of passing
-    // it vacuously (an empty receiver could not distinguish the two). Flags
-    // mirror `rsync_pull_diff_with_metadata`'s own pull dry-run: `-avz --dry-run --out-format=... --modify-window=2`,
-    // no `-u`. Skips gracefully (does not fail) if `rsync` is absent from PATH - this box's rsync is GNU 3.2.7
-    // at `/usr/bin/rsync` (not openrsync; the Mac check for openrsync's own `--out-format` shape is separate,
-    // docs/plan/done/conflict-detection-and-agy-report.md § Mac checks).
+    // Real local rsync: `%l`/`%M` in a dry-run pull's `--out-format` report the SENDER's size/mtime (the receiver's copy differs in both). Skips without rsync.
     #[test]
     fn real_rsync_out_format_reports_the_senders_size_and_mtime_in_a_dry_run_pull() {
         if Command::new("rsync").arg("--version").output().is_err() {
@@ -3250,9 +3144,7 @@ mod tests {
             .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(sender_mtime_unix))
             .expect("std::fs::File::set_modified must be supported on this filesystem for the fixture to mean anything");
 
-        // Same path already exists on the receiver with a DIFFERENT size and a DIFFERENT mtime (well beyond
-        // the 2s modify-window), so the classifier's own "both sides differ" shape is what this fixture
-        // actually exercises - the exact case #1 flagged as untested.
+        // Receiver copy differs in size and mtime (beyond the 2 s modify-window), so a parser reading the receiver's attributes fails.
         let receiver_file = receiver.join("known.txt");
         let receiver_contents = b"a shorter one"; // 13 bytes - deliberately not 17
         std::fs::write(&receiver_file, receiver_contents).unwrap();
