@@ -1819,7 +1819,7 @@ mod tests {
 
     #[test]
     fn resolve_remote_path_connect_timeout_is_bounded() {
-        assert!(RESOLVE_CONNECT_TIMEOUT_SECS > 0);
+        const { assert!(RESOLVE_CONNECT_TIMEOUT_SECS > 0) };
     }
 
     #[tokio::test]

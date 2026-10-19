@@ -2832,7 +2832,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn s1_baseline_for_same_remote_path_is_kept() {
         let baseline = crate::sync_state::Baseline {

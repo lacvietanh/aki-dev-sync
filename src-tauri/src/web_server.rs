@@ -632,13 +632,13 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-/// Fails closed: returns an error if OS entropy is unavailable. No secret may be produced
-/// from predictable state. A `cfg(test)` thread-local flag enables deterministic failure tests.
+// Test-only switch that forces `random_bytes` to fail.
 #[cfg(test)]
 thread_local! {
     static FAIL_ENTROPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Fails closed when OS entropy is unavailable: no secret is ever produced from predictable state.
 fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
     #[cfg(test)]
     if FAIL_ENTROPY.with(|f| f.get()) {

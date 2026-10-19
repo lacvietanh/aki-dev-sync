@@ -1584,7 +1584,8 @@ mod tests {
         let wired = r#"{"statusLine":{"type":"command","command":"statusline.sh"}}"#;
         let empty = r#"{"statusLine":{"type":"","command":""}}"#;
 
-        let cases: &[(&str, &[(&str, &str)], &[&str])] = &[
+        type Case<'a> = (&'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
+        let cases: &[Case<'_>] = &[
             ("nothing", &[], &["CC_SL=0", "AG_PRESENT=0", "AG_SL=0"]),
             // Script written, settings never patched - the bug this test exists for.
             (
