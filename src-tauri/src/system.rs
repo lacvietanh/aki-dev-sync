@@ -26,13 +26,7 @@ pub struct IdeAvailability {
     pub cursor: bool,
 }
 
-/// The single answer in this app to "is this string safe to hand to `ssh`/`rsync` as a host".
-///
-/// Two separate dangers, which is why an empty allowlist is the wrong shape and a leading `-` is rejected on its own line:
-///   1. A host reaching a *shell* string (`ssh host 'cmd'` built by hand) could carry `;` or `$(…)`. The character allowlist closes that.
-///   2. A host reaching `ssh` as a bare **argv element** never touches a shell - but `ssh` parses its own argv, so a value beginning with `-` is read as an *option*, not a hostname. `-oProxyCommand=…` makes ssh run that command **locally on this Mac**. Every character in it is alphanumeric/`.`/`-`/`=`, so the allowlist alone would wave it through; `=` not being allowed happens to stop today's exact payload, but the class is "argv that looks like a flag", so it is rejected explicitly rather than by lucky side effect.
-///
-/// Must be called at EVERY boundary where a persisted host becomes a process argument - the frontend is not trusted, and a companion device can send a project record directly.
+/// The one host check before `ssh`/`rsync`, at every boundary (companions send records too): the allowlist stops shell metachars, and a leading `-` is an ssh option.
 pub fn validate_remote_host(host: &str) -> Result<(), String> {
     if host.starts_with('-') {
         return Err(format!(
@@ -50,9 +44,7 @@ pub fn validate_remote_host(host: &str) -> Result<(), String> {
     }
 }
 
-/// Writes `contents` to `path` atomically: a temp file **in the same directory** (so the rename cannot cross a filesystem boundary and silently degrade to copy-then-truncate), then `rename` over the target.
-///
-/// `fs::write` truncates first and writes after, so a crash, a forced quit, or a full disk between those two steps leaves the user's real file empty or half-written. Every file this app owns on disk (`settings.json`, notes, project list) loses data on truncation. With `rename`, a reader either sees the whole old file or the whole new one, never a stump.
+/// Temp file in the same directory, then `rename`: a crash mid-write leaves the whole old file, never the stump `fs::write`'s truncate-first would.
 pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
     let dir = path
         .parent()
@@ -77,13 +69,7 @@ pub fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String
 /// How many timestamped backups of any one file this app keeps (enough to recover from bad edits while bounding disk usage).
 pub const BACKUP_KEEP: usize = 5;
 
-/// Deletes all but the newest [`BACKUP_KEEP`] files in `dir` whose name starts with `prefix`.
-///
-/// Every `*.aki-bak-<unix_ts>` writer stamps a NEW backup on EVERY write (a "back up once" scheme destroys the only copy on second edit). Backed-up files may contain secrets (`settings.json` has `ANTHROPIC_AUTH_TOKEN`, `.zshrc` has user tokens), so retention prunes unbounded accumulation.
-///
-/// Newest is decided by the numeric timestamp suffix after the last `-` (copied file mtime is not reliable creation order). Unparseable suffixes sort oldest.
-///
-/// Best-effort throughout: failing to prune must never be reported as failing to back up.
+/// Keeps the newest `keep` backups by their `-<unix_ts>` suffix (copy mtimes lie). Backups can hold tokens, hence pruning; best-effort, never fails a backup.
 pub fn prune_timestamped_backups(dir: &std::path::Path, prefix: &str, keep: usize) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -113,7 +99,7 @@ pub fn prune_timestamped_backups(dir: &std::path::Path, prefix: &str, keep: usiz
     }
 }
 
-/// Escapes a string for embedding inside an **AppleScript double-quoted literal** (outermost layer only; shell underneath is handled by `shell_quote`). Escapes newlines as well since raw newlines inside AppleScript string literals are syntax errors.
+/// Escapes for an AppleScript double-quoted literal only (the shell layer is `shell_quote`'s); a raw newline there is a syntax error.
 fn applescript_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -121,18 +107,12 @@ fn applescript_escape(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
-/// Quotes `s` as ONE literal POSIX shell word. Single funnel for all user-controlled paths/filenames interpolated into shell commands locally (Terminal.app / `$SHELL -ilc`) or remotely (`ssh`).
-///
-/// Uses single quotes (`'…'`) where nothing is special except `'` (escaped as `'\''`), avoiding command substitution exploits like `$(id)` (plan §2.2). Matches `usePtyTerminal.js` `cd` helper semantics.
-///
-/// Reusable by any module building shell strings (e.g. `sync.rs` remote `mkdir -p`).
+/// Quotes `s` as one literal POSIX word (`'` becomes `'\''`): the funnel for user-controlled text in local and remote shell strings.
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Quotes a **remote** path for a remote shell while keeping a leading `~` / `$HOME` expandable by that shell (plain `shell_quote` cannot do this because the remote home directory is only known remotely).
-///
-/// Only the leading segment is emitted unquoted (as `"$HOME"`, double-quoted for paths with spaces); everything after the first `/` is quoted literally via `shell_quote`, making substitutions inert.
+/// Like `shell_quote`, but a leading `~`/`$HOME` stays expandable as `"$HOME"`, since only the remote shell knows its home.
 pub fn shell_quote_remote_path(path: &str) -> String {
     if path == "~" || path == "$HOME" {
         return "\"$HOME\"".to_string();
@@ -146,13 +126,7 @@ pub fn shell_quote_remote_path(path: &str) -> String {
     shell_quote(path)
 }
 
-/// Runs `shell_cmd` in Terminal.app via AppleScript, avoiding the double-window bug where a cold-started Terminal spawns its own default (home-dir) window at launch *and* `do script` spawns a second one for the command. When Terminal has to be launched from scratch, we reuse its freshly-created default window (`in window 1`) instead of letting `do script` open another; when Terminal is already running, behavior is unchanged (`do script` opens a new window as before).
-///
-/// The wait for that default window is a poll (up to ~2s, checking every 100ms), not a fixed `delay` - a flat delay races a slow shell startup (heavy .zshrc: nvm, conda, etc.): if the window isn't up yet when we check, we'd fall through to `do script` opening a *second* window, and the slow default window would still appear on its own moments later (the exact "one window at $HOME + one at the right target" bug this helper exists to prevent).
-///
-/// Returns the new session's tty (`/dev/ttysNNN`, as AppleScript reports it - normalized by the caller), or `""` when it could not be read back. That empty string is not handled here: reading it is the ONE subprocess boundary where osascript's output enters this app (`docs/plan/done/terminal-ownership-model.md` §3/§8), so this is where a failure or an empty result is logged - a Mac run can then tell "the AppleScript contract broke" apart from "this session genuinely has no tty" from the log alone. What a caller DOES with an empty tty (nothing: the session simply stays untagged and today's cwd-adoption reading applies unchanged) is decided in exactly one place downstream, `tag_terminal_launch` - never re-branched here or at each call site.
-///
-/// UNVERIFIED on this box (no `osascript` here): `tty of t` resolves to a populated string in the same script that opened it, and switching `.spawn()` to `.output()` adds the AppleScript ~2s cold-start poll to latency rather than a new failure mode.
+/// Runs `shell_cmd` in one Terminal.app window and returns its tty, `""` when unread: docs/arch/terminal-stack.md § Opening a `Terminal.app` window.
 #[cfg(target_os = "macos")]
 fn open_terminal_with_command(shell_cmd: &str) -> Result<String, String> {
     let safe_cmd = applescript_escape(shell_cmd);
@@ -188,7 +162,7 @@ fn open_terminal_with_command(shell_cmd: &str) -> Result<String, String> {
         String::new()
     };
     if tty.is_empty() {
-        // Non-fatal by design: the window itself already opened (or the caller's own error path above already fired) - only the tty readback failed. Logged, not surfaced to the user (Extreme Narrow), so the degrade to cwd-adoption stays invisible in the UI.
+        // Non-fatal: the window opened, only the readback failed; logged, not shown.
         crate::logger::info(
             "terminal-owner",
             &format!(
@@ -200,11 +174,7 @@ fn open_terminal_with_command(shell_cmd: &str) -> Result<String, String> {
     Ok(tty)
 }
 
-/// Resizes/repositions the Terminal window this call just opened to 124 columns, snapped to the top-right corner of the main display (below the menu bar, above the Dock), height filling the available screen height. Fire-and-forget in its own `osascript` process, started right after the one that opens the window - it sleeps briefly up front so the new window exists and has settled before being resized, matching every other caller of Terminal in this file (spawn, no wait).
-///
-/// Resize (`numberOfColumns`) happens first, at the window's original (cascaded) position where it has room to grow; only once the true post-resize width is known does the single `bounds` write move+resize it into the target rectangle - resizing before positioning, not after, so the width read back is the true 124-column width, not one clipped by an edge the window was already pinned to.
-///
-/// The move+resize itself goes through System Events' Accessibility API (`AXPosition`/`AXSize` on the window element), not Terminal's own scriptable `bounds` property - `bounds` was proven (logged bounds at every step, see PR discussion) to silently refuse a cross-screen jump: X moved correctly but Y stayed within a few px of its original (wrong) value whenever the target Y belonged to a different display than the one the window opened on. AXPosition/AXSize apply cleanly to both axes regardless of which screen the window currently occupies. Requires System Events to have Accessibility permission for whatever process runs `osascript` - macOS will prompt for this on first use if not already granted.
+/// Snaps the window just opened to 124 columns at the main display's top-right, fire-and-forget: docs/arch/terminal-stack.md § Opening a `Terminal.app` window.
 #[cfg(target_os = "macos")]
 fn snap_frontmost_terminal_window() {
     let script = r#"
@@ -250,11 +220,7 @@ axWin.size = [w, targetH];
         .spawn();
 }
 
-/// Passes args directly to macOS `open`. JS is responsible for building the arg list.
-///
-/// The exit status is READ, not discarded: `open` tells us if a `vscode://…` URI has no handler or `.app` is not installed (replacing old spawn-and-forget which masked errors).
-///
-/// Waiting on a child is wrapped in `async fn` + `spawn_blocking` per CLAUDE.md's NEVER-BLOCK-THE-UI rule.
+/// Passes JS-built args to `open`; the exit status is read, so a missing URI handler or app comes back as an error.
 #[tauri::command]
 pub async fn macos_open(args: Vec<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -276,9 +242,7 @@ pub async fn macos_open(args: Vec<String>) -> Result<(), String> {
     .map_err(|e| format!("Failed to open: {}", e))?
 }
 
-/// `Err` unless `path` is an existing directory on this Mac (Terminal.app `do script` cannot report cd failure back to the caller).
-///
-/// `is_dir()` on unmounted or wedged SMB/NFS volumes can stall for tens of seconds, so commands calling this must run inside `spawn_blocking` (stack-tauri A1).
+/// `Err` unless `path` is a local dir (`do script` cannot report a failed `cd`). `is_dir` can stall on a wedged network volume: call it in `spawn_blocking`.
 #[cfg(target_os = "macos")]
 fn ensure_local_dir(path: &str) -> Result<(), String> {
     if std::path::Path::new(path).is_dir() {
@@ -288,11 +252,7 @@ fn ensure_local_dir(path: &str) -> Result<(), String> {
     }
 }
 
-/// Opens a local Terminal window `cd`'d into `local_path`. Routed through `open_terminal_with_command` (not a plain `open -a Terminal <path>` via `macos_open`) so it gets the same cold-start double-window protection as the SSH terminal.
-///
-/// `local_path` is optional (contract C-1 with the in-app terminal, which sends `null` when it cannot read the shell's cwd). Absent, empty, or the bare string `~` all mean **no `cd` at all** - the new shell then starts in `$HOME` by itself, which is what the caller wanted. Emitting `cd "~"` instead, as this used to, never worked: a tilde inside quotes is not expanded, so the window opened and immediately printed "no such file or directory".
-///
-/// `owner` is the spawn-origin tag (`docs/plan/done/terminal-ownership-model.md` §3/S3/S4) - a project id, or the global-scope token, passed straight through to `tag_terminal_launch` with no branch of its own here; whether it actually lands in the registry is decided in that one place.
+/// Opens Terminal.app `cd`'d into `local_path`; none, empty or `~` means no `cd` (a quoted `~` never expands). `owner` goes straight to `tag_terminal_launch`.
 #[tauri::command]
 pub async fn open_local_terminal(
     local_path: Option<String>,
@@ -325,11 +285,7 @@ pub async fn open_local_terminal(
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Resolves the `antigravity-ide` CLI into `$AGY_BIN` via static `[ -x path ]` checks before falling back to PATH lookup, then is prefixed to the command run inside the login shell below. Same cold-start PATH race, same fix pattern, and same reason as `agent_usage.rs`'s `NODE_BIN_RESOLVER_PREAMBLE` (stack-tauri A2): a `[ -x ]` test does not care whether the user's rc files have finished sourcing, whereas `-ilc` PATH resolution alone does. It matters more here than it looks, because the call site only `spawn()`s and never reads the exit code - a 127 from a lost PATH race is completely silent, the user just sees nothing happen.
-///
-/// The two `/Applications` bundle names are the same pair `check_ide_availability` probes; the in-bundle `Contents/Resources/app/bin/antigravity-ide` is what the IDE's own "install command in PATH" action symlinks to, so hitting the bundle directly is strictly more reliable than following the symlink. macOS-only list (this app ships macOS-only, see CLAUDE.md).
-///
-/// Unlike the node resolver this needs no `sh -c '...'` wrapper or single-line/no-single-quote discipline: it is handed to a known POSIX-compatible shell (`$SHELL`/bash) as one argv item by this process, not re-parsed by an arbitrary remote login shell chosen by sshd.
+/// Finds `antigravity-ide` at static `[ -x ]` bundle paths before PATH (cold-start race, stack-tauri A2): the caller only spawns, so a 127 would be silent.
 const AGY_BIN_RESOLVER_PREFIX: &str = r#"for _c in "/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide" "/Applications/Antigravity.app/Contents/Resources/app/bin/antigravity-ide" "$HOME/.antigravity-ide/antigravity-ide/bin/antigravity-ide" "$HOME/.local/bin/antigravity-ide" /opt/homebrew/bin/antigravity-ide /usr/local/bin/antigravity-ide; do
     [ -x "$_c" ] && { AGY_BIN=$_c; break; }
 done
@@ -337,7 +293,7 @@ done
 [ -n "$AGY_BIN" ] || AGY_BIN=antigravity-ide
 "#;
 
-/// Builds the exact `ssh … -t …` command line the native "SSH Terminal" popup entry launches in Terminal.app (see `open_remote_subprocess`'s "terminal" branch below), so the in-app terminal's "SSH Terminal (In-App)" popup entry can type the identical command into a PTY tab instead of spawning a second, external terminal window. Pure string construction, no subprocess — safe to call from a companion.
+/// The exact `ssh … -t …` line the external SSH Terminal runs, so the in-app SSH entry types the same command. Pure string building, safe from a companion.
 #[tauri::command]
 pub fn build_remote_ssh_command(host: String, path: String) -> Result<String, String> {
     validate_remote_host(&host)?;
@@ -346,13 +302,7 @@ pub fn build_remote_ssh_command(host: String, path: String) -> Result<String, St
     Ok(format!("ssh {} -t {}", host, shell_quote(&remote_cmd)))
 }
 
-/// Subprocess-based remote openers that cannot be expressed as a plain `open` call:
-/// - `terminal`: SSH via AppleScript (macOS-only)
-/// - `antigravity`: `antigravity-ide --remote` CLI
-///
-/// `async fn` + `spawn_blocking` since S3 (`docs/plan/done/terminal-ownership-model.md` §8): this used to be a plain synchronous `pub fn` and got away with it only because it never waited on its child (`.spawn()`, fire-and-forget). The `terminal` branch now reads the AppleScript's stdout back via `open_terminal_with_command`'s `.output()`, which blocks on that child - so the whole function must move off the IPC dispatch thread in the same step (stack-tauri A1), not later.
-///
-/// `owner` is passed straight through to `tag_terminal_launch`, unconditionally, same as `open_local_terminal` - the `antigravity` branch never reads it, since it opens no `Terminal.app` session to tag.
+/// Remote openers `open` cannot express: `terminal` (SSH via AppleScript) and `antigravity` (`antigravity-ide --remote`); only `terminal` uses `owner`.
 #[tauri::command]
 pub async fn open_remote_subprocess(
     ide_name: String,
@@ -367,10 +317,7 @@ pub async fn open_remote_subprocess(
         "terminal" => {
             #[cfg(target_os = "macos")]
             {
-                // Two shell layers quoted separately to prevent injection where `'` in path closed outer quotes and ran `$(…)` remotely:
-                // - Inner: parsed by REMOTE login shell (`shell_quote_remote_path` keeps leading `~` expandable, quotes rest).
-                // - Outer: parsed by LOCAL Terminal shell (one `shell_quote`d argv item forwarded by ssh). `host` is charset-validated.
-                // AppleScript escaping is applied separately by `open_terminal_with_command`.
+                // Two layers, quoted separately: inner for the remote login shell (`~` kept), outer for the local shell. `host` is charset-validated.
                 let qpath = shell_quote_remote_path(&path);
                 let remote_cmd = format!("mkdir -p {q} && cd {q} ; exec bash", q = qpath);
                 let shell_cmd = format!("ssh {} -t {}", host, shell_quote(&remote_cmd));
@@ -385,7 +332,7 @@ pub async fn open_remote_subprocess(
         }
         "antigravity" => {
             let expanded = expand_remote_tilde(&path);
-            // Use login shell so antigravity-ide is found via user PATH (JetBrains Toolbox, custom profile setup, etc.) - not available in macOS GUI app's stripped PATH. Prefer $SHELL (zsh on macOS Catalina+) so ~/.zshrc is sourced; fall back to bash.
+            // The user's shell (bash fallback), so their rc files supply the PATH a GUI app lacks.
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
             // Path is passed as a CLI argument, so it is quoted whole via `shell_quote` (no `$HOME` carve-out needed).
             let shell_cmd = format!(
@@ -394,7 +341,7 @@ pub async fn open_remote_subprocess(
                 host,
                 shell_quote(&expanded)
             );
-            // -ilc: interactive (-i) sources ~/.zshrc (not just ~/.zprofile); login (-l) sources ~/.zprofile. Both needed because antigravity-ide PATH is typically set in ~/.zshrc, which a non-interactive login shell (-lc) never reads - causing silent failure when the app launches from Finder vs. from a terminal that already inherited full PATH.
+            // `-i` as well: antigravity-ide's PATH is usually set in ~/.zshrc, which a non-interactive login shell never reads.
             Command::new(&shell)
                 .args(["-ilc", &shell_cmd])
                 .spawn()
@@ -411,7 +358,7 @@ const SSH_COLOR_MARKER_BEGIN: &str =
     "# --- Aki SSH remote color BEGIN (managed by Aki Dev Sync - safe to remove) ---";
 const SSH_COLOR_MARKER_END: &str = "# --- Aki SSH remote color END ---";
 
-/// Wraps `ssh` so the local Terminal.app/iTerm2 background tints while a remote session is active, then resets on exit - the same OSC 11/111 background-swap trick the user already hand-rolled locally, packaged so it can be (re)installed from the app. Idempotent: re-running strips any previously-installed block (between the markers) before writing a fresh one, so repeated installs never duplicate. The tint is skipped when stdout is not a terminal, so `ssh host cmd | …` output stays byte-clean (`docs/plan/done/fix-ssh-color-non-tty.md`).
+/// Wraps `ssh` to tint the local background (OSC 11/111) during a session; idempotent between its markers, inert when stdout is not a terminal.
 const SSH_COLOR_SNIPPET: &str = r#"
 ssh() {
   [[ -t 1 ]] && printf '\033]11;#1a0f0f\007'
@@ -422,11 +369,7 @@ ssh() {
 }
 "#;
 
-/// Reads a file that is about to be **rewritten from its own contents**, and refuses to guess.
-///
-/// The only benign failure is `NotFound` (`""` truthful prior content). Any other error (`PermissionDenied`, IO fault, is directory) means contents are unknown; treating unknown as empty causes silent truncation on read-modify-write (plan §3.20).
-///
-/// Returns error as user-facing string since broken terminal config would only be noticed later.
+/// For a read-modify-write: only `NotFound` reads as `""`; any other error is unknown content and must fail, never truncate the file.
 fn read_for_rewrite(path: &std::path::Path) -> Result<String, String> {
     match std::fs::read_to_string(path) {
         Ok(s) => Ok(s),
@@ -439,9 +382,7 @@ fn read_for_rewrite(path: &std::path::Path) -> Result<String, String> {
     }
 }
 
-/// Local-machine-only: the background swap needs to happen in the *local* shell that is launching `ssh`, so there is nothing to push to remote hosts here (unlike the statusline customizer, which does need per-host rollout).
-///
-/// `spawn_blocking`-wrapped per CLAUDE.md's blocking-UI rule: even "just" file I/O is a synchronous syscall, and the house rule now has zero exceptions for that - every command touching disk or a subprocess goes through the blocking thread-pool, no case-by-case judgment calls about whether a given file happens to be small.
+/// Local only: the tint happens in the shell that runs `ssh`, so nothing is pushed to remote hosts.
 #[tauri::command]
 pub async fn install_ssh_terminal_color() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -494,7 +435,7 @@ pub async fn install_ssh_terminal_color() -> Result<String, String> {
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-/// Resolves the local AkiDevRule checkout by trying well-known candidate paths first (same conservative pattern as the CLAUDE_BIN resolver - a file-existence check has no dependency on where any given machine happens to keep its dev tree), so it's never a guess. Its exact location varies per machine (see CLAUDE.md), so if none of these hit, the caller falls back to pointing the user at the GitHub repo to clone it.
+/// Finds the AkiDevRule checkout at well-known paths (it varies per machine); none found and the caller points the user at the GitHub repo.
 fn find_akidevrule_install_script(home: &str) -> Option<String> {
     let candidates = [
         "/Volumes/DEV/AkiDevRule/install.sh".to_string(),
@@ -509,9 +450,7 @@ fn find_akidevrule_install_script(home: &str) -> Option<String> {
         .find(|c| std::path::Path::new(c).exists())
 }
 
-/// Runs the local AkiDevRule `install.sh` in a visible Terminal window (the script prints colored progress output the user should see), or errors out pointing at the repo to clone if no checkout is found on this machine.
-///
-/// `async fn` + `spawn_blocking`: `open_terminal_with_command` reads AppleScript stdout via `.output()` which blocks (stack-tauri A1).
+/// Runs AkiDevRule's `install.sh` in a visible Terminal window, or errors with the repo to clone when no checkout exists.
 #[tauri::command]
 pub async fn install_akidevrule() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -656,15 +595,9 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
 
     validate_remote_host(&host)?;
 
-    // The SSH round-trip is blocking IO. This command used to be a plain `pub fn`, so Tauri ran it on the main thread and the whole UI froze for the duration of the network call. Move it onto the blocking pool (CLAUDE.md "async fn + blocking subprocess" pitfall) so the UI stays responsive while the resolve is in flight.
     tauri::async_runtime::spawn_blocking(move || {
         let mut command = create_command("ssh");
-        // Three shells parse this in turn, so it is quoted three times over, innermost first:
-        //   1. `shell_quote_remote_path` - only a leading `~`/`$HOME` stays expandable; the rest of
-        //      the user's path is literal, so a `$(…)` in it can no longer execute ON THE SERVER
-        //      (the old `bash -c "echo {}"` interpolated it raw inside double quotes).
-        //   2. `shell_quote` of the whole `echo …` - what `bash -c` receives as one argument.
-        //   3. one argv item to ssh, so ssh forwards it intact instead of splitting on spaces.
+        // Quoted for three shells, innermost first: the remote path (`~` kept), `bash -c`'s one argument, one ssh argv item; a `$(…)` in the path stays inert.
         let echo_cmd = format!("echo {}", shell_quote_remote_path(&path));
         let script = format!("bash -c {}", shell_quote(&echo_cmd));
         command.args([
@@ -691,9 +624,7 @@ pub async fn resolve_remote_path(host: String, path: String) -> Result<String, S
     .map_err(|e| format!("resolve_remote_path task join error: {}", e))?
 }
 
-/// Resolves the local path of a project's `REPORT.html` (produced by the akihtmlreport skill), pulling it from the remote first if the remote's copy is newer. Local-only projects (no remote_host/remote_path) just check local. Errors only when neither side has the file.
-///
-/// Deliberately thin: mtime comparison reuses `git::get_file_conflict_info` (the existing local/remote stat-diff primitive, used by the SELECT conflict check) and the pull reuses `sync::rsync_pull_file` - no bespoke SSH stat script or rsync invocation here.
+/// Local path of `REPORT.html`, pulled first when the remote copy is newer (via `get_file_conflict_info`, `rsync_pull_file`); errs only if neither side has it.
 #[tauri::command]
 pub async fn resolve_report_html(
     local_path: String,
@@ -744,7 +675,7 @@ pub async fn resolve_report_html(
         .to_string())
 }
 
-/// Looks for `filename` in `~/Downloads` so the update modal can offer to open an already-downloaded installer instead of re-triggering a browser download. `file_name()` strips any directory components from the (externally-sourced, GitHub API) filename to prevent escaping the Downloads directory.
+/// Finds an already-downloaded installer in `~/Downloads`; `file_name()` strips directories from the GitHub-sourced name so it cannot escape.
 #[tauri::command]
 pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
     let safe_name = std::path::Path::new(&filename)
@@ -761,7 +692,7 @@ pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
     })
 }
 
-/// Runs on every app startup (`onMounted` in `AppHeader.vue`) plus manual "Check for Updates"  - `curl`'s blocking network wait must never sit on the command-dispatch thread (a slow or dead network would freeze the whole app on launch). `spawn_blocking` per CLAUDE.md's blocking-UI rule.
+/// Runs on every launch (`AppHeader.vue`) and on manual "Check for Updates".
 #[tauri::command]
 pub async fn check_for_updates() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -805,15 +736,11 @@ pub struct ProjectStackInfo {
     pub cmd: String,
     pub dev_cmd: String,
     pub build_cmd: String,
-    /// Detected default for `commands.deploy` (deploy plan): unlike `dev_cmd`/`build_cmd` (assumed by
-    /// convention), this one actually reads `package.json`'s `scripts.deploy` - a project with no such
-    /// script has no safe default command to run, so this stays empty rather than guessing.
+    /// Read from `package.json` `scripts.deploy`, unlike the conventional dev/build defaults; empty when absent, never guessed.
     pub deploy_cmd: String,
 }
 
-/// Detects `commands.deploy`'s default (deploy plan § Design): true only when `package.json` declares a
-/// `scripts.deploy` entry - a missing/corrupt `package.json` or a project with no such script yields "",
-/// which the frontend renders as the DEPLOY button disabled with a reason, never a guessed command.
+/// `""` unless `package.json` declares `scripts.deploy`; empty disables DEPLOY with a reason (docs/feat/deploy.md).
 fn detect_deploy_cmd(path: &std::path::Path, pm: &str, run_prefix: &str) -> String {
     let raw = match std::fs::read_to_string(path.join("package.json")) {
         Ok(raw) => raw,
@@ -907,12 +834,7 @@ fn check_project_stack_blocking(local_path: &str) -> ProjectStackInfo {
     }
 }
 
-/// Builds the `ssh <host> -t <cmd>` string for a remote deploy (deploy plan § Running it): `cd`s to the
-/// target's remote_path (kept expandable via `shell_quote_remote_path` for a leading `~/`), then runs
-/// `bash -lc '<cmd>'` so nvm/npm resolve through the login shell. Pure string building - no subprocess or
-/// network I/O here (the ssh process itself is spawned later by the terminal that receives this string,
-/// same as `build_remote_ssh_command`), so this stays a plain sync command (coding.C4: `cmd` is shell-quoted
-/// as a single argument, never interpolated raw).
+/// `ssh <host> -t` deploy line: `cd` to remote_path (`~/` kept), then `bash -lc '<cmd>'` with `cmd` quoted as one word. Pure string building, so a sync `fn`.
 #[tauri::command]
 pub fn build_remote_deploy_command(
     host: String,
@@ -972,7 +894,7 @@ fn tag_terminal_launch(state: &TerminalOwnership, tty: &str, owner: Option<Strin
     record_terminal_owner(state, tty, owner);
 }
 
-/// Single funnel for both scan callers (docs/plan/done/terminal-ownership-model.md §9) - pins a still-`None` pid to the tty's lowest live pid on first sight; drops dead entries one key at a time, never a bulk clear.
+/// The reconcile for both scan callers: pins a `None` pid to the tty's lowest live pid, drops dead entries one key at a time, never a bulk clear.
 fn reconcile_terminal_owners(state: &TerminalOwnership, row_of: &HashMap<u32, PsRow>) {
     let mut map = state.by_tty.lock().unwrap();
     let mut dead: Vec<String> = Vec::new();
@@ -1012,9 +934,7 @@ fn normalize_dir(p: &str) -> &str {
     }
 }
 
-/// One row of the process table, as far as the external-terminal scan cares about it.
-///
-/// Shared by `list_terminal_sessions` (pid -> ppid) and `describe_terminal_sessions` (display details) via ONE `ps` invocation and parser so badge and detail modal never disagree.
+/// One process-table row; one `ps` call and parser feed both the badge and the detail modal, so they cannot disagree.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct PsRow {
     pub pid: u32,
@@ -1120,7 +1040,7 @@ fn is_subtree_root(tree: &TerminalTree, pid: u32) -> bool {
     !parent_same_cwd
 }
 
-/// Compact per-session fact polled every 5s for the badge (`describe_terminal_sessions` provides on-demand details). Project attribution is decided in frontend (`src/utils/terminalOwnership.js`, §3 priority rule).
+/// Per-session fact polled every 5 s for the badge; project attribution is decided in `src/utils/terminalOwnership.js`.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct TerminalSessionSummary {
     pub pid: u32,
@@ -1163,11 +1083,7 @@ pub async fn list_terminal_sessions(
     .map_err(|e| format!("list_terminal_sessions task join error: {}", e))?
 }
 
-/// One external `Terminal.app` window/tab, as the detail modal shows it.
-///
-/// Uses the same `is_subtree_root` definition as the badge counter to guarantee listed sessions match project badges.
-///
-/// Also includes sessions standing outside known project paths (`project_path: None`) for the modal's global overview.
+/// One external Terminal.app session for the detail modal, by the badge's `is_subtree_root`; `project_path: None` when outside every project.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct ExternalTerminalSession {
     pub pid: u32,
@@ -1185,11 +1101,7 @@ pub struct ExternalTerminalSession {
     pub owner: Option<String>,
 }
 
-/// Detail behind external-terminal badge: lists all `Terminal.app` sessions and active child processes (`docs/plan/done/terminal-ownership-model.md` §10 S1).
-///
-/// `paths` maps sessions to known projects for modal adoption labels (`ExternalTerminalsModal.vue`).
-///
-/// Runs `pgrep`, `ps`, and `lsof` in `spawn_blocking` (CLAUDE.md never-block-the-UI). Called on-demand from modal, not polled.
+/// Detail behind the external-terminal badge, on demand from the modal; `paths` maps sessions to known projects for its labels.
 #[tauri::command]
 pub async fn describe_terminal_sessions(
     paths: Vec<String>,
@@ -1301,9 +1213,7 @@ struct TerminalTree {
     row_of: HashMap<u32, PsRow>,
 }
 
-/// `pgrep -x Terminal` + `ps` + batched `lsof`, shared by badge poll and detail modal. `Ok(None)` if Terminal is not running or has no children.
-///
-/// Reconciles `ownership` registry against live processes on every scan (S3, §4 lifecycle table), dropping entries for closed sessions.
+/// `pgrep` + `ps` + batched `lsof`, shared by badge and modal, reconciling `ownership` each scan; `Ok(None)` when Terminal has no children.
 fn scan_terminal_tree(ownership: &TerminalOwnership) -> Result<Option<TerminalTree>, String> {
     #[cfg(not(target_os = "macos"))]
     {
@@ -1997,9 +1907,7 @@ mod tests {
 
     #[test]
     fn build_remote_deploy_command_exact_string_survives_quote_and_subshell_in_cmd() {
-        // Golden test with its OWN quoting logic (not calling shell_quote/shell_quote_remote_path), so a
-        // regression like dropping the inner `shell_quote(&cmd)` call in production - which the
-        // start/end-only `_neutralizes_a_single_quote_in_cmd` test above would NOT catch - fails here.
+        // Own quoting logic on purpose: dropping production's inner `shell_quote(&cmd)` must fail this golden test.
         fn sq(s: &str) -> String {
             format!("'{}'", s.replace('\'', "'\\''"))
         }
