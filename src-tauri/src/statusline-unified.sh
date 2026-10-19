@@ -20,28 +20,7 @@ case "$0" in
   *)           CLI="CC" ;;
 esac
 
-# aki-rlcache v4 - persist rate_limits across calls that omit it. Claude Code only: AGY carries
-# its quota in .quota on every turn and has no .rate_limits to persist, so an AGY run must not
-# read or write Claude Code's cache file.
-#
-# v2 lost data three ways v3 fixed: a corrupt cache file killed the whole line (--argjson on
-# invalid JSON), a payload carrying only five_hour overwrote seven_day, and the write was not
-# atomic. So: validate before reading, merge instead of replace, write via tmp+mv.
-#
-# DESIGN LOCK - the cache must NEVER be merged or displayed without checking (1) resets_at is
-# still in the future, (2) the entry belongs to the CURRENT account, and (3) the entry was seen
-# recently enough to still be trusted. That bug shipped from 1.10.0 through 1.17.0: an
-# object-merge that only ever adds/overwrites keys present in the live payload (and never drops
-# absent ones) keeps a stale field alive forever, so a host showed a phantom "7d 45%" for an
-# account that has no weekly limit at all. v4 closed the resets_at half and gated identity on
-# email - but email is not a stable account identifier: deleting and recreating a Claude account
-# under the same email address (same organization, new accountUuid, new plan) passes the v4 gate
-# unchanged, so v5 gates on accountUuid instead and falls back to email only when a client is old
-# enough to have never written one. v5 also stamps each surviving entry with the turn it was last
-# actually seen in a live payload, so an entry that stops being sent (weekly quota disappearing
-# because the new plan has none) ages out instead of surviving via resets_at forever - the same
-# blast radius as the resets_at check, just triggered by silence instead of a timestamp.
-# See docs/plan/done/1.18.0-statusline-apply-correctness.md, section P0-5 (data integrity).
+# aki-rlcache v4 - persists rate_limits across turns that omit it, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
 if [ "$CLI" = "CC" ]; then
   _rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   RLCACHE="$_rl_config_dir/rate-limits-cache.json"
@@ -49,18 +28,13 @@ if [ "$CLI" = "CC" ]; then
   _rl_now=$(date +%s)
   _rl_acct=""
   _rl_acct_uuid=""
-  # The CLI writes oauthAccount inside its config dir, whose default (CLAUDE_CONFIG_DIR unset) is
-  # $HOME/.claude, not bare $HOME - a flat $HOME/.claude.json is never the CLI's file. This process
-  # is a direct child of `claude` (the statusLine hook), so it already inherits whatever
-  # CLAUDE_CONFIG_DIR that invocation used, if any.
+  # oauthAccount lives in the config dir ($HOME/.claude by default, never $HOME/.claude.json); the statusLine hook inherits claude's CLAUDE_CONFIG_DIR.
   _rl_claude_json="$_rl_config_dir/.claude.json"
   if [ -f "$_rl_claude_json" ]; then
       _rl_acct=$(jq -r '.oauthAccount.emailAddress // ""' "$_rl_claude_json" 2>/dev/null)
       _rl_acct_uuid=$(jq -r '.oauthAccount.accountUuid // ""' "$_rl_claude_json" 2>/dev/null)
   fi
-  # Drop every entry that is past its reset (resets_at == 0 means "unknown", not "expired"),
-  # or that has gone unseen in a live payload for too long (the account still owns the cache
-  # file but this specific field stopped being sent, e.g. a plan change removed a limit tier).
+  # Drops entries past resets_at (0 = unknown, kept) or unseen in a live payload for 6 h (a plan change stopped sending that tier).
   _rl_prune() {
       jq -c -n --argjson rl "$1" --argjson now "$_rl_now" --argjson maxAge 21600 '
         $rl | with_entries(select(
@@ -74,9 +48,7 @@ if [ "$CLI" = "CC" ]; then
   rl_input=$(printf '%s' "$input" | jq -c '.rate_limits // empty' 2>/dev/null)
   rl_cached=""
   if [ -f "$RLCACHE" ] && jq -e . "$RLCACHE" >/dev/null 2>&1; then
-      # Account gate: a cache written by another account is not ours to display. Prefer the
-      # stable accountUuid; a cache from a pre-v5 write (or a client with no accountUuid yet)
-      # has no account_uuid field, so fall back to the email gate for that one case only.
+      # Account gate: accountUuid when either side has one, else email (a pre-v5 cache, or a client with no accountUuid).
       _rl_cached_acct=$(jq -r '.account // ""' "$RLCACHE" 2>/dev/null)
       _rl_cached_uuid=$(jq -r '.account_uuid // ""' "$RLCACHE" 2>/dev/null)
       if [ -n "$_rl_cached_uuid" ] || [ -n "$_rl_acct_uuid" ]; then
@@ -127,11 +99,7 @@ fi
 
 if [ -n "$input" ]; then
   eval $(echo "$input" | jq -r '
-    # Model name and the quota pool it selects, resolved ONCE up front.
-    # .model is an object on both CLIs today but was a plain string on older ones, and a single
-    # unguarded .model.display_name against a string aborts the WHOLE jq program - every JSON_*
-    # comes back empty and the statusline renders blank. Guard it here, in one place, rather than
-    # repeating the same conditional at each quota lookup.
+    # Resolved once: .model is a plain string on older CLIs, and an unguarded .model.display_name on a string aborts the whole program (blank line).
     (if (.model | type) == "object" then (.model.display_name // .model.id // "") else (.model // "") end | tostring) as $model_name
     | (if ($model_name | ascii_downcase | contains("gemini")) then "gemini" else "3p" end) as $pool
     | (if (.quota | type) == "object" then .quota else {} end) as $quota
@@ -175,12 +143,7 @@ if [ -n "$JSON_CWD" ] && [ "$JSON_CWD" != "null" ]; then
   [ "$JSON_CWD" = "$HOME" ] && cwd_dir="~" || cwd_dir="$(basename "$JSON_CWD")"
 fi
 
-# ANSI Colors. Fixed palette - these are the script's own vocabulary (a label is WHITE, a
-# secondary reading is GREY, the ladder owns the five BOLD_* tiers) and are deliberately NOT
-# user-configurable. Only the six COLOR_* variables in the generated region below are.
-# MIRROR: the codes come from src/utils/statuslineColors.js (STATUSLINE_TIERS for the ladder,
-# STATUSLINE_COLORS for the rest) - that file is the source of truth and also holds the hex the
-# app draws each code with. Shell cannot import it, so change it there first, then here.
+# ANSI colors: a fixed palette, only the generated pickers are user-set. MIRROR of src/utils/statuslineColors.js, which changes first (docs/feat/statusline-customizer.md § The dynamic-color ladder).
 RESET_ALL='\033[00m'
 RESET_FG='\033[22;39m'  # reset bold+fg, keep bg
 BOLD_GREEN='\033[01;32m'
@@ -246,9 +209,7 @@ SEPARATE_BLOCKS=1
 BLOCK_ORDER="identity cwd model context cache quota session git_branch ram"
 # <<< AKI-GENERATED-CONFIG <<<
 
-# Clamp so a bad generated value degrades instead of rendering garbage. The ceiling is deliberately
-# not uniform: a directory or branch name needs more room before it stops being recognisable than a
-# user name does, so those two go to 15 while the rest stay at 12.
+# Clamp so a bad generated value degrades; cwd and branch get 15, the rest 12 (docs/feat/statusline-customizer.md § Truncate widths).
 for _pair in TRUNC_ACCOUNT:12 TRUNC_USER:12 TRUNC_HOST:12 TRUNC_CWD:15 TRUNC_BRANCH:15; do
   _t="${_pair%%:*}"; _max="${_pair##*:}"
   eval "_v=\$$_t"
@@ -287,10 +248,7 @@ fmt_dur() {
   if [ "$h" -gt 0 ]; then printf '%dh%dm' "$h" "$m"; else printf '%dm' "$m"; fi
 }
 
-# The model name as one compact token: drop the trailing "(...)" note and the vendor word, glue what
-# is left. Removing a word from the middle of an id leaves its separators orphaned
-# ("gemini-2.5-flash" -> "-2.5-flash"), so the last step trims the edges and squeezes any doubled
-# run - otherwise the line opens with a stray dash.
+# One compact token: drop the trailing "(...)" and the vendor word, then trim and squeeze orphaned separators ("gemini-2.5-flash" must not open with "-").
 compact_model() {
   printf '%s' "$1" \
     | sed -E 's/ *\([^)]*\)$//' \
@@ -378,9 +336,7 @@ if [ "$EN_context" = 1 ] && [ -n "$JSON_CTX_SIZE" ] && [ "$JSON_CTX_SIZE" -gt 0 
   ctx_fmt="$(fmt_k "$ctx_total")"
   size_fmt="$(fmt_k "$JSON_CTX_SIZE")"
 
-  # Trong quá trình sử dụng thì % này không được chú ý lắm.
-  # Quan trọng là số context đối với bất kì model nào cũng sẽ bắt đầu bị nặng và giảm chất lượng ở khoảng 185k.
-  # Do đó, lược bỏ % và tô màu số token theo thang tối đa 200,000 (200k = 100%).
+  # Colored on a fixed 200k scale, % not printed (docs/feat/statusline-customizer.md § The dynamic-color ladder).
   dynamic_pct=$(awk -v used="$ctx_total" 'BEGIN{p=used/200000*100; if(p>100)p=100; printf "%.0f", p}' 2>/dev/null)
   pct_color=$(color_for_pct "$dynamic_pct")
 
@@ -497,21 +453,8 @@ g_cli_tag=""
 if [ "$EN_cli_tag" = 1 ]; then
   acc_name=""
   if [ "$EN_account" = 1 ]; then
-    # Each CLI reads its OWN on-disk account file. These must NOT be tried in sequence: on a machine that has both, whichever file exists would win and the tag would show the other CLI's account.
-    #
-    # For Claude Code, ~/.claude.json's oauthAccount is NOT used here (nor in get-claudecode-usage.sh
-    # - see that script's §5/§5c for the full story). It is a cache the CLI itself flushes on its own
-    # schedule, and when two `claude` processes share one CLAUDE_CONFIG_DIR (switching accounts by
-    # logging into a second one in the same config dir, without CLAUDE_CONFIG_DIR isolation - a real,
-    # supported workflow, see docs/ref/multiple-account-config-dir.md), whichever process flushes last
-    # wins there regardless of which one most recently logged in - so a switch could read correctly for
-    # one render and silently revert on the next, with nothing about that render having changed.
-    # `claude auth status` queries the CLI's live credential state directly and is not subject to that
-    # clobber race (confirmed: it does not itself write ~/.claude.json). Spawning it on every render
-    # would add ~200-300ms to every prompt though, so its result is cached for AUTH_TTL_S seconds in
-    # the SAME auth-cache.json get-claudecode-usage.sh already maintains (config-dir-scoped, so this
-    # and the app's own poll loop share one fresh copy in the common case - the app polls every ~30s,
-    # so this render usually finds it already warm and never has to spawn anything itself).
+    # Each CLI reads its OWN account source: tried in sequence, a machine with both would show the other CLI's account.
+    # CC asks `claude auth status`, cached AUTH_TTL_S in the usage poll's auth-cache.json (docs/feat/statusline-customizer.md § Account resolution).
     if [ "$CLI" = "CC" ]; then
       _live_acct=""
       _auth_cache="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/auth-cache.json"

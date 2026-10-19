@@ -199,29 +199,34 @@ The script clamps these itself, so a bad generated value degrades instead of ren
 
 ## Account resolution
 
-Neither CLI puts an email in its statusline payload reliably, so both fall back to disk when the `account` field is on. The two branches are **mutually exclusive, not sequential**: on a machine with both files, trying them in order would show the other CLI's account.
+Neither CLI puts an email in its statusline payload reliably, so each has its own source when the `account` field is on. The two branches are **mutually exclusive, not sequential**: on a machine with both CLIs, trying them in order would show the other CLI's account.
 
-| CLI | Payload keys tried | Disk fallback |
+| CLI | Payload keys tried | Own source |
 |---|---|---|
-| CC | `.account.email`, `.user.email`, `.email` | `~/.claude.json` → `.oauthAccount.emailAddress` |
-| AGY | same | `~/.gemini/google_accounts.json` → `.active` (an object, not an array) |
+| CC | `.account.email`, `.user.email`, `.email` | `claude auth status` → `.email`, overriding the payload; cached `AUTH_TTL_S` (15 s) in `<config dir>/auth-cache.json` |
+| AGY | same | `~/.gemini/google_accounts.json` → `.active` (an object, not an array), only when the payload has none |
 
-In practice AGY does send an email in the payload, so its disk file is only a backstop; Claude Code genuinely depends on the fallback.
+In practice AGY does send an email in the payload, so its disk file is only a backstop; Claude Code genuinely depends on its source.
+
+CC never reads `~/.claude.json`'s `oauthAccount` for the tag: the CLI flushes that file on its own schedule, so with two `claude` processes logged into different accounts in one config dir (`docs/ref/multiple-account-config-dir.md`) the last flusher wins and a switch reverts on the next render. `claude auth status` reads the live credential state and does not write that file. A spawn costs ~200-300 ms per prompt, so the result is cached in the same `auth-cache.json` that `get-claudecode-usage.sh` keeps warm on its ~30 s poll.
 
 ## Quota cache (`aki-rlcache`, CC only) - DESIGN LOCK
 
 Claude Code sends `rate_limits` only on some turns, so the script persists it to `~/.claude/rate-limits-cache.json` and merges it back on turns that omit it. AGY carries its quota in `.quota` every turn and has nothing to persist, so the whole block is skipped when `CLI=AG` - an AGY run must neither read nor write Claude Code's cache file.
 
-Two rules are **not optional** and are marked with a `DESIGN LOCK` comment in the `# aki-rlcache v4` block:
+Three rules are **not optional** and are marked with a `DESIGN LOCK` comment in the `# aki-rlcache` block:
 
 1. **Expiry** - an entry whose `resets_at` has already passed is dropped, not displayed. `resets_at: 0` means "unknown", not "expired", and is kept.
-2. **Account scope** - the cache file records the account that wrote it; a cache belonging to a different account is discarded rather than displayed. Nothing surviving both gates → the file is removed.
+2. **Account scope** - the cache file records the `account_uuid` and email that wrote it; a cache belonging to a different account is discarded rather than displayed. The gate compares `accountUuid` whenever either side has one, and falls back to email only when neither does (a pre-v5 cache). Email alone is not an account identity: an account deleted and recreated under the same address gets a new `accountUuid` and a new plan.
+3. **Staleness** - every entry the live payload sends is stamped `seen_at`; one unseen for 6 h is dropped, so a tier a plan change stopped sending ages out instead of living on through its `resets_at`.
+
+Nothing surviving the gates → the file is removed. The header's `# aki-rlcache vN` is parsed by `scripts/provision-claudecode.sh` to retire an older stacked block, so it stays at the start of that comment line.
 
 Without these, a field that landed in the cache once lived there forever, because the merge only adds/overwrites keys present in the live payload and never drops absent ones. That shipped in every release from 1.10.0 through 1.17.0 and produced a phantom `7d 45%` for an account with no weekly limit at all. Background: `docs/plan/done/1.18.0-statusline-apply-correctness.md` §P0-5.
 
 The block also validates the cache with `jq -e` before reading (a corrupt file used to blank the whole line), merges instead of replacing (a 5h-only payload no longer erases 7d), and writes via tmp+rename.
 
-`scripts/get-claudecode-usage.sh` (the reader, polled ~30s per host) mirrors the same two gates at read time, independent of the writer above - it protects the app even when a host is still running an older statusline hook that never got the v4 write-side fix. A foreign-account cache or an already-past `resets_at` entry is dropped before the JSON reaches stdout; a legacy cache with no `account` field is kept, not dropped (a host pending re-apply must not go blank). The reader never writes to or deletes the cache file - see `docs/arch/usage-claudecode.md` §3.
+`scripts/get-claudecode-usage.sh` (the reader, polled ~30s per host) mirrors the expiry and account gates at read time, independent of the writer above - it protects the app even when a host is still running an older statusline hook that never got the v4 write-side fix. A foreign-account cache or an already-past `resets_at` entry is dropped before the JSON reaches stdout; a legacy cache with no `account` field is kept, not dropped (a host pending re-apply must not go blank). The reader never writes to or deletes the cache file - see `docs/arch/usage-claudecode.md` §3.
 
 ## Quota routing (AGY)
 
