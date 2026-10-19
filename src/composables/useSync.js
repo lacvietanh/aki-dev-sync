@@ -85,12 +85,7 @@ export async function startSync(project, direction, specificPaths = []) {
     return
   }
 
-  // Boundary guard (item 2, docs/plan/done/settings-and-state-layout.md): sync must never run against a
-  // project whose project.json is not the authoritative 'ok' - a missing/unavailable/corrupt read means
-  // the excludes on `project` may be an empty or stale registry leftover, which must never reach rsync
-  // (the plan's own "never a defaulted struct" contract). This is the actual funnel both PUSH/PULL button
-  // clicks and a phone-mirrored dispatch go through, so it holds even when the UI-level disable (button
-  // `:disabled`) is bypassed.
+  // Sync only on an 'ok' project.json: otherwise the excludes may be stale; this funnel also covers phone dispatches and a bypassed disabled button.
   if (getProjectConfigEntry(project.id).status !== 'ok') {
     Toast.fire({ icon: 'error', title: `"${projectDisplayName(project)}" settings (.akidevsync/project.json) are not ready - cannot sync yet` })
     return
@@ -125,9 +120,7 @@ export async function startSync(project, direction, specificPaths = []) {
     isLogExpanded.value = prevLogExpanded
   }
 
-  // First real transfer between this project and this host: name the destination and ask. Both previews
-  // below are blind here - an empty or missing destination yields empty lists - and the host is a table
-  // dropdown one click from any other box (docs/research/sync-host-safety.md).
+  // First real transfer to this host: name it and ask, since both previews are blind on an empty destination (docs/research/sync-host-safety.md).
   if (!isDryRun && !(await hostHasSyncHistory(project))) {
     const from = direction === 'push' ? 'this Mac' : `${project.remote_host}:${project.remote_path}`
     const to = direction === 'push' ? `${project.remote_host}:${project.remote_path}` : project.local_path
@@ -158,9 +151,7 @@ export async function startSync(project, direction, specificPaths = []) {
       previewFailed = true
     }
     try {
-      // Mirror mode drops `-u` (build_rsync_args), so it also silently overwrites any file the
-      // destination currently holds a newer/equal copy of - a second destructive effect `--delete`
-      // preview never sees (that one only catches destination-only files, not destination-newer ones).
+      // Mirror mode drops `-u`, so it also overwrites newer-or-equal destination files, which the `--delete` preview never sees.
       overwriteList = await invoke('get_sync_overwrite_preview', { project, direction })
     } catch (e) {
       previewFailed = true
@@ -185,10 +176,7 @@ export async function startSync(project, direction, specificPaths = []) {
             if (!entry) return Infinity // couldn't verify - treat as fresh, ask
             return direction === 'push' ? entry.remote_mtime : entry.local_mtime
           }
-          // The ACTIVE host's own last sync, never `project.last_sync_time` - that field is hydrated
-          // as the newest last_sync.json across every host the project has ever used (correct for the
-          // table's last-action cell, wrong here: a more recent sync to a DIFFERENT host must not suppress
-          // a delete confirmation for the host we are about to sync with now).
+          // The active host's own last sync: `project.last_sync_time` is the newest across hosts and must not suppress this host's confirmation.
           const lastSync = await activeHostLastSyncTime(project)
           staleArtifacts = artifactEntries.filter(f => destMtime(f) <= lastSync)
         } catch (err) {
@@ -203,9 +191,7 @@ export async function startSync(project, direction, specificPaths = []) {
     }
 
     if ((deleteList.length > 0 || overwriteList.length > 0) && direction === 'push') {
-      // Auto-approve deletions AND overwrites in push-only paths (e.g. .git/) since destination isn't
-      // pulled back - the same "local stays authoritative there" assumption PULL's own exclude already
-      // makes, applied symmetrically instead of only to the deletion half.
+      // Push-only paths (e.g. .git/) auto-approve deletions and overwrites: local stays authoritative there, as PULL's exclude already assumes.
       const pushOnly = pushOnlyDirs(project)
       const autoApprovedDeletes = deleteList.filter(f => matchesDirExclude(f, pushOnly))
       const autoApprovedOverwrites = overwriteList.filter(f => matchesDirExclude(f, pushOnly))
@@ -219,10 +205,7 @@ export async function startSync(project, direction, specificPaths = []) {
 
     if (previewFailed || deleteList.length > 0 || overwriteList.length > 0) {
       const dest = direction === 'push' ? 'Remote' : 'Local'
-      // HTML-escape filenames and project name to prevent markup injection in dialog.
-      // The display name, never the raw registry `.name` (empty for an 'ok'-status project once
-      // project-owned fields live in project.json) - an empty requireText would trivially match an empty
-      // typed answer, defeating the confirmation entirely.
+      // Escape names for the dialog HTML; use the display name, since an empty registry `.name` would let an empty typed answer pass.
       const confirmName = projectDisplayName(project)
       const renderList = (list) => list.map(f => `  ${escHtml(f)}`).join('\n')
       const listBlock = (list) =>
@@ -286,11 +269,7 @@ export async function startSync(project, direction, specificPaths = []) {
       dryRun: isDryRun,
       specificPaths,
     })
-    // B2 (docs/plan/done/settings-and-state-layout.md § B2): persisted straight into
-    // state/<id>/<host>/last_sync.json - the ONE persisted source now (sync_state.rs) - rather than onto
-    // the registry object for save_projects to carry. The in-memory fields are still set for immediate
-    // UI feedback (ProjectTable's last-action cell, the auto-approval read below); the save funnel strips
-    // them before every save so projects.json never re-accumulates them (1.13.0 sync_git lesson).
+    // Persisted to `state/<id>/<host>/last_sync.json` (B2); the in-memory copy is UI feedback only and the save funnel strips it.
     project.last_sync_action = actionName + (isDryRun ? " (Dry)" : "")
     project.last_sync_time = Math.floor(Date.now() / 1000)
     project.last_sync_host = project.remote_host
@@ -306,10 +285,7 @@ export async function startSync(project, direction, specificPaths = []) {
           hasPendingPush: false, pushCount: 0,
           ...(isMirror ? { hasPendingPull: false, pullCount: 0 } : {}),
         }
-        // Deploy plan § "Always ask first": a non-dry push success is the ONE moment `on_push` offers the
-        // confirm dialog - `shouldOfferDeployAfterPush` (projectConfigPure.js) is the pure, tested decision.
-        // The command is resolved once, here, via `resolveDeployCmd` (the one impure caller of the pure
-        // `getDeployCmd`) and handed to both the decision and the offer - neither re-derives it.
+        // A real push success is the one moment `on_push` offers deploy; the command is resolved once and shared by the decision and the offer.
         const deployCmd = resolveDeployCmd(project)
         if (shouldOfferDeployAfterPush({ direction, isDryRun, specificPaths, project, deployCmd })) {
           offerDeployAfterPush(project, deployCmd).catch((e) => console.error('[useDeploy] offerDeployAfterPush failed', e))

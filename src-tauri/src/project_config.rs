@@ -28,10 +28,7 @@ pub struct ProjectConfigCommands {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-/// On-disk shape: serde(default) on every field lets forward-compatible or hand-trimmed files load
-/// without migration, same as `ProjectNotesFile`. Unlike `ProjectNotesFile`, this file's own research doc
-/// explicitly allows hand edits, so `extra` (and `commands.extra`) round-trip any key this struct doesn't
-/// name - see `write_blocking`'s merge, which is what actually preserves them across a save.
+/// `serde(default)` everywhere so hand-trimmed files load; `extra`/`commands.extra` round-trip unknown keys, since this file allows hand edits.
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 pub struct ProjectConfigFile {
     #[serde(default)]
@@ -119,9 +116,7 @@ fn check_path(local_path: &str) -> Result<(), String> {
     crate::projects::validate_path_segment("local_path", local_path)
 }
 
-/// Synchronous read: returns structured statuses rather than Err for missing/corrupt/unreachable states
-/// (same reasoning as `project_notes::read_blocking` - a missing project would otherwise be indistinguishable
-/// from an unmounted volume, and only the first is safe to write over).
+/// Returns a status, not Err, for missing/corrupt/unreachable: only a missing project is safe to write over, an unmounted volume is not.
 pub(crate) fn read_blocking(local_path: &str) -> ProjectConfigRead {
     if let Err(e) = check_path(local_path) {
         return ProjectConfigRead::unavailable(e);
@@ -169,10 +164,7 @@ pub async fn read_project_config_map(
     .map_err(|e| format!("read_project_config_map task join error: {}", e))
 }
 
-/// T1 (docs/plan/done/settings-and-state-layout.md): the ONE place `run_sync`/`check_sync_status`/
-/// `get_sync_delete_preview` obtain rsync excludes - read fresh from `project.json` at call time, never
-/// trusted from the JS-passed `SyncProject` (which may be stale mid-Refresh, or already stripped by the
-/// save funnel). Refuses rather than falling back to empty/stale excludes whenever the file is not `Ok`.
+/// T1: the one source of rsync excludes, read fresh from `project.json`, never the JS-passed project; refuses unless the file is `Ok`.
 pub(crate) fn require_ok_excludes(local_path: &str) -> Result<(Vec<String>, Vec<String>), String> {
     let read = read_blocking(local_path);
     match read.status {
@@ -187,12 +179,7 @@ pub(crate) fn require_ok_excludes(local_path: &str) -> Result<(Vec<String>, Vec<
     }
 }
 
-/// True read-modify-write, mirroring `project_notes::write_blocking`'s contract: the current status is read
-/// first and a Corrupt/Unavailable file refuses the write rather than being blindly overwritten (a
-/// git-conflicted `project.json` would otherwise lose both sides of the conflict). Unlike a whole-file
-/// overwrite, only the five fields the dialog actually edits are replaced - `extra` (and `commands.extra`)
-/// are always carried forward from the file already on disk, since the dialog never round-trips a key it
-/// does not know about (a hand-added key, or a newer build's field this one predates).
+/// Read-modify-write: a Corrupt/Unavailable file refuses (a git conflict would lose both sides); only the dialog's five fields change, `extra` is kept.
 fn write_blocking(
     local_path: &str,
     incoming: ProjectConfigFile,
@@ -227,7 +214,6 @@ fn write_blocking(
     file.commands.dev = incoming.commands.dev;
     file.commands.build = incoming.commands.build;
     file.commands.deploy = incoming.commands.deploy;
-    // file.extra / file.commands.extra: intentionally NOT overwritten by `incoming` - they stay whatever was already on disk, since the dialog's submission never carries a meaningful value for either.
 
     // Pretty-printed: this file is meant to be diffed in git, and a one-line JSON blob makes every edit a whole-file diff.
     let json = serde_json::to_string_pretty(&file)
@@ -246,13 +232,7 @@ pub async fn write_project_config(
         .map_err(|e| format!("write_project_config task join error: {}", e))?
 }
 
-/// True when every legacy-registry field this seed would write is empty - a project that never had any of
-/// these values set (a brand-new, still-unconfigured project) must not gain an all-empty `project.json`
-/// just from being loaded once; there is nothing there yet to seed.
-///
-/// `pub(crate)` (not `pub`) so `sync_state.rs`'s migration rehearsal can predict the JS seeding step's
-/// count from the same rule instead of duplicating it (docs/plan/done/1.32.0-mac-handoff.md § 2) - the seeding
-/// itself still only runs from JS (`write_project_configs_if_missing`'s per-project caller).
+/// No legacy field to seed, so no all-empty `project.json`; `pub(crate)` so the `sync_state.rs` rehearsal predicts the JS seeding count by the same rule.
 pub(crate) fn is_all_empty(file: &ProjectConfigFile) -> bool {
     file.name.trim().is_empty()
         && file.production_url.trim().is_empty()
@@ -301,10 +281,7 @@ fn seed_one(local_path: &str, file: ProjectConfigFile) -> SeedOutcome {
     }
 }
 
-/// Migration entry point (docs/plan/done/settings-and-state-layout.md § C): writes `project.json` for every seed
-/// whose file is still missing, has a readable folder, and has at least one non-empty legacy value - never
-/// an all-empty file. Returns each project's outcome keyed by id, so the caller (JS) knows exactly which
-/// projects are now owned by `project.json` versus still need retrying or have nothing to seed at all.
+/// Seeds `project.json` where it is missing, the folder is readable and some legacy value exists; per-id outcomes tell JS what to retry.
 #[tauri::command]
 pub async fn write_project_configs_if_missing(
     seeds: Vec<ProjectConfigSeed>,

@@ -83,10 +83,7 @@ async function seedProjectConfigsIfMissing(loadedProjects) {
   }
 }
 
-// Cut item (docs/plan/done/settings-and-state-layout.md, Slice E): a persisted per-project "already considered"
-// marker, local to this machine - once a project's id is in this set, the pycache migration never looks at
-// it again, so a user who deliberately removes `__pycache__/` from their project.json does not get it
-// silently written back on the next load/Refresh (the old content-check-only version re-added it forever).
+// Per-machine set of project ids the pycache migration already considered, so a user who removes `__pycache__/` never gets it written back.
 const PYCACHE_MIGRATION_STORAGE_KEY = 'aki-pycache-exclude-migration-v1'
 
 function readPycacheMigratedIds() {
@@ -179,7 +176,7 @@ function applyConfigToProject(project, entry) {
   project.push_excludes = [...entry.push_excludes]
   project.dev_cmd_override = entry.commands?.dev || ''
   project.build_cmd_override = entry.commands?.build || ''
-  // deploy plan: `commands.deploy` is project-owned the same way, but has no legacy registry field to shadow - `deploy_cmd` is an in-memory-only mirror on the project object, never persisted to projects.json.
+  // `deploy_cmd` mirrors `commands.deploy` in memory only; there is no registry field to shadow.
   project.deploy_cmd = entry.commands?.deploy || ''
 }
 
@@ -267,15 +264,11 @@ export async function hydrateProjectConfig(projectList) {
       if (!isCurrentProjectConfigGeneration(id, tokens.get(id))) continue
       const entry = toConfigEntry(read)
       setProjectConfigEntry(id, entry)
-      // Look up the entry currently in `projects.value` by id at apply time, never the `projectList`
-      // snapshot this function was called with - a captured reference could be a stale object if anything
-      // replaced `projects.value` while this batch's IPC round trip was in flight.
+      // Resolve by id at apply time: `projects.value` may have been replaced during the IPC round trip.
       applyConfigToProject(projects.value.find((p) => p.id === id), entry)
     }
   } catch (e) {
-    // Failed batch does not mark projects unavailable to avoid false read-only state; entries were already
-    // reset to 'unknown' by `markAllProjectConfigStatusesUnknown` before this call, so the sync gate stays
-    // closed for these ids rather than trusting whatever status happened to be cached before the reload.
+    // A failed batch marks nothing unavailable; statuses stay 'unknown' (reset before the call), which keeps the sync gate closed.
     console.error('[projectConfig] hydrate failed', e)
   }
 }
@@ -378,10 +371,7 @@ export async function loadData(sshHosts, showToast = false) {
     hydrateRemoteFromTargets(loaded)
     // Hydrate last_sync_action/time/status/host from state/ before this window renders anything - both boot load and titlebar Refresh share loadData, so this covers both call sites at once.
     await hydrateLastSyncFromState(loaded)
-    // Settings/state (remote_host/remote_path/hooks -> targets, legacy baselines/last_sync -> state/)
-    // migrates once in Rust setup() before this window even exists (docs/plan/done/settings-and-state-layout.md
-    // § Migration, B3) - `loaded` here already reflects it, and its own summary line is in usage.log.
-    // Each migration below still logs its own line on fire so usage.log identifies which step ran.
+    // Settings/state already migrated in Rust `setup()` (docs/plan/done/settings-and-state-layout.md § Migration); each migration below logs its own line when it fires.
     let migrated = false
     if (migratePushOnlyPaths(loaded)) {
       migrated = true
@@ -391,11 +381,7 @@ export async function loadData(sshHosts, showToast = false) {
       migrated = true
       appendGlobalLog("MIGRATE", "Removed .akidevsync/ from the default pull/push exclude lists.")
     }
-    // Cut item (docs/plan/done/settings-and-state-layout.md, Slice E): seed only at boot, never on a titlebar
-    // Refresh - `showToast` is already this function's only boot-vs-Refresh signal (App.vue's boot call
-    // passes false, requestReloadConfig's Refresh call passes true). Once seeded (or explicitly refused,
-    // NothingToSeed/Unavailable) a project has nothing left to retry mid-session; re-running the whole-folder
-    // batch on every Refresh only adds an extra IPC round trip to the exact window T1 closes.
+    // Seed at boot only (`showToast` false), never on Refresh: a seeded or refused project has nothing to retry mid-session.
     const isBootLoad = !showToast
     let seededConfigCount = 0
     if (isBootLoad) {
@@ -424,9 +410,7 @@ export async function loadData(sshHosts, showToast = false) {
       }
       if (!projectLogs.value[p.id]) projectLogs.value[p.id] = []
     }
-    // Reset every cached status to 'unknown' before the objects it describes are replaced - a stale
-    // 'ok' must never outlive the fresh, freshly-stripped object during the window before
-    // `hydrateProjectConfig` below completes (docs/plan/done/settings-and-state-layout.md).
+    // Reset statuses before replacing the objects, so a stale 'ok' never outlives them until `hydrateProjectConfig` completes.
     markAllProjectConfigStatusesUnknown()
     projects.value = loaded
     setupGlobalListener()
@@ -438,9 +422,7 @@ export async function loadData(sshHosts, showToast = false) {
       migrated = true
       appendGlobalLog("MIGRATE", "Moved project tasks/notes into each repo's .akidevsync/notes.json.")
     }
-    // Runs after hydrate, against project.json directly (its own RMW write), for every project.json
-    // that already owns pull/push_excludes - see migrateProjectConfigPycacheExcludes's doc comment for why
-    // this cannot be a registry mutation like the migrations above.
+    // After hydrate, as its own RMW on project.json (see `migrateProjectConfigPycacheExcludes`).
     const pycacheMigratedCount = await migrateProjectConfigPycacheExcludes(loaded)
     if (pycacheMigratedCount > 0) {
       appendGlobalLog("MIGRATE", `Added __pycache__/ to ${pycacheMigratedCount} project(s)' .akidevsync/project.json exclude lists.`)
@@ -481,7 +463,7 @@ export async function saveProjectsList() {
   try {
     const payload = buildProjectListSavePayload(projects.value, (id) => getProjectConfigEntry(id).status)
     await invoke("save_projects", { projects: payload })
-    // Mirror the write-back onto the live objects too, so a later host-switch sees the just-saved path without waiting for a reload (multi-entity guard: scoped to each project's own remote_host key only).
+    // Mirror onto the live objects so a host switch sees the saved path before a reload; each project's own remote_host key only.
     for (const p of projects.value) {
       if (!p.remote_host) continue
       p.targets = { ...(p.targets || {}), [p.remote_host]: { remote_path: p.remote_path, hooks: p.hooks || null } }
@@ -509,17 +491,12 @@ export async function openConfig(project) {
     await refreshProjectConfig(project.id, project.local_path)
   }
   const hydrated = projects.value.find((p) => p.id === project.id) || project
-  // A project.json that is Missing (fresh clone, or never seeded) has nothing to prefill from - offer
-  // the same defaults `createNewProject` uses, rather than an empty list, but only when there is truly
-  // nothing already in memory to keep (an unmigrated legacy value still wins).
+  // A Missing project.json gets `createNewProject`'s defaults, unless an unmigrated legacy value is still in memory.
   const configStatus = project.id ? getProjectConfigEntry(project.id).status : 'unknown'
   const useDefaultExcludes = shouldUseDefaultExcludes(configStatus, hydrated.pull_excludes, hydrated.push_excludes)
   const p = {
     ...hydrated,
-    // Honor remote_host/remote_path/hooks the caller explicitly passed (e.g. `setRemoteHost`'s
-    // switch-to-a-host-with-no-target case) instead of silently discarding them for the live project's
-    // still-old values - a normal open (table gear icon) passes the live object itself, so this is a
-    // no-op there.
+    // Honor an explicitly passed remote_host/remote_path/hooks (`setRemoteHost` to a host with no target); a table open passes the live object.
     remote_host: project.remote_host,
     remote_path: project.remote_path,
     hooks: project.hooks
@@ -589,11 +566,7 @@ export async function saveConfig() {
       closeConfig()
       return
     }
-    // On a companion screen `applyProjectConfig` is a fire-and-forget call over
-    // the wire (services/action.js's `actionStub` sends once and always resolves `undefined` - there is no
-    // reply channel this function can read a real outcome from). Never claim "Config saved" or close the
-    // dialog here without the host's acknowledgment: show a neutral, existing-element toast only and leave
-    // the dialog open, so a failed or rejected save on the host is never misreported as done on the phone.
+    // On a companion the save is fire-and-forget with no reply, so never claim success or close the dialog: a host-side failure must not read as done.
     Toast.fire({ icon: 'info', title: 'Sent to the Mac' })
   } catch (err) {
     appendGlobalLog("ERROR", `Failed to save config: ${err}`)

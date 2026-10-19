@@ -24,9 +24,7 @@ pub struct SyncHooks {
     pub ignore_hook_errors: bool,
 }
 
-/// `SyncProject.deploy` (docs/plan/done/deploy-action.md § Design, amended 2026-09-28): where a deploy runs and
-/// whether a push offers it. A remote deploy names its OWN `host`/`path` - never the active sync host
-/// implicitly, because that is a table dropdown one click from any other box (docs/research/sync-host-safety.md).
+/// Where a deploy runs and whether a push offers it; a remote deploy names its own `host`/`path`, never the active sync host (docs/research/sync-host-safety.md).
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct ProjectDeploy {
     /// `"local"` | `"remote"`. Empty/unset is treated as "local" by the frontend (deploy plan default),
@@ -43,16 +41,7 @@ pub struct ProjectDeploy {
     pub path: String,
 }
 
-/// One remembered remote (docs/research/akidevsync-project-config-scope-2.md § Field placement): `targets.<host>`.
-/// `hooks` are host-specific facts (real hooks embed that host's paths), so switching the active `remote_host` restores this entry instead of losing the
-/// previous host's settings (F5).
-///
-/// `remote_path` is DEPRECATED here (docs/plan/done/settings-and-state-layout.md § Amendments, 1.32.0): a
-/// project has exactly ONE remote directory regardless of which host serves it - storing it per-host made
-/// the first sync to a new host demand re-entering a path that was never actually different, which no real
-/// project in this app's own registry has ever needed. Kept only as a one-release migration source
-/// (`sync_state::migrate_settings_and_state` lifts it onto `SyncProject.remote_path`); app code never writes
-/// it again, and `skip_serializing_if` drops the key from a `Target` the moment it is cleared.
+/// One remembered remote, `targets.<host>`: `hooks` are host facts, restored on a host switch (F5). `remote_path` here is a migration source only (1.32.0).
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Target {
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -69,16 +58,12 @@ fn is_default_hooks(h: &SyncHooks) -> bool {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SyncProject {
     pub id: String,
-    // name/production_url/pull_excludes/push_excludes/commands.* are project-owned (project_config.rs) as
-    // of 1.32.0; these six registry fields are load-bearing only as a migration source and a plain (not
-    // Option) type so no read site needs an unwrap. Owner, wiring and the save-funnel strip: docs/arch/settings-and-state.md.
+    // Project-owned (project.json) since 1.32.0; kept only as a migration source, as plain types so no read needs an unwrap (docs/arch/settings-and-state.md).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     pub local_path: String,
     pub remote_host: String,
-    // The project's one remote directory - fixed across every host that serves it, never per-host (1.32.0
-    // fix; briefly lived in `targets.<host>.remote_path` in 1.32.0, see `Target`'s doc comment). Always the
-    // single, authoritative copy; `targets.<remote_host>` never holds it going forward.
+    // The project's one remote directory, the same on every host; `targets.<host>` never holds it (1.32.0).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub remote_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,10 +74,7 @@ pub struct SyncProject {
     pub push_excludes: Vec<String>,
     #[serde(default, skip_serializing_if = "is_default_hooks")]
     pub hooks: SyncHooks,
-    // DEPRECATED (1.32.0, docs/plan/done/settings-and-state-layout.md): moved to
-    // `~/.aki/devsync/state/<id>/<host>/last_sync.json` (a target · state fact, not project-on-machine config).
-    // Kept as Option + skip_serializing_if for one release so the migration can read an old value once and
-    // then never re-materializes it (1.13.0 sync_git lesson) - see sync_state::migrate_settings_and_state.
+    // DEPRECATED (1.32.0): now `state/<id>/<host>/last_sync.json`; read once by the migration, `skip_serializing_if` keeps it from coming back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_sync_action: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,15 +102,12 @@ pub struct SyncProject {
     // Skips this project in background sync/git polling only; manual actions are unaffected - see docs/feat/background-refresh.md.
     #[serde(default)]
     pub disabled: bool,
-    // Per-host remembered remote (target · config, see Target doc comment); keyed by SSH alias. `#[serde(default)]` lets pre-1.32.0 projects.json entries load with an empty map, migrated once by sync_state::migrate_settings_and_state.
+    // Per-host remembered remote keyed by SSH alias; `serde(default)` loads pre-1.32.0 entries, migrated once by `sync_state`.
     #[serde(default)]
     pub targets: BTreeMap<String, Target>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<ProjectDeploy>,
-    // DEPRECATED (1.22.0, docs/plan/done/1.22.0-notes-json-ssot.md): moved to `<local_path>/.akidevsync/notes.json`.
-    // Kept opaque (not the old typed list) so an unmigrated legacy record survives load -> save until
-    // useProjectNotes.js's migrateLegacyProjectNotes clears it; skip_serializing_if stops these keys from
-    // being re-materialized once gone (1.13.0 sync_git lesson).
+    // DEPRECATED (1.22.0): now `<local_path>/.akidevsync/notes.json`; opaque so a legacy record survives until `migrateLegacyProjectNotes` clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tasks: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -181,7 +160,7 @@ pub fn get_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(get_app_data_dir(app)?.join("projects.json"))
 }
 
-/// Returns the app data directory. `app` is unused (the dir no longer derives from the Tauri app handle - see `app_paths::app_data_dir`) but kept so `ssh.rs`/`web_server.rs` call sites do not need to change.
+/// `app` is unused (see `app_paths::app_data_dir`), kept so the `ssh.rs`/`web_server.rs` call sites stay unchanged.
 pub fn get_app_data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     crate::app_paths::app_data_dir()
 }
@@ -409,11 +388,7 @@ mod tests {
         assert!(validate_project(&p).is_ok());
     }
 
-    /// B1 (docs/plan/done/settings-and-state-layout.md § B): name/production_url/pull_excludes/push_excludes/
-    /// dev_cmd_override/build_cmd_override are project-owned (`project.json`) from 1.32.0. A legacy entry
-    /// still carrying them must load without error, and once the frontend's save funnel strips them to
-    /// their empty/None equivalents, `skip_serializing_if` must keep them out of the saved registry for
-    /// good (1.13.0 sync_git lesson) — never re-drifting back in on a later load -> save.
+    /// B1 (docs/plan/done/settings-and-state-layout.md § B): legacy project-owned fields still load, and once the save funnel strips them they never reappear in the registry.
     #[test]
     fn project_owned_fields_load_from_legacy_and_never_reappear_once_stripped() {
         let mut legacy = make_project("/home/user/app", "~/app", "server");
@@ -462,11 +437,7 @@ mod tests {
         assert!(reloaded_stripped.dev_cmd_override.is_none());
     }
 
-    /// 1.32.0 fix: `remote_path` is a project fact, not a per-host one - it must keep serializing at the
-    /// top level regardless of whether a `targets.<host>` entry exists, and must never be read back FROM a
-    /// target. `hooks` stays the opposite: still stripped from the top level once a target holds it (it
-    /// really is host-specific). CLAUDE.md multi-entity guard: round-tripping project A must never affect
-    /// project B's own target entry.
+    /// `remote_path` always serializes at the top level and is never read from a target, while `hooks` leave the top level; project B's target is untouched.
     #[test]
     fn top_level_remote_path_always_persists_regardless_of_targets() {
         let mut a = make_project("/local/a", "~/app-a", "hostA");
@@ -515,9 +486,7 @@ mod tests {
         );
     }
 
-    /// A stale `targets.<host>.remote_path` left over from a pre-fix registry (the field is now
-    /// migration-only, see `Target`'s doc comment) must never leak back onto the project once a real
-    /// top-level value exists - only the one-shot migration in `sync_state.rs` is allowed to lift it.
+    /// A stale `targets.<host>.remote_path` never overrides a real top-level value; only the `sync_state.rs` migration may lift it.
     #[test]
     fn stale_target_remote_path_never_overrides_the_top_level_value() {
         let mut p = make_project("/local/half-configured", "~/real-path", "hostA");
@@ -557,13 +526,7 @@ mod tests {
         assert_eq!(reloaded.hooks.pre_pull_cmd.as_deref(), Some("echo hi"));
     }
 
-    /// B2 last-sync end-to-end (docs/plan/done/settings-and-state-layout.md § B2): `useSync.js` now calls
-    /// `write_last_sync` (state/<id>/<host>/last_sync.json, sync_state.rs) instead of leaving these fields
-    /// Some on the project object for `save_projects` to persist. This is the same contract as B1's
-    /// project-owned fields: `skip_serializing_if` only drops a None/empty value - it is the frontend's
-    /// save funnel (`saveProjectsList`) that resets these four fields to null in the payload before every
-    /// save, same as `name`/`production_url` above. Proves the funnel's stripped payload never re-persists
-    /// them, even starting from a hydrated Some (mirrors `project_owned_fields_load_from_legacy_...` above).
+    /// B2 (docs/plan/done/settings-and-state-layout.md): once the save funnel nulls the four last-sync fields, they never re-persist, even from a hydrated Some.
     #[test]
     fn last_sync_fields_never_persist_once_the_save_funnel_strips_them() {
         let mut hydrated = make_project("/home/user/app", "~/app", "server");
@@ -601,10 +564,7 @@ mod tests {
         }
     }
 
-    /// B4 (docs/plan/done/settings-and-state-layout.md § C): `tasks`/`notes` are deprecated but opaque, not
-    /// deleted - an unmigrated legacy record must survive a load -> save round trip so
-    /// useProjectNotes.js's migrateLegacyProjectNotes still sees it, while a project that never had one
-    /// must never gain the key back (1.13.0 sync_git lesson).
+    /// B4 (docs/plan/done/settings-and-state-layout.md § C): a legacy `tasks`/`notes` value survives load and save; a project without one never gains the key.
     #[test]
     fn deprecated_tasks_and_notes_round_trip_some_and_never_reintroduce_none() {
         let mut with_legacy = make_project("/home/user/app", "~/app", "server");
