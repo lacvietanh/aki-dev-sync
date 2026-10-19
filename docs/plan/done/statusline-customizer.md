@@ -1,7 +1,6 @@
 # Statusline Customizer (Claude Code)
 
-**Status:** Planned, not started
-**Ngày:** 2026-07-09
+**Status:** Planned, not started **Ngày:** 2026-07-09
 
 ---
 

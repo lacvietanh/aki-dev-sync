@@ -48,8 +48,7 @@ Rules (RULE-ui-pattern A1/A3):
 Introduce one shared constant at module top (SSoT - do not inline the string twice):
 
 ```js
-// Artifacts this app itself produces/manages - routine sync churn on them is expected and must
-// not raise a confirm dialog. See docs/plan/done/narrow-mode-and-ux-1.14.0.md §A1.
+// Artifacts this app itself produces/manages - routine sync churn on them is expected and must not raise a confirm dialog. See docs/plan/done/narrow-mode-and-ux-1.14.0.md §A1.
 const FLOW_APP_ARTIFACTS = ['REPORT.html']
 ```
 

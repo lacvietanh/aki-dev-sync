@@ -235,8 +235,7 @@ AG lva   guest@roscy-  Aki-Dev-Sync  3.6Flashmed   ctx133k/1M    ↬0%    5h:0%4
 
 ### 8.3b. Hợp đồng generator (Phase 2.2 — ĐÃ CHỐT)
 
-`src-tauri/src/statusline-unified.sh` **vừa là bản tham chiếu vừa là template**. `statusline.rs` nhúng nó
-bằng `include_str!` và khi Apply chỉ thay **đúng vùng** giữa 2 marker:
+`src-tauri/src/statusline-unified.sh` **vừa là bản tham chiếu vừa là template**. `statusline.rs` nhúng nó bằng `include_str!` và khi Apply chỉ thay **đúng vùng** giữa 2 marker:
 
 ```
 # >>> AKI-GENERATED-CONFIG >>>

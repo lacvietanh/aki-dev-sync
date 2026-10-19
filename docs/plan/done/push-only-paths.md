@@ -2,8 +2,7 @@
 
 **Status:** ✅ DONE - Implemented + verified trên Mac (2026-07-20, 1.13.0). Kết quả verify: §6b.
 Còn đúng một hạng mục chưa chạy: PUSH/PULL thật vào host production (§6b mục 3) - cần thao tác có chủ đích của người dùng, không tự động hoá.
-**Thay thế:** bản draft cùng tên (2026-07-1x)
-**Verify code:** đã đối chiếu từng dòng với `sync.rs` / `useSync.js` / `useSyncStatus.js` / `git.rs` / `ProjectTable.vue` @ HEAD (1.12.0)
+**Thay thế:** bản draft cùng tên (2026-07-1x) **Verify code:** đã đối chiếu từng dòng với `sync.rs` / `useSync.js` / `useSyncStatus.js` / `git.rs` / `ProjectTable.vue` @ HEAD (1.12.0)
 
 ---
 

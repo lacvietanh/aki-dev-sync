@@ -66,8 +66,7 @@ const ccRemote = useToggleableSource(
 );
 ```
 
-`useToggleableSource` (dòng 46-58) đã tự lo: `enabled` persist theo `storageKey`, `toggle()`,
-`hostRef` computed trả `null` khi off (dừng poll). Không cần sửa gì trong hàm đó.
+`useToggleableSource` (dòng 46-58) đã tự lo: `enabled` persist theo `storageKey`, `toggle()`, `hostRef` computed trả `null` khi off (dừng poll). Không cần sửa gì trong hàm đó.
 
 > **Đã verify tương thích cấu trúc**: `AgentUsageSlot.vue:154` (`activeSource` = `props.ccRemote`) và template dòng 60-76 đọc `.data/.loading/.error/.stale/.isCached/.cachedAt/.accounts/.refresh/.selectAccount/.resetAccount` - tất cả đến từ `...hook` (giữ nguyên). Ngoài ra `useToggleableSource` còn thêm `.toggle` và `.locked` (computed `false`) mà bản `reactive({ enabled, ...hook })` cũ **không** có - thêm vào là an toàn (chỉ nới rộng, không mất field nào). `:locked="!!activeSource.locked"` vẫn ra `false` như trước.
 
@@ -88,8 +87,7 @@ const ccRemote = useToggleableSource(
 
 **Bước 2 - `remoteModeStore.js`: đổi tên theo đúng phạm vi**
 
-Đổi tên file → `src/store/syncCheckStore.js`, export `syncCheckEnabled` + `toggleSyncCheck()`,
-localStorage key mới `aki-sync-check-enabled`.
+Đổi tên file → `src/store/syncCheckStore.js`, export `syncCheckEnabled` + `toggleSyncCheck()`, localStorage key mới `aki-sync-check-enabled`.
 
 > Theo `CLAUDE.md` § Regression Guard: **đặt tên đúng phạm vi thật**. Sau khi tách, biến này chỉ còn gate sync/diff - giữ tên `remoteModeEnabled` là tên nói dối, đúng loại lỗi đặt tên đã gây regression 1.9.3.
 
@@ -198,8 +196,7 @@ async function refreshProject(p) {
 }
 ```
 
-Import `checkProjectSyncStatus` từ `../composables/useSyncStatus` (kiểm tra `fetchGitStatus` đã được
-import sẵn chưa, có rồi thì **không import lại**).
+Import `checkProjectSyncStatus` từ `../composables/useSyncStatus` (kiểm tra `fetchGitStatus` đã được import sẵn chưa, có rồi thì **không import lại**).
 
 **Chi tiết có chủ đích, đừng "tối ưu" đi:**
 - Gọi `fetchGitStatus(p.id)` với `silent` mặc định `false` → có log "Checking status for X..." trong global log. Đây là thao tác user chủ động bấm nên **cần** feedback; khác `refreshAll()` dùng `silent=true` vì nó chạy nền cho N project.
@@ -359,8 +356,7 @@ Dùng `cache_read` làm tử số vì đó mới là phần **tận dụng đư�
 
 ### 5b. Rate limit - thêm tuỳ chọn "Reset"
 
-**Nguồn dữ liệu đã có sẵn**: `docs/arch/usage-claudecode.md:37-39` xác nhận
-`rate-limits-cache.json` chứa `resets_at` (Unix epoch giây, UTC) trong cả `five_hour` và `seven_day`.
+**Nguồn dữ liệu đã có sẵn**: `docs/arch/usage-claudecode.md:37-39` xác nhận `rate-limits-cache.json` chứa `resets_at` (Unix epoch giây, UTC) trong cả `five_hour` và `seven_day`.
 
 **Thiết kế**: `rate_reset` là **field trong `cfg.fields`** (để dùng chung cơ chế persist/serialize, không đổi struct `StatuslineField`), nhưng **render gộp vào block rate_limits** chứ không thành group riêng - hiển thị `5h:42% ⟳1h12m  7d:18% ⟳2d3h`.
 

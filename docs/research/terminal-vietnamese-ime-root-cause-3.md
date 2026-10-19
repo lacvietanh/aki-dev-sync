@@ -198,8 +198,7 @@ const NAMED_KEYS = new Set([
   'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
   'F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19', 'F20', 'F21', 'F22', 'F23', 'F24',
   'Soft1', 'Soft2', 'Soft3', 'Soft4',
-  // Not a key value per se, but the spec's own escape hatch when the UA cannot map a
-  // physical key at all — never a synthetic carrier payload either.
+  // Not a key value per se, but the spec's own escape hatch when the UA cannot map a physical key at all — never a synthetic carrier payload either.
   'Unidentified',
 ])
 

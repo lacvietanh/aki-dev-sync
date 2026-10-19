@@ -27,8 +27,7 @@
 * **Thời gian:** 13:33 ICT - 24/06/2026
 * **Phương pháp:** Sử dụng công cụ phân tích tĩnh `strings` quét tệp nhị phân `/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm` để tìm kiếm các hàm handler Connect RPC mới.
 * **Kết quả:** Phát hiện ra một handler mới:
-  `7_LanguageServerService_RetrieveUserQuotaSummary_Handler`
-  tương ứng với endpoint:
+  `7_LanguageServerService_RetrieveUserQuotaSummary_Handler` tương ứng với endpoint:
   `/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary`
 
 ### Thử nghiệm 3: Gọi thử nghiệm RPC `RetrieveUserQuotaSummary`

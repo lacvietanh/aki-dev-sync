@@ -157,8 +157,7 @@ This means `useTerminalInput.js` does NOT import xterm at all. It only manages t
 ### 3.1 `src/composables/useTerminalInput.js`
 
 ```js
-// Terminal input layer — app-owned textarea overlay that separates keyboard
-// capture from xterm.js, so xterm is a pure renderer.
+// Terminal input layer — app-owned textarea overlay that separates keyboard capture from xterm.js, so xterm is a pure renderer.
 //
 // Architecture: docs/plan/done/terminal-ime-input-layer-separation.md
 //
@@ -169,12 +168,10 @@ This means `useTerminalInput.js` does NOT import xterm at all. It only manages t
 // from its own textarea, and this app-owned textarea captures all input
 // with the browser's own (correct) event pipeline.
 //
-// DIAGNOSTICS — same pull-based pattern as the old guard (record always,
-// read on demand). window.__akiTermInput replaces window.__akiIme.
+// DIAGNOSTICS — same pull-based pattern as the old guard (record always, read on demand). window.__akiTermInput replaces window.__akiIme.
 
 export function useTerminalInput(onData) {
-  // onData: (text: string) => void — called when text is committed and
-  // should be sent to the PTY. The caller wires this to sendRaw().
+  // onData: (text: string) => void — called when text is committed and should be sent to the PTY. The caller wires this to sendRaw().
   //
   // Returns: { mount(rootEl), dispose(), focus(), blur(), textarea }
 }

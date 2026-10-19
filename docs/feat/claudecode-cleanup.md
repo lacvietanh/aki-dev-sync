@@ -3,9 +3,7 @@
 > updated 2026-08-16 · v1.24.0
 
 **Where**: app-icon menu (☰) → `Claude Code Cleanup (Local)`. Host-only - hidden on a paired phone.
-**Code**: `src-tauri/src/claude_cleanup.rs` · `src/components/modals/ClaudeCleanupModal.vue` · `src/utils/bytes.js`
-**Path catalogue & per-path impact**: `docs/ref/claudecode-cleanup-paths.md`
-**Plan**: `docs/plan/done/claudecode-cleanup.md`
+**Code**: `src-tauri/src/claude_cleanup.rs` · `src/components/modals/ClaudeCleanupModal.vue` · `src/utils/bytes.js` **Path catalogue & per-path impact**: `docs/ref/claudecode-cleanup-paths.md` **Plan**: `docs/plan/done/claudecode-cleanup.md`
 
 Answers two questions the CLI does not: *where did my disk go*, and *how do I sign out or start clean without losing my rules and skills*. It is not a general disk cleaner - it only ever touches paths this app names explicitly.
 
