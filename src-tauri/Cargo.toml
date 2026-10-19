@@ -6,9 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+# `_lib` keeps the lib name distinct from the bin name (a Windows clash, https://github.com/rust-lang/cargo/issues/8519).
 name = "aki_dev_sync_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -32,12 +30,10 @@ getrandom = "0.2"
 # §7.2 (PORT-1) dev-mode reverse proxy to Vite. TLS stripped — every request it makes is to
 # 127.0.0.1, never a remote/https host. (No HMR websocket bridge: HMR stays direct to Vite.)
 reqwest = { version = "0.12", default-features = false }
-# In-app terminal (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4, T-1) — the only battle-tested cross-platform PTY crate; ships on Apple Silicon in wezterm itself. tauri-plugin-shell has no PTY.
+# In-app terminal PTY (tauri-plugin-shell has none); the cross-platform crate wezterm ships (docs/plan/done/1.20.0-terminal-and-remote-sync.md §4).
 portable-pty = "0.9"
 
-# `killpg` for the in-app terminal's teardown (see pty.rs::kill_process_group). Already in the
-# lockfile transitively; declared explicitly because this crate calls it directly. unix-only —
-# there is no `killpg` on Windows, and that path falls back to `Child::kill()`.
+# `killpg` for the terminal's process-group teardown (pty.rs::kill_process_group); Windows falls back to `Child::kill()`.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

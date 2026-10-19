@@ -249,10 +249,7 @@ import { projectIconSrc } from '../../utils/projectIcon'
 const { showConfigModal, editingProject, closeConfig, saveConfig, confirmRemove, Toast, projectRuntime } = useProjects()
 const { sshHosts } = useSsh()
 
-// The exact same decision `applyProjectConfig` (the writer) uses -
-// `canSaveProjectConfig` - so the button can never disagree with what a save would actually do. A brand-new
-// project (not yet in `projects.value`) is always allowed; an existing one is blocked whenever its
-// project.json read is not 'ok'/'missing' - 'unknown' (e.g. mid-Refresh) included, unlike before.
+// The same `canSaveProjectConfig` decision the writer uses, so the button never disagrees with what a save would do.
 const configEntry = computed(() => getProjectConfigEntry(editingProject.value?.id))
 const isNewProject = computed(() => !projects.value.some((p) => p.id === editingProject.value?.id))
 const configBlocked = computed(() => !canSaveProjectConfig(isNewProject.value, configEntry.value.status))
@@ -276,10 +273,7 @@ async function reloadIcon() {
 const togglePushScripts = ref(false)
 const togglePullScripts = ref(false)
 
-// The dialog's own Remote Host select must use the same switch logic as the table dropdown
-// (remoteActions.setRemoteHost) - never keep the outgoing host's hooks on the new one. `remote_path` is a
-// project fact (1.32.0) and is left untouched by this switch. Mutates the draft `editingProject` only;
-// nothing is saved until the user hits Save.
+// Same host switch as remoteActions.setRemoteHost (hooks follow the host, `remote_path` stays); edits the draft only, saved on Save.
 function onRemoteHostChange(event) {
   const newHost = event.target.value
   const project = editingProject.value

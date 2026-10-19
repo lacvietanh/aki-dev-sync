@@ -72,10 +72,7 @@ export function isCurrentProjectConfigGeneration(id, token) {
 }
 
 // ── Per-project write queue for `.akidevsync/project.json` ─────────────────────────────────────
-// Serialises `write_project_config` calls per project id so a rapid Save + a companion's Save (or, since
-// Slice E, the pycache exclude migration) never interleave two writes for the same project. Lives here
-// (not in remoteActions.js, its original home) so `useProjectConfig.js` can share the same queue without a
-// circular import - remoteActions.js already imports from useProjectConfig.js statically.
+// Serialises writes per project id so saves never interleave; lives here so useProjectConfig.js shares it without a circular import.
 const configWriteChains = new Map()
 export function queueConfigWrite(projectId, run) {
   const prev = configWriteChains.get(projectId) || Promise.resolve()

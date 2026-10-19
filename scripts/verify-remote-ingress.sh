@@ -70,7 +70,7 @@ for field in pairLinkToken foreignTarget suggestedOrigin ingressMode ingressOrig
   fi
 done
 
-# 7. capabilities/default.json: confirmed by the plan as needing no entry for web_server::* commands (Tauri v2 gates plugin permissions, not commands in generate_handler!) — assert that premise still holds so a future Tauri upgrade that changes it doesn't go unnoticed.
+# 7. web_server::* needs no capability entry (Tauri v2 gates plugin permissions, not generate_handler! commands); flag it if an upgrade changes that.
 CAPS="src-tauri/capabilities/default.json"
 if grep -q 'web_server::' "$CAPS" 2>/dev/null; then
   note "capabilities/default.json now names web_server:: commands — the 'no grant needed' premise in the plan §8 has changed, re-check it"

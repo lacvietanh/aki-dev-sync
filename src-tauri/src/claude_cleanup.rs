@@ -330,9 +330,7 @@ fn memory_dirs(root: &Path) -> (u64, usize) {
         .unwrap_or((0, 0))
 }
 
-/// Resolves a catalog entry to its actual filesystem path using the selected profile's config dir.
-/// Entries under `.claude/` resolve relative to `claude_dir` (`$CLAUDE_CONFIG_DIR` when set, else
-/// `home/.claude`). Home-relative entries (`.claude.json`, `Library/`) stay under `home`.
+/// `.claude/` entries resolve under `claude_dir` (the selected profile's config dir); home-relative ones (`.claude.json`, `Library/`) under `home`.
 fn entry_path(home: &Path, claude_dir: &Path, e: &CatalogEntry) -> std::path::PathBuf {
     if let Some(sub) = e.rel.strip_prefix(".claude/") {
         claude_dir.join(sub)

@@ -4,9 +4,8 @@ import { readFileSync } from "fs";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// Port is set by scripts/tauri-runner.js before Vite starts.
-// Falls back to 1420 when running `npm run dev` standalone (no tauri-runner).
-// Port the companion relay binds (src-tauri/src/web_server.rs). Vite must never sit on it.
+// RELAY_PORT: the companion relay's bind (web_server.rs), never Vite's (docs/plan/done/remote-control.md § PORT-1 corollary).
+// devPort: set by scripts/tauri-runner.js; 1420 under a standalone `npm run dev`.
 const RELAY_PORT = 1421;
 const devPort = parseInt(process.env.TAURI_DEV_PORT || '1420', 10);
 if (devPort === RELAY_PORT) {
@@ -37,11 +36,7 @@ export default defineConfig(async () => ({
     port: devPort,
     strictPort: true,
     host: host || false,
-    // HMR stays DIRECT to Vite (docs/plan/done/remote-control.md §7.2): the Mac dev window loads Vite
-    // on localhost and hot-reloads directly. The phone loads the SPA through axum's proxy on :1421
-    // (PORT-1) but does NOT get live HMR in dev — manual refresh — since Vite is localhost-only.
-    // An axum HMR websocket bridge was tried and removed: it forced even the Mac window's HMR
-    // through the proxy and broke it (connection-refused spam). Reliable-first.
+    // HMR stays direct to Vite; the phone, proxied via :1421, refreshes by hand (docs/plan/done/remote-control.md §7.2: the axum HMR bridge broke it).
     hmr: host
       ? {
           protocol: "ws",

@@ -641,11 +641,7 @@ function ideMissing(name) {
 const PATH_MISSING_TITLE = 'Local folder missing on disk';
 const CONFIG_NOT_READY_TITLE = 'Project settings (.akidevsync/project.json) are not ready - fix before syncing';
 
-// Item 2 (docs/plan/done/settings-and-state-layout.md): PUSH/PULL/status-check must never run against a
-// project whose project.json is not the authoritative 'ok' (missing with nothing to seed, corrupt,
-// unavailable) - the excludes on `p` may be an empty or stale registry leftover otherwise. The actual
-// guard lives in `useSync.js::startSync`/`useSyncStatus.js::checkProjectSyncStatus`; this is the matching
-// UI-level disable + tooltip, reusing the same disabled/title idiom as `localBlocked`/`localTitle`.
+// UI twin of useSync.js::startSync's guard: no PUSH/PULL/status check unless project.json is 'ok' (settings-and-state-layout.md item 2).
 function configBlocked(p) {
   return getProjectConfigEntry(p.id).status !== 'ok';
 }

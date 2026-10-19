@@ -15,7 +15,7 @@ Then two lines: "PUSH would ..." and "PULL would ..." stating the concrete conse
 Add a last line only if it changes what they would do: a stale remote, an old last sync, unverified files.
 Hard limits: never recommend which side to keep, never rate confidence, never suggest commands or actions - describe only, and only facts from the JSON or from what you just read. If a diff is missing, say so in one line and use sizes and times.`
 
-// agy needs an explicit model slug and carries its thinking tier in it (no effort dial); default = the newest Flash `-high` tier, https://github.com/lacvietanh/akidevrule/blob/79fb6695a64254df91fd61e1318b3b8ec5d5eac3/skills/akiflow/references/harness-facts.md#model-tiers
+// agy carries its thinking tier in the model slug (no effort dial); default = newest Flash `-high` (akidevrule harness-facts.md § Model tiers).
 export const DEFAULT_AGY_MODEL = 'gemini-3.8-flash-high'
 // An empty explain_prompt = use the built-in default, so improvements to it reach everyone who never customised it.
 const DEFAULTS = { agy_model: DEFAULT_AGY_MODEL, explain_prompt: '' }

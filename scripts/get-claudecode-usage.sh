@@ -1,11 +1,7 @@
 # @docs docs/arch/usage-claudecode.md
 set -e
 
-# docs/ref/multiple-account-config-dir.md: this probe has no profile parameter, so any
-# CLAUDE_CONFIG_DIR seen here is inherited ambiently. If it points at a dir with no
-# authenticated identity (e.g. the agent-mode proxy scaffold ~/.claude-prx), fall back to the
-# real default $HOME/.claude so usage never silently blanks; a genuine profile dir (one with
-# an oauthAccount) is kept, preserving intentional multi-account launches.
+# An inherited CLAUDE_CONFIG_DIR with no oauthAccount (e.g. the ~/.claude-prx proxy scaffold) falls back to ~/.claude (docs/ref/multiple-account-config-dir.md).
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
     _cc_has_identity=$(CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" python3 -c 'import json, os
 p = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], ".claude.json")

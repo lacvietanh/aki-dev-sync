@@ -79,7 +79,7 @@ test('empty remote_host project keeps hooks at the top level, never creates targ
   assert.equal(Object.prototype.hasOwnProperty.call(payload.targets, ''), false)
 })
 
-// 1.32.0 fix: remote_path is a project fact, fixed across every host - resolveHostSwitch no longer returns or touches it at all; the caller keeps the project's existing remote_path unchanged on any host switch.
+// remote_path is a project fact (1.32.0): resolveHostSwitch never returns or touches it.
 test('resolveHostSwitch to an unknown host yields empty hooks and leaves other hosts untouched', () => {
   const p = baseProject({
     remote_host: 'host-a',
@@ -115,9 +115,7 @@ test('buildProjectConfigSeeds skips projects without id/local_path and maps the 
   assert.deepEqual(seeds[0].file.commands, { dev: 'npm run dev', build: 'npm run build' })
 })
 
-// CanSaveProjectConfig is the one function both the writer (applyProjectConfig)
-// and the dialog's Save button (ProjectConfigModal.vue) call - a save is only allowed for a brand-new
-// project, or an existing one whose project.json read already came back 'ok' or 'missing'.
+// The writer and the Save button share this: only a new project, or one whose project.json read is 'ok'/'missing', may save.
 test('canSaveProjectConfig: a brand-new project is always allowed regardless of status', () => {
   assert.equal(canSaveProjectConfig(true, 'unknown'), true)
   assert.equal(canSaveProjectConfig(true, 'unavailable'), true)
@@ -226,10 +224,7 @@ test('deployTargetLabel is "local" or "host:path"', () => {
   assert.equal(deployTargetLabel({ deploy: { run_on: 'remote' }, remote_host: 'bien', remote_path: '~/app' }), '(no host):~/app')
 })
 
-// The pure decision behind the post-push `on_push` offer (useSync.js) - every branch named in
-// docs/plan/done/deploy-action.md's own test list. `deployCmd` is the already-resolved command the caller
-// (`resolveDeployCmd`) hands in; `syncSucceeded` is gone - a failed sync never reaches this call site at
-// all (it lives inside `run_sync`'s try-block success branch), so there is nothing left here to test for it.
+// The post-push `on_push` deploy offer (useSync.js), per docs/plan/done/deploy-action.md's test list; a failed sync never reaches it.
 test('shouldOfferDeployAfterPush never fires on a dry run', () => {
   const project = { remote_host: 'prod', remote_path: '~/app', deploy: { run_on: 'remote', on_push: true, host: 'prod' } }
   assert.equal(shouldOfferDeployAfterPush({ direction: 'push', isDryRun: true, specificPaths: [], project, deployCmd: 'npm run deploy' }), false)

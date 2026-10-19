@@ -8,9 +8,7 @@ import { useLogs } from './useLogs'
 export async function checkProjectSyncStatus(project) {
   if (!syncCheckEnabled.value) return
   if (projectRuntime.value[project.id]?.syncing) return
-  // Item 2 (docs/plan/done/settings-and-state-layout.md): a status check reads the excludes on `project`,
-  // which may be an empty/stale registry leftover unless project.json is the authoritative 'ok' - same
-  // boundary as `useSync.js::startSync`'s guard.
+  // Excludes are authoritative only when project.json is 'ok'; same boundary as `useSync.js::startSync`'s guard.
   if (getProjectConfigEntry(project.id).status !== 'ok') return
   // beginRefresh first - see fetchGitStatus.
   beginRefresh(project.id)

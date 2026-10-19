@@ -15,7 +15,7 @@
        class="fa-solid fa-trash cell-badge cell-badge-bottom sync-delete-badge"
        :class="deleteSide === 'left' ? 'cell-badge-left' : ''"
        :title="deleteTitle"></i>
-    <!-- Conflict overlay (docs/plan/done/conflict-detection-and-agy-report.md §4): free top-left corner, opens the read-only breakdown popover via the same native Popover API + CSS anchor positioning as the OPEN popup, without triggering the sync button underneath. -->
+    <!-- Conflict overlay (docs/plan/done/conflict-detection-and-agy-report.md §4): opens the read-only breakdown popover without triggering the sync button underneath. -->
     <button v-if="conflictCount > 0"
             type="button"
             class="cell-badge cell-badge-top cell-badge-left sync-conflict-badge"

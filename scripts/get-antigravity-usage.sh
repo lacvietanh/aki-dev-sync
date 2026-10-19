@@ -256,8 +256,7 @@ $PS_OUT
 EOF_PS
 
 # ── 6. agy CLI quota (docs/arch/usage-antigravity.md § agy CLI source) ─────
-# agy hosts its language server in-process with no --csrf_token in argv, so its RPC answers 401;
-# its own headless `/usage` is the supported read. ~4 s and ~200 MB per run, hence the 1-minute cache.
+# Headless `/usage`: agy's in-process server has no --csrf_token, so its RPC answers 401; ~4 s / ~200 MB a run, hence the 1-minute cache.
 resolve_agy() {
     for _c in "$HOME/.local/bin/agy" /opt/homebrew/bin/agy /usr/local/bin/agy; do
         [ -x "$_c" ] && { printf '%s' "$_c"; return 0; }

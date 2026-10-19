@@ -16,7 +16,7 @@ const httpsAvailable = ref(false)
 const httpsEnabled = ref(false)
 const httpsUrl = ref('') // https://<magicdns>/
 const httpsBusy = ref(false)
-// Set when another process owns the tailnet 443 "/" mount; the backend refuses to enable HTTPS while it is, and names it here so the UI can say why (docs/research/remote-ingress-tailscale-conflict.md F1).
+// Names the process that owns the tailnet 443 "/" mount, so the UI can say why HTTPS stays off (docs/research/remote-ingress-tailscale-conflict.md F1).
 const foreignTarget = ref(null)
 
 // Ingress mode (docs/plan/remote-ingress-rework.md §5): one stored origin, either Tailscale-managed or owner-run.

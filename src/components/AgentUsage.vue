@@ -356,10 +356,7 @@ function isAccountLive(acc) {
   return true;
 }
 
-// Truncate email in header to preserve stable layout width. Mirrors the @container
-// main-view (max-width: 700px) breakpoint every sibling component uses: in right-dock
-// mode dashboard-left is capped at MAIN_VIEW_MAX_WIDTH (440, always under 700) regardless
-// of window width, so window.innerWidth alone under-truncates there.
+// Mirrors the 700px @container main-view breakpoint; the right dock caps dashboard-left under it, so window width alone under-truncates.
 const windowNarrow = ref(typeof window !== 'undefined' && window.innerWidth <= 700);
 function updateWindowNarrow() { windowNarrow.value = window.innerWidth <= 700; }
 const isNarrow = computed(() => rightDockActive.value || windowNarrow.value);
