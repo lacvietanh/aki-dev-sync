@@ -1763,3 +1763,7 @@ Không phát hiện vấn đề: host luôn `connect()` (`services/index.js:41`)
 **🟡 (21)** — chi tiết trong từng case: E1 (2), E2 (2), E3 (1), E4 (1), E5 (1), E6 (1), E7 (2), E8 (2), E9 (3), E10 (2), E11 (1), E12 (1), E13 (2), E14 (2), E16 (2), E17 (2), E18 (2), E19 (1), E20 (1).
 
 **Không phát hiện vấn đề**: E4 (capabilities — 13/13 API đều được cấp quyền), E10 (audit toàn bộ `#[tauri::command]` — không lệnh nào vi phạm NEVER BLOCK THE UI), E13 (kiến trúc lưu/mirror global note), E20 (quy tắc select), phần bảng màu ANSI của E5 (8 màu + 5 tier khớp 100% giữa JS / Rust / shell), và `#[serde(default)]` trên `SyncProject`/`ProjectTask` (`src-tauri/src/projects.rs:23-88` — mọi field mới đều có default).
+
+## Amendments
+
+- 2026-10-19 · § E16, 🟡 "Hàm `ssh()` override áp cho cả shell không tương tác": đã sửa — snippet chỉ in OSC khi stdout là terminal và giữ exit status của `ssh`; xem `docs/plan/fix-ssh-color-non-tty.md`.
