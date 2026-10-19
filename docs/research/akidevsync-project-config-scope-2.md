@@ -1,6 +1,6 @@
 # Where each setting and state value lives — four owners, two kinds
 
-Status: amended 2026-09-28
+Status: amended 2026-10-19
 
 **Start time:** 2026-09-27
 
@@ -115,5 +115,7 @@ Rejected: `.akidevsync/local/` · everything travels · nothing travels (reasons
 ## Amendments
 
 **2026-09-28.** F5's field-placement column (`targets.<host>.remote_path`) was wrong. The finding itself — "the host dropdown keeps `remote_path` when the host changes" — was read as a bug to fix by making the path follow the host, when the owner's actual requirement (stated 2026-09-28) is the opposite: a project has exactly ONE remote directory regardless of host, so the path must NEVER change on a host switch. `hooks` (and `deploy`, added by plan 3) really are per-host — they were bundled with `remote_path` into the same `Target` struct on the assumption all three shared one placement rule, without re-checking that assumption against `remote_path` specifically. Checked against the real registry as part of the fix: no project has ever recorded two different paths across hosts, confirming the per-host storage was never actually exercised as designed, only as the friction it created (a new host prompting for a path that had never changed). Fixed directly in `docs/plan/done/settings-and-state-layout.md` § Amendments; this Decision's "three plans, in order" and the rejected alternatives above are otherwise unchanged.
+
+**2026-10-19.** § Result, F1: first concrete case. `aki-gegrok-bot`'s `.akidevsync/project.json` on `grokvm` carries a newer mtime (server-side mass touch, 2026-10-18) but older content than the Mac copy: it lacks the `data/` push exclude and `commands.deploy`. A PULL would overwrite the Mac copy and revert both settings; the PULL badge counts it as 1 of 3 files, and the mirror overwrite preview does not name it because it lists only files whose destination is newer or equal. This is the critique's reopen trigger ("a setting silently reverting after a sync") reached before it fired. The by-design decision stands until the owner reopens it; source `docs/research/sync-badge-time-only.md` § Result.
 
 **2026-09-28 (2).** § Field placement, row `targets.<host>.deploy`: deploy is no longer per-host. It is one project-level `deploy` that names its own `host`, because a deploy that follows the active sync host runs wherever the one-click dropdown last pointed — `docs/research/sync-host-safety.md` § R4. The rest of this Decision stands.

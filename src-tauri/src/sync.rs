@@ -1060,6 +1060,11 @@ pub struct SyncStatusResult {
     /// both lists") - keyed by the path's first component, or `"."` for a root-level file.
     #[serde(default)]
     pub by_top_dir: HashMap<String, TopDirCounts>,
+    /// Content-identical files a sync would only re-time, left out of the counts (docs/feat/sync-flow.md § Time-only differences).
+    #[serde(default)]
+    pub time_only_push: u32,
+    #[serde(default)]
+    pub time_only_pull: u32,
 }
 
 /// One top-level directory's class breakdown (`SyncStatusResult.by_top_dir`'s value). `.git` files land in
@@ -1347,6 +1352,60 @@ fn checksum_cache() -> &'static Mutex<HashMap<ChecksumCacheKey, bool>> {
     CHECKSUM_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+struct ContentCheck {
+    differing: HashSet<String>,
+    /// Past the per-poll cap, or in a failed `rsync -c` call - content unknown.
+    unchecked: HashSet<String>,
+    failed: bool,
+}
+
+/// Cache first, then one capped `rsync -c` call; a failure leaves paths unchecked instead of failing the status (it froze every badge).
+fn check_content(project: &SyncProject, paths: Vec<String>, meta: &HashMap<String, (u64, u64, u64)>) -> ContentCheck {
+    let cache_key = |path: &String| {
+        meta.get(path)
+            .map(|(l, r, s)| (project.id.clone(), project.remote_host.clone(), path.clone(), *l, *r, *s))
+    };
+    let mut differing = HashSet::new();
+    let mut uncached = Vec::new();
+    {
+        let cache = checksum_cache().lock().unwrap_or_else(|e| e.into_inner());
+        for path in paths {
+            match cache_key(&path).and_then(|k| cache.get(&k).copied()) {
+                Some(true) => {
+                    differing.insert(path);
+                }
+                Some(false) => {}
+                None => uncached.push(path),
+            }
+        }
+    }
+
+    let (to_check, over_cap) = conflict::split_checksum_residue(uncached, conflict::CHECKSUM_CAP);
+    let mut unchecked: HashSet<String> = over_cap.into_iter().collect();
+    let mut failed = false;
+    match rsync_checksum_residue(project, &to_check) {
+        Ok(fresh) => {
+            let mut cache = checksum_cache().lock().unwrap_or_else(|e| e.into_inner());
+            for path in &to_check {
+                if let Some(key) = cache_key(path) {
+                    cache.insert(key, fresh.contains(path));
+                }
+            }
+            differing.extend(fresh);
+        }
+        Err(e) => {
+            log_status_anomaly(
+                project,
+                "checksum",
+                &format!("checksum residue failed, {} file(s) left unverified: {}", to_check.len(), e),
+            );
+            failed = true;
+            unchecked.extend(to_check);
+        }
+    }
+    ContentCheck { differing, unchecked, failed }
+}
+
 /// Last status-check anomaly logged per (project, host, kind): one poll can fail in several independent steps
 /// with different messages, so a single slot per host would be overwritten by the sibling step and every poll
 /// would log both again. An unchanged failure of one kind is logged once, not once a minute.
@@ -1397,6 +1456,67 @@ struct ClassificationOutcome {
     conflicts: Vec<ConflictEntry>,
     needs_checksum: Vec<String>,
     needs_checksum_meta: HashMap<String, (u64, u64, u64)>,
+    size_matched_moves: Vec<SizeMatchedMove>,
+    time_only_push: u32,
+    time_only_pull: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MoveSide {
+    Push,
+    PushStaleRemote,
+    Pull,
+}
+
+#[derive(Debug)]
+struct SizeMatchedMove {
+    path: String,
+    side: MoveSide,
+    dir: String,
+}
+
+impl ClassificationOutcome {
+    fn count_move(&mut self, side: MoveSide, dir: String) {
+        let entry = self.by_top_dir.entry(dir).or_default();
+        match side {
+            MoveSide::Push => {
+                self.push_count += 1;
+                entry.push += 1;
+            }
+            MoveSide::PushStaleRemote => {
+                self.push_count += 1;
+                self.remote_behind = true;
+                entry.stale_remote += 1;
+            }
+            MoveSide::Pull => {
+                self.pull_count += 1;
+                entry.pull += 1;
+            }
+        }
+    }
+
+    /// `size_matched` is the checksum-cache (local mtime, remote mtime, size), present only when both sizes match.
+    fn route_move(&mut self, path: &str, side: MoveSide, dir: String, size_matched: Option<(u64, u64, u64)>) {
+        match size_matched {
+            Some(meta) => {
+                self.needs_checksum_meta.insert(path.to_string(), meta);
+                self.size_matched_moves.push(SizeMatchedMove { path: path.to_string(), side, dir });
+            }
+            None => self.count_move(side, dir),
+        }
+    }
+}
+
+fn tally_size_matched(out: &mut ClassificationOutcome, differing: &HashSet<String>, unchecked: &HashSet<String>) {
+    for m in std::mem::take(&mut out.size_matched_moves) {
+        if differing.contains(&m.path) || unchecked.contains(&m.path) {
+            out.count_move(m.side, m.dir);
+        } else if m.side == MoveSide::Pull {
+            out.time_only_pull += 1;
+        } else {
+            out.time_only_push += 1;
+        }
+    }
 }
 
 /// Classifies every candidate path via `conflict::classify_file` and accumulates counts, the per-top-directory
@@ -1438,6 +1558,10 @@ fn classify_candidates(
         let is_push_side = push_set.contains(path.as_str());
         let is_pull_side = !is_push_side && pull_after_u_set.contains(path.as_str());
         let dir = top_dir_of(path);
+        let size_matched = match (local_mtime, remote_meta, local_size) {
+            (Some(l), Some(m), Some(s)) if s == m.size => Some((l, m.mtime, s)),
+            _ => None,
+        };
 
         match conflict::classify_file(&input) {
             FileClass::GitGroup => {
@@ -1450,27 +1574,15 @@ fn classify_candidates(
                     out.pull_count += 1;
                 }
             }
-            FileClass::Push => {
-                out.push_count += 1;
-                out.by_top_dir.entry(dir).or_default().push += 1;
-            }
-            FileClass::PushStaleRemote => {
-                out.push_count += 1;
-                out.remote_behind = true;
-                out.by_top_dir.entry(dir).or_default().stale_remote += 1;
-            }
-            FileClass::Pull => {
-                out.pull_count += 1;
-                out.by_top_dir.entry(dir).or_default().pull += 1;
-            }
+            FileClass::Push => out.route_move(path, MoveSide::Push, dir, size_matched),
+            FileClass::PushStaleRemote => out.route_move(path, MoveSide::PushStaleRemote, dir, size_matched),
+            FileClass::Pull => out.route_move(path, MoveSide::Pull, dir, size_matched),
             FileClass::Suppressed => {} // remote-deleted, unedited locally - drops from every count.
             FileClass::Unclassified => {
                 if is_push_side {
-                    out.push_count += 1;
-                    out.by_top_dir.entry(dir).or_default().push += 1;
+                    out.route_move(path, MoveSide::Push, dir, size_matched);
                 } else if is_pull_side {
-                    out.pull_count += 1;
-                    out.by_top_dir.entry(dir).or_default().pull += 1;
+                    out.route_move(path, MoveSide::Pull, dir, size_matched);
                 }
             }
             FileClass::Conflict => out.conflicts.push(ConflictEntry {
@@ -1494,8 +1606,8 @@ fn classify_candidates(
 }
 
 /// Full pipeline (docs/plan/done/conflict-detection-and-agy-report.md §§1-4): gathers (L, R, B, sizes) for every
-/// differing file, classifies each with `conflict::classify_file`, checksums the same-size residue, and
-/// returns push/pull counts with conflicts already excluded. Degrades to the pre-conflict-detection counts
+/// differing file, classifies each with `conflict::classify_file`, checksums every same-size file, and
+/// returns push/pull counts with conflicts and time-only files excluded. Degrades to the pre-conflict-detection counts
 /// (`compute_sync_counts_with_push_files`, reusing the push dry-run already fetched here) when the pull
 /// dry-run's `--out-format` did not parse, OR when the metadata call itself exits non-zero (e.g. this
 /// rsync build rejects `--out-format` outright) - either way, never a guessed classification
@@ -1572,7 +1684,7 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         .map(|m| m.path.as_str())
         .collect();
 
-    let outcome = classify_candidates(
+    let mut outcome = classify_candidates(
         &candidates,
         &local_stats,
         &remote_by_path,
@@ -1581,6 +1693,22 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         &push_set,
         &pull_after_u_set,
     );
+
+    // Conflict residue goes first so the per-poll cap spends on it before the same-size moves.
+    let residue = std::mem::take(&mut outcome.needs_checksum);
+    let to_check: Vec<String> = residue
+        .iter()
+        .cloned()
+        .chain(outcome.size_matched_moves.iter().map(|m| m.path.clone()))
+        .collect();
+    let content = check_content(project, to_check, &outcome.needs_checksum_meta);
+    tally_size_matched(&mut outcome, &content.differing, &content.unchecked);
+
+    // Unchecked residue stays an unverified conflict, never "converged" (a guess).
+    let (checked, unverified): (Vec<String>, Vec<String>) =
+        residue.into_iter().partition(|p| !content.unchecked.contains(p));
+    let (_, real_conflicts) = conflict::classify_checksum_result(&checked, &content.differing);
+
     let ClassificationOutcome {
         push_count: final_push_count,
         pull_count: final_pull_count,
@@ -1588,71 +1716,10 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         remote_behind,
         by_top_dir,
         mut conflicts,
-        needs_checksum,
-        needs_checksum_meta,
+        time_only_push,
+        time_only_pull,
+        ..
     } = outcome;
-
-    let (checked, unverified) = conflict::split_checksum_residue(needs_checksum, conflict::CHECKSUM_CAP);
-
-    // Cache lookup: a same-size residue file whose (L, R, size) is unchanged since a previous poll already checksummed it - skip the rsync -c call for it entirely.
-    let mut still_need_check: Vec<String> = Vec::new();
-    let mut cached_differs: HashSet<String> = HashSet::new();
-    {
-        let cache = checksum_cache().lock().unwrap_or_else(|e| e.into_inner());
-        for path in &checked {
-            let hit = needs_checksum_meta.get(path).and_then(|(l, r, s)| {
-                let key = (project.id.clone(), project.remote_host.clone(), path.clone(), *l, *r, *s);
-                cache.get(&key).copied()
-            });
-            match hit {
-                Some(differs) => {
-                    if differs {
-                        cached_differs.insert(path.clone());
-                    }
-                }
-                None => still_need_check.push(path.clone()),
-            }
-        }
-    }
-
-    // A failed checksum leaves these files "both changed, same size, content unknown" - reported as
-    // unverified conflicts, the same honest answer the cap gives, never an Err that sinks the whole status
-    // (which froze every badge on the last good poll) and never "converged" (a guess).
-    let mut unverified = unverified;
-    let mut checked = checked;
-    let mut checksum_failed = false;
-    let freshly_differing = match rsync_checksum_residue(project, &still_need_check) {
-        Ok(differing) => {
-            let mut cache = checksum_cache().lock().unwrap_or_else(|e| e.into_inner());
-            for path in &still_need_check {
-                if let Some((l, r, s)) = needs_checksum_meta.get(path) {
-                    let key = (project.id.clone(), project.remote_host.clone(), path.clone(), *l, *r, *s);
-                    cache.insert(key, differing.contains(path));
-                }
-            }
-            differing
-        }
-        Err(e) => {
-            log_status_anomaly(
-                project,
-                "checksum",
-                &format!(
-                    "checksum residue failed, {} file(s) reported as unverified conflicts: {}",
-                    still_need_check.len(),
-                    e
-                ),
-            );
-            checksum_failed = true;
-            let failed: HashSet<&String> = still_need_check.iter().collect();
-            checked.retain(|p| !failed.contains(p));
-            unverified.extend(still_need_check.iter().cloned());
-            HashSet::new()
-        }
-    };
-
-    let mut differing = freshly_differing;
-    differing.extend(cached_differs);
-    let (_, real_conflicts) = conflict::classify_checksum_result(&checked, &differing);
 
     let conflict_entry_for = |path: String, verified: bool| {
         let (local_mtime, local_size) = local_file_stat(&project.local_path, &path);
@@ -1672,7 +1739,7 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
     for path in unverified {
         conflicts.push(conflict_entry_for(path, false));
     }
-    if !checksum_failed {
+    if !content.failed {
         clear_status_anomaly(project);
     }
 
@@ -1685,6 +1752,8 @@ fn compute_sync_status_full(project: &SyncProject) -> Result<SyncStatusResult, S
         git_count,
         remote_behind,
         by_top_dir,
+        time_only_push,
+        time_only_pull,
     })
 }
 
@@ -2816,7 +2885,7 @@ mod tests {
         // "push counting comes only from the push dry-run set" - a file excluded from push but
         // reported by the pull-side diff (no baseline, so the classifier itself can't resolve a direction)
         // must be attributed by set membership only, never defaulted into push.
-        let (path, meta) = candidate_meta("push-excluded.txt", 10, 500);
+        let (path, meta) = candidate_meta("push-excluded.txt", 12, 500);
         let candidates = vec![path.clone()];
         let local_stats: HashMap<String, (Option<u64>, Option<u64>)> =
             [(path.clone(), (Some(600), Some(10)))].into();
@@ -2860,6 +2929,7 @@ mod tests {
 
         assert_eq!(out.push_count, 0);
         assert_eq!(out.pull_count, 0);
+        assert!(out.size_matched_moves.is_empty());
     }
 
     #[test]
@@ -2911,6 +2981,50 @@ mod tests {
         assert_eq!(out.conflicts.len(), 1);
         assert_eq!(out.push_count, 0);
         assert_eq!(out.pull_count, 0);
+    }
+
+    #[test]
+    fn classify_candidates_same_size_remote_touch_waits_for_the_content_check() {
+        // The remote copy was re-timed (R > B) while local stayed at the baseline: a Pull by mtime, not yet by content.
+        let (path, meta) = candidate_meta("retimed.txt", 10, 500);
+        let candidates = vec![path.clone()];
+        let local_stats: HashMap<String, (Option<u64>, Option<u64>)> =
+            [(path.clone(), (Some(100), Some(10)))].into();
+        let remote_by_path: HashMap<&str, &RemoteFileMeta> = [(path.as_str(), &meta)].into();
+        let mut baseline_files = HashMap::new();
+        baseline_files.insert(path.clone(), 100u64);
+
+        let out = classify_candidates(
+            &candidates,
+            &local_stats,
+            &remote_by_path,
+            Some(&baseline_files),
+            true,
+            &HashSet::new(),
+            &[path.as_str()].into(),
+        );
+
+        assert_eq!(out.pull_count, 0);
+        assert_eq!(out.size_matched_moves.len(), 1);
+        assert_eq!(out.size_matched_moves[0].side, MoveSide::Pull);
+        assert_eq!(out.needs_checksum_meta.get(&path), Some(&(100, 500, 10)));
+    }
+
+    #[test]
+    fn tally_size_matched_counts_differing_and_unchecked_and_sets_identical_aside() {
+        let mut out = ClassificationOutcome::default();
+        for (path, side) in [("same.txt", MoveSide::Pull), ("edited.txt", MoveSide::Pull), ("over-cap.txt", MoveSide::Push)] {
+            out.size_matched_moves.push(SizeMatchedMove { path: path.to_string(), side, dir: ".".to_string() });
+        }
+        let differing: HashSet<String> = ["edited.txt".to_string()].into();
+        let unchecked: HashSet<String> = ["over-cap.txt".to_string()].into();
+
+        tally_size_matched(&mut out, &differing, &unchecked);
+
+        assert_eq!((out.pull_count, out.push_count), (1, 1));
+        assert_eq!((out.time_only_pull, out.time_only_push), (1, 0));
+        assert_eq!(out.by_top_dir.get(".").map(|c| (c.pull, c.push)), Some((1, 1)));
+        assert!(out.size_matched_moves.is_empty());
     }
 
     // real fixture running the local `rsync` binary this app

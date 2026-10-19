@@ -12,8 +12,7 @@ use std::collections::HashMap;
 /// means to the rsync invocation that produced the file list (sync.rs's existing `--modify-window=2`).
 pub const MODIFY_WINDOW_SECS: i64 = 2;
 
-/// Above this many same-size files, the checksum residue (§3) stops calling `rsync -c` and marks the rest
-/// conflict-unverified instead - a starting cap, per the plan's own wording.
+/// Per-poll limit on uncached same-size files sent to `rsync -c` (docs/feat/sync-flow.md § Checksum residue).
 pub const CHECKSUM_CAP: usize = 200;
 
 fn mtimes_equal(a: u64, b: u64) -> bool {
@@ -304,8 +303,7 @@ pub fn select_pull_after_u_filter<'a>(
         .collect()
 }
 
-/// Splits the same-size residue (§3): only the first `cap` files get a real checksum call; the rest are
-/// marked conflict-unverified instead of silently dropped or silently trusted.
+/// The first `cap` uncached same-size files get a checksum call; the rest stay unchecked, never trusted.
 pub fn split_checksum_residue(residue: Vec<String>, cap: usize) -> (Vec<String>, Vec<String>) {
     if residue.len() <= cap {
         (residue, Vec::new())

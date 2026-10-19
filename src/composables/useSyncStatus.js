@@ -57,6 +57,8 @@ export async function checkProjectSyncStatus(project) {
       gitCount: result.git_count ?? 0,
       remoteBehind: result.remote_behind ?? false,
       byTopDir: result.by_top_dir ?? {},
+      timeOnlyPush: result.time_only_push ?? 0,
+      timeOnlyPull: result.time_only_pull ?? 0,
       syncCheckError: null,
     }
   } catch (e) {

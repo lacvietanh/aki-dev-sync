@@ -295,7 +295,7 @@
                                 }"
                                 :disabled="!syncCheckEnabled || (projectRuntime[p.id]?.syncing && !isStop(p, 'push')) || (!isStop(p, 'push') && configBlocked(p))"
                                 @click="isStop(p, 'push') ? requestCancelSync(p.id) : requestSync(p.id, 'push')"
-                                :title="staleNote(p, 'push') + (isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : configBlocked(p) ? CONFIG_NOT_READY_TITLE : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))${conflictCount(p) ? ' — ' + conflictTooltip(p) : ''}` : 'Push Local to Remote')">
+                                :title="staleNote(p, 'push') + (isStop(p, 'push') ? 'Stop this sync now (kills rsync/ssh)' : configBlocked(p) ? CONFIG_NOT_READY_TITLE : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pushCount > 0 ? `Push Local → Remote (${projectRuntime[p.id].pushCount} file(s))${conflictCount(p) ? ' — ' + conflictTooltip(p) : ''}` : 'Push Local to Remote' + timeOnlySuffix(p, 'push'))">
                           <i class="fa-solid" :class="isStop(p, 'push') ? 'fa-stop' : 'fa-cloud-arrow-up'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'push') ? 'STOP' : 'PUSH' }}</span>
                         </button>
                       </CountBadgeWrap>
@@ -314,7 +314,7 @@
                               </div>
                               <div v-if="!sideDirRows(p, side.key).length" class="conflict-row-empty">nothing</div>
                             </div>
-                            <div v-if="side.key === 'push' && sidePushNote(p)" class="conflict-popup-side-note">{{ sidePushNote(p) }}</div>
+                            <div v-if="sideNote(p, side.key)" class="conflict-popup-side-note">{{ sideNote(p, side.key) }}</div>
                           </div>
                         </div>
                         <div v-if="conflictCount(p)" class="conflict-popup-conflicts">
@@ -369,7 +369,7 @@
                                 }"
                                 :disabled="!syncCheckEnabled || (projectRuntime[p.id]?.syncing && !isStop(p, 'pull')) || (!isStop(p, 'pull') && configBlocked(p))"
                                 @click="isStop(p, 'pull') ? requestCancelSync(p.id) : requestSync(p.id, 'pull')"
-                                :title="staleNote(p, 'pull') + (isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : configBlocked(p) ? CONFIG_NOT_READY_TITLE : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local')">
+                                :title="staleNote(p, 'pull') + (isStop(p, 'pull') ? 'Stop this sync now (kills rsync/ssh)' : configBlocked(p) ? CONFIG_NOT_READY_TITLE : !syncCheckEnabled ? 'Sync check is off' : projectRuntime[p.id]?.pullCount > 0 ? `Pull Remote → Local (${projectRuntime[p.id].pullCount} file(s))` : 'Pull Remote to Local' + timeOnlySuffix(p, 'pull'))">
                           <i class="fa-solid" :class="isStop(p, 'pull') ? 'fa-stop' : 'fa-cloud-arrow-down'"></i> <span class="btn-text u-narrow-hide">{{ isStop(p, 'pull') ? 'STOP' : 'PULL' }}</span>
                         </button>
                       </CountBadgeWrap>
@@ -486,6 +486,7 @@ function pushTooltip(p) {
   if (rt.pushCount) parts.push(`${rt.pushCount} to push`);
   if (rt.gitCount) parts.push(`${rt.gitCount} .git`);
   if (rt.remoteBehind) parts.push('remote is behind');
+  if (rt.timeOnlyPush) parts.push(timeOnlyNote(rt.timeOnlyPush));
   const n = conflictCount(p);
   if (n) parts.push(`${n} conflict${n === 1 ? '' : 's'} excluded`);
   return parts.join(' · ');
@@ -497,6 +498,7 @@ function pullTooltip(p) {
   if (!rt) return '';
   const parts = [];
   if (rt.pullCount) parts.push(`${rt.pullCount} to pull`);
+  if (rt.timeOnlyPull) parts.push(timeOnlyNote(rt.timeOnlyPull));
   const n = conflictCount(p);
   if (n) parts.push(`${n} conflict${n === 1 ? '' : 's'} excluded`);
   return parts.join(' · ');
@@ -511,6 +513,8 @@ function conflictTooltip(p) {
   if (rt.pullCount) parts.push(`${rt.pullCount} to pull`);
   if (rt.gitCount) parts.push(`${rt.gitCount} .git`);
   if (rt.remoteBehind) parts.push('remote is behind');
+  const timeOnly = (rt.timeOnlyPush || 0) + (rt.timeOnlyPull || 0);
+  if (timeOnly) parts.push(timeOnlyNote(timeOnly));
   const n = conflictCount(p);
   if (n) parts.push(`${n} conflict${n === 1 ? '' : 's'} excluded`);
   return parts.join(' · ');
@@ -531,10 +535,23 @@ function sideDirRows(p, side) {
     .sort((a, b) => b[1] - a[1]);
 }
 
-// Push-side extras that are not file rows: .git churn and a remote that is behind.
-function sidePushNote(p) {
+// Same-size files whose checksum matched: a sync would only reset their modified time, so no badge counts them.
+function timeOnlyNote(n) {
+  return `${n} same content, only modified time differs`;
+}
+
+// Side extras that are not file rows: .git churn and a remote that is behind (push only), time-only differences (both).
+function sideNote(p, side) {
   const rt = projectRuntime.value[p.id];
-  return [rt?.gitCount && `+ ${rt.gitCount} .git`, rt?.remoteBehind && 'remote is behind'].filter(Boolean).join(' · ');
+  const timeOnly = side === 'push' ? rt?.timeOnlyPush : rt?.timeOnlyPull;
+  const pushOnly = side === 'push' ? [rt?.gitCount && `+ ${rt.gitCount} .git`, rt?.remoteBehind && 'remote is behind'] : [];
+  return [...pushOnly, timeOnly && `+ ${timeOnly} same content (time only)`].filter(Boolean).join(' · ');
+}
+
+// Idle button title tail: says why the button is not lit even though files differ by time.
+function timeOnlySuffix(p, side) {
+  const n = projectRuntime.value[p.id]?.[side === 'push' ? 'timeOnlyPush' : 'timeOnlyPull'];
+  return n ? ` · ${timeOnlyNote(n)}` : '';
 }
 
 // Per-project Explain state, keyed by project id - never persisted, cleared on popover close is not needed (read-only, re-requestable).
@@ -583,6 +600,8 @@ async function requestExplain(p) {
       git_count: projectRuntime.value[p.id]?.gitCount || 0,
       remote_behind: projectRuntime.value[p.id]?.remoteBehind || false,
       by_top_dir: projectRuntime.value[p.id]?.byTopDir || {},
+      time_only_push: projectRuntime.value[p.id]?.timeOnlyPush || 0,
+      time_only_pull: projectRuntime.value[p.id]?.timeOnlyPull || 0,
     };
     const agyCmd = await invoke('explain_sync_status', { project: p, status, model: effectiveAgyModel(), prompt: effectiveExplainPrompt() });
     explainState.value = { ...explainState.value, [p.id]: { loading: false } };
