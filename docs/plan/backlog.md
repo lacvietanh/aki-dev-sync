@@ -29,6 +29,7 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 |---|---|---|---|
 | 2 | Kéo-thả file làm app crash | `task-1789604877926` | Reproduce và lấy crash/log trước; ưu tiên cao vì làm mất phiên đang chạy |
 | 3 | AGY usage hỏng từ khoảng 1.29–1.30 | `task-1789578897581` | Đã sửa trong code (Unreleased): agy 1.4.x chạy language server ngay trong process `agy`, argv không có `--csrf_token` nên mọi RPC trả 401 (thấy cả trên Mac lẫn máy dev). Script giờ đọc quota CLI bằng `agy -p "/usage" --output-format json`, email lấy từ dòng log của agy, cache 1 phút; chi tiết `docs/arch/usage-antigravity.md` § 1b. R-AG1 đã chạy 2026-10-19 trên Mac (bản dev, 5 phiên agy + 2 IDE + desktop): script của 1.33.0 trả 401 cho mọi frame CLI, bản sửa trả frame CLI 200; app dev nhận `done: ok`, 2 tài khoản live, thẻ hiện đúng số của từng tài khoản. Desktop dùng chung tài khoản với CLI: `docs/ref/antigravity-multi-account-ram-credentials.md` § 4. Note đóng được khi bản sửa được phát hành |
+| 7 | Một nút PUSH sync từng làm đứng cả app: audit async | `task-1791428905665` | Quét tĩnh 2026-10-19: 0/86 command vi phạm quy tắc `spawn_blocking`; H1, H3, H4 không có bằng chứng; H2 (mỗi dòng `sync-log` gây một lần cập nhật store + cuộn) đã gộp theo lô 50 ms trong `useLogs.js`, chưa kiểm ở runtime. Note mở đến khi chạy xong R1 trên Mac (dev build, Safari Web Inspector, PUSH ≥1000 file rồi PUSH ~10 file). Chi tiết và R1–R3: `docs/research/push-freeze-diagnosis.md`. Bài học cho UNIDOC Tauri mới ở dạng đề xuất trong doc đó, chưa áp dụng |
 
 ## Research / thiết kế
 

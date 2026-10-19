@@ -14,6 +14,10 @@ import {
 const consoleRef = ref(null);
 const copied = ref(false);
 
+const SYNC_LOG_FLUSH_MS = 50;
+const pendingSyncLines = new Map();
+let syncLogFlushTimer = null;
+
 export function useLogs() {
   const displayedLogs = computed(() => {
     if (activeLogProjectId.value) {
@@ -36,8 +40,29 @@ export function useLogs() {
     });
   }
 
+  function flushSyncLines() {
+    clearTimeout(syncLogFlushTimer);
+    syncLogFlushTimer = null;
+    let activeReceived = false;
+    for (const [projectId, lines] of pendingSyncLines) {
+      appendProjectLogLines(projectId, lines);
+      if (activeLogProjectId.value === projectId) activeReceived = true;
+    }
+    pendingSyncLines.clear();
+    if (activeReceived) scrollConsole();
+  }
+
+  function queueSyncLine(projectId, line) {
+    const lines = pendingSyncLines.get(projectId);
+    if (lines) lines.push(line);
+    else pendingSyncLines.set(projectId, [line]);
+    // setTimeout, not rAF: rAF stops while the window is hidden and the buffer would grow unbounded during a long push.
+    if (syncLogFlushTimer === null) syncLogFlushTimer = setTimeout(flushSyncLines, SYNC_LOG_FLUSH_MS);
+  }
+
   // Appenders route through logStore funnel (LOG_CAP ceiling & mirror append cursor).
   function appendLog(projectId, line) {
+    flushSyncLines();
     appendProjectLogLines(projectId, [line]);
     if (activeLogProjectId.value === projectId) {
       scrollConsole();
@@ -53,6 +78,7 @@ export function useLogs() {
 
   function clearLog() {
     if (activeLogProjectId.value) {
+      pendingSyncLines.delete(activeLogProjectId.value);
       projectLogs.value[activeLogProjectId.value] = [];
     } else {
       globalLogs.value = [];
@@ -93,7 +119,7 @@ export function useLogs() {
       setGlobalListener(await listen("sync-log", (event) => {
         const payload = event.payload;
         if (payload && payload.project_id && payload.line !== undefined) {
-          appendLog(payload.project_id, payload.line);
+          queueSyncLine(payload.project_id, payload.line);
         }
       }));
     });
