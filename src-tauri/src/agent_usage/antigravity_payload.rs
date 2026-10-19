@@ -139,7 +139,7 @@ fn parse_frame_chunk(chunk: &str) -> ParsedFrameChunk {
         } else if let Some(val) = line.strip_prefix("|||STATUS|||") {
             current_tag = "STATUS";
             current_buf = val.to_string();
-        } else if let Some(_) = line.strip_prefix("|||SUMMARYCODE|||") {
+        } else if line.starts_with("|||SUMMARYCODE|||") {
             if current_tag == "STATUS" {
                 status_body = current_buf.clone();
             }
@@ -147,13 +147,11 @@ fn parse_frame_chunk(chunk: &str) -> ParsedFrameChunk {
         } else if let Some(val) = line.strip_prefix("|||SUMMARY|||") {
             current_tag = "SUMMARY";
             current_buf = val.to_string();
-        } else {
-            if !current_tag.is_empty() {
-                if !current_buf.is_empty() {
-                    current_buf.push('\n');
-                }
-                current_buf.push_str(line);
+        } else if !current_tag.is_empty() {
+            if !current_buf.is_empty() {
+                current_buf.push('\n');
             }
+            current_buf.push_str(line);
         }
     }
 

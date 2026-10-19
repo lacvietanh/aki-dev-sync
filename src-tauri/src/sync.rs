@@ -1470,13 +1470,14 @@ fn check_content(
     }
 }
 
+type StatusAnomalyKey = (String, String, &'static str);
+
 /// Last status-check anomaly logged per (project, host, kind): one poll can fail in several independent steps
 /// with different messages, so a single slot per host would be overwritten by the sibling step and every poll
 /// would log both again. An unchanged failure of one kind is logged once, not once a minute.
-static LAST_STATUS_ANOMALY: OnceLock<Mutex<HashMap<(String, String, &'static str), String>>> =
-    OnceLock::new();
+static LAST_STATUS_ANOMALY: OnceLock<Mutex<HashMap<StatusAnomalyKey, String>>> = OnceLock::new();
 
-fn status_anomalies() -> &'static Mutex<HashMap<(String, String, &'static str), String>> {
+fn status_anomalies() -> &'static Mutex<HashMap<StatusAnomalyKey, String>> {
     LAST_STATUS_ANOMALY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
