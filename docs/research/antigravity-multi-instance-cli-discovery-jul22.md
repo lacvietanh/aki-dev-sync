@@ -1,5 +1,7 @@
 # Nghiên Cứu & Đúc Kết: Giám Sát Quota Đa Tiến Trình (Antigravity IDE vs AGY CLI)
 
+Status: amended 2026-10-19
+
 > **Status note (2026-07-30):** Finding #5 in `test-case-check-flow.md` (same email, 2 sourceType keys, duplicate cache entries) is resolved: the entity model is now `(host, email)` with no sourceType in the key. This research doc's observation about IDE vs CLI being separate processes is still accurate; the conclusion that they need separate cache entries is superseded — same email = same account = same cache slot.
 
 
@@ -126,3 +128,8 @@ Script `get-antigravity-usage.js` duyệt qua tất cả các tiến trình phá
 1. **Giới hạn số tài khoản LIVE:** Trên 1 máy tính / 1 user OS session, số lượng tài khoản có thể chạy **LIVE đồng thời tối đa là 2** (1 từ Antigravity IDE và 1 từ AGY CLI).
 2. **Khả năng tương thích API:** Cả Antigravity IDE và AGY CLI đều triển khai cùng một chuẩn Connect RPC (gRPC-web) của Codeium/Antigravity backend engine, cho phép sử dụng chung tập API probe `/GetUserStatus` và `/RetrieveUserQuotaSummary`.
 3. **Độc lập Đăng xuất & Quản lý State:** Ứng dụng quản lý tách biệt hoàn toàn giữa session IDE và session CLI, cho phép người dùng theo dõi và đăng xuất độc lập từng công cụ mà không ảnh hưởng tới môi trường còn lại.
+
+## Amendments
+
+- 2026-10-19 · § 2 Thử nghiệm 3: không còn đúng từ agy 1.4.x (1.4.2 trên Mac). Language server chạy trong chính process `agy`, argv không có `--csrf_token`, nên `GetUserStatus`/`RetrieveUserQuotaSummary` trả `401 {"code":"unauthenticated","message":"unauthenticated: missing CSRF token"}`. Đo trên Mac: script của bản 1.33.0 trả 401 cho cả 5 frame CLI, trong khi 2 frame IDE và 1 frame desktop trả 200. Quota CLI giờ đọc bằng `agy -p "/usage"` (`docs/arch/usage-antigravity.md` § 1b); kết luận 2 của § 4 (CLI dùng chung bộ probe RPC với IDE) không còn áp dụng cho CLI.
+- 2026-10-19 · § 4 kết luận 1: có thêm surface thứ ba là Antigravity desktop (`/Applications/Antigravity.app`, language server `--standalone --subclient_type hub --app_data_dir antigravity`). Desktop dùng chung tài khoản đăng nhập với agy CLI: tài khoản đăng nhập sau cùng trên một trong hai là tài khoản cả hai dùng ở lần khởi động kế tiếp; process đang chạy giữ tài khoản cũ đến khi khởi động lại. Antigravity IDE có tài khoản riêng. Bằng chứng: owner quan sát (đăng nhập acc A ở desktop, rồi acc B ở CLI, quit desktop mở lại thì desktop là acc B); probe 2026-10-19 cho frame desktop cùng email với frame CLI, còn 2 frame IDE là một tài khoản khác; `lsof` của language server desktop giữ mở `~/.gemini/antigravity-cli/conversations/*.db`. Hệ quả: app thấy một tài khoản cho mỗi IDE, một cho desktop (tài khoản trong RAM của nó) và một cho CLI (tài khoản trên đĩa); thường là 2, lên 3 khi CLI vừa đăng nhập tài khoản khác mà desktop chưa khởi động lại.

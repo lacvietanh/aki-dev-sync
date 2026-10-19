@@ -1,6 +1,6 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-10-19 · v1.33.0
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
@@ -9,7 +9,7 @@ This reference document explains the architecture, flow, and implementation deta
 | Surface | Data & Storage Path | Primary Settings File | Note |
 | :--- | :--- | :--- | :--- |
 | **AGY CLI** | `~/.gemini/antigravity-cli/` | `settings.json` | JSON format. Holds `permissions.allow` for auto-approving terminal commands. |
-| **AGY Desktop App** | `~/.gemini/antigravity/` | `user_settings.pb` | Protobuf format for UI settings. Shares auth credentials with CLI. |
+| **AGY Desktop App** | `~/.gemini/antigravity/` | `user_settings.pb` | Protobuf format for UI settings. Shares the CLI's sign-in and its `antigravity-cli/conversations/` store: the account signed in last on either surface is the one both use on their next start (`docs/ref/antigravity-multi-account-ram-credentials.md` § 4). |
 | **AGY IDE** | `~/.gemini/antigravity-ide/` | `user_settings.pb` | Protobuf format for IDE extension settings. |
 
 *Shared auth credentials live at `~/.gemini/oauth_creds.json` and `~/.gemini/google_accounts.json`.*
@@ -39,7 +39,7 @@ sequenceDiagram
     Shell->>Shell: Match language_server binary & extract CSRF token / seed port
     Shell->>PORT: Execute 'lsof' (macOS) or 'ss'/'netstat' (Linux)
     PORT-->>Shell: List of listening TCP ports
-    Shell->>AG: Probe ports via curl (POST /GetUnleashData with CSRF)
+    Shell->>AG: Probe ports via curl (POST /RetrieveUserQuotaSummary with CSRF)
     AG-->>Shell: Response 200/401 (identifies active port)
     
     rect rgb(20, 30, 40)
@@ -50,6 +50,9 @@ sequenceDiagram
         AG-->>Shell: Return detailed groups/buckets quota
     end
 
+    opt an agy CLI session is running
+        Shell->>Shell: agy -p "/usage" --output-format json (cached 1 min)
+    end
     Shell->>Rust: Output delimited JSON frames (|||AGPROC|||...)
     Rust->>Rust: Parse frames & serialize for Vue Frontend
 ```
@@ -58,20 +61,28 @@ sequenceDiagram
 * **Execution:** Runs `ps auxww` on macOS/Unix to output the command list without line truncation.
 * **Targeting:** Detects both Antigravity IDE and standalone `agy` CLI processes running simultaneously:
   * **IDE Language Server binaries:** `language_server_macos_arm`, `language_server_macos_x64`, `language_server_linux_x64`, `language_server_linux_arm64`, `language_server_windows_x64.exe` (with `--csrf_token` and `--extension_server_port`).
-  * **AGY CLI binary:** Standalone `agy` process instances listening on local Connect RPC HTTPS ports.
-* **Argument Extraction:** Parses the command arguments using regular expressions to extract:
+  * **AGY CLI binary:** Standalone `agy` process instances. Detected only; their quota comes from the CLI source below, not from RPC.
+* **Argument Extraction (language server only):** Parses the command arguments using regular expressions to extract:
   * `--csrf_token` (Security token required for Connect RPC queries).
   * `--extension_server_port` (Base extension communication port).
-* **Both branches extract, unconditionally.** Until 2026-07-30 only the language-server branch ran the extraction; the `agy` CLI branch set `proc_type="cli"` and skipped it, so an `agy` session was probed with **no** `X-Codeium-Csrf-Token` header and no seeded port. Where the Connect API requires the token, every request 401s and the whole poll collapses into an anonymous failure - which the app renders as a reading that simply keeps getting older, with no error surfaced. This was the direct cause of "Antigravity cannot measure quota while `agy` is running", and it is worth recording *why it survived so long*: the defect was inherited from the Node probe this script was ported from, which hardcoded the token to `undefined`. A port that is checked for parity against its own predecessor cannot detect a fault the two share - so the language-server branch, not the old JS, is the specification the `agy` branch was made to match. Extraction now costs nothing when a process genuinely carries neither flag: the values come out empty and behaviour is unchanged.
-* **A 401 with no `--csrf_token` in argv is logged by name**, distinguishing a permanent "this process's quota is unreadable" from a transient "the IDE is mid-restart". Both used to look identical in the log.
+
+### 1b. agy CLI source — `agy -p "/usage"`
+* **Why not RPC:** `agy` (1.4.2, Mac and Linux, observed 2026-10-19) hosts its language server inside the `agy` process, whose argv is just `agy` - no `--csrf_token`, no `--extension_server_port`. Its ports answer `401 {"code":"unauthenticated","message":"unauthenticated: missing CSRF token"}` to both RPCs, and the token is only exported into commands agy itself spawns (`ANTIGRAVITY_LS_ADDRESS`, `ANTIGRAVITY_CSRF_TOKEN`). The former agy RPC branch of the script could never succeed and was removed; it used to leave the card silently showing the last cached reading.
+* **The read:** when `ps` shows at least one `agy` session, the script runs, once per poll, `agy -p "/usage" --output-format json --log-file <mktemp>` from `/` with stdin closed. agy's changelog (1.1.11, bundled at `~/.gemini/antigravity-cli/cache/CHANGELOG.md`) documents print-mode `/usage` as answered "without starting an agent turn, spending quota, or leaving a conversation behind"; measured `total_tokens: 0`. Output: `command.data.groups[]{name, description, buckets[]{id, name, window, remaining_fraction, reset_time, description?}}` with UTC timestamps.
+* **Email:** `/usage`, `/credits`, `/config` and `/help` carry no account. agy logs `OAuth: authenticated successfully as <email>` on every start; `--log-file` points that log at a temp file the script reads and deletes. No credential file is read. A run whose log names no email emits no frame (logged by name), since the cache is keyed by email.
+* **Account semantics:** a print-mode run signs in from the on-disk account, so it reports the account new `agy` runs use. A long-running session pinned to another account in RAM (`docs/ref/antigravity-multi-account-ram-credentials.md`) is not what this frame shows; the card labels the reading with the email it really belongs to. The desktop app shares this on-disk account but its `desktop` frame reports the account its own language server holds in RAM, so after a sign-in on the CLI the two frames can name different accounts until the desktop app restarts (ref § 4).
+* **Cost and cache:** one run costs ~3-4 s wall, ~1.3 CPU-s and ~200 MB RSS (measured on the Linux dev box); 6.7 s wall on the Mac with three agy sessions running (2026-10-19), well inside the 30 s `REMOTE_SCRIPT_TIMEOUT_SECS`. The frame is cached in `${TMPDIR:-/tmp}/aki-devsync-agy-usage.<uid>` (mode 600) and reused while under 1 minute old (`find -mmin -1`), so a 30 s poll runs agy at most once a minute; a failed run writes nothing.
+* **Frame and mapping:** the script emits a normal `|||AGPROC|||` frame with `TYPE cli`, `STATUS {"email":...}` and the raw `/usage` JSON as `SUMMARY`. `quota_summary_from_cli_usage` in `antigravity_payload.rs` renames it onto the `RetrieveUserQuotaSummary` shape (`id`→`bucketId`, `name`→`displayName`, `remaining_fraction`→`remainingFraction`, `reset_time`→`resetTime`); a field agy omits stays absent, so the card never reads a null as 0 %. A `cli` frame without `command.data.groups` is dropped.
+* **Binary resolution:** static `[ -x ]` candidates first (`$HOME/.local/bin/agy`, `/opt/homebrew/bin/agy`, `/usr/local/bin/agy`), then `command -v agy` (tauri.A2).
+* **Updates:** agy updates itself in the background; `~/.gemini/antigravity-cli/updater/update_status.json` read `"Already on the latest version."` on 2026-10-19 with 1.4.2 installed on both the Mac and the Linux dev box.
 
 ### 2. Port Discovery & Probing
 * **TCP Port Detection:** Runs `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` to gather active ports listening on each target process ID (both IDE and CLI).
 * **Seed Ports:** Seeds candidate lists with extracted `extensionServerPort` and adjacent ports (`port + 1`).
-* **Connection Probing:** Sends POST requests to `/exa.language_server_pb.LanguageServerService/GetUnleashData` (probing HTTPS and HTTP) to check for valid Connect RPC statuses (`200` or `401`).
+* **Connection Probing:** Sends POST requests to `/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary` (probing HTTPS and HTTP) to check for valid Connect RPC statuses (`200` or `401`).
 
 ### 3. API Query & Standardization
-* **Parallel Queries:** Performs two Connect RPC queries concurrently using `Promise.all`:
+* **Sequential Queries:** Performs two Connect RPC queries one after the other with `curl`:
   * `GetUserStatus`: Fetch account information such as `email`.
   * `RetrieveUserQuotaSummary`: Fetch the 4 detailed quota metrics (5h and Weekly buckets for Gemini and Claude/GPT pools).
 * **Output Mapping:** Merges the results into a standardized JSON snapshot containing:
@@ -86,7 +97,7 @@ When the user is signed out while the language server is still running, `GetUser
 - classic: HTTP `401` / `unauthorized`
 - current: HTTP `500` matching `is nil` / `GetCascadeModelConfigData`
 
-**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100% stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing: `get_antigravity_usage` in `agent_usage/antigravity.rs` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set `error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là `usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort monitor and the frontend already has a graceful null path (show the last cached account), so `get_antigravity_usage` now swallows **any** non-zero script exit to `Ok(None)` and logs the reason at debug level. Result: transient/offline/signed-out states show the cached account (or the "Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
+**Root cause of the "usage keeps erroring / unstable" report:** the probe script itself is 100% stable while the IDE runs (measured 8/8, ~175 ms). The instability was purely in error surfacing: `get_antigravity_usage` in `agent_usage/antigravity.rs` only swallowed `"is not running"` / `"Not authenticated"` / `"command not found"` to `Ok(None)`, and returned `Err` for every other transient case - port not open yet, IDE mid-restart, a single RPC timeout, and the signed-out `500`. Each `Err` set `error.value` in the frontend monitor (khi đó là `useAgentUsage.js`; sau refactor 1.20.0 là `usageMonitor.js`), flashing an error banner every poll. AG usage is a best-effort monitor and the frontend already has a graceful null path (show the last cached account), so `get_antigravity_usage` now maps **any** non-zero script exit to `AgentUsageResult::miss` (or `unreachable` when ssh could not reach the host) and logs the reason at debug level. Result: transient/offline/signed-out states show the cached account (or the "Not connected - open & sign in to Antigravity to monitor" empty state), never a repeating banner.
 
 ## Log Out (removed 1.23.0)
 
@@ -99,7 +110,7 @@ The script is compiled into the Tauri binary via `include_str!` inside [antigrav
 ## Stability and Performance
 
 * **Zero Plugin Conflicts:** By targeting the native binary `language_server_` names rather than a generic `"language-server"` search, it avoids false matches with external plugins like Volar's `language-server.js` or `cssServerMain` which run inside the Antigravity IDE directory.
-* **Zero CLI Startup Latency:** Directly executing our raw shell script avoids spawning `npx` or Node interpreters over remote shells, bringing detection time down to ~40ms.
+* **Low latency:** Directly executing our raw shell script avoids spawning `npx` or Node interpreters over remote shells; the IDE path takes ~40ms. A poll that has to run `agy -p "/usage"` takes ~3-7 s instead (at most once a minute, § 1b), inside the same `spawn_blocking` probe, so the UI never waits on it.
 
 ---
 

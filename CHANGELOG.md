@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Fixed
+- **Antigravity usage reads the agy CLI again.** agy 1.4.x runs its language server inside the `agy` process with no `--csrf_token` in its arguments, so every RPC the probe sent got `401 missing CSRF token` and the card kept showing an old cached reading with no error. `scripts/get-antigravity-usage.sh` now reads a running agy session's quota through agy's own headless `agy -p "/usage" --output-format json` (no agent turn, no quota spent), takes the account email from the log line agy writes to a temp `--log-file`, and reuses the result for up to 1 minute because one run costs ~3-4 s and ~200 MB; `antigravity_payload.rs` maps agy's snake_case buckets onto the shape the card already reads. The dead agy RPC branch is removed; the IDE language-server path is unchanged. The per-account cache keeps every other account's entry intact.
+
 ## [1.33.0] - 2026-10-07
 
 ### Added

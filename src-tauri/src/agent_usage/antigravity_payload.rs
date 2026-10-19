@@ -1,5 +1,5 @@
 use crate::agent_usage::probe_result::AgentUsageResponse;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 
 /// Parses raw framed output from `get-antigravity-usage.sh` and assembles the unified AG snapshot payload.
@@ -44,9 +44,16 @@ pub(crate) fn parse_antigravity_frames(
             None
         };
 
-        let quota_summary = raw_summary
-            .as_ref()
-            .and_then(|s| s.get("response").cloned().or_else(|| Some(s.clone())));
+        let quota_summary = if proc_info.proc_type == "cli" {
+            match raw_summary.as_ref().and_then(quota_summary_from_cli_usage) {
+                Some(q) => Some(q),
+                None => continue,
+            }
+        } else {
+            raw_summary
+                .as_ref()
+                .and_then(|s| s.get("response").cloned().or_else(|| Some(s.clone())))
+        };
 
         let mut snapshot = build_local_quota_snapshot(user_status, quota_summary, now);
         let source_type = if proc_info.proc_type.is_empty() {
@@ -162,6 +169,46 @@ fn parse_frame_chunk(chunk: &str) -> ParsedFrameChunk {
         status_body,
         summary_body,
     }
+}
+
+/// Maps `agy -p "/usage" --output-format json` (`command.data.groups[]`, snake_case) onto the `RetrieveUserQuotaSummary` shape `AgentUsage.vue` reads; a field agy omits stays absent rather than null.
+fn quota_summary_from_cli_usage(usage: &Value) -> Option<Value> {
+    const GROUP_FIELDS: &[(&str, &str)] =
+        &[("name", "displayName"), ("description", "description")];
+    const BUCKET_FIELDS: &[(&str, &str)] = &[
+        ("id", "bucketId"),
+        ("name", "displayName"),
+        ("description", "description"),
+        ("window", "window"),
+        ("remaining_fraction", "remainingFraction"),
+        ("reset_time", "resetTime"),
+    ];
+    fn renamed(src: &Value, fields: &[(&str, &str)]) -> Map<String, Value> {
+        fields
+            .iter()
+            .filter_map(|(from, to)| src.get(*from).map(|v| (to.to_string(), v.clone())))
+            .collect()
+    }
+
+    let groups = usage.pointer("/command/data/groups")?.as_array()?;
+    let groups: Vec<Value> = groups
+        .iter()
+        .map(|g| {
+            let mut group = renamed(g, GROUP_FIELDS);
+            let buckets = g
+                .get("buckets")
+                .and_then(Value::as_array)
+                .map(|bs| {
+                    bs.iter()
+                        .map(|b| Value::Object(renamed(b, BUCKET_FIELDS)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            group.insert("buckets".to_string(), Value::Array(buckets));
+            Value::Object(group)
+        })
+        .collect();
+    Some(json!({ "groups": groups }))
 }
 
 fn build_local_quota_snapshot(
@@ -358,5 +405,34 @@ mod tests {
         let payload = res.unwrap();
         assert!(payload.content.contains("user@example.com"));
         assert!(payload.content.contains("gemini-2.5-flash"));
+    }
+
+    #[test]
+    fn agy_cli_usage_frame_maps_to_quota_summary_shape() {
+        let raw = r#"|||AGPROC|||agy-cli
+|||TYPE|||cli
+|||STATUSCODE|||200
+|||STATUS|||{"email":"user@example.com"}
+|||SUMMARYCODE|||200
+|||SUMMARY|||{"conversation_id":"","status":"SUCCESS","response":"Gemini Models\tFive Hour Limit Remaining\t40%\t2026-10-19T11:40:06Z\n","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","description":"Models within this group: Gemini Flash, Gemini Pro","buckets":[{"id":"gemini-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":0.4,"reset_time":"2026-10-19T11:40:06Z"}]}]}}}
+"#;
+        let payload = parse_antigravity_frames(raw, 1750000000).unwrap().unwrap();
+        let v: Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["email"], "user@example.com");
+        assert_eq!(v["sourceType"], "cli");
+        assert_eq!(
+            v["quotaSummary"],
+            json!({"groups":[{
+                "displayName":"Gemini Models",
+                "description":"Models within this group: Gemini Flash, Gemini Pro",
+                "buckets":[{
+                    "bucketId":"gemini-5h",
+                    "displayName":"Five Hour Limit Remaining",
+                    "window":"5h",
+                    "remainingFraction":0.4,
+                    "resetTime":"2026-10-19T11:40:06Z"
+                }]
+            }]})
+        );
     }
 }

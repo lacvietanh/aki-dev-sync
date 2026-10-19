@@ -54,3 +54,13 @@ When operating Google Antigravity CLI (`agy`) across multiple terminal windows o
    - If an account is logged out on disk while an `agy` process continues running, statusline scripts and usage monitors must degrade gracefully without throwing errors if disk files are removed.
 3. **Session Cache Reset**:
    - To force an `agy` terminal session to pick up a newly selected account, the user must exit and restart the `agy` CLI process in that terminal.
+
+---
+
+## 4. Antigravity desktop shares the CLI sign-in (2026-10-19, agy 1.4.2)
+
+- **Shared:** Antigravity desktop (`/Applications/Antigravity.app`) and `agy` CLI use one sign-in. The account signed in last on either surface is the one both use on their next start. Example: sign in A on desktop, then B on the CLI; quit and reopen desktop and it runs as B.
+- **Pinned while running:** like an `agy` session (§ 2), a running desktop app keeps the account it started with until it restarts.
+- **Separate:** Antigravity IDE (`Antigravity IDE.app`) keeps its own account.
+- **What Aki Dev Sync shows:** the `desktop` frame reports the desktop's in-RAM account, the `cli` frame the on-disk account (`agy -p "/usage"`), the `ide` frames the IDE's. When desktop and CLI agree, the account appears once, with the desktop icon (its frame comes first in the per-email dedup of `antigravity_payload.rs`).
+- **Trail:** owner observation 2026-10-19; probe output and `lsof` evidence in `docs/research/antigravity-multi-instance-cli-discovery-jul22.md` § Amendments.
