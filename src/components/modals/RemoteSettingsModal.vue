@@ -1,5 +1,5 @@
 <!--
-  Remote Control settings — the container the feature outgrew (docs/plan/remote-ingress-rework.md §6).
+  Remote Control settings — the container the feature outgrew (docs/plan/done/remote-ingress-rework.md §6).
 
   Ingress mode, the Tailscale HTTPS row moved out of the AppHeader dropdown, the pairing link, and the paired-device list.
 -->

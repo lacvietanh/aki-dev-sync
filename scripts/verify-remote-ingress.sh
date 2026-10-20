@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static/compile-time gate for docs/plan/remote-ingress-rework.md before the Mac hand-off (§10).
+# Static/compile-time gate for docs/plan/done/remote-ingress-rework.md before the Mac hand-off (§10).
 # Everything here is settled WITHOUT a live tailnet or phone (§8) - it does not touch Tailscale,
 # does not start the app, and changes nothing. What still needs the Mac is listed in the plan §10.1.
 set -uo pipefail
@@ -14,7 +14,7 @@ note() { echo "   $1"; }
 pass() { echo "✓ $1"; }
 fail() { echo "✗ $1"; failed=1; }
 
-echo "── verify-remote-ingress: static checks (docs/plan/remote-ingress-rework.md §8) ──"
+echo "── verify-remote-ingress: static checks (docs/plan/done/remote-ingress-rework.md §8) ──"
 
 # 1. Rust compiles and the new RelayState/PairGate/ingress tests pass.
 if command -v cargo >/dev/null 2>&1; then
@@ -80,7 +80,7 @@ fi
 
 echo
 if [ "$failed" -eq 0 ]; then
-  echo "✓ All static checks green. Remaining work needs the Mac: docs/plan/remote-ingress-rework.md §10.1."
+  echo "✓ All static checks green. Runtime protocol: docs/plan/done/remote-ingress-rework.md §10.1."
 else
   echo "✗ One or more static checks failed — see above."
 fi

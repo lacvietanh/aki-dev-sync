@@ -71,7 +71,7 @@ Two secrets, minted together so no path can hand out one without the other:
 | Lock duration | 300 s | Long enough to make guessing worthless, short enough that the owner is not locked out of his own device |
 | Record TTL / cap | 900 s / 512 IPs | The table is bounded memory, not an audit log |
 
-Sizing record (reach, capability, motive, blast radius) with its reopen trigger: `docs/plan/remote-ingress-rework.md` §4.
+Sizing record (reach, capability, motive, blast radius) with its reopen trigger: `docs/plan/done/remote-ingress-rework.md` §4.
 
 ## Persistence
 

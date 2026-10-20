@@ -19,7 +19,7 @@ const httpsBusy = ref(false)
 // Names the process that owns the tailnet 443 "/" mount, so the UI can say why HTTPS stays off (docs/research/remote-ingress-tailscale-conflict.md F1).
 const foreignTarget = ref(null)
 
-// Ingress mode (docs/plan/remote-ingress-rework.md §5): one stored origin, either Tailscale-managed or owner-run.
+// Ingress mode (docs/plan/done/remote-ingress-rework.md §5): one stored origin, either Tailscale-managed or owner-run.
 const ingressMode = ref('tailscale')
 const ingressOrigin = ref('')
 const suggestedOrigin = ref('')

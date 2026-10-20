@@ -44,7 +44,7 @@ const MAX_PAIR_FAILURES: u32 = 10;
 /// Ceiling behind the per-address counter so a distributed flood still costs only a cooling window.
 const MAX_PAIR_FAILURES_GLOBAL: u32 = 100;
 
-/// How long `/pair` stays refused after the strike count is reached. Nothing about the lock is persisted, and `enabled` is never touched (docs/plan/remote-ingress-rework.md §4).
+/// How long `/pair` stays refused after the strike count is reached. Nothing about the lock is persisted, and `enabled` is never touched (docs/plan/done/remote-ingress-rework.md §4).
 const PAIR_LOCK_SECS: u64 = 300;
 
 /// Idle strike records older than this are dropped, so a scan cannot grow the map without bound.
@@ -53,7 +53,7 @@ const PAIR_RECORD_TTL_SECS: u64 = 900;
 /// Hard cap on tracked source addresses; the least recently seen record is dropped first.
 const MAX_PAIR_IP_RECORDS: usize = 512;
 
-// ── Ingress modes (docs/plan/remote-ingress-rework.md §5) ─────────────────────────────────────
+// ── Ingress modes (docs/plan/done/remote-ingress-rework.md §5) ─────────────────────────────────────
 /// App-managed `tailscale serve` — the default and the only mode that touches Tailscale at all.
 const INGRESS_TAILSCALE: &str = "tailscale";
 /// The owner runs the edge; the app only stores and displays the origin it terminates at.
@@ -477,7 +477,7 @@ impl RelayState {
     }
 
     /// The whole pairing decision in one place: gate first, then secret. A bad code costs a cooling
-    /// window and never the server itself (docs/plan/remote-ingress-rework.md §4).
+    /// window and never the server itself (docs/plan/done/remote-ingress-rework.md §4).
     fn judge_pair_attempt(&self, code: &str, ip: IpAddr, now: u64) -> PairVerdict {
         if !self.enabled.load(Ordering::SeqCst) {
             return PairVerdict::Disabled;
@@ -1469,7 +1469,7 @@ fn https_state(owner: MountOwner) -> TailscaleHttps {
     }
 }
 
-/// In `public` mode the edge is the owner's, so the app reports Tailscale as none of its business rather than probing it (docs/plan/remote-ingress-rework.md §5).
+/// In `public` mode the edge is the owner's, so the app reports Tailscale as none of its business rather than probing it (docs/plan/done/remote-ingress-rework.md §5).
 fn tailscale_unmanaged() -> TailscaleHttps {
     TailscaleHttps {
         available: false,
@@ -1540,7 +1540,7 @@ pub async fn set_tailscale_https(enable: bool) -> Result<TailscaleHttps, String>
     .map_err(|e| format!("spawn_blocking panicked: {}", e))?
 }
 
-// ── Remote ingress (docs/plan/remote-ingress-rework.md §5) ───────────────────────────────────
+// ── Remote ingress (docs/plan/done/remote-ingress-rework.md §5) ───────────────────────────────────
 
 #[derive(Serialize)]
 pub struct RemoteIngress {

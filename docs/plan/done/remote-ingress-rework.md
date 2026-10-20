@@ -1,5 +1,7 @@
 # Plan: Remote Control ingress — stop the cross-app teardown, make the edge swappable
 
+Status: done 2026-10-20. W1–W4 shipped (`00f4e68`, `a4be4ef`, `5752d1b`). §10.1 at close: steps 1–3 are obsolete, because `aki-mcp-sv` now runs on its own cloudflared tunnel and no Funnel sits on 443 any more. Step 4 passed; the owner used the phone over LAN on 2026-10-20. Steps 6, 8 and 9 are covered by the `RelayState` tests in §8 and were not run by hand. Steps 5 and 7, plus strict URL parsing of the stored origin (`trim_origin` in `web_server.rs` only trims; see `docs/plan/done/audit-hardening.md`), wait until the owner sets up a tunnel and hostname for Dev Sync. That is machine setup, not repo work (`docs/research/remote-ingress-shared-vs-separate.md`).
+
 Research this plan executes: `docs/research/remote-ingress-tailscale-conflict.md` — why Aki Dev Sync's `tailscale serve` and `aki-mcp-sv`'s `tailscale funnel` collide on one mount point, and what a non-Tailscale origin would cost.
 Feature doc this changes: `docs/feat/remote-control.md` (its "HTTPS over Tailscale" section stops being the whole story).
 

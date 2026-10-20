@@ -105,4 +105,4 @@ Tailscale stays as the mode requiring no domain — the people arriving via `aki
 
 **Assumptions to monitor** (reopen triggers, `proportion.C1`): `aki-mcp-sv`'s `ingress.json` changing shape, which would make the suggestion silently wrong — check on any release of that project touching ingress · Cloudflare's handling of a long-lived WebSocket, still unmeasured · the appearance of a genuine shared reverse proxy for the whole Aki ecosystem, which would void this verdict rather than bend it.
 
-**Cross-references:** `docs/plan/remote-ingress-rework.md` §9 (the open decision this closes; W3 carries mechanisms 1–2 and W1 carries mechanism 3) · `docs/feat/remote-control.md` (current-state doc, updated by that plan).
+**Cross-references:** `docs/plan/done/remote-ingress-rework.md` §9 (the open decision this closes; W3 carries mechanisms 1–2 and W1 carries mechanism 3) · `docs/feat/remote-control.md` (current-state doc, updated by that plan).
