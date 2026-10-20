@@ -5,6 +5,8 @@ const INFO = {
   help: 'this list: the install command first, the build-name key last',
   dev: 'frontend only, in the browser (no app window, no Rust)',
   'dev:debug': 'run the full app window from source, with debug logs',
+  'dev:agent': 'run the app from source hidden and unfocusable, beside the installed app, for an agent or script to drive with npm run ctl',
+  ctl: 'drive the running dev app: npm run ctl -- status | remote.on | remote.off | remote.status | eval "<JS body>" (docs/ref/agent-control.md)',
   tauri: 'Tauri CLI (npm run tauri dev = run the full app window from source)',
   build: 'build the frontend only (no app); build:app and the DMG builds run it for you',
   preview: 'serve the built frontend in the browser',

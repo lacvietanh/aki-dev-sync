@@ -4,7 +4,6 @@ import { ref } from 'vue'
 // Direct @tauri-apps/api/core import avoids bootstrap cycle with utils/tauri.js (guarded by isHost).
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 import {
-  REMOTE_PORT,
   FRAME_PING,
   FRAME_PONG,
   FRAME_INVOKE_RESULT,
@@ -109,6 +108,8 @@ function takePairLinkToken() {
 
 // Process-local host secret required for role=host (prevents proxied loopback peers from hijacking host role).
 let hostRelayToken = ''
+// The relay port differs between debug and release builds, so the host reads it from Rust (web_server.rs PORT) with the token.
+let hostRelayPort = 0
 let hostTokenPromise = null
 
 function fetchHostRelayToken() {
@@ -116,6 +117,7 @@ function fetchHostRelayToken() {
     hostTokenPromise = tauriInvoke('get_companion_status')
       .then((s) => {
         hostRelayToken = (s && s.hostToken) || ''
+        hostRelayPort = (s && s.port) || 0
         if (!hostRelayToken) console.error('[bridge] host relay token missing from get_companion_status')
       })
       .catch((e) => {
@@ -130,7 +132,7 @@ function fetchHostRelayToken() {
 
 function wsUrl() {
   if (isHost) {
-    return `ws://127.0.0.1:${REMOTE_PORT}/ws?role=host&token=${encodeURIComponent(hostRelayToken)}`
+    return `ws://127.0.0.1:${hostRelayPort}/ws?role=host&token=${encodeURIComponent(hostRelayToken)}`
   }
   const token = getDeviceToken()
   // Origin-relative WS URL to support HTTPS/WSS (e.g. Tailscale serve TLS termination on 443) without mixed-content errors.

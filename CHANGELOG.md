@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ## [Unreleased]
 
+### Changed
+- **A dev build runs beside the installed app and can be driven by code.** `npm run tauri dev` now uses its own identifier (`aki.devsync.dev`), data dir (`~/.aki/devsync-dev`, seeded once from `projects.json`) and relay port (1431), so it no longer hands itself to the installed app through the single-instance socket. Debug builds also open `~/.aki/devsync-dev/control.sock` (mode 0600; `status`, `remote.on|off|status`, `eval`), `npm run dev:agent` starts one hidden and unable to take focus, and `npm run ctl` talks to it (`docs/ref/agent-control.md`). Release builds are unchanged: no socket, port 1421, `~/.aki/devsync`; the host webview now reads the relay port from `get_companion_status` instead of a JS constant.
+
 ### Removed
 - `scripts/test/monitor-ag-proxy.js`: a dev-only monitor that could not parse the Antigravity probe's framed output since it replaced JSON.
 

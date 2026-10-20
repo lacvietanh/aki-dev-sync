@@ -1,17 +1,35 @@
-// Single funnel for "where is the app data dir": `$HOME/.aki/devsync`, ecosystem-standardized
-// away from Tauri's per-OS default (`~/Library/Application Support/aki.devsync/` on macOS).
-// Every module that needs the current app data dir calls `app_data_dir()` here instead of
-// resolving it itself. `sync.rs`'s pre-1.7.1 `legacy_baseline_dir()` (`~/.aki/devsync-baselines`)
-// is a separate, older, read-only fallback path and is untouched by this module.
+// The one place that resolves the app data dir; a debug build gets its own so it can run beside the installed app (docs/research/agent-control-channel.md § R2).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+const DATA_DIR_NAME: &str = if cfg!(debug_assertions) {
+    "devsync-dev"
+} else {
+    "devsync"
+};
+
 pub fn app_data_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Cannot resolve home directory")?;
-    let dir = home.join(".aki").join("devsync");
+    let dir = home.join(".aki").join(DATA_DIR_NAME);
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create app data dir: {}", e))?;
     Ok(dir)
+}
+
+/// A fresh dev data dir starts from a copy of the installed app's project registry, never a link to it, so dev edits stay out of the owner's list.
+#[cfg(debug_assertions)]
+pub fn seed_dev_data_dir() -> String {
+    let (Some(home), Ok(dev_dir)) = (dirs::home_dir(), app_data_dir()) else {
+        return "dev data dir seed skipped: dir unresolved".to_string();
+    };
+    let dest = dev_dir.join("projects.json");
+    if dest.exists() {
+        return "dev data dir seed: projects.json already present".to_string();
+    }
+    match fs::copy(home.join(".aki/devsync/projects.json"), &dest) {
+        Ok(_) => "dev data dir seed: copied projects.json from ~/.aki/devsync".to_string(),
+        Err(e) => format!("dev data dir seed: no projects.json copied: {}", e),
+    }
 }
 
 const LEGACY_ARTIFACTS: &[&str] = &[
@@ -107,6 +125,11 @@ fn record(
 /// Runs before anything touches app data, `logger::init` included - hence the returned summary instead of a log call. docs/plan/done/appdata-dir-to-aki-devsync.md
 pub fn migrate_legacy_app_data(app: &tauri::AppHandle) -> String {
     use tauri::Manager;
+
+    // The legacy dir belongs to the installed app; a debug build run without the dev identifier would otherwise move its files into the dev dir.
+    if cfg!(debug_assertions) {
+        return "app data migration: skipped in a debug build".to_string();
+    }
 
     let legacy_dir = match app.path().app_data_dir() {
         Ok(d) => d,

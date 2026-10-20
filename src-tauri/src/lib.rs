@@ -3,6 +3,8 @@ mod app_paths;
 mod claude_cleanup;
 mod claude_profile;
 mod conflict;
+#[cfg(debug_assertions)]
+mod control;
 mod gemini_allowlist;
 mod git;
 mod global_note;
@@ -21,8 +23,11 @@ mod web_server;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[cfg_attr(not(all(debug_assertions, target_os = "macos")), allow(unused_mut))]
+    let mut app = tauri::Builder::default()
         .setup(|app| {
+            #[cfg(debug_assertions)]
+            let seed_summary = app_paths::seed_dev_data_dir();
             // Must run before logger::init: it moves usage.log itself, and the logger has not opened a file yet to log through.
             let migration_summary = app_paths::migrate_legacy_app_data(app.handle());
             // Runs here, not from JS, so every path resolves before a sync command primes `sync::APP_DATA_DIR` (settings-and-state-layout.md § Migration).
@@ -31,6 +36,11 @@ pub fn run() {
             logger::init(app.handle());
             logger::info("MIGRATE", &migration_summary);
             logger::info("MIGRATE", &settings_state_summary);
+            #[cfg(debug_assertions)]
+            {
+                logger::info("MIGRATE", &seed_summary);
+                control::start(app.handle().clone());
+            }
             // Remote Control relay (docs/plan/done/remote-control.md §7) — binds the axum server on Tauri's own tokio runtime; never blocks this setup thread (see web_server::init).
             web_server::init(app.handle());
             Ok(())
@@ -42,6 +52,10 @@ pub fn run() {
         // Socket is keyed by bundle identifier, so a dev build exits into the installed app: docs/research/agent-control-channel.md § R2.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             use tauri::Manager;
+            #[cfg(debug_assertions)]
+            if control::agent_mode() {
+                return;
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -175,15 +189,24 @@ pub fn run() {
             pty::pty_rename_tab,
             pty::pty_set_tab_pinned,
         ])
-        // `build` + `run(closure)` rather than `run(context)` purely so there is somewhere to hang the exit hook below — the two are otherwise equivalent.
+        // `build` + `run(closure)` rather than `run(context)` so the activation policy and the exit hook below have somewhere to go.
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|_app, event| {
-            // Kill in-app terminal process tree on quit: prevents orphaned shells (e.g. live ssh running agy/claude) from outliving the app indefinitely (see pty::kill_process_group).
-            // Kill running sync on quit: prevents orphaned rsync/ssh processes from continuing to write to remote after exit.
-            if let tauri::RunEvent::Exit = event {
-                pty::shutdown();
-                sync::shutdown();
-            }
-        });
+        .expect("error while building tauri application");
+
+    // A Prohibited app cannot become active, so an agent-driven launch never takes the owner's focus (docs/research/agent-control-channel.md § R3).
+    #[cfg(all(debug_assertions, target_os = "macos"))]
+    if control::agent_mode() {
+        app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+    }
+
+    app.run(|_app, event| {
+        // Kill in-app terminal process tree on quit: prevents orphaned shells (e.g. live ssh running agy/claude) from outliving the app indefinitely (see pty::kill_process_group).
+        // Kill running sync on quit: prevents orphaned rsync/ssh processes from continuing to write to remote after exit.
+        if let tauri::RunEvent::Exit = event {
+            pty::shutdown();
+            sync::shutdown();
+            #[cfg(debug_assertions)]
+            control::shutdown();
+        }
+    });
 }

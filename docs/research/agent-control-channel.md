@@ -1,5 +1,7 @@
 # Agent control channel — letting AIs and scripts drive the app by code
 
+Status: amended 2026-10-20
+
 **Start time:** 2026-10-20
 
 ## Initial purpose
@@ -67,7 +69,7 @@ With Remote Control on and a device paired, the companion SPA in any browser dri
 
 ## Decision
 
-**Action**, in three steps, each verifiable alone. It becomes a plan doc when scheduled (owner decision D5).
+**Action**, in three steps, each verifiable alone. Executed by `docs/plan/done/agent-control-channel.md`; usage in `docs/ref/agent-control.md`.
 
 1. **Dev isolation (prerequisite):**
    - `tauri dev` merges a dev config with its own identifier (`aki.devsync.dev`) and product name.
@@ -103,3 +105,10 @@ With Remote Control on and a device paired, the companion SPA in any browser dri
 - `docs/plan/backlog.md` (ledger #1 and the ingress line)
 - `src-tauri/src/lib.rs` (single-instance callback)
 - `docs/arch/remote-ingress.md` (the relay this channel switches on)
+
+## Amendments
+
+- 2026-10-20 · § R3: verified. `ActivationPolicy::Prohibited` plus a hidden, unfocused window kept the frontmost app (`Terminal`) unchanged across two `npm run dev:agent` launches.
+- 2026-10-20 · § Decision step 1: the data dir and relay port are chosen by `cfg!(debug_assertions)`, not by an override env var (`app_paths.rs` `DATA_DIR_NAME`, `web_server.rs` `PORT`); the host bridge reads the port from `get_companion_status`. The activation policy is `Prohibited`, not `Accessory`.
+- 2026-10-20 · § Decision step 2: `eval` returns through `WebviewWindow::eval_with_callback`, so no reply command or capability entry was added.
+- 2026-10-20 · § Decision step 1: a hidden window also needs `backgroundThrottling: disabled` (`tauri-utils` 2.9.3 `WindowConfig::background_throttling`; the default suspends a hidden or minimized webview on macOS 14+). Without it the host answered the relay only while a `ctl eval` was running.

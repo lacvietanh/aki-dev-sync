@@ -110,7 +110,8 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 ```bash
 npm install
 npm run build:app    # INSTALL on this Mac: build the arm64 .app (skipped when nothing changed), sign it, quit the running app, replace /Applications/Aki Dev Sync.app
-npm run tauri dev    # first run compiles Rust (~5-10 min)
+npm run tauri dev    # first run compiles Rust (~5-10 min); runs beside the installed app with its own data dir (~/.aki/devsync-dev)
+npm run dev:agent    # the same, hidden and unable to take focus, driven by `npm run ctl` (docs/ref/agent-control.md)
 npm run build:rmud   # release build: universal (Intel + Apple Silicon) .dmg + artifact rename
 npm run build:rmad:friend # arm64 .dmg to hand to someone: adds a double-click installer (signs with a stable identity on their Mac) and a readme
 npm run build:rmud:friend # the same, universal

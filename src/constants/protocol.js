@@ -1,9 +1,6 @@
 // Wire-protocol contract SSoT shared by Rust relay (src-tauri/src/web_server.rs) and JS seams (bridge, mirror, intents, tauri).
 // @docs docs/plan/done/remote-control.md §13 (wire protocol contract frozen).
 
-// Relay WS/HTTP port (dev and prod; docs/plan/done/remote-control.md §7.1a).
-export const REMOTE_PORT = 1421
-
 // Optional addressing fields: to (host->relay target connection), from (relay->host opaque connection ID).
 // Per-connection isolation prevents duplicate scrollbacks and request ID collisions across tabs (live frames remain broadcast).
 

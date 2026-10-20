@@ -20,6 +20,8 @@
     "build:rmad:friend": "FRIEND=1 npm run build:rmad",
     "build:rmud:friend": "FRIEND=1 npm run build:rmud",
     "dev:debug": "AKI_DEBUG=1 npm run tauri dev",
+    "dev:agent": "AKI_DEVSYNC_AGENT=1 npm run tauri dev",
+    "ctl": "node scripts/devsync-ctl.mjs",
     "audit:ui": "node scripts/audit-ui-architecture.mjs",
     "test:ui-audit": "node --test scripts/tests/audit-ui-architecture.test.mjs",
     "test:replay": "node --test scripts/tests/replay-hydration.test.mjs",

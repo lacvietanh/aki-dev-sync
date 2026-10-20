@@ -1,9 +1,11 @@
 # Settings and state — four owners, four files
 
-> updated 2026-09-30 · v1.31.0
+> updated 2026-10-20 · v1.33.1
 
 Decision record and field-by-field reasoning: `docs/research/akidevsync-project-config-scope-2.md`.
 Execution plan and checklist: `docs/plan/done/settings-and-state-layout.md` (see its § Amendments for the 1.32.0 `remote_path` correction below). This doc is the current-state summary the two of them point at — read them for *why*, this for *what's true now*.
+
+A debug build keeps all of `~/.aki/devsync` in `~/.aki/devsync-dev` instead, seeded with a copy of `projects.json` on first launch, so it can run beside the installed app: `docs/ref/agent-control.md`.
 
 ## The four owners
 

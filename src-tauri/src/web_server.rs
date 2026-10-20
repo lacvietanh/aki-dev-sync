@@ -35,7 +35,8 @@ use tokio::{
 };
 
 /// Fixed relay port (baked into `tauri.conf.json` CSP `connect-src` and `get_companion_url()`). Not user-configurable (plan §7.1a).
-const PORT: u16 = 1421;
+// A debug build serves on its own port so it can run beside the installed app; scripts/tauri-runner.js mirrors both values.
+const PORT: u16 = if cfg!(debug_assertions) { 1431 } else { 1421 };
 
 /// Bad `/pair` codes tolerated from ONE source address before pairing — not the server — is locked.
 const MAX_PAIR_FAILURES: u32 = 10;
@@ -725,7 +726,7 @@ pub fn init(app_handle: &AppHandle) {
     });
 }
 
-/// Binds IPv4 listener on port 1421 and runs axum server for the process lifetime. IPv4-only bind avoids IPv6-mapped dual-stack loopback issues.
+/// Binds IPv4 listener on `PORT` and runs axum server for the process lifetime. IPv4-only bind avoids IPv6-mapped dual-stack loopback issues.
 async fn serve_forever(app: AppHandle) {
     let addr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::UNSPECIFIED), PORT);
     let listener = match TcpListener::bind(addr).await {
@@ -745,7 +746,7 @@ async fn serve_forever(app: AppHandle) {
     }
 }
 
-// ── §7.2 PORT-1: axum on :1421 is the one LAN entry; release serves the embedded SPA, dev proxies non-relay requests to Vite (no HMR) ──
+// ── §7.2 PORT-1: axum on `PORT` is the one LAN entry; release serves the embedded SPA, dev proxies non-relay requests to Vite (no HMR) ──
 fn build_router(app: &AppHandle) -> Router {
     let router = Router::new()
         .route("/ws", get(ws_handler))
@@ -2227,10 +2228,13 @@ mod tests {
     #[test]
     fn the_443_mount_is_ours_only_when_it_proxies_our_port() {
         let target = format!("127.0.0.1:{}", PORT);
-        let ours = r#"{"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:1421"}}}}}"#;
+        let ours = format!(
+            r#"{{"TCP":{{"443":{{"HTTPS":true}}}},"Web":{{"mac.tail1234.ts.net:443":{{"Handlers":{{"/":{{"Proxy":"http://{}"}}}}}}}}}}"#,
+            target
+        );
         let funnel = r#"{"TCP":{"443":{"HTTPS":true}},"Web":{"mac.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}},"AllowFunnel":{"mac.tail1234.ts.net:443":true}}"#;
 
-        assert_eq!(parse_mount_owner(ours, &target), MountOwner::Ours);
+        assert_eq!(parse_mount_owner(&ours, &target), MountOwner::Ours);
         assert_eq!(parse_mount_owner(funnel, &target), MountOwner::Foreign("http://127.0.0.1:9999".to_string()), "a foreign mount must be reported WITH its target, so the UI can name what is holding it");
         assert_eq!(
             parse_mount_owner("{}", &target),
