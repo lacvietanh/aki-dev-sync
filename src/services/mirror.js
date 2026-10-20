@@ -49,22 +49,24 @@ const LOG_GLOBAL_KEY = 'logStore.globalLogs'
 const LOG_PROJECT_KEY = 'logStore.projectLogs'
 
 // SER-1: JSON-safe encode/decode for Set/Map tagged payloads; un-encodable values drop with warning.
-function encode(value, seen) {
-  if (value instanceof Set) return { __t: 'Set', v: Array.from(value, (x) => encode(x, seen)) }
+// `ancestors` holds only the objects on the current path: one object reached twice (a project's `hooks` is also its `targets.<host>.hooks`) is not a cycle.
+function encode(value, ancestors) {
+  if (value instanceof Set) return { __t: 'Set', v: Array.from(value, (x) => encode(x, ancestors)) }
   if (value instanceof Map) {
-    return { __t: 'Map', v: Array.from(value.entries(), ([k, v]) => [encode(k, seen), encode(v, seen)]) }
+    return { __t: 'Map', v: Array.from(value.entries(), ([k, v]) => [encode(k, ancestors), encode(v, ancestors)]) }
   }
   if (typeof value === 'function') throw new Error('function cannot be mirrored')
   if (typeof value === 'symbol' || typeof value === 'bigint') {
     throw new Error(`${typeof value} cannot be mirrored`)
   }
   if (typeof Node !== 'undefined' && value instanceof Node) throw new Error('DOM node cannot be mirrored')
-  if (Array.isArray(value)) return value.map((x) => encode(x, seen))
+  if (Array.isArray(value)) return value.map((x) => encode(x, ancestors))
   if (value && typeof value === 'object') {
-    if (seen.has(value)) throw new Error('circular reference cannot be mirrored')
-    seen.add(value)
+    if (ancestors.has(value)) throw new Error('circular reference cannot be mirrored')
+    ancestors.add(value)
     const out = {}
-    for (const [k, v] of Object.entries(value)) out[k] = encode(v, seen)
+    for (const [k, v] of Object.entries(value)) out[k] = encode(v, ancestors)
+    ancestors.delete(value)
     return out
   }
   return value // string | number | boolean | null | undefined

@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 ### Removed
 - `scripts/test/monitor-ag-proxy.js`: a dev-only monitor that could not parse the Antigravity probe's framed output since it replaced JSON.
 
+### Fixed
+- **The phone companion showed no projects** (since 1.31.0). Each project's `hooks` is the same object as its `targets.<host>.hooks`, and the state mirror's encoder treated any object reached twice as a cycle, so it dropped the whole project list from every snapshot sent to the phone. It now rejects only an object that contains itself (`src/services/mirror.js` `encode`). Every other mirrored key was unaffected.
+
 ## [1.33.1] - 2026-10-20
 
 ### Changed
