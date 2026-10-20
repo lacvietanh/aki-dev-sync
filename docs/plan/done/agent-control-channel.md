@@ -24,4 +24,4 @@ Executes `docs/research/agent-control-channel.md` § Decision. Owner approved on
 ## Found while verifying
 
 - The companion received every mirrored key except the project list: the mirror encoder rejected an object reached twice (`hooks` aliased by `targets.<host>.hooks`) as a cycle. Fixed in `src/services/mirror.js`; CHANGELOG `[Unreleased]` § Fixed.
-- The installed app has the same default throttling policy, so a minimized or hidden release window may stop serving the phone. Not changed here: it is a release behaviour change.
+- The installed app had the same default throttling policy. Every build now opts out at every layer: `src-tauri/src/keep_awake.rs`, `docs/feat/background-refresh.md` § Never throttled.

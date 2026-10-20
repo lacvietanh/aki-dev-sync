@@ -69,10 +69,10 @@ if (subcommand !== 'dev') {
   // Runtime override via --config JSON merge, derived from tauri.conf.json so nothing is restated (Vite reads TAURI_DEV_PORT in vite.config.js).
   const baseConfig = JSON.parse(readFileSync(resolve(root, 'src-tauri/tauri.conf.json'), 'utf8'));
   const devCsp = baseConfig.app.security.csp.replaceAll(`:${RELEASE_RELAY_PORT}`, `:${DEV_RELAY_PORT}`);
-  // npm run dev:agent: hidden so it never covers the owner's work, unthrottled so the hidden host keeps serving the relay (docs/ref/agent-control.md).
+  // npm run dev:agent: hidden so it never covers the owner's work (docs/ref/agent-control.md).
   const agentMode = Boolean(process.env.AKI_DEVSYNC_AGENT);
   const windows = agentMode
-    ? baseConfig.app.windows.map(w => ({ ...w, visible: false, focus: false, backgroundThrottling: 'disabled' }))
+    ? baseConfig.app.windows.map(w => ({ ...w, visible: false, focus: false }))
     : baseConfig.app.windows;
   const configOverride = JSON.stringify({
     identifier: DEV_IDENTIFIER,

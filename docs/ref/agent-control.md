@@ -19,8 +19,6 @@ What a debug build has of its own, so the installed app is never touched:
 | Companion relay port | 1431 | 1421 |
 | Control socket | `~/.aki/devsync-dev/control.sock`, mode 0600 | none |
 
-Agent mode also sets `backgroundThrottling: disabled` on the window: WebKit otherwise suspends a hidden webview's tasks, so the host stops answering the relay and a paired browser receives nothing until something wakes the page.
-
 `npm run tauri dev` and `npm run dev:debug` get the same isolation, but with a visible window.
 
 ## Operations

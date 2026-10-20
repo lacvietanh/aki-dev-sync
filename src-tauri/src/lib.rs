@@ -8,6 +8,7 @@ mod control;
 mod gemini_allowlist;
 mod git;
 mod global_note;
+mod keep_awake;
 mod logger;
 mod project_config;
 mod project_notes;
@@ -36,6 +37,7 @@ pub fn run() {
             logger::init(app.handle());
             logger::info("MIGRATE", &migration_summary);
             logger::info("MIGRATE", &settings_state_summary);
+            keep_awake::hold(app.handle());
             #[cfg(debug_assertions)]
             {
                 logger::info("MIGRATE", &seed_summary);

@@ -1,6 +1,6 @@
 # Background Refresh
 
-> updated 2026-09-20 · v1.30.0
+> updated 2026-10-20 · v1.33.1
 
 Automatic background polling that keeps three independent data types fresh without user interaction. Each type has a different cost profile and refresh interval.
 
@@ -103,9 +103,21 @@ A power icon (`.src-power`, the same control as the usage monitors and the SYNC 
 
 ---
 
+## Never throttled
+
+While the app runs, nothing in it is put to sleep to save energy: it serves the phone, streams terminals and syncs with its window hidden or minimized. `src-tauri/src/keep_awake.rs` opts out at every layer, once at setup, with one branch per platform:
+
+| Layer | macOS | Windows | Linux |
+|---|---|---|---|
+| Process | App Nap: `NSProcessInfo` user-initiated activity, idle system sleep still allowed | EcoQoS: `SetProcessInformation(ProcessPowerThrottling)` | none exists |
+| Webview engine | WebKit hidden-page timer throttling and WebContent process suppression: private `WKPreferences` setters, probed first | Chromium background throttling: browser flags in `tauri.conf.json` `additionalBrowserArgs` | WebKitGTK has no switch; measure when a Linux build ships |
+| Tauri config | `backgroundThrottling: "disabled"` (inactive scheduling policy, macOS 14+) | ignored | ignored |
+
+`backgroundThrottling` alone is not enough on macOS: a hidden window still ran a 10 ms interval 9 times in 3 s; with the engine layer it ran 248 times. Only macOS is measured; the Windows branch type-checks and the app ships no Windows or Linux build.
+
 ## Sleep/wake self-heal
 
-WKWebView suspends and throttles `setInterval` when the window is occluded, minimised, or the Mac sleeps. The timers simply stop, and nothing downstream notices: project status freezes on whatever it last showed, which is the app quietly lying about the state of a repo. A suspended interval does not reliably resume ticking on its own once the window is visible again either.
+When the Mac itself sleeps, every timer stops, and nothing downstream notices: project status freezes on whatever it last showed, which is the app quietly lying about the state of a repo. A stopped interval does not reliably resume ticking on its own after wake either.
 
 There is **one** wake mechanism in the app, and it lives with the usage monitor (`usageMonitor.js`, `subscribeWake`) because that is where it was built first. `useBackgroundRefresh` subscribes to it rather than running a second heartbeat — two watchdogs would double the wake-up cost and mean two places to reason about when recovery misbehaves. It drives recovery from two signals:
 
