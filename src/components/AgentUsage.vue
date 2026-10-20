@@ -1,31 +1,12 @@
 <template>
   <div class="agent-usage-card">
     <!-- Header shell for Antigravity and Claude Code. -->
-    <div class="agent-header" :class="{ 'claudecode-custom-header': agentId === 'claudecode' }">
-      <!-- Claude Code title -->
-      <div v-if="agentId === 'claudecode'" class="agent-title-group">
-        <div class="agent-icon-wrapper">
-          <img src="/claude-icon.png" class="agent-img-icon icon-glow" alt="Claude Code" />
-        </div>
-        <div class="agent-name-row">
-          <span class="agent-name u-narrow-hide">{{ agentName }}</span>
-          <span v-if="claudeTierDisplay" class="agent-plan-badge claude">
-            {{ claudeTierDisplay }}
-          </span>
-          <!-- u-select-text: account address is copy-worthy. -->
-          <span v-if="data?.email" class="agent-account u-select-text" :class="{ 'email-blurred': !showEmail }">{{ truncEmail(data.email) }}</span>
-          <button v-if="data?.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
-            <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
-          </button>
-          <span v-if="ccOrgName" class="agent-org u-select-text" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
-        </div>
-      </div>
-
-      <!-- Antigravity title (keep tiny logo + email) -->
-      <div v-else class="agent-title-group">
-        <div class="agent-icon-wrapper" :class="currentSourceType">
+    <div class="agent-header" :class="{ 'claudecode-custom-header': isCc }">
+      <div class="agent-title-group">
+        <div class="agent-icon-wrapper" :class="isCc ? null : currentSourceType">
+          <img v-if="isCc" src="/claude-icon.png" class="agent-img-icon icon-glow" alt="Claude Code" />
           <i
-            v-if="currentSourceType === 'cli'"
+            v-else-if="currentSourceType === 'cli'"
             class="fa-solid fa-terminal agent-cli-icon clickable-icon"
             @click="handleIconClick"
             title="CLI Active"
@@ -47,59 +28,60 @@
             title="IDE Active"
           />
         </div>
-        <div class="agent-info">
-          <div class="agent-name">
-            <span class="u-narrow-hide">{{ agDisplayName }}</span>
-            <span v-if="data?.userTier?.name" class="agent-plan-badge ag">
-              {{ data.userTier.name.replace(/\b(Google|AI)\b/gi, '').trim() }}
+        <div :class="isCc ? 'agent-name-row' : 'agent-name'">
+          <span :class="isCc ? 'agent-name u-narrow-hide' : 'u-narrow-hide'">{{ displayName }}</span>
+          <span v-if="planBadge" class="agent-plan-badge" :class="isCc ? 'claude' : 'ag'">
+            {{ planBadge }}
+          </span>
+          <span
+            v-if="data?.email"
+            class="ag-account-wrap"
+            role="button"
+            tabindex="0"
+            title="Switch account view"
+          >
+            <span class="agent-account ag-account-trigger">
+              <template v-if="showEmail">
+                {{ truncEmail(data.email) }}
+              </template>
+              <template v-else>
+                <span class="email-prefix">{{ getEmailPrefix(data.email) }}</span><span class="email-blurred-fixed">••••••••</span>
+              </template>
             </span>
-            <span
-              v-if="data?.email"
-              class="ag-account-wrap"
-              role="button"
-              tabindex="0"
-              title="Switch account view"
-            >
-              <span class="agent-account ag-account-trigger">
-                <template v-if="showEmail">
-                  {{ truncEmail(data.email) }}
-                </template>
-                <template v-else>
-                  <span class="email-prefix">{{ getEmailPrefix(data.email) }}</span><span class="email-blurred-fixed">••••••••</span>
-                </template>
-              </span>
-              <div class="ag-account-menu" :class="popupPosition" @click.stop>
-                <button
-                  v-for="acc in accounts"
-                  :key="acc.accountKey || acc.email"
-                  class="ag-account-item"
-                  :class="{ 'is-current': isAccountCurrent(acc) }"
-                  @click="pickAccount(acc)"
-                >
-                  <span class="ag-account-left">
+            <div class="ag-account-menu" :class="popupPosition" @click.stop>
+              <button
+                v-for="acc in accounts"
+                :key="acc.accountKey || acc.email"
+                class="ag-account-item"
+                :class="{ 'is-current': isAccountCurrent(acc) }"
+                @click="pickAccount(acc)"
+              >
+                <span class="ag-account-left">
+                  <template v-if="!isCc">
                     <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="CLI"></i>
                     <img v-else-if="acc.sourceType === 'desktop' || acc.sourceType === 'desktop_cli'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG" />
                     <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="IDE" />
-                    <span v-if="showEmail" class="ag-account-email u-select-text">{{ acc.email }}</span>
-                    <span v-else class="ag-account-email-masked">
-                      <span class="email-prefix">{{ getEmailPrefix(acc.email) }}</span><span class="email-blurred-fixed">••••••••</span>
-                    </span>
+                  </template>
+                  <span v-if="showEmail" class="ag-account-email u-select-text">{{ acc.email }}</span>
+                  <span v-else class="ag-account-email-masked">
+                    <span class="email-prefix">{{ getEmailPrefix(acc.email) }}</span><span class="email-blurred-fixed">••••••••</span>
                   </span>
-                  <span class="ag-account-metacol">
-                    <span
-                      v-if="isAccountLive(acc)"
-                      class="ag-live-dot"
-                      title="Live account"
-                    ></span>
-                    <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
-                  </span>
-                </button>
-              </div>
-            </span>
-            <button v-if="data?.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
-              <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
-            </button>
-          </div>
+                </span>
+                <span class="ag-account-metacol">
+                  <span
+                    v-if="isAccountLive(acc)"
+                    class="ag-live-dot"
+                    title="Live account"
+                  ></span>
+                  <span class="ag-account-time">{{ formatAgo(acc.fetchedAt) }}</span>
+                </span>
+              </button>
+            </div>
+          </span>
+          <button v-if="data?.email" class="btn-eye-inline" @click.stop="$emit('toggle-email')" :title="showEmail ? 'Hide email' : 'Show email'" :aria-label="showEmail ? 'Hide email' : 'Show email'">
+            <i class="fa-regular" :class="showEmail ? 'fa-eye' : 'fa-eye-slash'"></i>
+          </button>
+          <span v-if="ccOrgName" class="agent-org u-select-text" :class="{ 'email-blurred': !showEmail }">· {{ ccOrgName }}</span>
         </div>
       </div>
 
@@ -286,7 +268,7 @@ const props = defineProps({
   sourceOff: { type: Boolean, default: false },
   // True when sourceOff is locked (e.g. Proxy mode active).
   locked: { type: Boolean, default: false },
-  // AG-only multi-account view (unused for Claude Code)
+  // Multi-account view: accounts seen on this host, the slot's pinned one, and the live ones
   accounts: { type: Array, default: () => [] },
   viewingEmail: { default: null },
   activeEmail: { default: null },
@@ -333,7 +315,9 @@ const currentSourceType = computed(() => {
   return props.data?.sourceType || 'ide';
 });
 
-const agDisplayName = computed(() => {
+const isCc = computed(() => props.agentId === 'claudecode');
+
+const displayName = computed(() => {
   if (props.agentId !== 'antigravity') return props.agentName;
   if (currentSourceType.value === 'cli') return 'CLI';
   if (currentSourceType.value === 'ide') return 'IDE';
@@ -690,6 +674,10 @@ const claudeTierDisplay = computed(() => {
   return '';
 });
 
+const planBadge = computed(() => (isCc.value
+  ? claudeTierDisplay.value
+  : props.data?.userTier?.name?.replace(/\b(Google|AI)\b/gi, '').trim()) || '');
+
 async function handleIconClick() {
   if (props.agentId === 'antigravity') {
     try {
@@ -764,11 +752,6 @@ async function handleIconClick() {
   object-fit: contain;
 }
 
-.agent-info {
-  display: flex;
-  align-items: center;
-}
-
 .agent-name {
   font-size: 12px;
   font-weight: 700;
@@ -807,7 +790,7 @@ async function handleIconClick() {
   transition: filter 0.2s;
 }
 
-/* AG account-switch dropdown (anchored under the email) */
+/* Account-switch dropdown (anchored under the email) */
 .ag-account-wrap {
   position: relative;
   cursor: pointer;

@@ -14,7 +14,7 @@ import { isHost } from '../services/bridge';
 import { hostInterval } from '../utils/scheduler';
 import { refreshSettings, manualRefreshCount } from '../store/refreshStore';
 import { usageReading, patchUsageReading } from '../store/usageReadingStore';
-import { persistAgAccount, loadAgAccount, listAgAccounts, lastActiveEmailFor, lastActiveKeyFor } from './agUsageCache';
+import { accountCacheFor } from './usageAccountCache';
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 // Logs to frontend console first, then forwards to Rust backend (file + stderr) via fire-and-forget IPC.
@@ -121,6 +121,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   const ulog = makeLogger(id);
   logStartupInfo(); // one-time: resolves debug mode, enables console output
   const isAg = agentId === 'antigravity';
+  const accountCache = accountCacheFor(agentId);
 
   // Readings are mirrored in usageReadingStore; stale state is derived from dataAt in the card.
   const reading = computed(() => usageReading(id));
@@ -132,18 +133,18 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
   const error = computed(() => reading.value.error);
   // Cache file mtime in Unix seconds (clock staleness baseline; for Claude Code, written by statusline hook).
   const dataAt = computed(() => reading.value.dataAt);
-  // AG-only: tracks whether current data is from cache (AG offline) and when it was cached
+  // Whether the shown reading is a cached one (agent offline, or Claude Code past its reset with no new turn) and when it was cached
   const isCached = computed(() => reading.value.isCached);
   const cachedAt = computed(() => reading.value.cachedAt); // Unix seconds
 
-  // AG-only multi-account state scoped to this host; account pin selection is owned per-slot.
+  // Multi-account state scoped to this host; account pin selection is owned per-slot.
   const accounts = computed(() => reading.value.accounts);       // dropdown list [{ email, fetchedAt }] sorted newest-first
   const activeEmail = computed(() => reading.value.activeEmail); // email of the primary successful live fetch
   const activeEmails = computed(() => reading.value.activeEmails); // Set of emails of all currently live accounts
-  const refreshAccounts = () => { set({ accounts: listAgAccounts(host) }); };
+  const refreshAccounts = () => { set({ accounts: accountCache.list(host) }); };
   // Seeded from THIS host's own cache. set is host-only so companion receives mirrored data.
-  if (isAg && isHost) {
-    set({ accounts: listAgAccounts(host), activeEmail: lastActiveEmailFor(host) });
+  if (isHost) {
+    set({ accounts: accountCache.list(host), activeEmail: accountCache.lastActive(host) });
   }
 
   let pollTimer = null;
@@ -257,32 +258,22 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
           // UI staleness baseline: valid mtime in Unix seconds, or null if unknown.
           const nextDataAt = mtimeSec > 0 ? mtimeSec : null;
 
-          if (isAg) {
-            // Record live fetch under account email and refresh accounts list; slot resolves pinned views.
-            const nextActiveEmail = parsed?.email || activeEmail.value;
-
-            const liveList = [];
-            if (Array.isArray(parsed?.allAccounts) && parsed.allAccounts.length > 0) {
-              for (const a of parsed.allAccounts) {
-                if (a.email) liveList.push(a.email);
-              }
-            } else if (parsed?.email) {
-              liveList.push(parsed.email);
-            }
-            persistAgAccount(parsed, fetchedAt, host);
-            set({
-              dataAt: nextDataAt,
-              activeEmail: nextActiveEmail,
-              activeEmails: new Set(liveList),
-              accounts: listAgAccounts(host),
-              data: parsed,
-              isCached: false,
-              cachedAt: null,
-            });
-            ulog('ag live fetched', { email: nextActiveEmail, liveCount: liveList.length, fetchedAt }, 'debug');
-          } else {
-            set({ dataAt: nextDataAt, data: parsed, isCached: false, cachedAt: null });
-          }
+          // Record live fetch under account email and refresh accounts list; slot resolves pinned views.
+          const nextActiveEmail = parsed?.email || activeEmail.value;
+          const liveList = (Array.isArray(parsed?.allAccounts) && parsed.allAccounts.length > 0
+            ? parsed.allAccounts.map(a => a.email)
+            : [parsed?.email]).filter(Boolean);
+          accountCache.persist(parsed, fetchedAt, host);
+          set({
+            dataAt: nextDataAt,
+            activeEmail: nextActiveEmail,
+            activeEmails: new Set(liveList),
+            accounts: accountCache.list(host),
+            data: parsed,
+            isCached: false,
+            cachedAt: null,
+          });
+          ulog('live fetched', { email: nextActiveEmail, liveCount: liveList.length, fetchedAt }, 'debug');
 
           const fiveHour = parsed?.rate_limits?.five_hour;
           // Log all rate limit buckets carried in the payload for observability.
@@ -314,26 +305,23 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
         // Server returned null data; reason logged from backend miss_reason.
         ulog('got null', { hadData, why: result?.miss_reason ?? 'unknown' }, 'info');
 
-        // AG offline: fallback to last-active account cache deterministically.
-        if (isAg) {
-          refreshAccounts();
-          // Handle key includes sourceType (email:sourceType) to disambiguate IDE vs CLI quotas.
-          const lastActiveKey = lastActiveKeyFor(host);
-          if (!activeEmail.value) set({ activeEmail: lastActiveEmailFor(host) });
-          const cached = loadAgAccount(lastActiveKey, host);
-          if (cached) {
-            set({ data: cached.data, isCached: true, cachedAt: cached.fetchedAt });
-            ulog('ag offline cached', { account: lastActiveKey, fetchedAt: cached.fetchedAt }, 'info');
-          } else {
-            set({ data: null, isCached: false, cachedAt: null });
-            ulog('ag offline no cache', {}, 'info');
-          }
-        } else if (hadData) {
+        if (!isAg && hadData) {
           // STALE_RESET: past reset boundary without new CC turn; preserve last reading as cached.
           set({ isCached: true, cachedAt: lastFetchedAt });
           ulog('cc STALE_RESET: keep cached', { cachedAt: lastFetchedAt }, 'info');
         } else {
-          set({ data: null });
+          // Nothing live: fall back to the last-active account's cached reading.
+          refreshAccounts();
+          const lastActive = accountCache.lastActive(host);
+          if (!activeEmail.value) set({ activeEmail: lastActive });
+          const cached = accountCache.load(lastActive, host);
+          if (cached) {
+            set({ data: cached.data, isCached: true, cachedAt: cached.fetchedAt });
+            ulog('offline cached', { account: lastActive, fetchedAt: cached.fetchedAt }, 'info');
+          } else {
+            set({ data: null, isCached: false, cachedAt: null });
+            ulog('offline no cache', {}, 'info');
+          }
         }
 
         if (!isAg) provision();
@@ -515,7 +503,7 @@ export function createUsageMonitor({ id, agentId, host, enabled, locked, toggle 
     isCached,
     cachedAt,
     refresh: checkUsage,
-    // AG-only: what is currently signed in on this machine, for the slot's account dropdown to render and choose from (harmless/unused for Claude Code).
+    // Accounts seen on this machine, for the slot's account dropdown to render and choose from.
     accounts,
     activeEmail,
     activeEmails,

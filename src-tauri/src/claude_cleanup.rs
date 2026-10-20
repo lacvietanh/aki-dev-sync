@@ -73,6 +73,13 @@ const CATALOG: &[CatalogEntry] = &[
     },
     CatalogEntry {
         group: GROUP_ACCOUNT,
+        key: "rate-limits",
+        rel: ".claude/rate-limits",
+        kind: Kind::Dir,
+        label: "Per-account rate limit cache",
+    },
+    CatalogEntry {
+        group: GROUP_ACCOUNT,
         key: "daemon-auth-status",
         rel: ".claude/daemon-auth-status.json",
         kind: Kind::File,

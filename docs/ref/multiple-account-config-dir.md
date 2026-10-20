@@ -41,4 +41,5 @@ alias ag2="GEMINI_DIR=~/.gemini-2 agy"
 
 1. **Config & Token Isolation**: Overriding the config directory creates an independent storage tree containing authentication tokens, history logs, plugins, and custom settings.
 2. **Concurrent Sessions**: Terminal windows using different config directories can run side-by-side without credential collisions or token refresh overwrites.
-3. **In-RAM Persistence**: Processes load environment settings at invocation; modifying disk configuration while a process is running does not alter the active in-RAM session state.
+3. **The login is keyed by the variable's string, not the directory.** Claude Code stores credentials in the macOS Keychain as `Claude Code-credentials` when `CLAUDE_CONFIG_DIR` is unset and `Claude Code-credentials-<sha256(value)[:8]>` when set, so `claude` and `CLAUDE_CONFIG_DIR=~/.claude claude` are two separate logins sharing one directory. Checked 2026-10-20 on this Mac: sha256 of `/Users/aki/.claude` starts `05a20467`, matching a Keychain item, and `claude auth status` returned a different email with and without the variable. Shared files in that directory (`.claude.json`) then hold whichever account wrote last.
+4. **In-RAM Persistence**: Processes load environment settings at invocation; modifying disk configuration while a process is running does not alter the active in-RAM session state.

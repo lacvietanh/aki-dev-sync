@@ -1,6 +1,6 @@
 # Claude Code Cleanup (Local)
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-10-20 · v1.33.1
 
 **Where**: app-icon menu (☰) → `Claude Code Cleanup (Local)`. Host-only - hidden on a paired phone.
 **Code**: `src-tauri/src/claude_cleanup.rs` · `src/components/modals/ClaudeCleanupModal.vue` · `src/utils/bytes.js` **Path catalogue & per-path impact**: `docs/ref/claudecode-cleanup-paths.md` **Plan**: `docs/plan/done/claudecode-cleanup.md`
@@ -13,7 +13,7 @@ Five groups, each with its total size.
 
 | Group | Deletable | What it holds | What you lose |
 |---|---|---|---|
-| **Account** | yes | `~/.claude.json`, `.credentials.json`, `auth-cache.json`, `stats-cache.json`, `rate-limits-cache.json`, `daemon-auth-status.json`, `daemon-auth-cooldown` | Signed out; `claude` asks you to log in again |
+| **Account** | yes | `~/.claude.json`, `.credentials.json`, `auth-cache.json`, `stats-cache.json`, `rate-limits-cache.json`, `rate-limits/`, `daemon-auth-status.json`, `daemon-auth-cooldown` | Signed out; `claude` asks you to log in again |
 | **Data** | yes | `projects/` transcripts (minus every `memory/`), `history.jsonl`, `file-history/`, `sessions/`, `paste-cache/`, `plans/`, `session-env/`, `tasks/`, `shell-snapshots/`, `downloads/` | Chat transcripts, prompt history, and the ability to undo a file Claude edited. Usually the biggest group |
 | **Agent memory** | yes | every `projects/*/memory/` | Everything the agent has remembered across sessions |
 | **Cache** | yes | `cache/`, `backups/`, `plugins/`, `telemetry/`, `debug/`, `daemon.log`, `~/Library/Caches/claude-code/` | Nothing - regenerates on demand |
@@ -49,7 +49,7 @@ Sizing walks the tree with `symlink_metadata` and never follows a symlink, so a 
 
 ## After a cleanup
 
-Deleting the Account group removes the very files the app's own Claude Code usage monitor reads (`auth-cache.json`, `rate-limits-cache.json` - see `docs/arch/usage-claudecode.md`). The modal fires a manual refresh afterwards so the usage panel does not keep rendering quota numbers whose source file no longer exists.
+Deleting the Account group removes the very files the app's own Claude Code usage monitor reads (`auth-cache.json`, `rate-limits-cache.json`, `rate-limits/` - see `docs/arch/usage-claudecode.md`). The modal fires a manual refresh afterwards so the usage panel does not keep rendering quota numbers whose source file no longer exists.
 
 ## Verification status
 

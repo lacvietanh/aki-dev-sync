@@ -20,19 +20,45 @@ case "$0" in
   *)           CLI="CC" ;;
 esac
 
-# aki-rlcache v4 - persists rate_limits across turns that omit it, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
+# aki-rlcache v6 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
 if [ "$CLI" = "CC" ]; then
   _rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  RLCACHE="$_rl_config_dir/rate-limits-cache.json"
-  mkdir -p "$_rl_config_dir" 2>/dev/null
   _rl_now=$(date +%s)
-  _rl_acct=""
-  _rl_acct_uuid=""
-  # oauthAccount lives in the config dir ($HOME/.claude by default, never $HOME/.claude.json); the statusLine hook inherits claude's CLAUDE_CONFIG_DIR.
-  _rl_claude_json="$_rl_config_dir/.claude.json"
-  if [ -f "$_rl_claude_json" ]; then
-      _rl_acct=$(jq -r '.oauthAccount.emailAddress // ""' "$_rl_claude_json" 2>/dev/null)
-      _rl_acct_uuid=$(jq -r '.oauthAccount.accountUuid // ""' "$_rl_claude_json" 2>/dev/null)
+  # One config dir can hold two logins, slotted like Claude Code's Keychain item: docs/arch/usage-claudecode.md § Nhiều account trên một máy.
+  _cc_slot=default
+  [ -n "${CLAUDE_CONFIG_DIR:-}" ] && _cc_slot=$(printf '%s' "$CLAUDE_CONFIG_DIR" | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -c1-8)
+  _cc_auth_cache="$_rl_config_dir/auth-cache-${_cc_slot:-default}.json"
+  AUTH_TTL_S=15
+  _cc_auth=""
+  _auth_cache_age=999999
+  if [ -f "$_cc_auth_cache" ]; then
+      _auth_mtime=$(stat -f %m "$_cc_auth_cache" 2>/dev/null || stat -c %Y "$_cc_auth_cache" 2>/dev/null)
+      _auth_cache_age=$(( _rl_now - _auth_mtime ))
+  fi
+  if [ "$_auth_cache_age" -lt "$AUTH_TTL_S" ]; then
+      _cc_auth=$(cat "$_cc_auth_cache" 2>/dev/null)
+  else
+      _auth_live=$( (timeout 3 claude auth status 2>/dev/null || gtimeout 3 claude auth status 2>/dev/null || claude auth status 2>/dev/null) )
+      if [ -n "$(printf '%s' "$_auth_live" | jq -r '.email // empty' 2>/dev/null)" ]; then
+          _cc_auth="$_auth_live"
+          mkdir -p "$_rl_config_dir" 2>/dev/null
+          printf '%s' "$_auth_live" > "$_cc_auth_cache" 2>/dev/null
+      elif [ -f "$_cc_auth_cache" ]; then
+          _cc_auth=$(cat "$_cc_auth_cache" 2>/dev/null)
+      fi
+  fi
+  _rl_acct=$(printf '%s' "$_cc_auth" | jq -r '.email // ""' 2>/dev/null)
+  _rl_org_id=$(printf '%s' "$_cc_auth" | jq -r '.orgId // ""' 2>/dev/null)
+  RLCACHE=""
+  if [ -n "$_rl_acct" ]; then
+      _rl_dir="$HOME/.claude/rate-limits"
+      mkdir -p "$_rl_dir" 2>/dev/null
+      RLCACHE="$_rl_dir/$(printf '%s' "$_rl_acct" | tr -c 'A-Za-z0-9@._+-' '_').json"
+  fi
+  # The plan tier is only in .claude.json, which every account in the dir overwrites: trust it only while it names this account, else keep the tier cached before.
+  _rl_tier=""
+  if [ -f "$_rl_config_dir/.claude.json" ]; then
+      _rl_tier=$(jq -r --arg a "$_rl_acct" 'if .oauthAccount.emailAddress == $a then (.oauthAccount.organizationRateLimitTier // .oauthAccount.userRateLimitTier // "") else "" end' "$_rl_config_dir/.claude.json" 2>/dev/null)
   fi
   # Drops entries past resets_at (0 = unknown, kept) or unseen in a live payload for 6 h (a plan change stopped sending that tier).
   _rl_prune() {
@@ -47,19 +73,12 @@ if [ "$CLI" = "CC" ]; then
   }
   rl_input=$(printf '%s' "$input" | jq -c '.rate_limits // empty' 2>/dev/null)
   rl_cached=""
-  if [ -f "$RLCACHE" ] && jq -e . "$RLCACHE" >/dev/null 2>&1; then
-      # Account gate: accountUuid when either side has one, else email (a pre-v5 cache, or a client with no accountUuid).
-      _rl_cached_acct=$(jq -r '.account // ""' "$RLCACHE" 2>/dev/null)
-      _rl_cached_uuid=$(jq -r '.account_uuid // ""' "$RLCACHE" 2>/dev/null)
-      if [ -n "$_rl_cached_uuid" ] || [ -n "$_rl_acct_uuid" ]; then
-          _rl_acct_match=false
-          [ -n "$_rl_cached_uuid" ] && [ "$_rl_cached_uuid" = "$_rl_acct_uuid" ] && _rl_acct_match=true
-      else
-          _rl_acct_match=false
-          [ "$_rl_cached_acct" = "$_rl_acct" ] && _rl_acct_match=true
-      fi
-      if [ "$_rl_acct_match" = "true" ]; then
+  if [ -n "$RLCACHE" ] && [ -f "$RLCACHE" ] && jq -e . "$RLCACHE" >/dev/null 2>&1; then
+      # Account gate: the file is named by email, so only the org id is left to compare - an account deleted and recreated under the same address gets a new org and a new plan.
+      _rl_cached_org=$(jq -r '.org_id // ""' "$RLCACHE" 2>/dev/null)
+      if [ -z "$_rl_cached_org" ] || [ -z "$_rl_org_id" ] || [ "$_rl_cached_org" = "$_rl_org_id" ]; then
           rl_cached=$(jq -c '.rate_limits // empty' "$RLCACHE" 2>/dev/null)
+          [ -z "$_rl_tier" ] && _rl_tier=$(jq -r '.rate_limit_tier // ""' "$RLCACHE" 2>/dev/null)
       fi
   fi
   rl_merged="$rl_cached"
@@ -83,15 +102,16 @@ if [ "$CLI" = "CC" ]; then
   if [ -n "$rl_merged" ]; then
       _with_rl=$(printf '%s' "$input" | jq -c --argjson rl "$rl_merged" '.rate_limits = $rl' 2>/dev/null)
       [ -n "$_with_rl" ] && input="$_with_rl"
-      _rl_tmp=$(mktemp "$_rl_config_dir/.rate-limits-cache.XXXXXX" 2>/dev/null)
+      _rl_tmp=""
+      [ -n "$RLCACHE" ] && _rl_tmp=$(mktemp "$_rl_dir/.rate-limits.XXXXXX" 2>/dev/null)
       if [ -n "$_rl_tmp" ]; then
-          if printf '{"account":%s,"account_uuid":%s,"rate_limits":%s}\n' "$(jq -n --arg a "$_rl_acct" '$a')" "$(jq -n --arg u "$_rl_acct_uuid" '$u')" "$rl_merged" > "$_rl_tmp" 2>/dev/null; then
+          if printf '%s' "$_cc_auth" | jq -c --argjson rl "$rl_merged" --arg tier "$_rl_tier" '{account: .email, org_id: (.orgId // ""), org_name: (.orgName // ""), subscription_type: (.subscriptionType // ""), rate_limit_tier: $tier, rate_limits: $rl}' > "$_rl_tmp" 2>/dev/null; then
               mv -f "$_rl_tmp" "$RLCACHE" 2>/dev/null || rm -f "$_rl_tmp"
           else
               rm -f "$_rl_tmp"
           fi
       fi
-  elif [ -f "$RLCACHE" ]; then
+  elif [ -n "$RLCACHE" ] && [ -f "$RLCACHE" ]; then
       # Nothing survived the account/expiry/staleness gates - do not leave the stale file behind to be re-read (and re-trusted) on the next call.
       rm -f "$RLCACHE" 2>/dev/null
   fi
@@ -453,25 +473,9 @@ g_cli_tag=""
 if [ "$EN_cli_tag" = 1 ]; then
   acc_name=""
   if [ "$EN_account" = 1 ]; then
-    # Each CLI reads its OWN account source: tried in sequence, a machine with both would show the other CLI's account.
-    # CC asks `claude auth status`, cached AUTH_TTL_S in the usage poll's auth-cache.json (docs/feat/statusline-customizer.md § Account resolution).
+    # Each CLI reads its OWN account source: tried in sequence, a machine with both would show the other CLI's account. CC's is this session's slot, resolved in the aki-rlcache block.
     if [ "$CLI" = "CC" ]; then
-      _live_acct=""
-      _auth_cache="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/auth-cache.json"
-      AUTH_TTL_S=15
-      _auth_cache_age=999999
-      if [ -f "$_auth_cache" ]; then
-        _auth_mtime=$(stat -f %m "$_auth_cache" 2>/dev/null || stat -c %Y "$_auth_cache" 2>/dev/null)
-        _auth_cache_age=$(( $(date +%s) - _auth_mtime ))
-      fi
-      if [ "$_auth_cache_age" -lt "$AUTH_TTL_S" ]; then
-        _live_acct=$(jq -r '.email // ""' "$_auth_cache" 2>/dev/null)
-      else
-        _auth_live=$( (timeout 3 claude auth status 2>/dev/null || gtimeout 3 claude auth status 2>/dev/null || claude auth status 2>/dev/null) )
-        _live_acct=$(printf '%s' "$_auth_live" | jq -r '.email // ""' 2>/dev/null)
-        [ -n "$_live_acct" ] && printf '%s' "$_auth_live" > "$_auth_cache" 2>/dev/null
-      fi
-      [ -n "$_live_acct" ] && JSON_ACCOUNT_EMAIL="$_live_acct"
+      [ -n "$_rl_acct" ] && JSON_ACCOUNT_EMAIL="$_rl_acct"
     elif [ -z "$JSON_ACCOUNT_EMAIL" ]; then
       [ -f "$HOME/.gemini/google_accounts.json" ] && \
         JSON_ACCOUNT_EMAIL=$(jq -r '.active // ""' "$HOME/.gemini/google_accounts.json" 2>/dev/null)

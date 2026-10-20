@@ -15,7 +15,7 @@ export const EMPTY_READING = Object.freeze({
   isCached: false,
   cachedAt: null,
   pollHalted: false,
-  // AG-only multi-account view (harmless/unused for Claude Code).
+  // Multi-account view of this host (accounts seen, primary live one, all live ones).
   accounts: [],
   activeEmail: null,
   activeEmails: new Set(),

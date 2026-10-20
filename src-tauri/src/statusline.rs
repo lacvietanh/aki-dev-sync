@@ -842,14 +842,15 @@ mod tests {
             ".gemini/antigravity-cli/agy_rlcache.sh",
             &gen(&cfg),
             payload,
-            &[(".claude/rate-limits-cache.json", cache)],
+            &[(".claude/rate-limits/me@example.com.json", cache)],
         );
         assert!(
             !plain(&line).contains("42%"),
             "AGY read Claude Code's rate-limit cache: {}",
             plain(&line)
         );
-        let after = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
+        let after =
+            std::fs::read_to_string(home.join(".claude/rate-limits/me@example.com.json")).unwrap();
         assert_eq!(after, cache, "AGY rewrote Claude Code's rate-limit cache");
     }
 
@@ -861,6 +862,17 @@ mod tests {
         script: &str,
         payload: &str,
         files: &[(&str, &str)],
+    ) -> (String, std::path::PathBuf) {
+        run_script_env(name, script, payload, files, &[])
+    }
+
+    /// `run_script` with extra env; a `claude` stub shadows the real CLI so no test reaches the real login.
+    fn run_script_env(
+        name: &str,
+        script: &str,
+        payload: &str,
+        files: &[(&str, &str)],
+        env: &[(&str, String)],
     ) -> (String, std::path::PathBuf) {
         let home =
             std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")));
@@ -878,11 +890,26 @@ mod tests {
             std::fs::create_dir_all(parent).unwrap();
         }
         std::fs::write(&path, script).unwrap();
+        let bin = home.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("claude"), "#!/bin/sh\nexit 1\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+        let path_env = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
         let out = std::process::Command::new("bash")
             .arg(&path)
             .env("HOME", &home)
+            .env("PATH", path_env)
             // If run from inside a Claude Code session, CLAUDE_CONFIG_DIR is inherited and overrides this fake HOME, leaking the real account into the script's output.
             .env_remove("CLAUDE_CONFIG_DIR")
+            .envs(env.iter().map(|(k, v)| (*k, v.as_str())))
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .spawn()
@@ -906,7 +933,7 @@ mod tests {
             &gen(&test_config()),
             payload,
             &[(
-                ".claude/auth-cache.json",
+                ".claude/auth-cache-default.json",
                 r#"{"email":"disk-user@example.com"}"#,
             )],
         );
@@ -933,7 +960,13 @@ mod tests {
             "cc_rlcache.sh",
             &gen(&test_config()),
             payload,
-            &[(".claude/rate-limits-cache.json", cache)],
+            &[
+                (
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com"}"#,
+                ),
+                (".claude/rate-limits/me@example.com.json", cache),
+            ],
         );
         println!("CC RLCACHE>>>{}<<<", line);
         let p = plain(&line);
@@ -950,13 +983,20 @@ mod tests {
             "cc_rlmerge.sh",
             &gen(&test_config()),
             payload,
-            &[(".claude/rate-limits-cache.json", cache)],
+            &[
+                (
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com"}"#,
+                ),
+                (".claude/rate-limits/me@example.com.json", cache),
+            ],
         );
         println!("CC RLMERGE>>>{}<<<", line);
         let p = plain(&line);
         assert!(p.contains("10%"), "fresh 5h value not used: {}", p);
         assert!(p.contains("92%"), "cached 7d lost on merge: {}", p);
-        let written = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
+        let written =
+            std::fs::read_to_string(home.join(".claude/rate-limits/me@example.com.json")).unwrap();
         assert!(
             written.contains("seven_day"),
             "rewritten cache dropped seven_day: {}",
@@ -988,13 +1028,20 @@ mod tests {
             "cc_rlexpired.sh",
             &gen(&test_config()),
             &payload,
-            &[(".claude/rate-limits-cache.json", cache.as_str())],
+            &[
+                (
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com"}"#,
+                ),
+                (".claude/rate-limits/me@example.com.json", cache.as_str()),
+            ],
         );
         println!("CC RLEXPIRED>>>{}<<<", line);
         let p = plain(&line);
         assert!(p.contains("50%"), "live 5h lost: {}", p);
         assert!(!p.contains("45%"), "expired 7d still rendered: {}", p);
-        let written = std::fs::read_to_string(home.join(".claude/rate-limits-cache.json")).unwrap();
+        let written =
+            std::fs::read_to_string(home.join(".claude/rate-limits/me@example.com.json")).unwrap();
         assert!(
             !written.contains("seven_day"),
             "expired entry kept in cache: {}",
@@ -1002,30 +1049,120 @@ mod tests {
         );
     }
 
+    fn quota_file(pct: u32, org: &str) -> String {
+        format!(
+            r#"{{"account":"x","org_id":"{}","rate_limits":{{"seven_day":{{"used_percentage":{},"resets_at":{}}}}}}}"#,
+            org,
+            pct,
+            now_epoch() + 7200
+        )
+    }
+
     #[test]
     fn cc_ignores_a_cache_written_by_another_account() {
-        let now = now_epoch();
-        let cache = format!(
-            r#"{{"account":"other@example.com","rate_limits":{{"seven_day":{{"used_percentage":45,"resets_at":{}}}}}}}"#,
-            now + 7200
-        );
-        let (line, _) = run_script(
+        let mine = quota_file(30, "");
+        let theirs = quota_file(45, "");
+        let (line, home) = run_script(
             "cc_rlforeign.sh",
             &gen(&test_config()),
             r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#,
             &[
                 (
-                    ".claude.json",
-                    r#"{"oauthAccount":{"emailAddress":"me@example.com"}}"#,
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com"}"#,
                 ),
-                (".claude/rate-limits-cache.json", cache.as_str()),
+                (".claude/rate-limits/me@example.com.json", mine.as_str()),
+                (
+                    ".claude/rate-limits/other@example.com.json",
+                    theirs.as_str(),
+                ),
             ],
         );
         println!("CC RLFOREIGN>>>{}<<<", line);
         let p = plain(&line);
+        assert!(p.contains("30%"), "this account's own quota lost: {}", p);
         assert!(
             !p.contains("45%"),
             "another account's cached quota leaked into this line: {}",
+            p
+        );
+        let after =
+            std::fs::read_to_string(home.join(".claude/rate-limits/other@example.com.json"))
+                .unwrap();
+        assert_eq!(
+            after, theirs,
+            "this session rewrote another account's quota file"
+        );
+    }
+
+    #[test]
+    fn cc_config_dir_slot_picks_its_own_account() {
+        // Two logins share one config dir: CLAUDE_CONFIG_DIR set (hashed slot) vs unset (default slot).
+        let home = std::env::temp_dir().join("aki-statusline-test/cc_slot.sh");
+        let config_dir = home.join(".claude").display().to_string();
+        let slot = String::from_utf8(
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg("printf '%s' \"$1\" | shasum -a 256 | cut -c1-8")
+                .arg("sh")
+                .arg(&config_dir)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let slot_auth = format!(".claude/auth-cache-{}.json", slot.trim());
+        let mine = quota_file(30, "");
+        let theirs = quota_file(45, "");
+        let (line, _) = run_script_env(
+            "cc_slot.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#,
+            &[
+                (
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com"}"#,
+                ),
+                (slot_auth.as_str(), r#"{"email":"other@example.com"}"#),
+                (".claude/rate-limits/me@example.com.json", mine.as_str()),
+                (
+                    ".claude/rate-limits/other@example.com.json",
+                    theirs.as_str(),
+                ),
+            ],
+            &[("CLAUDE_CONFIG_DIR", config_dir.clone())],
+        );
+        println!("CC SLOT>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(
+            p.contains("45%"),
+            "the slot's own account quota not shown: {}",
+            p
+        );
+        assert!(!p.contains("30%"), "the default slot's quota leaked: {}", p);
+    }
+
+    #[test]
+    fn cc_drops_a_cache_from_a_recreated_account() {
+        // Same address, new org: the old plan's numbers must not carry over.
+        let old = quota_file(45, "org-old");
+        let (line, _) = run_script(
+            "cc_rlorg.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#,
+            &[
+                (
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com","orgId":"org-new"}"#,
+                ),
+                (".claude/rate-limits/me@example.com.json", old.as_str()),
+            ],
+        );
+        println!("CC RLORG>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(
+            !p.contains("45%"),
+            "a recreated account inherited the old quota: {}",
             p
         );
         assert!(p.contains("Sonnet5"), "rest of the line lost: {}", p);
@@ -1038,7 +1175,16 @@ mod tests {
             "cc_rlcorrupt.sh",
             &gen(&test_config()),
             payload,
-            &[(".claude/rate-limits-cache.json", "{not json at all")],
+            &[
+                (
+                    ".claude/auth-cache-default.json",
+                    r#"{"email":"me@example.com"}"#,
+                ),
+                (
+                    ".claude/rate-limits/me@example.com.json",
+                    "{not json at all",
+                ),
+            ],
         );
         println!("CC RLCORRUPT>>>{}<<<", line);
         assert!(
@@ -1200,7 +1346,7 @@ mod tests {
         );
         let payload = payload.as_str();
         let files = [(
-            ".claude/auth-cache.json",
+            ".claude/auth-cache-default.json",
             r#"{"email":"ntu-gen@example.com"}"#,
         )];
         // The host half of the identity block is whatever this machine is called, cut to TRUNC_HOST.
@@ -1657,7 +1803,7 @@ mod tests {
             &gen(&test_config()),
             r#"{"cwd":"/sentinel/path","model":{"display_name":"Sonnet 5"}}"#,
             &[(
-                ".claude/auth-cache.json",
+                ".claude/auth-cache-default.json",
                 r#"{"email":"sentinel@example.com"}"#,
             )],
         );

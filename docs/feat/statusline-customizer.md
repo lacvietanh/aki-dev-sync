@@ -203,21 +203,21 @@ Neither CLI puts an email in its statusline payload reliably, so each has its ow
 
 | CLI | Payload keys tried | Own source |
 |---|---|---|
-| CC | `.account.email`, `.user.email`, `.email` | `claude auth status` → `.email`, overriding the payload; cached `AUTH_TTL_S` (15 s) in `<config dir>/auth-cache.json` |
+| CC | `.account.email`, `.user.email`, `.email` | `claude auth status` → `.email`, overriding the payload; cached `AUTH_TTL_S` (15 s) in `<config dir>/auth-cache-<slot>.json` |
 | AGY | same | `~/.gemini/google_accounts.json` → `.active` (an object, not an array), only when the payload has none |
 
 In practice AGY does send an email in the payload, so its disk file is only a backstop; Claude Code genuinely depends on its source.
 
-CC never reads `~/.claude.json`'s `oauthAccount` for the tag: the CLI flushes that file on its own schedule, so with two `claude` processes logged into different accounts in one config dir (`docs/ref/multiple-account-config-dir.md`) the last flusher wins and a switch reverts on the next render. `claude auth status` reads the live credential state and does not write that file. A spawn costs ~200-300 ms per prompt, so the result is cached in the same `auth-cache.json` that `get-claudecode-usage.sh` keeps warm on its ~30 s poll.
+CC never reads `~/.claude.json`'s `oauthAccount` for the tag: the CLI flushes that file on its own schedule, so with two `claude` processes logged into different accounts in one config dir (`docs/ref/multiple-account-config-dir.md`) the last flusher wins and a switch reverts on the next render. `claude auth status` reads the live credential state and does not write that file. A spawn costs ~200-300 ms per prompt, so the result is cached per login slot: `default` when `CLAUDE_CONFIG_DIR` is unset, else the first 8 hex chars of its sha256, the same suffix Claude Code puts on its Keychain item. One config dir can hold two logins (unset vs. set to the same path), so one shared cache would hand one session the other's email.
 
 ## Quota cache (`aki-rlcache`, CC only) - DESIGN LOCK
 
-Claude Code sends `rate_limits` only on some turns, so the script persists it to `~/.claude/rate-limits-cache.json` and merges it back on turns that omit it. AGY carries its quota in `.quota` every turn and has nothing to persist, so the whole block is skipped when `CLI=AG` - an AGY run must neither read nor write Claude Code's cache file.
+Claude Code sends `rate_limits` only on some turns, so the script persists it to `~/.claude/rate-limits/<email>.json`, one file per account, and merges it back on turns that omit it. A session reads and writes only its own account's file, so two accounts taking turns on one machine never overwrite each other's numbers (`docs/arch/usage-claudecode.md` § Nhiều account trên một máy). AGY carries its quota in `.quota` every turn and has nothing to persist, so the whole block is skipped when `CLI=AG` - an AGY run must neither read nor write Claude Code's cache file.
 
 Three rules are **not optional** and are marked with a `DESIGN LOCK` comment in the `# aki-rlcache` block:
 
 1. **Expiry** - an entry whose `resets_at` has already passed is dropped, not displayed. `resets_at: 0` means "unknown", not "expired", and is kept.
-2. **Account scope** - the cache file records the `account_uuid` and email that wrote it; a cache belonging to a different account is discarded rather than displayed. The gate compares `accountUuid` whenever either side has one, and falls back to email only when neither does (a pre-v5 cache). Email alone is not an account identity: an account deleted and recreated under the same address gets a new `accountUuid` and a new plan.
+2. **Account scope** - the file is named by the email `claude auth status` returns for this session, and records the `org_id` that wrote it; a file whose `org_id` differs from the session's is discarded rather than displayed (either side empty counts as a match). Email alone is not an account identity: an account deleted and recreated under the same address gets a new org and a new plan.
 3. **Staleness** - every entry the live payload sends is stamped `seen_at`; one unseen for 6 h is dropped, so a tier a plan change stopped sending ages out instead of living on through its `resets_at`.
 
 Nothing surviving the gates → the file is removed. The header's `# aki-rlcache vN` is parsed by `scripts/provision-claudecode.sh` to retire an older stacked block, so it stays at the start of that comment line.
@@ -269,7 +269,8 @@ Auto-repair stays Claude Code-only: a host with Claude Code but no statusline ge
 | `agy_never_touches_the_claude_rate_limit_cache` | the `CLI=AG` skip, verified against the file on disk |
 | `cc_account_falls_back_to_claude_json`, `agy_account_falls_back_to_google_accounts_object` | the disk fallbacks above, including domain-stripping |
 | `cc_rate_limits_survive_a_payload_that_omits_them`, `cc_rate_limits_merge_instead_of_overwrite` | the cache restores and merges rather than replaces |
-| `cc_drops_a_cached_quota_whose_reset_has_passed`, `cc_ignores_a_cache_written_by_another_account` | the two DESIGN LOCK rules |
+| `cc_drops_a_cached_quota_whose_reset_has_passed`, `cc_ignores_a_cache_written_by_another_account`, `cc_drops_a_cache_from_a_recreated_account` | the expiry and account DESIGN LOCK rules; another account's file is left byte-identical |
+| `cc_config_dir_slot_picks_its_own_account` | a session with `CLAUDE_CONFIG_DIR` set reads its own slot's account, not the unset slot's, in the same config dir |
 | `cc_survives_a_corrupt_rate_limits_cache` | a corrupt cache does not blank the line |
 | `agy_reset_eta_includes_minutes`, `a_disabled_reset_hides_only_the_eta` | `5400s → 1h30m`, and switching the ETA off leaves the reading itself |
 | `no_target_selected_is_an_error_not_a_silent_agy_write`, `both_targets_receive_the_same_body` | empty "Apply to" is an error; the two paths get one identical script |

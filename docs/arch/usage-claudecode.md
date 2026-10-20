@@ -1,6 +1,6 @@
 # Kiến trúc: theo dõi quota Claude Code
 
-> updated 2026-08-19 · v1.27.0
+> updated 2026-10-20 · v1.33.1
 
 > Mô tả hệ thống **đang chạy**. Vì sao nó thành ra thế này, và những gì đã thử rồi bỏ: `docs/research/claudecode-usage-FINAL.md` - **đọc §5 (nhật ký) trước khi đề xuất thay đổi**.
 
@@ -12,7 +12,7 @@ App vá một script vào hook đó để persist JSON ấy ra file, rồi đị
 
 ```
 Người dùng chạy Claude Code (interactive)
-        └─> statusLine hook ──> ~/.claude/rate-limits-cache.json
+        └─> statusLine hook ──> ~/.claude/rate-limits/<email>.json (một file mỗi account)
                                         │
                           app đọc file này mỗi 30s (poll)
                                         │
@@ -51,9 +51,11 @@ Pool quota Pro/Max **dùng chung** cho claude.ai web, Desktop, mobile, Cowork v�
 ```
 ~/.claude/settings.json            → trỏ tới statusLine script
 ~/.claude/statusline-command.sh    → script app vá vào, hứng stdin, ghi cache
-~/.claude/rate-limits-cache.json   → cache quota app đọc. NGUỒN QUOTA DUY NHẤT
-~/.claude/.claude.json → .oauthAccount → chỉ còn dùng cho tier/orgType + accountUuid (KHÔNG PHẢI danh tính hiển thị - xem đoạn dưới)
-~/.claude/auth-cache.json          → snapshot `claude auth status`, viết lại mỗi lần gọi live thành công - NGUỒN DANH TÍNH DUY NHẤT khi hiển thị
+~/.claude/rate-limits/<email>.json → cache quota của TỪNG account (hook v6). NGUỒN QUOTA DUY NHẤT
+<config dir>/auth-cache-<slot>.json → snapshot `claude auth status` của phiên thuộc slot đó, TTL 15s - NGUỒN DANH TÍNH của file quota trên
+~/.claude/rate-limits-cache.json   → cache một file kiểu cũ (hook ≤ v5); chỉ còn được đọc khi chưa có file nào trong `rate-limits/`
+~/.claude/auth-cache.json          → snapshot `claude auth status` của script đọc, chỉ dùng cho nhánh một file kiểu cũ
+~/.claude/.claude.json → .oauthAccount → chỉ còn dùng cho tier, và chỉ khi nó đang ghi đúng account của phiên (xem đoạn dưới)
 ~/.claude/.credentials.json        → ⚠️ KHÔNG còn tồn tại trên bản CC mới (keychain)
 ```
 
@@ -62,6 +64,14 @@ Pool quota Pro/Max **dùng chung** cho claude.ai web, Desktop, mobile, Cowork v�
 **`.claude.json` KHÔNG phải nguồn danh tính đáng tin cho email/org (sửa lần 3, cùng ngày 2026-07-30 - xem SSOT §15).** Nó do chính CLI ghi, nhưng theo lịch refresh nội bộ của CLI, không phải theo lượt lệnh - và khi hai tiến trình `claude` cùng dùng một `CLAUDE_CONFIG_DIR` (hai account thật, cùng đăng nhập, một workflow bình thường của owner - xem `docs/ref/multiple-account-config-dir.md`), tiến trình nào flush sau cùng thắng ở file này, bất kể tiến trình nào vừa đăng nhập gần nhất. Danh tính hiển thị (email/org) giờ luôn đọc từ `claude auth status` chạy **live** (script) hoặc cache TTL 15s của cùng lệnh đó (statusline) - lệnh này resolve đúng danh tính của **phiên gọi nó**, không đụng tới `.claude.json` nên không dính race chia sẻ file. `.claude.json` chỉ còn dùng cho `organizationRateLimitTier`/`organizationType` (tier/gói) và `accountUuid` (so khớp chủ sở hữu cache quota) - không dùng cho email/orgName hiển thị nữa.
 
 **Quota và danh tính là hai luồng tách rời, không cái nào gate cái nào.** Trước 2026-07-30 toàn bộ khối đọc danh tính nằm **bên trong** phép thử "có file cache quota không" - nên đổi account xong: cache cũ bị gate account loại bỏ → script không in gì → app không có gì để cập nhật → thẻ giữ nguyên email cũ cho tới khi khởi động lại app và xoá tay cache. Giờ script luôn phát khung danh tính, kể cả khi không có một byte quota nào đáng tin: khi đó nó in `{}` cộng `|||MTIME|||0` và đủ 3 khung `SUBTYPE`/`TIER`/`AUTHINFO`, thẻ hiện đúng account với 0 thanh quota thay vì hiện sai account.
+
+### Nhiều account trên một máy (hook v6)
+
+Claude Code lưu login trong Keychain theo **chuỗi** `CLAUDE_CONFIG_DIR`: `Claude Code-credentials` khi biến này không set, `Claude Code-credentials-<sha256(chuỗi)[:8]>` khi có set. Vì vậy cùng một thư mục `~/.claude` có thể giữ hai account cùng lúc (unset và `CLAUDE_CONFIG_DIR=/Users/x/.claude` là hai slot khác nhau), và mọi file chung trong thư mục (`.claude.json`, cache một file kiểu cũ) cứ lật qua lật lại theo account nào vừa chạy turn. Đó là nguyên nhân số trên thẻ "nhảy liên tục" trước v6.
+
+- **Hook (phía ghi)** tính slot của phiên, hỏi `claude auth status` (cache `auth-cache-<slot>.json`, TTL 15s), rồi ghi `rate-limits/<email>.json` = `{account, org_id, org_name, subscription_type, rate_limit_tier, rate_limits}`. Một phiên chỉ đọc và ghi file của chính account mình. Tier lấy từ `.claude.json` chỉ khi file đó đang mang đúng email này, nếu không thì giữ tier đã cache.
+- **Script đọc** áp gate hết hạn/6h cho từng file, sắp các account còn quota theo mtime file (= lượt dùng cuối, `seenAt`), in account mới nhất làm headline kèm `allAccounts`, và không chạy `claude auth status` live ở nhánh này.
+- **App** lưu mỗi account vào cache `aki-claudecode-usage-cache-v1` (cùng module `src/composables/usageAccountCache.js` với AG, khoá riêng). Thẻ có menu chọn account như AG, mỗi slot ghim account riêng cho từng agent, và mốc "x phút trước" theo `seenAt` của account đang xem.
 
 ## 2. Local hay remote - cùng một script
 
@@ -110,7 +120,9 @@ Thiếu điều kiện này, một field lọt vào cache sẽ sống vĩnh vi�
 
 Từ v5, gate account không còn so bằng email: một account bị xoá rồi tạo lại **dưới cùng email** (cùng tổ chức, `accountUuid` mới, gói khác) vẫn lọt qua gate email nguyên vẹn - đúng cách bug này tái xuất hiện sau khi v4 đã đóng nửa `resets_at`. v5 so `account_uuid` trong cache với `.oauthAccount.accountUuid` hiện tại (`~/.claude/.claude.json`); chỉ fallback về so email khi một trong hai bên không có `accountUuid` (cache ghi trước v5, hoặc client cũ chưa từng có field này). v5 cũng stamp `seen_at` lên mỗi entry còn sống sau merge - một entry không còn được CLI gửi trong ≥6 giờ (`maxAge=21600`) bị loại dù `resets_at` vẫn ở tương lai, để "gói mới không có weekly limit" không còn phải chờ tới `resets_at` (có thể là ngày khác) mới hết dính số cũ.
 
-Hai điều kiện này được test khoá lại (`cc_drops_a_cached_quota_whose_reset_has_passed`, `cc_ignores_a_cache_written_by_another_account`), cùng với việc **nhánh AGY không bao giờ đọc/ghi file cache này** (`agy_never_touches_the_claude_rate_limit_cache`). Cách chạy các test đó trên máy không build được Tauri: `docs/research/statusline-generator-test-suite.md`.
+Từ v6 file quota đã được đặt tên theo email, nên gate account chỉ còn so `org_id`: một account bị xoá rồi tạo lại dưới cùng email có org mới, và số của gói cũ bị bỏ. Hai bên thiếu `org_id` thì coi là khớp.
+
+Hai điều kiện này được test khoá lại (`cc_drops_a_cached_quota_whose_reset_has_passed`, `cc_ignores_a_cache_written_by_another_account`, `cc_config_dir_slot_picks_its_own_account`, `cc_drops_a_cache_from_a_recreated_account`), cùng với việc **nhánh AGY không bao giờ đọc/ghi file cache này** (`agy_never_touches_the_claude_rate_limit_cache`). Cách chạy các test đó trên máy không build được Tauri: `docs/research/statusline-generator-test-suite.md`.
 
 ### Hai gate, hai vai trò khác nhau
 
@@ -201,7 +213,7 @@ Vi phạm bất kỳ mục nào là tái diễn một bug đã trả giá. Chi t
 5. **Mọi lệnh `claude` chạy xa phải bound tại chỗ**, không dựa vào cắt SSH.
 6. **Thao tác nhanh và chậm không dùng chung ngân sách thời gian.**
 7. **Không hardcode số lượng/tên bucket `rate_limits` ở bất kỳ tầng nào.** Parse như map mở, vẽ như danh sách (§4.1). Schema này đã đổi hình 4 lần trong 7 tuần; mọi chỗ đếm cứng "2 bucket" là một lần mất dữ liệu im lặng đang chờ xảy ra.
-8. **Danh tính hiển thị (email/org) chỉ có một nguồn: `claude auth status` chạy live (hoặc cache TTL ≤15s của cùng lệnh đó), và nó không bao giờ bị gate bởi quota.** `.claude.json` KHÔNG dùng cho email/orgName nữa (sửa 2026-07-30, xem SSOT §15) - nó là file CLI flush theo lịch nội bộ, không theo phiên, nên khi hai tiến trình `claude` chia sẻ một `CLAUDE_CONFIG_DIR` (workflow đa-account bình thường của owner) nó phản ánh "tiến trình nào flush sau", không phải "phiên này đang đăng nhập account nào". `.claude.json` chỉ còn dùng cho `organizationRateLimitTier`/`organizationType`/`accountUuid`. Có ba chỗ giữ email của một host - `auth-cache.json` (nguồn), field `account` trong `rate-limits-cache.json`, và tag account trên statusline. Hai chỗ sau đều **dẫn xuất** từ cùng lệnh `claude auth status`. Thêm một chỗ giữ email thứ tư, hoặc để một trong hai chỗ dẫn xuất tự quyết theo nguồn khác, là tái diễn đúng bug "đổi account xong vẫn hiện email cũ".
+8. **Danh tính hiển thị (email/org) chỉ có một nguồn: `claude auth status` chạy live (hoặc cache TTL ≤15s của cùng lệnh đó), và nó không bao giờ bị gate bởi quota.** Từ v6 lệnh này chạy trong hook, theo slot của phiên, và email nó trả về là tên file quota; script đọc lấy danh tính từ chính các file đó. `.claude.json` KHÔNG dùng cho email/orgName nữa (sửa 2026-07-30, xem SSOT §15) - nó là file CLI flush theo lịch nội bộ, không theo phiên, nên khi hai tiến trình `claude` chia sẻ một `CLAUDE_CONFIG_DIR` (workflow đa-account bình thường của owner) nó phản ánh "tiến trình nào flush sau", không phải "phiên này đang đăng nhập account nào". `.claude.json` chỉ còn dùng cho `organizationRateLimitTier`/`organizationType`/`accountUuid`. Có ba chỗ giữ email của một host - `auth-cache.json` (nguồn), field `account` trong `rate-limits-cache.json`, và tag account trên statusline. Hai chỗ sau đều **dẫn xuất** từ cùng lệnh `claude auth status`. Thêm một chỗ giữ email thứ tư, hoặc để một trong hai chỗ dẫn xuất tự quyết theo nguồn khác, là tái diễn đúng bug "đổi account xong vẫn hiện email cũ".
 9. **Script đọc không bao giờ ghi/xoá `~/.claude/.claude.json`.** Nó là input read-only. Nhóm Account của `claude_cleanup.rs` có xoá file này - một helper "dọn cache danh tính" mà chạm tới nó là xoá đúng nguồn sự thật để chữa một bản sao bị cũ, cùng loại bán kính với bug 1.9.3.
 
 ## 6. Điểm mù đã biết, chấp nhận có chủ đích

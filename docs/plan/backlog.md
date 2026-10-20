@@ -36,9 +36,9 @@ Không còn mục nào. Owner đã tận mắt thấy chạy đúng thì mục �
 - Code sạch `[WRAP]/[YAP]` và `cargo fmt`/`clippy --all-targets` (2026-10-20). `scythe.py --all` còn 9 `[YAP]`, toàn là code trích trong `docs/plan/done/` và `docs/research/`: bản ghi sự kiện, giữ nguyên có chủ ý.
 - `npm run audit:ui` đã xanh (2026-09-29): detector sửa xong, literal lặp thành token, phần còn lại ghi exception có owner + lý do trong `scripts/ui-audit.config.json`. Không còn nợ từ `docs/plan/done/audit-akirule-2026-09-18.md`.
 
-## Hoãn có chủ ý
+## Chờ owner xác nhận
 
-- `task-1787103368182` — nhiều account Claude Code: owner đã hoãn vì cần debug trực tiếp; không lên lịch lại khi chưa được mở lại.
+- `task-1787103368182` — nhiều account Claude Code: code xong (2026-10-20, `[Unreleased]`, `docs/arch/usage-claudecode.md` § Nhiều account trên một máy). Còn lại: build bản mới, bấm Apply trong Statusline Customizer để cài hook v6, chạy turn ở cả hai account rồi xem menu email trên thẻ CC có đủ hai account với số riêng. Thấy đúng thì đóng note.
 
 ## Ngoài backlog này
 

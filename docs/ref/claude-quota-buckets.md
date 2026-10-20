@@ -31,7 +31,7 @@ Chưa từng thấy trong payload thật tính tới 2026-07: `seven_day_fable`,
 
 - **[CỘNG ĐỒNG]** Tuỳ phiên bản, phần trăm đến dưới tên `used_percentage` **hoặc** `utilization`. Payload của statusLine hook mà app đọc dùng `used_percentage`.
 - `resets_at`: Unix epoch giây, UTC. `0`/thiếu = "không rõ mốc reset".
-- `seen_at`: **không phải của Anthropic** - do script `aki-rlcache v5` của app stamp vào lúc merge (arch §3), dùng để loại entry CLI không còn gửi nữa.
+- `seen_at`: **không phải của Anthropic** - do script `aki-rlcache v6` của app stamp vào lúc merge (arch §3), dùng để loại entry CLI không còn gửi nữa.
 - **`null` = không áp dụng cho gói này**, không phải lỗi và không phải 0%. Bỏ qua, đừng vẽ.
 
 ## Quy tắc khi viết code đụng vào đây

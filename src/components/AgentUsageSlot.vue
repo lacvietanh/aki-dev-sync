@@ -50,7 +50,7 @@
       :data="slotAccountInfo.data"
       :loading="monitor.loading"
       :error="monitor.error"
-      :dataAt="monitor.dataAt"
+      :dataAt="slotAccountInfo.dataAt"
       :isCached="slotAccountInfo.isCached"
       :cachedAt="slotAccountInfo.cachedAt"
       :showEmail="showEmail"
@@ -73,7 +73,7 @@ import { ref, shallowRef, computed, watch, onUnmounted } from 'vue';
 import AgentUsage from './AgentUsage.vue';
 import { useSsh } from '../composables/useSsh';
 import { getMonitor, releaseMonitor } from '../composables/usageMonitorRegistry';
-import { loadAgAccount } from '../composables/agUsageCache';
+import { accountCacheFor } from '../composables/usageAccountCache';
 import { slotTarget, setSlotTarget } from '../store/usageSlotStore';
 import { tierCount, slotIndexOf, SLOTS_PER_ROW } from '../store/usageTierStore';
 
@@ -151,30 +151,34 @@ const popupPosition = computed(() => {
   const vert = row < tierCount.value / 2 ? 't' : 'b';
   return `popup-pos-${vert}${col}`;
 });
-// Per-slot viewing email state persisted to localStorage.
-const slotViewingEmailKey = `aki-usage-slot-${props.slotId}-viewing-account`;
-const slotViewingEmail = ref(localStorage.getItem(slotViewingEmailKey) || null);
+// Per-slot, per-agent viewing account persisted to localStorage (AG keeps its pre-multi-agent key).
+const viewingKeyOf = {
+  antigravity: `aki-usage-slot-${props.slotId}-viewing-account`,
+  claudecode: `aki-usage-slot-${props.slotId}-viewing-account-cc`,
+};
+const viewingByAgent = ref({
+  antigravity: localStorage.getItem(viewingKeyOf.antigravity) || null,
+  claudecode: localStorage.getItem(viewingKeyOf.claudecode) || null,
+});
+const slotViewingEmail = computed(() => viewingByAgent.value[activeAgentId.value]);
 
 function handleSelectAccount(keyOrEmail) {
+  const agentId = activeAgentId.value;
   const nextVal = slotViewingEmail.value === keyOrEmail ? null : keyOrEmail;
-  slotViewingEmail.value = nextVal;
+  viewingByAgent.value = { ...viewingByAgent.value, [agentId]: nextVal };
   if (nextVal) {
-    localStorage.setItem(slotViewingEmailKey, nextVal);
+    localStorage.setItem(viewingKeyOf[agentId], nextVal);
   } else {
-    localStorage.removeItem(slotViewingEmailKey);
+    localStorage.removeItem(viewingKeyOf[agentId]);
   }
 }
 
+// An account's own seenAt (Claude Code: its last turn) dates a pinned live reading; otherwise the monitor's file mtime.
 const slotAccountInfo = computed(() => {
   const src = monitor.value;
-  if (activeAgentId.value !== 'antigravity' || !src.data) {
-    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
-  }
-
+  const liveInfo = { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt, dataAt: src.dataAt };
   const key = slotViewingEmail.value;
-  if (!key) {
-    return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
-  }
+  if (!src.data || !key) return liveInfo;
 
   // Pin match against (email, sourceType) entity handle.
   const emailPart = key.includes(':') ? key.slice(0, key.indexOf(':')) : key;
@@ -185,20 +189,20 @@ const slotAccountInfo = computed(() => {
   if (Array.isArray(src.data.allAccounts)) {
     const liveMatches = src.data.allAccounts.filter(isPinned);
     if (liveMatches.length === 1) {
-      return { data: liveMatches[0], isCached: false, cachedAt: null };
+      return { data: liveMatches[0], isCached: false, cachedAt: null, dataAt: liveMatches[0].seenAt || src.dataAt };
     }
   } else if (isPinned(src.data)) {
-    return { data: src.data, isCached: false, cachedAt: null };
+    return { ...liveInfo, isCached: false, cachedAt: null };
   }
 
   // Offline cache fallback scoped to host.
-  const acc = loadAgAccount(key, target.value.host);
+  const acc = accountCacheFor(activeAgentId.value).load(key, target.value.host);
   if (acc) {
-    return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt };
+    return { data: acc.data, isCached: true, cachedAt: acc.fetchedAt, dataAt: acc.fetchedAt };
   }
 
   // Fallback to active live data without mutating or deleting slot preference.
-  return { data: src.data, isCached: src.isCached, cachedAt: src.cachedAt };
+  return liveInfo;
 });
 </script>
 

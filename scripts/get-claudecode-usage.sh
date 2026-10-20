@@ -25,6 +25,73 @@ FILE_EXISTS=$([ -f "$FILE" ] && echo yes || echo no)
 CREDS_EXISTS=$([ -f "$CREDS" ] && echo yes || echo no)
 _log "start: cache_file=$FILE exists=$FILE_EXISTS creds_exists=$CREDS_EXISTS now=$NOW"
 
+# ── 0. Per-account caches (aki-rlcache v6 hook, docs/arch/usage-claudecode.md §1) ─────
+# The newest account is the headline, the rest ride in allAccounts; a host whose hook predates v6 falls through to the single-file path.
+ACCT_DIR="$HOME/.claude/rate-limits"
+if ls "$ACCT_DIR"/*.json >/dev/null 2>&1; then
+    MULTI=$(AKI_DIR="$ACCT_DIR" AKI_NOW="$NOW" python3 -c '
+import glob, json, os, sys
+now = int(os.environ["AKI_NOW"])
+def num(v):
+    try:
+        return int(v or 0)
+    except Exception:
+        return 0
+accounts = []
+for path in glob.glob(os.path.join(os.environ["AKI_DIR"], "*.json")):
+    try:
+        d = json.load(open(path))
+        seen_at = int(os.path.getmtime(path))
+    except Exception as e:
+        print("LOG:skipped {} ({})".format(os.path.basename(path), e))
+        continue
+    email = d.get("account") or ""
+    if not email:
+        continue
+    kept = {}
+    for key, entry in (d.get("rate_limits") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        seen, resets = num(entry.get("seen_at")), num(entry.get("resets_at"))
+        if (seen and now - seen >= 21600) or resets <= now:
+            print("LOG:{} dropped {} (expired or unseen)".format(email, key))
+            continue
+        kept[key] = entry
+    if kept:
+        accounts.append({"email": email, "orgName": d.get("org_name") or "", "subscriptionType": d.get("subscription_type") or "Unknown", "rateLimitTier": d.get("rate_limit_tier") or "Unknown", "rate_limits": kept, "seenAt": seen_at})
+if not accounts:
+    print("STATUS:STALE")
+    sys.exit(0)
+accounts.sort(key=lambda a: -a["seenAt"])
+top = dict(accounts[0])
+top["allAccounts"] = accounts
+print("STATUS:OK\t{}\t{}\t{}\t{}\t{}".format(json.dumps(top), top["seenAt"], top["subscriptionType"], top["rateLimitTier"], json.dumps({"email": top["email"], "orgName": top["orgName"]})))
+' 2>/dev/null || echo 'STATUS:INTERPRETER_ERROR')
+    printf '%s\n' "$MULTI" | while IFS= read -r _line; do
+        case "$_line" in
+            LOG:*) _log "accounts: ${_line#LOG:}" ;;
+        esac
+    done
+    MULTI_LAST=$(printf '%s\n' "$MULTI" | grep '^STATUS:' | tail -n 1)
+    case "$MULTI_LAST" in
+        STATUS:OK*)
+            _log "accounts: emitting per-account caches from $ACCT_DIR"
+            printf '%s\n' "$(printf '%s' "$MULTI_LAST" | cut -f2)"
+            echo "|||MTIME|||$(printf '%s' "$MULTI_LAST" | cut -f3)"
+            echo "|||SUBTYPE|||$(printf '%s' "$MULTI_LAST" | cut -f4)"
+            echo "|||TIER|||$(printf '%s' "$MULTI_LAST" | cut -f5)"
+            echo "|||AUTHINFO|||$(printf '%s' "$MULTI_LAST" | cut -f6-)"
+            exit 0
+            ;;
+        STATUS:STALE)
+            _log "accounts: every window has passed its reset → STALE_RESET"
+            echo "|||STALE_RESET|||"
+            exit 0
+            ;;
+    esac
+    _log "accounts: unreadable (${MULTI_LAST:-no status}) → falling back to the single-file cache"
+fi
+
 # ── 5. Auth info (docs/ref/multiple-account-config-dir.md) ─────────────
 # Run `claude auth status` live every poll without TTL to prevent multi-process CLAUDE_CONFIG_DIR clobber races.
 AUTH_CACHE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/auth-cache.json"

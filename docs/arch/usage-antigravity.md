@@ -116,7 +116,7 @@ The script is compiled into the Tauri binary via `include_str!` inside [antigrav
 
 ## Per-Account Cache (localStorage) & Account Dropdown
 
-Antigravity can switch the logged-in account on the same machine, so usage is cached **per account per machine** in `localStorage` under `aki-antigravity-usage-cache-v4`. The whole cache is owned by `src/composables/agUsageCache.js` and reached only through its functions — no component parses it:
+Antigravity can switch the logged-in account on the same machine, so usage is cached **per account per machine** in `localStorage` under `aki-antigravity-usage-cache-v4`. The whole cache is owned by `src/composables/usageAccountCache.js` and reached only through its functions — no component parses it:
 
 ```json
 {
@@ -169,7 +169,7 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **Header shows a character-truncated email.** `truncEmail()` in `AgentUsage.vue` cắt theo **số ký tự** (12, hoặc 7 ở breakpoint narrow `window.innerWidth <= 700`) rồi thêm `…` - **không** phải lấy phần trước dấu `@`. Mục đích là giữ width header ổn định khi đổi account active/cached; the full email is shown in the dropdown rows and the tooltip. (Ghi chú design lock nằm ngay trên hàm.)
 - **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always carries `email`; no empty-email guard is added in the live cache path.
 - **Logout never clears the account cache or blanks the header.** See "Log Out behavior & cache retention" above - this is a deliberate product decision, not a gap to "fix" later.
-- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted in `prune()`, gọi từ `loadStore()` (cả hai là private trong `agUsageCache.js`), to prevent indefinite accumulation of obsolete sessions.
+- **10-Day Eviction TTL on cached accounts (v1.16.1):** Account records with `fetchedAt` older than 10 days (`> 864,000s`) are automatically evicted in `prune()`, gọi từ `loadStore()` (cả hai là private trong `usageAccountCache.js`), to prevent indefinite accumulation of obsolete sessions.
 
 ---
 
@@ -182,7 +182,7 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **Frontend Stores & Composables:**
   - [usageMonitor.js](../../src/composables/usageMonitor.js) - One monitor entity: poll loop, circuit breaker, wake self-heal, multi-account view state. Its agent and machine are immutable identity.
   - [usageMonitorRegistry.js](../../src/composables/usageMonitorRegistry.js) - Multiton keyed `agentId@host`; two slots naming the same pair share one monitor and one poll.
-  - [agUsageCache.js](../../src/composables/agUsageCache.js) - The per-account, per-host cache above; sole owner of the localStorage key.
+  - [usageAccountCache.js](../../src/composables/usageAccountCache.js) - The per-account, per-host cache above; sole owner of the localStorage key.
   - [usageMonitorStore.js](../../src/store/usageMonitorStore.js) - Which monitors are switched on, keyed by monitor id (mirrored).
   - [usageSlotStore.js](../../src/store/usageSlotStore.js) - What each display slot points at, including its own remote host (mirrored).
   - [usageTierStore.js](../../src/store/usageTierStore.js) - Reactive store managing 1 Tier / 2 Tiers layout preference.
