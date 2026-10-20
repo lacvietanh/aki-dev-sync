@@ -17,7 +17,7 @@ Không còn — statusline đã apply lại xong (owner xác nhận 2026-09-27).
 
 Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây — xem lý do bên dưới. Còn đúng 1 mục:
 
-1. **Điện thoại companion, nhiều tab** — mở app trên điện thoại, kết nối lại (reconnect) khi Mac đang có nhiều tab terminal mở, mở một tab đã "nguội" (không hoạt động gần đây) và xem nó có hiện lại lịch sử cũ (scrollback) hay màn hình trắng. Qua nếu tab nguội hiện đúng lịch sử.
+1. **Điện thoại companion, nhiều tab** — mở app trên điện thoại, kết nối lại (reconnect) khi Mac đang có nhiều tab terminal mở, mở một tab đã "nguội" (không hoạt động gần đây) và xem nó có hiện lại lịch sử cũ (scrollback) hay màn hình trắng. Qua nếu tab nguội hiện đúng lịch sử. Agent tự chạy được thay owner khi có kênh điều khiển bằng code (`docs/research/agent-control-channel.md` § Decision); trước đó vẫn là việc của owner.
 
 Đóng, 2026-10-20:
 - **Badge PULL 142 / 376 sau `touch` hàng loạt** (#9 cũ): ra trong 1.33.1, app trên Mac đang chạy 1.33.1; `project.json` của aki-gegrok-bot trên `grokvm` và trên Mac giờ giống hệt (`cmp`), nên ca F1 không còn.
@@ -37,6 +37,7 @@ Modal/màu token (item cũ #1) và Refresh all (item cũ #3) đóng ở đây �
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
+| 9 | Kênh điều khiển app bằng code cho AI/script (dev isolation + Unix control socket chỉ ở bản debug) | — | Đã quyết trong `docs/research/agent-control-channel.md`; chờ owner duyệt (D5) rồi viết plan theo 3 bước của Decision |
 | 8 | Lấy usage thật của Claude Code qua API `/usage` (RE từ CLI), không cần probe hay phiên đang chạy | `task-1790294479640` | Debug/RE CLI để tìm API và cách xác thực; ghi kết quả vào `docs/research/`. Đối chiếu `docs/arch/usage-claudecode.md`: hiện statusLine hook là nguồn duy nhất, không có luồng active — đổi nguồn là đổi ràng buộc đó |
 
 ## Nợ kỹ thuật không chặn ship

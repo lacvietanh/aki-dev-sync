@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Removed
+- `scripts/test/monitor-ag-proxy.js`: a dev-only monitor that could not parse the Antigravity probe's framed output since it replaced JSON.
+
 ## [1.33.1] - 2026-10-20
 
 ### Changed

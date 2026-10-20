@@ -49,6 +49,7 @@
 
 ## Research
 - [docs/research/index.md](research/index.md) - Schema note: pre-2026-07 docs predate the current B2 field set/supersede-chain rule; new docs must follow it in full
+- [docs/research/agent-control-channel.md](research/agent-control-channel.md) - Driving the app by code for AIs/scripts: why a dev build cannot run beside the installed app yet, `tauri-plugin-mcp-bridge` risks, decided dev isolation + debug-only Unix control socket
 - [docs/research/claudecode-usage-FINAL.md](research/claudecode-usage-FINAL.md) - **Nghiên cứu FINAL, thay 8 file đã xoá**: sự thật đã kiểm chứng, nhật ký đã-thử-đã-bỏ (§5), bản đồ 8 file cũ (§7)
 - [docs/research/antigravity-multi-instance-cli-discovery-jul22.md](research/antigravity-multi-instance-cli-discovery-jul22.md) - Nghiên cứu & đúc kết cơ chế phát hiện & giám sát Quota đa tiến trình (Multi-Instance: Antigravity IDE vs AGY CLI) trên cùng 1 máy; phân tíchConnect RPC ports, sourceType payload (`ide`/`cli`) và nâng cấp UI multi-live dropdown
 - [docs/research/aki-dev-sync-ag-cc-usage-flow.md](research/aki-dev-sync-ag-cc-usage-flow.md) - So sánh flow của project vs cộng đồng, lợi thế native approach (phục vụ bài viết akidev)

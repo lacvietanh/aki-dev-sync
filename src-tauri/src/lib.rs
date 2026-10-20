@@ -39,6 +39,7 @@ pub fn run() {
         .manage(system::TerminalOwnership::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Socket is keyed by bundle identifier, so a dev build exits into the installed app: docs/research/agent-control-channel.md § R2.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
