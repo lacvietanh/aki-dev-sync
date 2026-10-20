@@ -1,6 +1,6 @@
 # PUSH sync froze the whole app: static diagnosis
 
-Status: open, runtime checks R1-R3 pending on the Mac.
+Status: closed 2026-10-20; amended, see § Amendments.
 
 ## 1. Start time and purpose
 
@@ -57,10 +57,14 @@ The owner note stays open until R1 passes.
 
 ## 6. Decision
 
-Action: batching landed in `src/composables/useLogs.js` (changelog `[Unreleased]`); the backlog row #7 in `docs/plan/backlog.md` tracks R1. No claim that the freeze is fixed until R1 is run.
+Action: batching landed in `src/composables/useLogs.js` (1.33.1). Closed: the owner saw PUSH run without a freeze, and R1 passed (§ Amendments).
 
 ### UNIDOC lesson (proposal for the Mac-side UNIDOC Tauri, not applied)
 
 > Event floods are the second UI-freeze class, beside blocking commands: a streaming subprocess must not emit one IPC event per output line into a listener that does O(buffer) work per event. Batch on the receiving side (one flush per timer tick into a capped list) or on the emitting side (coalesce lines for about 50 ms). Review rule: for every `emit` inside a read loop, name the per-event cost of its listener and the maximum events per second.
 
-Cross-references: `docs/plan/backlog.md` #7, `CHANGELOG.md` `[Unreleased]`.
+Cross-references: `CHANGELOG.md` `[1.33.1]`.
+
+## Amendments
+
+- 2026-10-20 · § 5: the owner ran PUSH on 1.33.1 and saw no freeze. R1 also ran on a hidden dev build (`docs/ref/agent-control.md`): dry-run PUSH to `akicloud`, main-thread reply latency measured over the control socket during the push. 1500 files: max 25 ms (log panel open: 11 ms); 20000 files: max 245 ms, twice above 100 ms; every line arrived and the console stayed at the bottom. Clear mid-push was checked by reading `clearLog` (it drops the project's pending lines; later lines append to the new empty list), because a dry run delivers its lines in one burst. R2 and R3 are not needed.
