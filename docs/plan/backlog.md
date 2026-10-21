@@ -30,6 +30,7 @@ Không còn mục nào. Owner đã tận mắt thấy chạy đúng thì mục �
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
 | 8 | Lấy usage thật của Claude Code qua API `/usage` (RE từ CLI), không cần probe hay phiên đang chạy | `task-1790294479640` | Debug/RE CLI để tìm API và cách xác thực; ghi kết quả vào `docs/research/`. Đối chiếu `docs/arch/usage-claudecode.md`: hiện statusLine hook là nguồn duy nhất, không có luồng active — đổi nguồn là đổi ràng buộc đó |
+| 9 | Quota cho phiên Claude Code chạy từ thư mục cấu hình khác (`CLAUDE_CONFIG_DIR=~/.claude-2`) | — | Apply chỉ nối `~/.claude/settings.json`, nên phiên từ thư mục khác không chạy hook. Chưa ai dùng kiểu này với login có quota (`docs/research/statusline-hook-upgrade.md` § Decision); làm khi có người dùng thật |
 
 ## Nợ kỹ thuật không chặn ship
 
@@ -38,7 +39,7 @@ Không còn mục nào. Owner đã tận mắt thấy chạy đúng thì mục �
 
 ## Chờ owner xác nhận
 
-- `task-1787103368182` — nhiều account Claude Code: code xong (2026-10-20, `[Unreleased]`, `docs/arch/usage-claudecode.md` § Nhiều account trên một máy). Còn lại: build bản mới, bấm Apply trong Statusline Customizer để cài hook v6, chạy turn ở cả hai account rồi xem menu email trên thẻ CC có đủ hai account với số riêng. Thấy đúng thì đóng note.
+- `task-1787103368182` — nhiều account Claude Code: code xong (2026-10-20, ship trong 1.34.0, `docs/arch/usage-claudecode.md` § Nhiều account trên một máy). Còn lại: cài bản mới (mở app là hook v6 tự thay hook cũ trên máy này và trên host remote), chạy turn ở cả hai account rồi xem menu email trên thẻ CC có đủ hai account với số riêng. Thấy đúng thì đóng note.
 
 ## Ngoài backlog này
 

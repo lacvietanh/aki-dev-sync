@@ -56,7 +56,7 @@ Pool quota Pro/Max **dùng chung** cho claude.ai web, Desktop, mobile, Cowork v�
 ~/.claude/rate-limits-cache.json   → cache một file kiểu cũ (hook ≤ v5); chỉ còn được đọc khi chưa có file nào trong `rate-limits/`
 ~/.claude/auth-cache.json          → snapshot `claude auth status` của script đọc, chỉ dùng cho nhánh một file kiểu cũ
 ~/.claude/.claude.json → .oauthAccount → chỉ còn dùng cho tier, và chỉ khi nó đang ghi đúng account của phiên (xem đoạn dưới)
-~/.claude/.credentials.json        → ⚠️ KHÔNG còn tồn tại trên bản CC mới (keychain)
+~/.claude/.credentials.json        → ⚠️ KHÔNG còn tồn tại trên bản CC mới trên macOS (keychain); Linux chưa kiểm với login OAuth
 ```
 
 **Đường dẫn chính xác của `.claude.json` là `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json`, KHÔNG PHẢI `$HOME/.claude.json`.** Đây là bug thứ hai phát hiện ngày 2026-07-30 (chi tiết: `docs/plan/done/cc-account-identity-ssot.md` §14).
@@ -72,6 +72,10 @@ Claude Code lưu login trong Keychain theo **chuỗi** `CLAUDE_CONFIG_DIR`: `Cla
 - **Hook (phía ghi)** tính slot của phiên, hỏi `claude auth status` (cache `auth-cache-<slot>.json`, TTL 15s), rồi ghi `rate-limits/<email>.json` = `{account, org_id, org_name, subscription_type, rate_limit_tier, rate_limits}`. Một phiên chỉ đọc và ghi file của chính account mình. Tier lấy từ `.claude.json` chỉ khi file đó đang mang đúng email này, nếu không thì giữ tier đã cache.
 - **Script đọc** áp gate hết hạn/6h cho từng file, sắp các account còn quota theo mtime file (= lượt dùng cuối, `seenAt`), in account mới nhất làm headline kèm `allAccounts`, và không chạy `claude auth status` live ở nhánh này.
 - **App** lưu mỗi account vào cache `aki-claudecode-usage-cache-v1` (cùng module `src/composables/usageAccountCache.js` với AG, khoá riêng). Thẻ có menu chọn account như AG, mỗi slot ghim account riêng cho từng agent, và mốc "x phút trước" theo `seenAt` của account đang xem.
+- **Nâng hook**: lúc mở app, mọi host có hook `aki-rlcache` cũ hơn bản app mang theo được ghi lại (`docs/feat/statusline-customizer.md` § Rollout to hosts). Hook cũ chỉ ghi một file chung, nên chưa nâng thì thẻ chỉ thấy một account.
+- **Thư mục quota luôn là `$HOME/.claude/rate-limits/`**, bất kể `CLAUDE_CONFIG_DIR`, và script đọc cũng đọc đúng chỗ đó. Phiên chạy từ thư mục khác (`~/.claude-2`) chỉ có quota khi `settings.json` của thư mục đó trỏ tới hook; Apply hiện chỉ nối `~/.claude/settings.json`.
+- **Không có email thì không có file quota.** Phiên mà `claude auth status` không trả email (API key, `ANTHROPIC_AUTH_TOKEN` qua gateway) không ghi gì; những phiên này cũng không nhận `rate_limits`, nên hook cũ cũng không có gì để ghi.
+- **Phạm vi nền tảng**: macOS đã kiểm (Keychain theo slot). Host Linux: hook chạy được (`shasum`/`sha256sum`, `stat -f`/`-c`), nhưng nhiều account OAuth trên Linux chưa kiểm vì chưa có host nào đăng nhập kiểu đó. Windows không hỗ trợ: app chỉ ship macOS, script remote là POSIX `sh` qua SSH. Bằng chứng: `docs/research/statusline-hook-upgrade.md`.
 
 ## 2. Local hay remote - cùng một script
 
