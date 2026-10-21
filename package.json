@@ -1,7 +1,7 @@
 {
   "name": "aki-dev-sync",
   "private": true,
-  "version": "1.33.1",
+  "version": "1.34.0",
   "type": "module",
   "scripts": {
     "help": "node scripts/help.js",
