@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Source of the one Aki Dev Sync overview image (1920×1080), the SSoT that publish-overview.sh copies to the websites. Three live screenshots in shots/: main window, header menu, Statusline Customizer. No captions and no text of its own, so one image serves the Vietnamese and English pages. Refresh a screenshot in shots/ when its UI changes, then run dev/html-render/publish-overview.sh. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: radial-gradient(1100px 700px at 30% 20%, #151a24 0%, #0b0e14 60%, #07090d 100%); }
+  .shot { position: absolute; display: block; border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07); overflow: hidden; }
+  .main { left: 147px; top: 40px; width: 727px; height: 1000px; -webkit-mask-image: linear-gradient(#000 88%, transparent); mask-image: linear-gradient(#000 88%, transparent); box-shadow: none; border-radius: 12px; }
+  .main img { position: absolute; left: -23px; top: -18px; }
+  .menu { left: 944px; top: 40px; width: 245px; height: 568px; }
+  .custom { left: 1259px; top: 250px; width: 514px; height: 633px; }
+</style>
+</head>
+<body>
+  <div class="shot main"><img src="shots/main-window.png" alt=""></div>
+  <img class="shot menu" src="shots/menu.png" alt="">
+  <img class="shot custom" src="shots/statusline-customizer.jpg" alt="">
+</body>
+</html>
