@@ -1,8 +1,8 @@
 #!/bin/sh
-# Usage: dev/html-render/render.sh <name> <width> <height> <out.jpg> — renders dev/html-render/<name>.html at 1:1 with headless Chrome, then converts to JPEG
+# Usage: dev/html-render/render.sh <page> <width> <height> <out.jpg> [out-width] — renders dev/html-render/<page> (a query string is allowed) in a <width>×<height> window at 2× with headless Chrome, then scales it to <out-width> (default <width>) as JPEG
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
-png=$(mktemp -t html-render).png
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --allow-file-access-from-files --window-size="$2,$3" --screenshot="$png" "file://$here/$1.html" >/dev/null 2>&1
-sips -s format jpeg -s formatOptions 90 "$png" --out "$4" >/dev/null
-rm -f "$png"
+tmp=$(mktemp -d -t html-render)
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 --allow-file-access-from-files --virtual-time-budget=6000 --user-data-dir="$tmp/profile" --window-size="$2,$3" --screenshot="$tmp/shot.png" "file://$here/$1" >/dev/null 2>&1
+sips --resampleWidth "${5:-$2}" -s format jpeg -s formatOptions 90 "$tmp/shot.png" --out "$4" >/dev/null
+rm -rf "$tmp"

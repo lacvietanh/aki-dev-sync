@@ -1,21 +1,109 @@
 <!doctype html>
-<!-- Source of the one Aki Dev Sync overview image (1920×1080), the SSoT that publish-overview.sh copies to the websites. Three live screenshots in shots/: main window, header menu, Statusline Customizer. No captions and no text of its own, so one image serves the Vietnamese and English pages. Refresh a screenshot in shots/ when its UI changes, then run dev/html-render/publish-overview.sh. -->
+<!-- Layout of the overview image that publish-overview.sh renders; every screen is a mock from mock/app.html (docs/ref/overview-image.md). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
-  * { box-sizing: border-box; margin: 0; }
-  body { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: radial-gradient(1100px 700px at 30% 20%, #151a24 0%, #0b0e14 60%, #07090d 100%); }
-  .shot { position: absolute; display: block; border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07); overflow: hidden; }
-  .main { left: 147px; top: 40px; width: 727px; height: 1000px; -webkit-mask-image: linear-gradient(#000 88%, transparent); mask-image: linear-gradient(#000 88%, transparent); box-shadow: none; border-radius: 12px; }
-  .main img { position: absolute; left: -23px; top: -18px; }
-  .menu { left: 944px; top: 40px; width: 245px; height: 568px; }
-  .custom { left: 1259px; top: 250px; width: 514px; height: 633px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif; color: #e5e7eb; background: #05080d; }
+  .bg { position: absolute; inset: 0; background: url(../../public/aki-dev-sync-herobg.jpg) center / cover; opacity: .32; }
+  .bg-shade { position: absolute; inset: 0; background: radial-gradient(900px 560px at 30% 60%, rgba(5,8,13,.1), rgba(5,8,13,.86) 72%), linear-gradient(180deg, rgba(5,8,13,.15), rgba(5,8,13,.7)); }
+
+  /* One mock screen: --fw/--fh the frame's own window size, --s its scale here, --cx/--cy the crop origin inside it. */
+  .card { position: absolute; overflow: hidden; border-radius: 10px; background: #0A0F16; box-shadow: 0 22px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.1); }
+  .card iframe { position: absolute; border: 0; transform-origin: 0 0; transform: scale(var(--s)); width: calc(var(--fw) * 1px); height: calc(var(--fh) * 1px); left: calc(var(--cx, 0) * var(--s) * -1px); top: calc(var(--cy, 0) * var(--s) * -1px); }
+  .phone { border-radius: 26px; border: 6px solid #1f2937; }
+
+  .tag { position: absolute; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; font-size: 23px; font-weight: 700; color: #f8fafc; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+  .tag small { font-size: 18px; font-weight: 500; color: #a8b3c4; }
+  .note { position: absolute; font-size: 18px; line-height: 1.35; color: #cbd5e1; }
+  .tag.wrap { white-space: normal; display: block; font-size: 21px; line-height: 1.2; }
+  .pill { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: #ff8c00; color: #05080d; font-size: 12px; font-weight: 800; letter-spacing: 1px; vertical-align: 3px; text-shadow: none; }
+
+  /* The loop: the strip under the header names the four steps, the numbered tags put each step on its screen. */
+  .step { --c: #fff; }
+  .s1 { --c: #ff8c00; } .s2 { --c: #00d2ff; } .s3 { --c: #3b9bff; } .s4 { --c: #10b981; }
+  .num { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--c); color: #05080d; font-size: 17px; font-weight: 800; transform: translateY(3px); }
+  .loop { position: absolute; left: 292px; right: 48px; top: 176px; display: flex; align-items: center; justify-content: space-between; padding: 8px 22px; border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: rgba(13,17,23,.82); font-size: 22px; font-weight: 700; color: #f8fafc; }
+  .loop .step { display: flex; align-items: baseline; gap: 10px; }
+  .loop .arrow { color: #64748b; font-weight: 400; }
+
+  header { position: absolute; left: 48px; top: 26px; display: flex; align-items: center; gap: 22px; }
+  header img { width: 88px; height: 88px; }
+  h1 { font-size: 58px; font-weight: 800; letter-spacing: -.5px; line-height: 1; }
+  .pitch { margin-top: 10px; font-size: 27px; color: #cbd5e1; }
+  .pitch b { color: #fff; font-weight: 600; }
+  .audience { margin-top: 8px; font-size: 24px; color: #cbd5e1; }
+
+  .model { position: absolute; right: 48px; top: 28px; display: flex; align-items: center; gap: 16px; }
+  .side { padding: 10px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,.16); background: rgba(13,17,23,.85); line-height: 1.3; }
+  .side b { display: block; font-size: 22px; letter-spacing: 2px; }
+  .side span { color: #94a3b8; font-size: 17px; }
+  .side.local b { color: #00d2ff; } .side.remote b { color: #ffb366; }
+  .arrows { display: grid; gap: 6px; font-size: 18px; font-weight: 800; letter-spacing: 1px; text-align: center; }
+  .arrows .push { color: #ff8c00; } .arrows .pull { color: #3b9bff; }
+  .chips { position: absolute; right: 48px; top: 142px; font-size: 21px; color: #e2e8f0; letter-spacing: .3px; }
+
+  .rail { position: absolute; left: 48px; width: 220px; }
+  .rail h3 { font-size: 25px; line-height: 1.15; color: #f8fafc; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+  .rail p { margin-top: 8px; font-size: 20px; line-height: 1.36; color: #b8c2d1; }
 </style>
 </head>
 <body>
-  <div class="shot main"><img src="shots/main-window.png" alt=""></div>
-  <img class="shot menu" src="shots/menu.png" alt="">
-  <img class="shot custom" src="shots/statusline-customizer.jpg" alt="">
+  <div class="bg"></div><div class="bg-shade"></div>
+
+  <header>
+    <img src="../../public/icon.png" alt="">
+    <div>
+      <h1>Aki Dev Sync</h1>
+      <p class="pitch">Code on your Mac. <b>Let AI agents work on an SSH box.</b> Keep both sides in sync.</p>
+      <p class="audience">For solo devs who code on a Mac and run AI agents on an SSH box.</p>
+    </div>
+  </header>
+  <div class="model">
+    <div class="side local"><b>LOCAL</b><span>your Mac · git, your IDE</span></div>
+    <div class="arrows"><span class="push">PUSH →</span><span class="pull">← PULL</span></div>
+    <div class="side remote"><b>REMOTE</b><span>SSH box · Claude Code, heavy builds</span></div>
+  </div>
+  <div class="chips">macOS · free · no account · no backend · github.com/lacvietanh/aki-dev-sync</div>
+
+  <div class="loop">
+    <span class="step s1"><span class="num">1</span>Push from your Mac</span><span class="arrow">→</span>
+    <span class="step s2"><span class="num">2</span>Claude Code works on the SSH box</span><span class="arrow">→</span>
+    <span class="step s3"><span class="num">3</span>Pull the 12 files</span><span class="arrow">→</span>
+    <span class="step s4"><span class="num">4</span>Review &amp; commit</span>
+  </div>
+
+  <div class="rail" style="top: 270px"><h3>See AI quota before it runs out</h3><p>Real 5-hour and 7-day numbers from Claude Code and Antigravity, not estimates.</p></div>
+  <div class="rail" style="top: 470px"><h3>Sync in one click</h3><p>rsync with .git history included. No throwaway commits just to move files.</p></div>
+  <div class="rail" style="top: 642px"><h3>Safe by default</h3><p>Push never deletes unless Mirror is on. Dry run previews every change. Conflicts are flagged and left out of both sides. First sync to a new host always asks.</p></div>
+  <div class="rail" style="top: 930px"><h3>Install in a minute</h3><p>Download the .dmg, run its installer. Apple Silicon and Intel.</p></div>
+
+  <div class="tag step s1" style="left: 292px; top: 232px"><span class="num">1</span>Push any project <small>one window, every host</small></div>
+  <div class="card" style="left: 292px; top: 270px; width: 520px; height: 521px; --s: .6842; --fw: 760; --fh: 900"><iframe src="mock/app.html?view=main"></iframe></div>
+
+  <div class="tag" style="left: 292px; top: 809px">Tasks per project <small>kept in the repo, synced with it</small></div>
+  <div class="card" style="left: 292px; top: 847px; width: 520px; height: 213px; --s: .76; --fw: 700; --fh: 760; --cx: 8; --cy: 121"><iframe src="mock/app.html?view=tasks"></iframe></div>
+
+  <div class="tag step s2" style="left: 840px; top: 232px"><span class="num">2</span>The agent's session <small>in the app's own terminal</small></div>
+  <div class="card" style="left: 840px; top: 270px; width: 560px; height: 298px; --s: .675; --fw: 1400; --fh: 880; --cx: 442; --cy: 44"><iframe src="mock/app.html?view=wide"></iframe></div>
+
+  <div class="tag step s3" style="left: 840px; top: 586px"><span class="num">3</span>See the 12 files first</div>
+  <div class="card" style="left: 840px; top: 624px; width: 272px; height: 158px; --s: .72; --fw: 760; --fh: 900; --cx: 182; --cy: 449"><iframe src="mock/app.html?view=sync"></iframe></div>
+  <div class="tag step s4" style="left: 1128px; top: 586px"><span class="num">4</span>Review it, commit it</div>
+  <div class="card" style="left: 1128px; top: 624px; width: 272px; height: 153px; --s: .6415; --fw: 440; --fh: 760; --cx: 8; --cy: 222"><iframe src="mock/app.html?view=git"></iframe></div>
+
+  <div class="tag" style="left: 840px; top: 800px">One statusline, Claude Code + Antigravity <small>every host</small></div>
+  <div class="card" style="left: 840px; top: 836px; width: 560px; height: 218px; --s: .84; --fw: 900; --fh: 820; --cx: 44; --cy: 123"><iframe src="mock/app.html?view=customizer"></iframe></div>
+
+  <div class="tag wrap" style="left: 1428px; top: 232px; width: 206px">Control it from your phone <span class="pill">PREVIEW</span></div>
+  <div class="card phone" style="left: 1428px; top: 300px; width: 195px; height: 409px; --s: .4692; --fw: 390; --fh: 844"><iframe src="mock/app.html?view=phone"></iframe></div>
+  <div class="note" style="left: 1428px; top: 720px; width: 195px">Pair once with a 6-digit code. LAN, Tailscale or your own HTTPS.</div>
+
+  <div class="tag wrap" style="left: 1637px; top: 232px; width: 226px">Everything else, one menu away</div>
+  <div class="card" style="left: 1637px; top: 300px; width: 226px; height: 485px; --s: .74; --fw: 760; --fh: 1000; --cx: 4; --cy: 36"><iframe src="mock/app.html?view=menu"></iframe></div>
+
+  <div class="tag" style="left: 1428px; top: 800px">Open in any IDE or SSH</div>
+  <div class="card" style="left: 1428px; top: 838px; width: 377px; height: 222px; --s: .836; --fw: 760; --fh: 900; --cx: 8; --cy: 230"><iframe src="mock/app.html?view=open"></iframe></div>
 </body>
 </html>

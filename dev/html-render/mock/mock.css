@@ -1,0 +1,7 @@
+/* What the app does at runtime that a static page cannot: a frozen frame, the menu held open, xterm's canvas painted as text. */
+*, *::before, *::after { animation: none !important; transition: none !important; }
+#app, body { height: 100vh; }
+.mock-menu-open .icon-dropdown { display: block; }
+.mock-xterm { margin: 0; font: 12px/1.4 ui-monospace, Menlo, monospace; color: #F3F4F6; white-space: pre; }
+.mock-cursor { background: #00d2ff; }
+.modal-overlay { top: 0; backdrop-filter: none; background: transparent; }
