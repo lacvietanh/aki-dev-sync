@@ -1,6 +1,6 @@
 # Kiến trúc: theo dõi quota Claude Code
 
-> updated 2026-10-20 · v1.33.1
+> updated 2026-10-21 · v1.34.0
 
 > Mô tả hệ thống **đang chạy**. Vì sao nó thành ra thế này, và những gì đã thử rồi bỏ: `docs/research/claudecode-usage-FINAL.md` - **đọc §5 (nhật ký) trước khi đề xuất thay đổi**.
 

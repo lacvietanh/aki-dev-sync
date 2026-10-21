@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-10-20 · v1.33.1
+> updated 2026-10-21 · v1.34.0
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
