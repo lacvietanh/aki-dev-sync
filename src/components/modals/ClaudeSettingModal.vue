@@ -208,7 +208,8 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { invoke } from '../../utils/tauri';
-import { projects } from '../../store/projectStore';
+import { projects, Toast } from '../../store/projectStore';
+import { isHost } from '../../services/bridge';
 import BaseModal from './BaseModal.vue';
 import { STATUSLINE_COLORS, STATUSLINE_TIERS, swatchTitle } from '../../utils/statuslineColors';
 
@@ -509,19 +510,24 @@ const hostStatus = ref({});
 
 // The two CLI tags drawn inside a host chip. Built here rather than in the template so the chip stays one line and the "only what the host actually has" rule lives in exactly one place.
 const CLI_TAGS = [
-  { cli: 'CC', name: 'Claude Code', present: 'cc_present', configured: 'cc_configured' },
+  { cli: 'CC', name: 'Claude Code', present: 'cc_present', configured: 'cc_configured', outdated: 'cc_outdated' },
   { cli: 'AG', name: 'AGY CLI', present: 'ag_present', configured: 'ag_configured' },
 ];
 function cliTags(host) {
   const s = hostStatus.value[host];
   if (!s) return [];
-  return CLI_TAGS.filter(t => s[t.present]).map(t => ({
-    cli: t.cli,
-    configured: s[t.configured],
-    title: s[t.configured]
-      ? `${t.name}: statusline installed and wired up`
-      : `${t.name}: found, but no statusline wired up yet`,
-  }));
+  return CLI_TAGS.filter(t => s[t.present]).map(t => {
+    const outdated = !!s[t.outdated];
+    return {
+      cli: t.cli,
+      configured: s[t.configured] && !outdated,
+      title: outdated
+        ? `${t.name}: statusline is an older version - press Apply to update it`
+        : s[t.configured]
+          ? `${t.name}: statusline installed and wired up`
+          : `${t.name}: found, but no statusline wired up yet`,
+    };
+  });
 }
 
 function loadTargets() {
@@ -560,35 +566,53 @@ watch(() => props.show, async (val) => {
   // No backend default to fetch: defaultLocalConfig() is the standard - see docs/feat/statusline-customizer.md § SSOT: the Vue component.
   Object.assign(cfg, loadCfg());
   resetMasterChecked();
-  checkAndAutoInstall();
+  repairCcStatusline(hostOptions.value, needsCcStatusline);
 });
 
-// Auto-repairs Claude Code only - see docs/feat/statusline-customizer.md § Rollout to hosts.
-async function checkAndAutoInstall() {
-  try {
-    const list = await invoke('check_statusline_status', { hosts: hostOptions.value });
-    const map = {};
-    for (const s of list) map[s.host] = s;
-    hostStatus.value = map;
+const isOutdated = s => s.cc_outdated;
+const needsCcStatusline = s => s.cc_outdated || (s.cc_present && !s.cc_configured);
 
-    const toInstall = list.filter(s => s.cc_present && !s.cc_configured).map(s => s.host);
-    if (!toInstall.length) return;
+// Launch pass: upgrade outdated hooks only, release host window only - docs/feat/statusline-customizer.md § Rollout to hosts.
+const launchChecked = new Set();
+if (isHost && !import.meta.env.DEV) {
+  watch(hostOptions, hosts => {
+    const fresh = hosts.filter(h => !launchChecked.has(h));
+    fresh.forEach(h => launchChecked.add(h));
+    if (fresh.length) repairCcStatusline(fresh, isOutdated);
+  }, { immediate: true });
+}
+
+// Auto-repairs Claude Code only - see docs/feat/statusline-customizer.md § Rollout to hosts.
+async function repairCcStatusline(hosts, needsWrite) {
+  try {
+    const list = await invoke('check_statusline_status', { hosts });
+    hostStatus.value = { ...hostStatus.value, ...Object.fromEntries(list.map(s => [s.host, s])) };
+
+    const targets = list.filter(needsWrite);
+    if (!targets.length) return;
 
     const config = JSON.parse(JSON.stringify(cfg));
     // The probe checks Claude Code only, so the repair must write the same target - rationale: docs/feat/statusline-customizer.md § Rollout to hosts.
     const autoResults = await invoke('apply_statusline_config', {
       config,
-      targetHosts: toInstall,
+      targetHosts: targets.map(s => s.host),
       selectedTargets: ['cc']
     });
-    for (const r of autoResults) {
-      if (hostStatus.value[r.host]) hostStatus.value[r.host].cc_configured = r.ok;
-    }
-    const ok = autoResults.filter(r => r.ok).map(r => r.host);
-    if (ok.length) {
-      status.err = false;
-      status.msg = `Auto-installed statusline on: ${ok.join(', ')}. Restart Claude Code (or open a new terminal) to see it.`;
-    }
+    const ok = new Set(autoResults.filter(r => r.ok).map(r => r.host));
+    const done = targets.filter(s => ok.has(s.host));
+    const installed = done.filter(s => !s.cc_configured).map(s => s.host);
+    const updated = done.filter(s => s.cc_configured).map(s => s.host);
+    const failed = targets.filter(s => !ok.has(s.host)).map(s => s.host);
+    for (const s of done) Object.assign(hostStatus.value[s.host], { cc_configured: true, cc_outdated: false });
+    const msg = [
+      installed.length && `Auto-installed statusline on: ${installed.join(', ')}. Restart Claude Code (or open a new terminal) to see it.`,
+      updated.length && `Updated the Claude Code statusline on: ${updated.join(', ')}. Usage reads the new format from the next Claude Code turn.`,
+      failed.length && `Could not write the Claude Code statusline on: ${failed.join(', ')}. Open Statusline Customizer and press Apply to retry.`,
+    ].filter(Boolean).join(' ');
+    if (!msg) return;
+    status.err = failed.length > 0;
+    status.msg = msg;
+    if (!props.show) Toast.fire({ icon: failed.length ? 'warning' : 'success', title: msg, timer: 6000 });
   } catch (e) {
     console.error('Statusline status check failed:', e);
   }

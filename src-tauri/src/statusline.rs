@@ -367,6 +367,8 @@ pub struct StatuslineHostStatus {
     pub host: String,
     pub cc_present: bool,
     pub cc_configured: bool,
+    /// Installed and wired, but its `aki-rlcache` block is older than the one this build ships, so the quota reading runs on the old cache format until it is rewritten.
+    pub cc_outdated: bool,
     pub ag_present: bool,
     pub ag_configured: bool,
 }
@@ -377,16 +379,48 @@ impl StatuslineHostStatus {
             host,
             cc_present: false,
             cc_configured: false,
+            cc_outdated: false,
             ag_present: false,
             ag_configured: false,
         }
     }
+
+    fn from_probe(host: String, stdout: &str) -> Self {
+        let cc_configured = stdout.contains("CC_SL=1");
+        let cc_outdated = cc_configured
+            && rlcache_version(stdout)
+                .zip(rlcache_version(TEMPLATE))
+                .is_some_and(|(installed, shipped)| installed < shipped);
+        Self {
+            host,
+            cc_present: stdout.contains("CC_PRESENT=1"),
+            cc_configured,
+            cc_outdated,
+            ag_present: stdout.contains("AG_PRESENT=1"),
+            ag_configured: stdout.contains("AG_SL=1"),
+        }
+    }
+}
+
+/// Highest `# aki-rlcache vN` marker in `text`. A script with no marker was not written by this app and is never called outdated.
+fn rlcache_version(text: &str) -> Option<u32> {
+    const MARKER: &str = "# aki-rlcache v";
+    text.match_indices(MARKER)
+        .filter_map(|(i, _)| {
+            let digits: String = text[i + MARKER.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            digits.parse().ok()
+        })
+        .max()
 }
 
 /// Both halves of an install are checked: the script file, and the settings key naming it. A host with the file but an empty `statusLine.command` renders nothing, so it is not "configured".
 const PROBE: &str = r#"
 if command -v "$CLAUDE_BIN" >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then echo "CC_PRESENT=1"; else echo "CC_PRESENT=0"; fi
 if [ -f "$HOME/.claude/statusline-command.sh" ] && grep -q "statusline-command.sh" "$HOME/.claude/settings.json" 2>/dev/null; then echo "CC_SL=1"; else echo "CC_SL=0"; fi
+grep -o '# aki-rlcache v[0-9][0-9]*' "$HOME/.claude/statusline-command.sh" 2>/dev/null
 if [ -d "$HOME/.gemini/antigravity-cli" ]; then echo "AG_PRESENT=1"; else echo "AG_PRESENT=0"; fi
 if [ -f "$HOME/.gemini/antigravity-cli/statusline.sh" ] && grep -q "statusline.sh" "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; then echo "AG_SL=1"; else echo "AG_SL=0"; fi
 "#;
@@ -406,16 +440,10 @@ pub async fn check_statusline_status(hosts: Vec<String>) -> Vec<StatuslineHostSt
                         return StatuslineHostStatus::unreachable(host_for_thread);
                     }
                     match run_remote_script_bounded(&host_for_thread, PROBE) {
-                        Ok(out) => {
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            StatuslineHostStatus {
-                                host: host_for_thread,
-                                cc_present: stdout.contains("CC_PRESENT=1"),
-                                cc_configured: stdout.contains("CC_SL=1"),
-                                ag_present: stdout.contains("AG_PRESENT=1"),
-                                ag_configured: stdout.contains("AG_SL=1"),
-                            }
-                        }
+                        Ok(out) => StatuslineHostStatus::from_probe(
+                            host_for_thread,
+                            &String::from_utf8_lossy(&out.stdout),
+                        ),
                         Err(_) => StatuslineHostStatus::unreachable(host_for_thread),
                     }
                 });
@@ -1767,6 +1795,34 @@ mod tests {
                     out
                 );
             }
+        }
+    }
+
+    /// An upgrade that changes the cache format must reach hosts already wired up, or their quota reading silently stays on the old format.
+    #[test]
+    fn the_probe_flags_an_older_rlcache_hook_as_outdated() {
+        let cc_sh = ".claude/statusline-command.sh";
+        let cc_json = ".claude/settings.json";
+        let wired = r#"{"statusLine":{"command":"statusline-command.sh"}}"#;
+        let shipped = rlcache_version(TEMPLATE).expect("the template carries an aki-rlcache marker");
+        let older = format!("#!/bin/bash\n# aki-rlcache v3\n# aki-rlcache v{} - old\n", shipped - 1);
+        let current = format!("#!/bin/bash\n# aki-rlcache v{} - new\n", shipped);
+
+        let cases: &[(&str, &str, bool)] = &[
+            ("older", &older, true),
+            ("current", &current, false),
+            ("not_ours", "#!/bin/bash\necho hand-written\n", false),
+        ];
+        for (name, script, want) in cases {
+            let (out, _) = run_script(
+                &format!("probe_rl_{}.sh", name),
+                PROBE,
+                "",
+                &[(cc_sh, script), (cc_json, wired)],
+            );
+            let status = StatuslineHostStatus::from_probe("local".into(), &out);
+            assert!(status.cc_configured, "{}: not configured: {}", name, out);
+            assert_eq!(status.cc_outdated, *want, "{}: probe said {}", name, out);
         }
     }
 
