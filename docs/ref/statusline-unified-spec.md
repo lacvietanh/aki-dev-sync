@@ -1,6 +1,6 @@
 # Unified Statusline Specification
 
-> Tài liệu tham chiếu quy chuẩn kỹ thuật cho kịch bản hiển thị dải trạng thái (Statusline) dùng chung cho cả Antigravity (AGY CLI) và Claude Code CLI.
+> updated 2026-10-25 · v1.34.0 — Tài liệu tham chiếu quy chuẩn kỹ thuật cho kịch bản hiển thị dải trạng thái (Statusline) dùng chung cho cả Antigravity (AGY CLI) và Claude Code CLI.
 
 ---
 
@@ -64,6 +64,10 @@ Phân loại đối tượng Quota dựa trên hai tầng kiểm tra:
   │
   └── 2. NẾU có .quota (AGY CLI)
          │
+         ├── Tên Model chứa "argon" (Gemini 4 Argon)
+         │     ├─► 5h: (vắng mặt/suppressed, return -1)
+         │     └─► 7d: .quota["gemini-argon-wtu-weekly"]
+         │
          ├── Tên Model chứa "gemini"
          │     ├─► 5h: .quota["gemini-5h"]
          │     └─► 7d: .quota["gemini-weekly"]
@@ -72,6 +76,8 @@ Phân loại đối tượng Quota dựa trên hai tầng kiểm tra:
                ├─► 5h: .quota["3p-5h"]
                └─► 7d: .quota["3p-weekly"]
 ```
+
+Khi bucket 5h vắng mặt (như với model Argon chỉ có weekly bucket), phân đoạn `5h:` tự động ẩn và dải statusline chỉ hiển thị `7d: XX%`.
 
 ---
 

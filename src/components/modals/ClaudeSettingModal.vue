@@ -361,8 +361,8 @@ const GROUPS = [
     id: 'quota',
     keys: ['rate_limits_5h', 'rate_reset_5h', 'rate_limits_7d', 'rate_reset_7d'],
     sep: ' ',
-    // AGY splits its quota into a Gemini pool and a 3P (Claude/GPT) pool; the script picks the pool matching the running model, so there is nothing to configure here.
-    note: 'AGY: pool follows the selected model',
+    // AGY splits its quota into Gemini, Claude/GPT, and Argon pools; the script picks the pool matching the running model, so there is nothing to configure here.
+    note: 'AGY: pool follows the selected model (Gemini, Claude, or Argon)',
     lines: [
       { segments: [
         { controls: [

@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-10-21 · v1.34.0
+> updated 2026-10-25 · v1.34.0
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
@@ -230,7 +230,7 @@ The block also validates the cache with `jq -e` before reading (a corrupt file u
 
 ## Quota routing (AGY)
 
-AGY splits its quota into a Gemini pool and a 3P pool (Claude/GPT models running inside AGY). The script picks the pool matching the running model - `gemini-5h`/`gemini-weekly` if the model name contains `gemini`, otherwise `3p-5h`/`3p-weekly` - so there is nothing to configure, only a note on the quota row. Dropping the `3p-*` branch silently blanks the quota for anyone running Claude inside AGY.
+AGY splits its quota into three pools: Gemini, Argon (Gemini 4 Argon), and 3P (Claude/GPT models running inside AGY). The script picks the pool matching the running model - `gemini-argon-wtu-weekly` if the model name contains `argon` (5h absent/suppressed), `gemini-5h`/`gemini-weekly` if the model name contains `gemini`, otherwise `3p-5h`/`3p-weekly` - so there is nothing to configure, only a note on the quota row (`AGY: pool follows the selected model (Gemini, Claude, or Argon)`). Dropping the `3p-*` branch silently blanks the quota for anyone running Claude inside AGY.
 
 The two CLIs also report reset time on **different scales**: Claude Code sends an absolute epoch (`.rate_limits.*.resets_at`), AGY a relative countdown (`.quota[*].reset_in_seconds`). The script normalises CC onto AGY's scale before formatting.
 

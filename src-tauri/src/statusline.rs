@@ -824,6 +824,29 @@ mod tests {
         assert!(p.contains("50%"), "7d used% wrong (want 50%): {}", p);
     }
 
+    #[test]
+    fn agy_renders_argon_quota() {
+        let payload = r#"{"cwd":"/tmp/demo","account":{"email":"user-a@example.com"},"model":"Gemini 4 Argon","quota":{"gemini-weekly":{"remaining_fraction":0.8},"gemini-5h":{"remaining_fraction":0.9},"gemini-argon-wtu-weekly":{"remaining_fraction":0.4}}}"#;
+        let (line, _) = run_script(
+            ".gemini/antigravity-cli/statusline.sh",
+            &gen(&test_config()),
+            payload,
+            &[],
+        );
+        println!("AGY ARGON RENDERED>>>{}<<<", line);
+        let p = plain(&line);
+        assert!(
+            p.starts_with("AG"),
+            "AGY path did not identify as AG: {}",
+            p
+        );
+        assert!(p.contains("4Argon"), "model not compacted to 4Argon: {}", p);
+        assert!(p.contains("60%"), "Argon weekly quota wrong (want 60%): {}", p);
+        assert!(!p.contains("20%"), "stray gemini-weekly quota rendered: {}", p);
+        assert!(!p.contains("5h:"), "5h quota should be omitted for Argon: {}", p);
+        assert!(p.contains("7d:"), "7d quota missing for Argon: {}", p);
+    }
+
     /// Whatever shape a CLI reports the model in, dropping the vendor word must leave one token with no stray punctuation at either edge.
     #[test]
     fn the_vendor_word_leaves_no_stray_punctuation_behind() {

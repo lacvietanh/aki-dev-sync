@@ -180,6 +180,7 @@ fn quota_summary_from_cli_usage(usage: &Value) -> Option<Value> {
         ("window", "window"),
         ("remaining_fraction", "remainingFraction"),
         ("reset_time", "resetTime"),
+        ("disabled", "disabled"),
     ];
     fn renamed(src: &Value, fields: &[(&str, &str)]) -> Map<String, Value> {
         fields
@@ -432,5 +433,90 @@ mod tests {
                 }]
             }]})
         );
+    }
+
+    #[test]
+    fn quota_summary_from_cli_usage_preserves_argon4_and_disabled_flag() {
+        let usage = json!({
+            "command": {
+                "name": "usage",
+                "data": {
+                    "groups": [
+                        {
+                            "name": "Gemini Models",
+                            "description": "Models within this group: Gemini Flash, Gemini Pro",
+                            "buckets": [
+                                {
+                                    "id": "gemini-5h",
+                                    "name": "Five Hour Limit Remaining",
+                                    "window": "5h",
+                                    "remaining_fraction": 0.8,
+                                    "reset_time": "2026-10-25T18:00:00Z"
+                                },
+                                {
+                                    "id": "gemini-weekly",
+                                    "name": "Weekly Limit Remaining",
+                                    "window": "weekly",
+                                    "remaining_fraction": 0.9,
+                                    "reset_time": "2026-10-31T18:00:00Z"
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Claude and GPT models",
+                            "description": "Models within this group: Claude, GPT",
+                            "buckets": [
+                                {
+                                    "id": "3p-5h",
+                                    "name": "Five Hour Limit Remaining",
+                                    "window": "5h",
+                                    "disabled": true,
+                                    "remaining_fraction": 1.0
+                                },
+                                {
+                                    "id": "3p-weekly",
+                                    "name": "Weekly Limit Remaining",
+                                    "window": "weekly",
+                                    "remaining_fraction": 0.0,
+                                    "reset_time": "2026-10-26T00:00:00Z"
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Gemini 4 Argon",
+                            "description": "Argon quota is separate.",
+                            "buckets": [
+                                {
+                                    "id": "gemini-argon-wtu-weekly",
+                                    "name": "Gemini 4 Argon Weekly Limit",
+                                    "window": "weekly",
+                                    "remaining_fraction": 0.39,
+                                    "reset_time": "2026-11-01T10:49:17Z"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        });
+        let summary = quota_summary_from_cli_usage(&usage).expect("normalized summary");
+        let groups = summary["groups"].as_array().expect("groups array");
+        assert_eq!(groups.len(), 3);
+
+        assert_eq!(groups[0]["displayName"], "Gemini Models");
+        assert_eq!(groups[0]["buckets"].as_array().unwrap().len(), 2);
+
+        assert_eq!(groups[1]["displayName"], "Claude and GPT models");
+        let b0 = &groups[1]["buckets"][0];
+        assert_eq!(b0["bucketId"], "3p-5h");
+        assert_eq!(b0["disabled"], true);
+        assert_eq!(b0["remainingFraction"], 1.0);
+
+        assert_eq!(groups[2]["displayName"], "Gemini 4 Argon");
+        let b_argon = &groups[2]["buckets"][0];
+        assert_eq!(b_argon["bucketId"], "gemini-argon-wtu-weekly");
+        assert_eq!(b_argon["window"], "weekly");
+        assert_eq!(b_argon["remainingFraction"], 0.39);
+        assert_eq!(b_argon["resetTime"], "2026-11-01T10:49:17Z");
     }
 }

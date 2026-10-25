@@ -121,7 +121,7 @@ if [ -n "$input" ]; then
   eval $(echo "$input" | jq -r '
     # Resolved once: .model is a plain string on older CLIs, and an unguarded .model.display_name on a string aborts the whole program (blank line).
     (if (.model | type) == "object" then (.model.display_name // .model.id // "") else (.model // "") end | tostring) as $model_name
-    | (if ($model_name | ascii_downcase | contains("gemini")) then "gemini" else "3p" end) as $pool
+    | (if ($model_name | ascii_downcase | contains("argon")) then "argon" elif ($model_name | ascii_downcase | contains("gemini")) then "gemini" else "3p" end) as $pool
     | (if (.quota | type) == "object" then .quota else {} end) as $quota
     # A quota entry is either an object or a bare number meaning "fraction remaining"; a bare number carries no reset time, so qreset yields 0 for it rather than reusing the fraction.
     | def qfrac($k): $quota[$k] as $v
@@ -130,6 +130,22 @@ if [ -n "$input" ]; then
           else -1 end;
       def qreset($k): $quota[$k] as $v
         | if ($v | type) == "object" then ($v.reset_in_seconds // 0) else 0 end;
+      def qfrac_pool($p; $win):
+        if $p == "argon" and $win == "weekly" then
+          (qfrac("gemini-argon-wtu-weekly") as $f | if $f != -1 then $f else (qfrac("gemini-argon-weekly") as $f2 | if $f2 != -1 then $f2 else qfrac("argon-weekly") end) end)
+        elif $p == "argon" and $win == "5h" then
+          (qfrac("gemini-argon-5h") as $f | if $f != -1 then $f else qfrac("argon-5h") end)
+        else
+          qfrac($p + "-" + $win)
+        end;
+      def qreset_pool($p; $win):
+        if $p == "argon" and $win == "weekly" then
+          (qreset("gemini-argon-wtu-weekly") as $s | if $s > 0 then $s else (qreset("gemini-argon-weekly") as $s2 | if $s2 > 0 then $s2 else qreset("argon-weekly") end) end)
+        elif $p == "argon" and $win == "5h" then
+          (qreset("gemini-argon-5h") as $s | if $s > 0 then $s else qreset("argon-5h") end)
+        else
+          qreset($p + "-" + $win)
+        end;
     [
       "JSON_CWD=" + ((.cwd // .workspace.current_dir // "") | @sh),
       "JSON_MODEL=" + ($model_name | @sh),
@@ -146,10 +162,10 @@ if [ -n "$input" ]; then
       "JSON_CACHE_CREATE=" + ((.context_window.current_usage.cache_creation_input_tokens // 0) | @sh),
       "JSON_CACHE_INPUT=" + ((.context_window.current_usage.input_tokens // 0) | @sh),
 
-      "JSON_5H_REM=" + (qfrac($pool + "-5h") | @sh),
-      "JSON_5H_SEC=" + (qreset($pool + "-5h") | @sh),
-      "JSON_7D_REM=" + (qfrac($pool + "-weekly") | @sh),
-      "JSON_7D_SEC=" + (qreset($pool + "-weekly") | @sh),
+      "JSON_5H_REM=" + (qfrac_pool($pool; "5h") | @sh),
+      "JSON_5H_SEC=" + (qreset_pool($pool; "5h") | @sh),
+      "JSON_7D_REM=" + (qfrac_pool($pool; "weekly") | @sh),
+      "JSON_7D_SEC=" + (qreset_pool($pool; "weekly") | @sh),
       "JSON_CLAUDE_5H_USED=" + (if (.rate_limits | type) == "object" and (.rate_limits.five_hour | type) == "object" then (.rate_limits.five_hour.used_percentage // -1) else -1 end | @sh),
       "JSON_CLAUDE_7D_USED=" + (if (.rate_limits | type) == "object" and (.rate_limits.seven_day | type) == "object" then (.rate_limits.seven_day.used_percentage // -1) else -1 end | @sh),
       "JSON_CLAUDE_5H_RESET=" + ((.rate_limits.five_hour.resets_at // 0) | @sh),
