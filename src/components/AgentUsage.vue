@@ -345,173 +345,98 @@ const quotaSummaryGroups = computed(() => {
   return props.data.quotaSummary.groups || null;
 });
 
-function normalizeAgPoolLabel(displayName) {
-  const name = displayName || '';
-  const lower = name.toLowerCase();
-  if (lower.includes('argon')) return { key: 'argon', label: 'Argon 4' };
-  if (lower.includes('gemini')) return { key: 'gemini', label: 'Gemini' };
-  if (lower.includes('claude') || lower.includes('3p') || lower.includes('gpt')) {
-    return { key: 'claude', label: 'Claude/GPT' };
-  }
-  return {
-    key: lower.replace(/\s+/g, '-'),
-    label: name.replace(/\s+models$/i, '').trim() || name
-  };
+// The pools agy reports today, in display order; any other group renders after them under its own name.
+const AG_POOLS = {
+  gemini: { rank: 0, label: 'Gemini' },
+  claude: { rank: 1, label: 'Claude/GPT' },
+  argon: { rank: 2, label: 'Argon 4' },
+};
+
+function agPoolKey(displayName) {
+  const lower = (displayName || '').toLowerCase();
+  // Before gemini: the vendor names this pool "Gemini 4 Argon".
+  if (lower.includes('argon')) return 'argon';
+  if (lower.includes('gemini')) return 'gemini';
+  if (lower.includes('claude') || lower.includes('3p') || lower.includes('gpt')) return 'claude';
+  return null;
 }
 
-function formatCountdown(resetsAt, nowSec) {
-  if (!resetsAt) return 'N/A';
-  const diff = resetsAt - nowSec;
-  if (diff <= 0) return 'ready';
-  const days = Math.floor(diff / 86400);
-  const hours = Math.floor((diff % 86400) / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  if (days > 0) return `${days}d${hours}h`;
-  if (hours > 0) return `${hours}h${minutes}m`;
-  return minutes > 0 ? `${minutes}m` : '<1m';
+function agWindow({ key, label, name, fraction, resetTime, muted = false, disabled = false }, now) {
+  const pct = fraction !== undefined ? Math.round((1 - fraction) * 100) : null;
+  const resetsAt = resetTime ? Math.floor(new Date(resetTime).getTime() / 1000) : null;
+  const reset = formatResetLine(resetsAt, now);
+  const parts = [name, pct !== null ? `${pct}% used` : 'N/A'];
+  if (reset.val) parts.push(`Resets in ${reset.val} (${reset.abs})`);
+  else if (resetsAt) parts.push('Reset passed - refreshing');
+  else if (pct !== null) parts.push('Dynamic Window');
+  if (muted) parts.push(disabled ? 'Dimmed: disabled' : 'Dimmed: 7D pool full');
+  return {
+    key,
+    label,
+    resetsAt,
+    muted,
+    pctText: pct !== null ? `${pct}%` : 'N/A',
+    colorClass: muted ? 'color-muted' : pctColorClass(pct),
+    fillPct: Math.max(0, Math.min(100, pct || 0)),
+    resetCountdown: reset.val ?? reset.label,
+    tooltip: parts.join(' · '),
+  };
 }
 
 const agPools = computed(() => {
   if (props.agentId !== 'antigravity') return [];
-  const groups = quotaSummaryGroups.value;
   const now = agoNow.value;
+  const groups = quotaSummaryGroups.value;
 
-  if (groups && groups.length > 0) {
-    const rawPools = groups.map((g, idx) => {
-      const { key, label } = normalizeAgPoolLabel(g.displayName);
+  if (groups?.length) {
+    const taken = new Set();
+    return groups.map((g, idx) => {
+      // A second group matching a known pool (say, a new Gemini tier) gets its own key and the vendor's name, never a duplicate card.
+      const known = agPoolKey(g.displayName);
+      const own = known && !taken.has(known);
+      if (own) taken.add(known);
+      const label = own ? AG_POOLS[known].label : (g.displayName || '').replace(/\s+models$/i, '').trim();
       const buckets = Array.isArray(g.buckets) ? g.buckets : [];
-
-      const sortedBuckets = [...buckets].sort((a, b) => {
-        const aIs5h = (a.window === '5h' || a.bucketId?.includes('5h')) ? 0 : 1;
-        const bIs5h = (b.window === '5h' || b.bucketId?.includes('5h')) ? 0 : 1;
-        return aIs5h - bIs5h;
-      });
-
-      const weeklyB = sortedBuckets.find(b => b.window === 'weekly' || b.bucketId?.includes('weekly'));
-      const weeklyPct = weeklyB?.remainingFraction !== undefined
-        ? Math.round((1 - weeklyB.remainingFraction) * 100)
-        : null;
-      const isWeeklyExhausted = weeklyPct !== null && weeklyPct >= 100;
-
-      const windows = sortedBuckets.map(b => {
-        const is5h = b.window === '5h' || b.bucketId?.includes('5h');
-        const winLabel = is5h ? '5H' : '7D';
-        const pct = b.remainingFraction !== undefined ? Math.round((1 - b.remainingFraction) * 100) : null;
-        const resetsAt = b.resetTime ? Math.floor(new Date(b.resetTime).getTime() / 1000) : null;
+      const is5h = b => b.window === '5h' || !!b.bucketId?.includes('5h');
+      const weekly = buckets.find(b => b.window === 'weekly' || b.bucketId?.includes('weekly'));
+      const weeklyFull = weekly?.remainingFraction !== undefined && Math.round((1 - weekly.remainingFraction) * 100) >= 100;
+      const windows = [...buckets].sort((a, b) => is5h(b) - is5h(a)).map(b => {
+        const short = is5h(b);
         const disabled = b.disabled === true;
-        const muted = is5h && (isWeeklyExhausted || disabled);
-        const colorClass = muted ? 'color-muted' : pctColorClass(pct);
-        const countdown = formatCountdown(resetsAt, now);
-        const resetInfo = formatResetLine(resetsAt, now);
-
-        const parts = [
-          b.displayName || `${label} ${winLabel === '5H' ? '5-Hour' : 'Weekly'} Limit`,
-          pct !== null ? `${pct}% used` : 'N/A'
-        ];
-        if (resetsAt) {
-          parts.push(`Resets in ${countdown}${resetInfo.abs ? ` (${resetInfo.abs})` : ''}`);
-        } else if (pct !== null) {
-          parts.push('Dynamic Window');
-        }
-        if (muted) {
-          parts.push(disabled ? 'Dimmed: disabled' : 'Dimmed: 7D pool full');
-        }
-
-        return {
-          key: b.bucketId || b.id || winLabel,
-          label: winLabel,
-          pct,
-          pctText: pct !== null ? `${pct}%` : 'N/A',
-          resetsAt,
+        return agWindow({
+          key: b.bucketId || b.id || (short ? '5H' : '7D'),
+          label: short ? '5H' : '7D',
+          name: b.displayName || `${label} ${short ? '5-Hour' : 'Weekly'} Limit`,
+          fraction: b.remainingFraction,
+          resetTime: b.resetTime,
+          muted: short && (weeklyFull || disabled),
           disabled,
-          muted,
-          colorClass,
-          fillPct: Math.max(0, Math.min(100, pct || 0)),
-          resetCountdown: countdown,
-          tooltip: parts.join(' · ')
-        };
+        }, now);
       });
-
-      return {
-        key,
-        label,
-        originalIndex: idx,
-        windows
-      };
-    });
-
-    const POOL_PRIORITY = { gemini: 0, claude: 1, argon: 2 };
-    return rawPools.sort((a, b) => {
-      const pA = POOL_PRIORITY[a.key] !== undefined ? POOL_PRIORITY[a.key] : 100 + a.originalIndex;
-      const pB = POOL_PRIORITY[b.key] !== undefined ? POOL_PRIORITY[b.key] : 100 + b.originalIndex;
-      return pA - pB;
-    });
+      return { key: own ? known : `group-${idx}`, label, rank: own ? AG_POOLS[known].rank : 100 + idx, windows };
+    }).sort((a, b) => a.rank - b.rank);
   }
 
-  if (props.data?.models && props.data.models.length > 0) {
-    const models = props.data.models;
-    const geminiModel = models.find(m => m.label?.toLowerCase().includes('gemini'));
-    const claudeModel = models.find(m => !m.label?.toLowerCase().includes('gemini'));
-    const fallbackPools = [];
-
-    const buildModelPool = (m, key, label) => {
-      if (!m) return null;
-      const pct = m.remainingPercentage !== undefined ? Math.round((1 - m.remainingPercentage) * 100) : null;
-      const resetsAt = m.resetTime ? Math.floor(new Date(m.resetTime).getTime() / 1000) : null;
-      const countdown = formatCountdown(resetsAt, now);
-      const resetInfo = formatResetLine(resetsAt, now);
-      const parts = [
-        m.label || label,
-        pct !== null ? `${pct}% used` : 'N/A'
-      ];
-      if (resetsAt) {
-        parts.push(`Resets in ${countdown}${resetInfo.abs ? ` (${resetInfo.abs})` : ''}`);
-      } else if (pct !== null) {
-        parts.push('Dynamic Window');
-      }
-
-      return {
-        key,
-        label,
-        windows: [{
-          key: `${key}-5h`,
-          label: '5H',
-          pct,
-          pctText: pct !== null ? `${pct}%` : 'N/A',
-          resetsAt,
-          disabled: false,
-          muted: false,
-          colorClass: pctColorClass(pct),
-          fillPct: Math.max(0, Math.min(100, pct || 0)),
-          resetCountdown: countdown,
-          tooltip: parts.join(' · ')
-        }]
-      };
-    };
-
-    const gPool = buildModelPool(geminiModel, 'gemini', 'Gemini');
-    if (gPool) fallbackPools.push(gPool);
-    const cPool = buildModelPool(claudeModel, 'claude', 'Claude/GPT');
-    if (cPool) fallbackPools.push(cPool);
-    return fallbackPools;
-  }
-
-  return [];
+  // Readings without groups (Antigravity before 2.1.1, or an older offline cache entry) carry one figure per model.
+  const models = props.data?.models;
+  if (!models?.length) return [];
+  const legacyPool = (m, key) => m && {
+    key,
+    label: AG_POOLS[key].label,
+    windows: [agWindow({ key: `${key}-5h`, label: '5H', name: m.label || AG_POOLS[key].label, fraction: m.remainingPercentage, resetTime: m.resetTime }, now)],
+  };
+  return [
+    legacyPool(models.find(m => m.label?.toLowerCase().includes('gemini')), 'gemini'),
+    legacyPool(models.find(m => !m.label?.toLowerCase().includes('gemini')), 'claude'),
+  ].filter(Boolean);
 });
 
+// Refetch once when a shown reset passes. Only while bars are on screen: an error view includes a halted monitor, which must stay halted until the user acts (usageMonitor.js haltPolling).
+const shownResets = computed(() => (isCc.value ? ccBuckets.value : agPools.value.flatMap(p => p.windows)).map(w => w.resetsAt).filter(Boolean));
 watch(agoNow, (now, prev) => {
-  if (props.agentId !== 'antigravity' || !agPools.value) return;
-  for (const pool of agPools.value) {
-    for (const w of pool.windows) {
-      if (w.resetsAt && prev <= w.resetsAt && now > w.resetsAt) {
-        emit('retry');
-        return;
-      }
-    }
-  }
+  if (uiStatus.value.kind === 'data' && shownResets.value.some(t => prev <= t && now > t)) emit('retry');
 });
 
-// CC bar helpers
 function formatResetLine(resetsAt, nowSec) {
   if (!resetsAt) return { label: 'N/A', val: null, abs: '' };
   const diff = resetsAt - nowSec;
@@ -536,10 +461,6 @@ function pctColorClass(pct) {
   if (pct <= 90) return 'color-warning';
   return 'color-danger';
 }
-
-const ccNow = ref(Math.floor(Date.now() / 1000));
-let ccClockTimer = null;
-onUnmounted(() => { if (ccClockTimer) clearInterval(ccClockTimer); });
 
 // Refcounted relative timestamp clock across all mounted cards.
 onMounted(retainAgoClock);
@@ -654,7 +575,7 @@ const ccBuckets = computed(() => {
       resetsAt,
       muted,
       colorClass: muted ? 'color-muted' : pctColorClass(pct),
-      resetLine: formatResetLine(resetsAt, ccNow.value),
+      resetLine: formatResetLine(resetsAt, agoNow.value),
     };
   });
 });
@@ -668,23 +589,6 @@ const cc5hResetsAt = computed(() => {
 });
 // Dim 5H bar when shared 7D pool is full (100%).
 const cc5hMutedBy7d = computed(() => cc7dPct.value !== null && cc7dPct.value >= 100);
-
-// Claude Code 60s countdown timer and 5h boundary auto-retry trigger.
-watch(() => props.agentId, (newId) => {
-  if (ccClockTimer) {
-    clearInterval(ccClockTimer);
-    ccClockTimer = null;
-  }
-  if (newId === 'claudecode') {
-    let wasPast = cc5hResetsAt.value > 0 && ccNow.value > cc5hResetsAt.value;
-    ccClockTimer = setInterval(() => {
-      ccNow.value = Math.floor(Date.now() / 1000);
-      const nowPast = cc5hResetsAt.value > 0 && ccNow.value > cc5hResetsAt.value;
-      if (nowPast && !wasPast) emit('retry');
-      wasPast = nowPast;
-    }, 60000);
-  }
-}, { immediate: true });
 
 // Shared 7D percentage for 5H dimming evaluation.
 const cc7dPct = computed(() => { const v = props.data?.rate_limits?.seven_day?.used_percentage; return v != null ? Math.round(v) : null; });
