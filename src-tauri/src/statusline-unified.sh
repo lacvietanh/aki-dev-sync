@@ -117,6 +117,7 @@ if [ "$CLI" = "CC" ]; then
   fi
 fi
 
+# aki-agquota v1 - AGY quota pool routing (gemini / 3p / argon). Bump when the routing changes, so hosts on an older script show as outdated: docs/feat/statusline-customizer.md § Quota routing (AGY).
 if [ -n "$input" ]; then
   eval $(echo "$input" | jq -r '
     # Resolved once: .model is a plain string on older CLIs, and an unguarded .model.display_name on a string aborts the whole program (blank line).

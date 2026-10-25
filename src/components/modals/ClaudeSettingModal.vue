@@ -511,7 +511,7 @@ const hostStatus = ref({});
 // The two CLI tags drawn inside a host chip. Built here rather than in the template so the chip stays one line and the "only what the host actually has" rule lives in exactly one place.
 const CLI_TAGS = [
   { cli: 'CC', name: 'Claude Code', present: 'cc_present', configured: 'cc_configured', outdated: 'cc_outdated' },
-  { cli: 'AG', name: 'AGY CLI', present: 'ag_present', configured: 'ag_configured' },
+  { cli: 'AG', name: 'AGY CLI', present: 'ag_present', configured: 'ag_configured', outdated: 'ag_outdated' },
 ];
 function cliTags(host) {
   const s = hostStatus.value[host];
@@ -603,7 +603,7 @@ async function repairCcStatusline(hosts, needsWrite) {
     const installed = done.filter(s => !s.cc_configured).map(s => s.host);
     const updated = done.filter(s => s.cc_configured).map(s => s.host);
     const failed = targets.filter(s => !ok.has(s.host)).map(s => s.host);
-    for (const s of done) Object.assign(hostStatus.value[s.host], { cc_configured: true, cc_outdated: false });
+    markApplied(done.map(s => s.host), ['cc']);
     const msg = [
       installed.length && `Auto-installed statusline on: ${installed.join(', ')}. Restart Claude Code (or open a new terminal) to see it.`,
       updated.length && `Updated the Claude Code statusline on: ${updated.join(', ')}. Usage reads the new format from the next Claude Code turn.`,
@@ -615,6 +615,14 @@ async function repairCcStatusline(hosts, needsWrite) {
     if (!props.show) Toast.fire({ icon: failed.length ? 'warning' : 'success', title: msg, timer: 6000 });
   } catch (e) {
     console.error('Statusline status check failed:', e);
+  }
+}
+
+// A host that applied ok holds the current script for every target written, so its chip tags turn current without a second probe.
+function markApplied(hosts, targets) {
+  for (const host of hosts) {
+    const s = hostStatus.value[host];
+    if (s) for (const t of targets) Object.assign(s, { [`${t}_configured`]: true, [`${t}_outdated`]: false });
   }
 }
 
@@ -784,16 +792,19 @@ async function apply() {
   results.value = [];
   try {
     const config = JSON.parse(JSON.stringify(cfg));
+    const targets = [...selectedTargets.value];
     const hostResults = await invoke('apply_statusline_config', {
       config,
       targetHosts: [...selectedHosts.value],
-      selectedTargets: [...selectedTargets.value]
+      selectedTargets: targets
     });
     results.value = hostResults;
+    markApplied(hostResults.filter(r => r.ok).map(r => r.host), targets);
     const failed = hostResults.filter(r => !r.ok);
+    const clis = targets.map(t => (t === 'cc' ? 'Claude Code' : 'AGY')).join(' and ');
     status.err = failed.length > 0;
     status.msg = failed.length === 0
-      ? `Applied to ${hostResults.length} host${hostResults.length === 1 ? '' : 's'}. Restart Claude Code (or open a new terminal) to see it.`
+      ? `Applied to ${hostResults.length} host${hostResults.length === 1 ? '' : 's'}. Restart ${clis} (or open a new terminal) to see it.`
       : `${hostResults.length - failed.length}/${hostResults.length} hosts applied - see details above.`;
   } catch (e) {
     status.msg = String(e);

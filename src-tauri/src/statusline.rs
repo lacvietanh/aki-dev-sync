@@ -371,6 +371,8 @@ pub struct StatuslineHostStatus {
     pub cc_outdated: bool,
     pub ag_present: bool,
     pub ag_configured: bool,
+    /// Installed and wired by this app, but its `aki-agquota` routing block is older than this build's (or absent), so AGY may read the wrong quota pool until it is rewritten.
+    pub ag_outdated: bool,
 }
 
 impl StatuslineHostStatus {
@@ -382,32 +384,46 @@ impl StatuslineHostStatus {
             cc_outdated: false,
             ag_present: false,
             ag_configured: false,
+            ag_outdated: false,
         }
     }
 
     fn from_probe(host: String, stdout: &str) -> Self {
         let cc_configured = stdout.contains("CC_SL=1");
         let cc_outdated = cc_configured
-            && rlcache_version(stdout)
-                .zip(rlcache_version(TEMPLATE))
+            && marker_version(stdout, RLCACHE_MARKER)
+                .zip(marker_version(TEMPLATE, RLCACHE_MARKER))
                 .is_some_and(|(installed, shipped)| installed < shipped);
+        let ag_configured = stdout.contains("AG_SL=1");
+        // The rlcache marker proves this app wrote the script; a routing block from before the marker existed counts as version 0.
+        let ag_outdated = ag_configured
+            && marker_version(stdout, PROBED_AG_RLCACHE).is_some()
+            && marker_version(TEMPLATE, AGQUOTA_MARKER).is_some_and(|shipped| {
+                marker_version(stdout, PROBED_AG_AGQUOTA).unwrap_or(0) < shipped
+            });
         Self {
             host,
             cc_present: stdout.contains("CC_PRESENT=1"),
             cc_configured,
             cc_outdated,
             ag_present: stdout.contains("AG_PRESENT=1"),
-            ag_configured: stdout.contains("AG_SL=1"),
+            ag_configured,
+            ag_outdated,
         }
     }
 }
 
-/// Highest `# aki-rlcache vN` marker in `text`. A script with no marker was not written by this app and is never called outdated.
-fn rlcache_version(text: &str) -> Option<u32> {
-    const MARKER: &str = "# aki-rlcache v";
-    text.match_indices(MARKER)
+const RLCACHE_MARKER: &str = "# aki-rlcache v";
+const AGQUOTA_MARKER: &str = "# aki-agquota v";
+/// The AGY script's markers as PROBE prints them (`# aki-` → `AG_`), so they never read as the Claude Code script's.
+const PROBED_AG_RLCACHE: &str = "AG_rlcache v";
+const PROBED_AG_AGQUOTA: &str = "AG_agquota v";
+
+/// Highest `<marker>N` in `text`. A script with no rlcache marker was not written by this app and is never called outdated.
+fn marker_version(text: &str, marker: &str) -> Option<u32> {
+    text.match_indices(marker)
         .filter_map(|(i, _)| {
-            let digits: String = text[i + MARKER.len()..]
+            let digits: String = text[i + marker.len()..]
                 .chars()
                 .take_while(|c| c.is_ascii_digit())
                 .collect();
@@ -423,6 +439,7 @@ if [ -f "$HOME/.claude/statusline-command.sh" ] && grep -q "statusline-command.s
 grep -o '# aki-rlcache v[0-9][0-9]*' "$HOME/.claude/statusline-command.sh" 2>/dev/null
 if [ -d "$HOME/.gemini/antigravity-cli" ]; then echo "AG_PRESENT=1"; else echo "AG_PRESENT=0"; fi
 if [ -f "$HOME/.gemini/antigravity-cli/statusline.sh" ] && grep -q "statusline.sh" "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; then echo "AG_SL=1"; else echo "AG_SL=0"; fi
+grep -o '# aki-[a-z]* v[0-9][0-9]*' "$HOME/.gemini/antigravity-cli/statusline.sh" 2>/dev/null | sed 's/^# aki-/AG_/'
 "#;
 
 #[tauri::command]
@@ -1821,13 +1838,13 @@ mod tests {
         }
     }
 
-    /// An upgrade that changes the cache format must reach hosts already wired up, or their quota reading silently stays on the old format.
+    /// An upgrade that changes the cache format (CC) or the quota routing (AGY) must reach hosts already wired up, or their reading silently stays on the old behavior.
     #[test]
-    fn the_probe_flags_an_older_rlcache_hook_as_outdated() {
+    fn the_probe_flags_an_older_hook_as_outdated_per_cli() {
         let cc_sh = ".claude/statusline-command.sh";
         let cc_json = ".claude/settings.json";
         let wired = r#"{"statusLine":{"command":"statusline-command.sh"}}"#;
-        let shipped = rlcache_version(TEMPLATE).expect("the template carries an aki-rlcache marker");
+        let shipped = marker_version(TEMPLATE, RLCACHE_MARKER).expect("the template carries an aki-rlcache marker");
         let older = format!("#!/bin/bash\n# aki-rlcache v3\n# aki-rlcache v{} - old\n", shipped - 1);
         let current = format!("#!/bin/bash\n# aki-rlcache v{} - new\n", shipped);
 
@@ -1846,6 +1863,30 @@ mod tests {
             let status = StatuslineHostStatus::from_probe("local".into(), &out);
             assert!(status.cc_configured, "{}: not configured: {}", name, out);
             assert_eq!(status.cc_outdated, *want, "{}: probe said {}", name, out);
+        }
+
+        let ag_sh = ".gemini/antigravity-cli/statusline.sh";
+        let ag_json = ".gemini/antigravity-cli/settings.json";
+        let ag_wired = r#"{"statusLine":{"type":"command","command":"statusline.sh"}}"#;
+        let routing = marker_version(TEMPLATE, AGQUOTA_MARKER).expect("the template carries an aki-agquota marker");
+        let ours = format!("#!/bin/bash\n# aki-rlcache v{}\n", shipped);
+        let ag_cases: &[(&str, String, bool)] = &[
+            ("ag_before_marker", ours.clone(), true),
+            ("ag_older", format!("{}# aki-agquota v{}\n", ours, routing - 1), true),
+            ("ag_current", format!("{}# aki-agquota v{}\n", ours, routing), false),
+            ("ag_not_ours", "#!/bin/bash\necho hand-written\n".to_string(), false),
+        ];
+        for (name, script, want) in ag_cases {
+            let (out, _) = run_script(
+                &format!("probe_ag_{}.sh", name),
+                PROBE,
+                "",
+                &[(ag_sh, script.as_str()), (ag_json, ag_wired)],
+            );
+            let status = StatuslineHostStatus::from_probe("local".into(), &out);
+            assert!(status.ag_configured, "{}: not configured: {}", name, out);
+            assert!(!status.cc_outdated, "{}: AGY markers read as Claude Code's: {}", name, out);
+            assert_eq!(status.ag_outdated, *want, "{}: probe said {}", name, out);
         }
     }
 
