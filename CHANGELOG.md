@@ -3,15 +3,17 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [Unreleased]
+## [1.35.0] - 2026-10-26
 
 ### Added
 - **Antigravity Gemini 4 Argon quota pool support**: Normalizes `gemini-argon-wtu-weekly` and `disabled` status from CLI `/usage` payloads in `antigravity_payload.rs`.
-- **Dynamic 3-way AGY statusline quota routing**: Routes `argon` models to `gemini-argon-wtu-weekly` (suppressing absent 5h bucket) in `statusline-unified.sh` alongside Gemini and 3P Claude/OSS pools.
+- **Dynamic 3-way AGY statusline quota routing**: Routes `argon` models to `gemini-argon-wtu-weekly` (suppressing absent 5h bucket) in `statusline-unified.sh` alongside the Gemini and 3P Claude/GPT pools.
+- **Statusline Customizer flags outdated AGY scripts**: the routing block carries `# aki-agquota v1` and the probe reports `ag_outdated`, so a host still on the pre-Argon AGY script shows a hollow AGY tag ("older version - press Apply") instead of silently reading Argon from the Gemini pool. AGY is still never rewritten automatically.
 
 ### Changed
-- **Antigravity quota UI upgraded to compact multi-pool bars**: Replaced `UsageCircle.vue` radial layout in `AgentUsage.vue` with compact data-driven pool bars across Argon 4, Gemini, and Claude/OSS pools with full 11-datum parity, per-pool 5H dimming when 7D hits 100%, and auto-retry on reset expiry via `agoNow`.
-- **Statusline Customizer note updated**: Mentions Argon alongside Gemini and Claude in `ClaudeSettingModal.vue`.
+- **Antigravity quota UI upgraded to compact multi-pool bars**: Replaced `UsageCircle.vue` radial layout in `AgentUsage.vue` with compact data-driven pool bars (Gemini, Claude/GPT, Argon 4, in that order) with full 11-datum parity, per-pool 5H dimming when 7D hits 100%, and auto-retry on reset expiry via `agoNow` only while bars are shown, so a monitor halted by its unreachable-host breaker stays halted. Claude Code bars share the same 10s clock and boundary watcher (the separate 60s timer is gone), so any shown bucket's reset, not only the 5-hour one, triggers the refetch. Two vendor groups that match one pool get separate cards under the vendor's name instead of a duplicate key.
+- **Statusline Customizer note updated**: Mentions Argon alongside Gemini and Claude in `ClaudeSettingModal.vue`. Apply now turns the written targets' host tags current at once, and its success message names the CLIs actually written.
+- **UI audit skips the image mock by an owned config entry**: `scripts/ui-audit.config.json` `ignoredPaths` lists `dev/html-render` with owner and reason, printed under Exceptions, instead of `audit-ui-architecture.mjs` skipping every folder named `dev`. The mock (`dev/html-render/mock/views.js`) now copies the AgentUsage pool-bar markup, order and labels, the dimmed `N/A` 5H window, the cached-age note and the header build line (version read from `package.json`); the overview and Statusline Customizer images are re-rendered from it.
 
 ### Removed
 - `src/components/UsageCircle.vue`: Retired SVG radial progress circles and associated CSS overrides from `scripts/ui-audit.config.json`.
