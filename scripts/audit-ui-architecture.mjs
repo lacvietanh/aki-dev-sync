@@ -8,19 +8,21 @@ const DEFAULT_CONFIG = {
   exceptions: [],
   sfcResidents: [],
   duplicateExceptions: [],
+  ignoredPaths: [],
 };
 
 function lineNumber(source, offset) {
   return source.slice(0, offset).split('\n').length;
 }
 
-function walk(directory) {
+function walk(directory, ignored = new Set()) {
   const files = [];
   if (!statSync(directory).isDirectory()) return [directory];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === 'target' || entry.name === 'dist' || entry.name === '.git' || entry.name === 'dev') continue;
+    if (entry.name === 'node_modules' || entry.name === 'target' || entry.name === 'dist' || entry.name === '.git') continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...walk(path));
+    if (ignored.has(path)) continue;
+    if (entry.isDirectory()) files.push(...walk(path, ignored));
     else if (SOURCE_EXTENSIONS.has(extname(entry.name))) files.push(path);
   }
   return files;
@@ -163,7 +165,9 @@ function duplicates(items, { acrossFiles = false } = {}) {
 
 export function audit(root, config = DEFAULT_CONFIG) {
   const base = resolve(root);
-  const files = walk(base);
+  // A root-relative path skipped whole, with the same owner + reason contract as a per-finding exception, so the skip shows in the report.
+  const ignoredPaths = (config.ignoredPaths || []).filter((entry) => entry.path && entry.owner && entry.reason);
+  const files = walk(base, new Set(ignoredPaths.map((entry) => join(base, entry.path))));
   const findings = [];
   const selectors = [];
   const tokens = [];
@@ -189,7 +193,7 @@ export function audit(root, config = DEFAULT_CONFIG) {
     }
   }
 
-  const exceptions = [];
+  const exceptions = ignoredPaths.map(({ path, owner, reason }) => ({ rule: 'ignored-path', origin: path, owner, reason }));
   const violations = findings.filter((finding) => {
     const exception = matchingException(finding, config.exceptions || []);
     if (!exception) return true;

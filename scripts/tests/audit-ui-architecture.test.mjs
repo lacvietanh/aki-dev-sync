@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -73,6 +73,24 @@ await test('a duplicate selector with an owner and reason is reported as an exce
   const report = audit(root, { duplicateExceptions: [{ name: '.a', owner: 'UI', reason: 'Two intentionally different variants.' }, { name: '.b', owner: 'UI' }] });
   assert.deepEqual(report.duplicateSelectors.map(({ name }) => name), ['.b']);
   assert(report.exceptions.some(({ rule, reason }) => rule === 'duplicate-selector' && reason.includes('intentionally')));
+});
+
+await test('an owned ignored path is skipped and reported, a same-named folder elsewhere and an unowned entry are not', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aki-ui-audit-'));
+  try {
+    mkdirSync(join(root, 'dev'));
+    mkdirSync(join(root, 'src', 'dev'), { recursive: true });
+    mkdirSync(join(root, 'tools'));
+    const inlineStyle = '<template><div style="gap: 1px" /></template>\n';
+    writeFileSync(join(root, 'dev', 'Mock.vue'), inlineStyle);
+    writeFileSync(join(root, 'src', 'dev', 'Panel.vue'), inlineStyle);
+    writeFileSync(join(root, 'tools', 'X.vue'), inlineStyle);
+    const report = audit(root, { ignoredPaths: [{ path: 'dev', owner: 'UI', reason: 'Offline mock.' }, { path: 'tools', owner: 'UI' }] });
+    assert.deepEqual(report.violations.map(({ file }) => file).sort(), ['src/dev/Panel.vue', 'tools/X.vue']);
+    assert(report.exceptions.some(({ rule, origin }) => rule === 'ignored-path' && origin === 'dev'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 await test('a component-scoped token overridden in a media query is not a second theme source, a token defined twice in :root is', () => {

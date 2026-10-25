@@ -1625,5 +1625,12 @@
       "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
     }
   ],
-  "duplicateExceptions": []
+  "duplicateExceptions": [],
+  "ignoredPaths": [
+    {
+      "path": "dev/html-render",
+      "owner": "UI",
+      "reason": "offline mock that renders the README/site images (docs/ref/overview-image.md): its invented data and terminal colours are literals by design, mock.css re-declares app selectors to freeze them, and none of it ships in the app"
+    }
+  ]
 }
