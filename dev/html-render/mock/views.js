@@ -1,6 +1,11 @@
 // Renders the mock screens from window.MOCK. Markup copies the class structure of the real templates in src/components, so main.css and sfc.css style it exactly as the app; when a template changes, change its function here.
 const M = window.MOCK
 const PUB = '../../../public'
+// AppHeader prints `<version> <build HHMM>`; the version comes from package.json so a rebuilt image never shows a stale one.
+const pkg = new XMLHttpRequest()
+pkg.open('GET', '../../../package.json', false)
+pkg.send()
+const BUILD = `${JSON.parse(pkg.responseText).version} 0930`
 const view = new URLSearchParams(location.search).get('view') || 'main'
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const each = (list, fn) => list.map(fn).join('')
@@ -18,9 +23,9 @@ const header = ({ menu = false, native = true } = {}) => `
       <span class="menu-affordance"><i class="fa-solid fa-bars"></i></span>
       ${menu ? dropdown() : ''}
     </span>
-    <div class="title-block"><h1>Aki Dev Sync</h1></div>
+    <div class="title-block"><h1>Aki Dev Sync</h1><span class="build-narrow u-wide-hide">${BUILD}</span></div>
   </div>
-  <span class="app-version"></span>
+  <span class="app-version"><span class="build-time u-narrow-hide">${BUILD}</span></span>
   <div class="header-actions">
     <button class="btn-tech btn-tech-secondary btn-intro"><i class="fa-solid fa-book-open"></i> <span class="btn-text u-narrow-hide">INTRO</span></button>
     <button class="btn-tech btn-tech-secondary btn-note"><i class="fa-solid fa-note-sticky has-note"></i><span class="cell-badge cell-badge-top task-badge-pin">1</span><span class="cell-badge cell-badge-bottom task-badge-normal">4</span></button>
@@ -70,13 +75,13 @@ const dropdown = () => `
 </div>`
 
 // AgentUsageSection.vue → AgentUsageSlot.vue → AgentUsage.vue
-const agPoolRow = (p) => `
-<div class="ag-pool-row">
-  <div class="ag-pool-head"><span class="ag-pool-name">${p.label}</span></div>
+const agPoolCard = (p) => `
+<div class="ag-pool-card">
+  <div class="ag-pool-header"><span class="ag-pool-title">${p.label}</span></div>
   <div class="ag-pool-windows">${each(p.windows, (w) => `
-    <div class="ag-win-col${w.muted ? ' is-muted' : ''}${w.disabled ? ' is-disabled' : ''}">
-      <div class="ag-win-meta"><span class="ag-win-label">${w.label}</span><span class="ag-pct-val ${pctClass(w.pct, w.muted)}">${w.pct === null ? '—' : w.pct + '%'}</span><span class="ag-time-val">${w.val}</span></div>
-      <div class="ag-track"><div class="ag-track-fill ${pctClass(w.pct, w.muted)}" style="width:${w.pct ?? 0}%"></div></div>
+    <div class="ag-win-col${w.muted ? ' is-muted' : ''}">
+      <div class="ag-win-meta"><div class="ag-win-left"><span class="ag-win-tag">${w.label}</span><span class="ag-pct-val ${pctClass(w.pct, w.muted)}">${w.pct}%</span></div><div class="ag-win-right${w.val === 'N/A' ? ' is-na' : ''}"><span class="ag-time-val">${w.val}</span></div></div>
+      <div class="ag-track"><div class="ag-track-fill ${pctClass(w.pct, w.muted)}" style="width:${w.pct}%"></div></div>
     </div>`)}</div>
 </div>`
 const slotTab = (active, inner) => `<button class="slot-tab${active ? ' is-active' : ''}">${inner}</button>`
@@ -93,7 +98,7 @@ const usageSlot = (s) => {
         <div class="cc-usage-bar"><div class="cc-bar-header"><span class="cc-bar-label">${b.label}</span><span class="cc-bar-pct ${pctClass(b.pct)}">${b.pct}%</span></div>
           <div class="cc-progress-track"><div class="cc-progress-fill ${pctClass(b.pct)}" style="width:${b.pct}%"></div></div>
           <div class="cc-reset-line"><span class="time-label">Reset </span><span class="time-val">${b.val}</span><span class="time-abs"> (${b.abs})</span></div></div>`)}</div>`
-    : `<div class="ag-bars-block">${each(s.pools, agPoolRow)}</div>`
+    : `<div class="ag-bars-block">${each(s.pools, agPoolCard)}</div>`
   return `
 <div class="usage-column">
   <div class="column-header">
@@ -103,7 +108,7 @@ const usageSlot = (s) => {
   <div class="agent-usage-card">
     <div class="agent-header${cc ? ' claudecode-custom-header' : ''}">
       <div class="agent-title-group"><div class="agent-icon-wrapper${cc ? '' : ' ' + s.source}">${icon}</div>${name}</div>
-      <div class="agent-status-badges"><button class="btn-ui-action btn-reload">${ring(true, 'rgba(0, 210, 255, 0.6)', 0.4)}<i class="fa-solid fa-rotate-right"></i></button></div>
+      <div class="agent-status-badges">${s.ago ? `<span class="cached-note">${s.ago}</span>` : ''}<button class="btn-ui-action btn-reload">${ring(true, 'rgba(0, 210, 255, 0.6)', 0.4)}<i class="fa-solid fa-rotate-right"></i></button></div>
     </div>
     <div class="agent-body"><div class="usage-bars-container">${body}</div></div>
   </div>
