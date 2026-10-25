@@ -1,6 +1,6 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-> updated 2026-10-25 · v1.34.0
+> updated 2026-10-26 · v1.34.0
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
@@ -84,7 +84,7 @@ sequenceDiagram
 ### 3. API Query & Standardization
 * **Sequential Queries:** Performs two Connect RPC queries one after the other with `curl`:
   * `GetUserStatus`: Fetch account information such as `email`.
-  * `RetrieveUserQuotaSummary`: Fetch detailed quota metrics (5h and Weekly buckets for Gemini, Gemini 4 Argon weekly pool, and Claude/OSS pools, including disabled status flag).
+  * `RetrieveUserQuotaSummary`: Fetch detailed quota metrics (5h and Weekly buckets for the Gemini and Claude/GPT pools, the weekly-only Gemini 4 Argon pool, and the disabled status flag).
 * **Output Mapping:** Merges the results into a standardized JSON snapshot containing:
   * `email`: User account email.
   * `models`: Autocomplete/model metadata (for backward compatibility).
@@ -189,5 +189,5 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **UI Components:**
   - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Pure N-Tier slot layout; owns no usage state.
   - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
-  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini 4 Argon, Gemini, Claude/OSS) with per-pool 5H dimming when 7D hits 100%, disabled state tracking, and dynamic IDE/CLI icon.
+  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini, Claude/GPT, Argon 4, in that order) with per-pool 5H dimming when 7D hits 100%, disabled state tracking, and dynamic IDE/CLI icon.
   - [RefreshRing.vue](../../src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).
