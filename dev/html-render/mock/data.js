@@ -9,9 +9,17 @@ window.MOCK = {
     { scope: 'remote', host: 'devbox', agent: 'cc', name: 'Claude Code', plan: 'Pro', account: 'team', note: 'live',
       bars: [{ label: '5-HOUR', pct: 82, val: '1h12m', abs: '14:30 Oct22' }, { label: '7-DAY', pct: 37, val: '5d2h', abs: '15:00 Oct27' }] },
     { scope: 'local', agent: 'ag', source: 'ide', plan: 'Pro', account: 'me',
-      zones: { gemini: [{ sub: '5H', pct: 12, rs: '3h05m' }, { sub: '7D', pct: 34, rs: '4d6h' }], claude: [{ sub: '5H', pct: 0, rs: null }, { sub: '7D', pct: 9, rs: '6d1h' }] } },
+      pools: [
+        { label: 'Argon 4', windows: [{ label: '7D', pct: 0, val: 'ready' }] },
+        { label: 'Gemini', windows: [{ label: '5H', pct: 12, val: '3h05m' }, { label: '7D', pct: 34, val: '4d6h' }] },
+        { label: 'Claude/OSS', windows: [{ label: '5H', pct: 0, val: 'ready' }, { label: '7D', pct: 9, val: '6d1h' }] },
+      ] },
     { scope: 'remote', host: 'gpu-box', agent: 'ag', source: 'cli', account: 'lab',
-      zones: { gemini: [{ sub: '5H', pct: 100, rs: '47m' }, { sub: '7D', pct: 71, rs: '2d3h' }], claude: [{ sub: '5H', pct: 23, rs: '4h10m' }, { sub: '7D', pct: 18, rs: '5d20h' }] } },
+      pools: [
+        { label: 'Argon 4', windows: [{ label: '7D', pct: 0, val: 'ready', disabled: true }] },
+        { label: 'Gemini', windows: [{ label: '5H', pct: 100, val: '47m' }, { label: '7D', pct: 71, val: '2d3h' }] },
+        { label: 'Claude/OSS', windows: [{ label: '5H', pct: 23, val: '4h10m' }, { label: '7D', pct: 18, val: '5d20h' }] },
+      ] },
   ],
 
   // The header count; the table shows only the first rows of a longer list.

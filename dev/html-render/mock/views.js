@@ -7,7 +7,7 @@ const each = (list, fn) => list.map(fn).join('')
 
 // RefreshRing.vue, frozen part-way through its countdown.
 const ring = (overlay, color, frac = 0.62) => `<svg class="refresh-ring ${overlay ? 'refresh-ring--overlay' : 'refresh-ring--inline'}" viewBox="0 0 36 36"><circle class="rr-track" cx="18" cy="18" r="15"/><circle class="rr-fill" cx="18" cy="18" r="15" style="stroke:${color};stroke-dashoffset:${94.25 * (1 - frac)}"/></svg>`
-const pctClass = (pct) => (pct === null ? 'color-na' : pct <= 70 ? 'color-safe' : pct <= 90 ? 'color-warning' : 'color-danger')
+const pctClass = (pct, muted = false) => (muted ? 'color-muted' : pct === null ? 'color-na' : pct <= 70 ? 'color-safe' : pct <= 90 ? 'color-warning' : 'color-danger')
 
 // AppHeader.vue
 const header = ({ menu = false, native = true } = {}) => `
@@ -69,15 +69,16 @@ const dropdown = () => `
   ${menuItem('fa-solid fa-heart', 'Donate to AkiDevSync', 'donate-link')}
 </div>`
 
-// AgentUsageSection.vue → AgentUsageSlot.vue → AgentUsage.vue → UsageCircle.vue
-const circle = (c) => `
-<div class="usage-circle-wrapper"><div class="usage-circle-container">
-  <div class="circle-main-row"><span class="circle-sub-label">${c.sub}</span>
-    <div class="circle-svg-wrapper"><svg class="radial-progress" viewBox="0 0 36 36"><circle class="circle-bg" cx="18" cy="18" r="15" stroke-width="3"/>${c.pct > 0 ? `<circle class="circle-fill ${pctClass(c.pct)}" cx="18" cy="18" r="15" stroke-width="3" stroke-dasharray="94.25" stroke-dashoffset="${94.25 - 0.9425 * c.pct}"/>` : ''}</svg>
-      <div class="percentage-inner ${pctClass(c.pct)}">${c.pct}</div></div></div>
-  <div class="circle-time-line">${c.rs ? `<span class="time-label">Rs </span><span class="time-val">${c.rs}</span>` : '<span class="time-label">ready</span>'}</div>
-</div></div>`
-const zone = (cls, legend, circles) => `<fieldset class="zone-fieldset ${cls}"><legend class="zone-legend">${legend}</legend><div class="zone-content">${each(circles, circle)}</div></fieldset>`
+// AgentUsageSection.vue → AgentUsageSlot.vue → AgentUsage.vue
+const agPoolRow = (p) => `
+<div class="ag-pool-row">
+  <div class="ag-pool-head"><span class="ag-pool-name">${p.label}</span></div>
+  <div class="ag-pool-windows">${each(p.windows, (w) => `
+    <div class="ag-win-col${w.muted ? ' is-muted' : ''}${w.disabled ? ' is-disabled' : ''}">
+      <div class="ag-win-meta"><span class="ag-win-label">${w.label}</span><span class="ag-pct-val ${pctClass(w.pct, w.muted)}">${w.pct === null ? '—' : w.pct + '%'}</span><span class="ag-time-val">${w.val}</span></div>
+      <div class="ag-track"><div class="ag-track-fill ${pctClass(w.pct, w.muted)}" style="width:${w.pct ?? 0}%"></div></div>
+    </div>`)}</div>
+</div>`
 const slotTab = (active, inner) => `<button class="slot-tab${active ? ' is-active' : ''}">${inner}</button>`
 const srcTab = (s, key, icon, label) => slotTab(s.agent === key, `<i class="fa-solid fa-power-off src-power is-on"></i><img src="${PUB}/${icon}" class="src-icon"> <span class="u-narrow-hide">${label}</span>`)
 const usageSlot = (s) => {
@@ -92,7 +93,7 @@ const usageSlot = (s) => {
         <div class="cc-usage-bar"><div class="cc-bar-header"><span class="cc-bar-label">${b.label}</span><span class="cc-bar-pct ${pctClass(b.pct)}">${b.pct}%</span></div>
           <div class="cc-progress-track"><div class="cc-progress-fill ${pctClass(b.pct)}" style="width:${b.pct}%"></div></div>
           <div class="cc-reset-line"><span class="time-label">Reset </span><span class="time-val">${b.val}</span><span class="time-abs"> (${b.abs})</span></div></div>`)}</div>`
-    : `<div class="circles-row">${zone('zone-gemini', 'Gemini', s.zones.gemini)}${zone('zone-claude', 'Claude/OSS', s.zones.claude)}</div>`
+    : `<div class="ag-bars-block">${each(s.pools, agPoolRow)}</div>`
   return `
 <div class="usage-column">
   <div class="column-header">

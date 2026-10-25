@@ -100,34 +100,23 @@
         <span><i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ uiStatus.text }}</span>
       </div>
 
-      <!-- Skeleton circles with fieldset wrapper for AG -->
+      <!-- Skeleton bars loader -->
       <div v-else-if="uiStatus.kind === 'loading'" class="usage-circles-skeleton">
         <div v-if="agentId === 'claudecode'" class="cc-skeleton-block">
           <div class="skeleton-bar-header"></div>
           <div class="skeleton-bar-track"></div>
           <div class="skeleton-bar-time"></div>
         </div>
-        <div v-else class="circles-row">
-          <fieldset class="zone-fieldset zone-gemini skeleton-zone">
-            <legend class="zone-legend">Gemini</legend>
-            <div class="zone-content">
-              <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
-                <div class="skeleton-circle"></div>
-                <div class="skeleton-text skeleton-text-15"></div>
-                <div class="skeleton-text skeleton-text-25"></div>
+        <div v-else class="ag-bars-skeleton">
+          <div v-for="i in 3" :key="i" class="ag-skeleton-pool">
+            <div class="skeleton-pool-title"></div>
+            <div class="skeleton-pool-windows">
+              <div v-for="j in (i === 3 ? 1 : 2)" :key="j" class="skeleton-win-col">
+                <div class="skeleton-win-meta"></div>
+                <div class="skeleton-win-track"></div>
               </div>
             </div>
-          </fieldset>
-          <fieldset class="zone-fieldset zone-claude skeleton-zone">
-            <legend class="zone-legend">Claude/OSS</legend>
-            <div class="zone-content">
-              <div v-for="i in 2" :key="i" class="skeleton-circle-wrapper">
-                <div class="skeleton-circle"></div>
-                <div class="skeleton-text skeleton-text-15"></div>
-                <div class="skeleton-text skeleton-text-25"></div>
-              </div>
-            </div>
-          </fieldset>
+          </div>
         </div>
       </div>
 
@@ -173,48 +162,44 @@
           </div>
         </template>
 
-        <!-- Render Antigravity specific circular progress (4 circles in 2 fieldsets) -->
+        <!-- Render Antigravity compact pool bars (3 pools) -->
         <template v-else-if="agentId === 'antigravity'">
-          <div class="circles-row">
-            <fieldset class="zone-fieldset zone-gemini">
-              <legend class="zone-legend">Gemini</legend>
-              <div class="zone-content">
-                <UsageCircle
-                             label="Gemini 5-Hour Limit"
-                             subLabel="5H"
-                             :percentage="gemini5hData?.percentage ?? null"
-                             :resetsAt="gemini5hData?.resetsAt ?? null"
-                             :muted="gemini5hMutedByWeekly"
-                             :muted-reason="MUTED_BY_WEEKLY_REASON"
-                             @timeout="$emit('retry')" />
-                <UsageCircle
-                             label="Gemini Weekly Limit"
-                             subLabel="7D"
-                             :percentage="geminiWeeklyPct"
-                             :resetsAt="geminiWeeklyBucket?.resetTime ? Math.floor(new Date(geminiWeeklyBucket.resetTime).getTime() / 1000) : null"
-                             @timeout="$emit('retry')" />
+          <div class="ag-bars-block">
+            <div
+              v-for="pool in agPools"
+              :key="pool.key"
+              class="ag-pool-card"
+            >
+              <div class="ag-pool-header">
+                <span class="ag-pool-title">{{ pool.label }}</span>
               </div>
-            </fieldset>
-
-            <fieldset class="zone-fieldset zone-claude">
-              <legend class="zone-legend">Claude/OSS</legend>
-              <div class="zone-content">
-                <UsageCircle
-                             label="Claude & GPT 5-Hour Limit"
-                             subLabel="5H"
-                             :percentage="claude5hData?.percentage ?? null"
-                             :resetsAt="claude5hData?.resetsAt ?? null"
-                             :muted="claude5hMutedByWeekly"
-                             :muted-reason="MUTED_BY_WEEKLY_REASON"
-                             @timeout="$emit('retry')" />
-                <UsageCircle
-                             label="Claude & GPT Weekly Limit"
-                             subLabel="7D"
-                             :percentage="claudeWeeklyPct"
-                             :resetsAt="claudeWeeklyBucket?.resetTime ? Math.floor(new Date(claudeWeeklyBucket.resetTime).getTime() / 1000) : null"
-                             @timeout="$emit('retry')" />
+              <div class="ag-pool-windows">
+                <div
+                  v-for="w in pool.windows"
+                  :key="w.key"
+                  class="ag-win-col"
+                  :class="{ 'is-muted': w.muted }"
+                  :title="w.tooltip"
+                >
+                  <div class="ag-win-meta">
+                    <div class="ag-win-left">
+                      <span class="ag-win-tag">{{ w.label }}</span>
+                      <span class="ag-pct-val" :class="w.colorClass">{{ w.pctText }}</span>
+                    </div>
+                    <div class="ag-win-right" :class="{ 'is-na': !w.resetsAt }">
+                      <span class="ag-time-val">{{ w.resetCountdown }}</span>
+                    </div>
+                  </div>
+                  <div class="ag-track">
+                    <div
+                      class="ag-track-fill"
+                      :class="w.colorClass"
+                      :style="{ width: w.fillPct + '%' }"
+                    ></div>
+                  </div>
+                </div>
               </div>
-            </fieldset>
+            </div>
           </div>
         </template>
       </div>
@@ -250,7 +235,6 @@ export function releaseAgoClock() {
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
 import { rightDockActive } from '../composables/useRightDockLayout';
-import UsageCircle from './UsageCircle.vue';
 import RefreshRing from './RefreshRing.vue';
 import { refreshSettings } from '../store/refreshStore';
 
@@ -361,96 +345,170 @@ const quotaSummaryGroups = computed(() => {
   return props.data.quotaSummary.groups || null;
 });
 
-const geminiGroup = computed(() => {
-  if (!quotaSummaryGroups.value) return null;
-  return quotaSummaryGroups.value.find(g => g.displayName.toLowerCase().includes('gemini')) || null;
-});
-
-const claudeGroup = computed(() => {
-  if (!quotaSummaryGroups.value) return null;
-  return quotaSummaryGroups.value.find(g => g.displayName.toLowerCase().includes('claude') || g.displayName.toLowerCase().includes('3p')) || null;
-});
-
-const gemini5hBucket = computed(() => {
-  if (!geminiGroup.value?.buckets) return null;
-  return geminiGroup.value.buckets.find(b => b.window === '5h' || b.bucketId.includes('5h')) || null;
-});
-
-const geminiWeeklyBucket = computed(() => {
-  if (!geminiGroup.value?.buckets) return null;
-  return geminiGroup.value.buckets.find(b => b.window === 'weekly' || b.bucketId.includes('weekly')) || null;
-});
-
-const claude5hBucket = computed(() => {
-  if (!claudeGroup.value?.buckets) return null;
-  return claudeGroup.value.buckets.find(b => b.window === '5h' || b.bucketId.includes('5h')) || null;
-});
-
-const claudeWeeklyBucket = computed(() => {
-  if (!claudeGroup.value?.buckets) return null;
-  return claudeGroup.value.buckets.find(b => b.window === 'weekly' || b.bucketId.includes('weekly')) || null;
-});
-
-// Dim a pool's 5H circle when that same pool's weekly 7D quota reaches 100%.
-const geminiWeeklyPct = computed(() =>
-  geminiWeeklyBucket.value?.remainingFraction !== undefined
-    ? Math.round((1 - geminiWeeklyBucket.value.remainingFraction) * 100)
-    : null);
-const claudeWeeklyPct = computed(() =>
-  claudeWeeklyBucket.value?.remainingFraction !== undefined
-    ? Math.round((1 - claudeWeeklyBucket.value.remainingFraction) * 100)
-    : null);
-
-const gemini5hMutedByWeekly = computed(() => geminiWeeklyPct.value !== null && geminiWeeklyPct.value >= 100);
-const claude5hMutedByWeekly = computed(() => claudeWeeklyPct.value !== null && claudeWeeklyPct.value >= 100);
-
-const MUTED_BY_WEEKLY_REASON = '7D pool full';
-
-// Backward compatibility fallbacks
-const geminiPool = computed(() => {
-  if (props.agentId !== 'antigravity' || !props.data?.models) return null;
-  return props.data.models.find(m => m.label.toLowerCase().includes('gemini'));
-});
-
-const claudeOssPool = computed(() => {
-  if (props.agentId !== 'antigravity' || !props.data?.models) return null;
-  return props.data.models.find(m => !m.label.toLowerCase().includes('gemini')) || null;
-});
-
-const gemini5hData = computed(() => {
-  const bucket = gemini5hBucket.value;
-  if (bucket) {
-    return {
-      percentage: bucket.remainingFraction !== undefined ? Math.round((1 - bucket.remainingFraction) * 100) : null,
-      resetsAt: bucket.resetTime ? Math.floor(new Date(bucket.resetTime).getTime() / 1000) : null
-    };
+function normalizeAgPoolLabel(displayName) {
+  const name = displayName || '';
+  const lower = name.toLowerCase();
+  if (lower.includes('argon')) return { key: 'argon', label: 'Argon 4' };
+  if (lower.includes('gemini')) return { key: 'gemini', label: 'Gemini' };
+  if (lower.includes('claude') || lower.includes('3p') || lower.includes('gpt')) {
+    return { key: 'claude', label: 'Claude/GPT' };
   }
-  const oldPool = geminiPool.value;
-  if (oldPool) {
-    return {
-      percentage: oldPool.remainingPercentage !== undefined ? Math.round((1 - oldPool.remainingPercentage) * 100) : null,
-      resetsAt: oldPool.resetTime ? Math.floor(new Date(oldPool.resetTime).getTime() / 1000) : null
-    };
+  return {
+    key: lower.replace(/\s+/g, '-'),
+    label: name.replace(/\s+models$/i, '').trim() || name
+  };
+}
+
+function formatCountdown(resetsAt, nowSec) {
+  if (!resetsAt) return 'N/A';
+  const diff = resetsAt - nowSec;
+  if (diff <= 0) return 'ready';
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  if (days > 0) return `${days}d${hours}h`;
+  if (hours > 0) return `${hours}h${minutes}m`;
+  return minutes > 0 ? `${minutes}m` : '<1m';
+}
+
+const agPools = computed(() => {
+  if (props.agentId !== 'antigravity') return [];
+  const groups = quotaSummaryGroups.value;
+  const now = agoNow.value;
+
+  if (groups && groups.length > 0) {
+    const rawPools = groups.map((g, idx) => {
+      const { key, label } = normalizeAgPoolLabel(g.displayName);
+      const buckets = Array.isArray(g.buckets) ? g.buckets : [];
+
+      const sortedBuckets = [...buckets].sort((a, b) => {
+        const aIs5h = (a.window === '5h' || a.bucketId?.includes('5h')) ? 0 : 1;
+        const bIs5h = (b.window === '5h' || b.bucketId?.includes('5h')) ? 0 : 1;
+        return aIs5h - bIs5h;
+      });
+
+      const weeklyB = sortedBuckets.find(b => b.window === 'weekly' || b.bucketId?.includes('weekly'));
+      const weeklyPct = weeklyB?.remainingFraction !== undefined
+        ? Math.round((1 - weeklyB.remainingFraction) * 100)
+        : null;
+      const isWeeklyExhausted = weeklyPct !== null && weeklyPct >= 100;
+
+      const windows = sortedBuckets.map(b => {
+        const is5h = b.window === '5h' || b.bucketId?.includes('5h');
+        const winLabel = is5h ? '5H' : '7D';
+        const pct = b.remainingFraction !== undefined ? Math.round((1 - b.remainingFraction) * 100) : null;
+        const resetsAt = b.resetTime ? Math.floor(new Date(b.resetTime).getTime() / 1000) : null;
+        const disabled = b.disabled === true;
+        const muted = is5h && (isWeeklyExhausted || disabled);
+        const colorClass = muted ? 'color-muted' : pctColorClass(pct);
+        const countdown = formatCountdown(resetsAt, now);
+        const resetInfo = formatResetLine(resetsAt, now);
+
+        const parts = [
+          b.displayName || `${label} ${winLabel === '5H' ? '5-Hour' : 'Weekly'} Limit`,
+          pct !== null ? `${pct}% used` : 'N/A'
+        ];
+        if (resetsAt) {
+          parts.push(`Resets in ${countdown}${resetInfo.abs ? ` (${resetInfo.abs})` : ''}`);
+        } else if (pct !== null) {
+          parts.push('Dynamic Window');
+        }
+        if (muted) {
+          parts.push(disabled ? 'Dimmed: disabled' : 'Dimmed: 7D pool full');
+        }
+
+        return {
+          key: b.bucketId || b.id || winLabel,
+          label: winLabel,
+          pct,
+          pctText: pct !== null ? `${pct}%` : 'N/A',
+          resetsAt,
+          disabled,
+          muted,
+          colorClass,
+          fillPct: Math.max(0, Math.min(100, pct || 0)),
+          resetCountdown: countdown,
+          tooltip: parts.join(' · ')
+        };
+      });
+
+      return {
+        key,
+        label,
+        originalIndex: idx,
+        windows
+      };
+    });
+
+    const POOL_PRIORITY = { gemini: 0, claude: 1, argon: 2 };
+    return rawPools.sort((a, b) => {
+      const pA = POOL_PRIORITY[a.key] !== undefined ? POOL_PRIORITY[a.key] : 100 + a.originalIndex;
+      const pB = POOL_PRIORITY[b.key] !== undefined ? POOL_PRIORITY[b.key] : 100 + b.originalIndex;
+      return pA - pB;
+    });
   }
-  return null;
+
+  if (props.data?.models && props.data.models.length > 0) {
+    const models = props.data.models;
+    const geminiModel = models.find(m => m.label?.toLowerCase().includes('gemini'));
+    const claudeModel = models.find(m => !m.label?.toLowerCase().includes('gemini'));
+    const fallbackPools = [];
+
+    const buildModelPool = (m, key, label) => {
+      if (!m) return null;
+      const pct = m.remainingPercentage !== undefined ? Math.round((1 - m.remainingPercentage) * 100) : null;
+      const resetsAt = m.resetTime ? Math.floor(new Date(m.resetTime).getTime() / 1000) : null;
+      const countdown = formatCountdown(resetsAt, now);
+      const resetInfo = formatResetLine(resetsAt, now);
+      const parts = [
+        m.label || label,
+        pct !== null ? `${pct}% used` : 'N/A'
+      ];
+      if (resetsAt) {
+        parts.push(`Resets in ${countdown}${resetInfo.abs ? ` (${resetInfo.abs})` : ''}`);
+      } else if (pct !== null) {
+        parts.push('Dynamic Window');
+      }
+
+      return {
+        key,
+        label,
+        windows: [{
+          key: `${key}-5h`,
+          label: '5H',
+          pct,
+          pctText: pct !== null ? `${pct}%` : 'N/A',
+          resetsAt,
+          disabled: false,
+          muted: false,
+          colorClass: pctColorClass(pct),
+          fillPct: Math.max(0, Math.min(100, pct || 0)),
+          resetCountdown: countdown,
+          tooltip: parts.join(' · ')
+        }]
+      };
+    };
+
+    const gPool = buildModelPool(geminiModel, 'gemini', 'Gemini');
+    if (gPool) fallbackPools.push(gPool);
+    const cPool = buildModelPool(claudeModel, 'claude', 'Claude/GPT');
+    if (cPool) fallbackPools.push(cPool);
+    return fallbackPools;
+  }
+
+  return [];
 });
 
-const claude5hData = computed(() => {
-  const bucket = claude5hBucket.value;
-  if (bucket) {
-    return {
-      percentage: bucket.remainingFraction !== undefined ? Math.round((1 - bucket.remainingFraction) * 100) : null,
-      resetsAt: bucket.resetTime ? Math.floor(new Date(bucket.resetTime).getTime() / 1000) : null
-    };
+watch(agoNow, (now, prev) => {
+  if (props.agentId !== 'antigravity' || !agPools.value) return;
+  for (const pool of agPools.value) {
+    for (const w of pool.windows) {
+      if (w.resetsAt && prev <= w.resetsAt && now > w.resetsAt) {
+        emit('retry');
+        return;
+      }
+    }
   }
-  const oldPool = claudeOssPool.value;
-  if (oldPool) {
-    return {
-      percentage: oldPool.remainingPercentage !== undefined ? Math.round((1 - oldPool.remainingPercentage) * 100) : null,
-      resetsAt: oldPool.resetTime ? Math.floor(new Date(oldPool.resetTime).getTime() / 1000) : null
-    };
-  }
-  return null;
 });
 
 // CC bar helpers
@@ -1046,73 +1104,145 @@ async function handleIconClick() {
   width: 100%;
 }
 
-.circles-row {
+/* Antigravity compact bar quota stack */
+.ag-bars-block {
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  /* Tight gap */
-  justify-content: space-between;
-  align-items: stretch;
   width: 100%;
-  padding: 2px 0;
 }
 
-/* fieldset for grouping Antigravity */
-.zone-fieldset {
-  flex: 1;
-  border: 1px dashed var(--border-strong);
-  /* Brighter dashed line */
-  border-radius: 6px;
-  padding: 4px 2px 4px 2px;
-  /* Super compact padding */
-  margin: 0;
-  min-width: 0;
-  box-sizing: border-box;
-  transition: border-color 0.2s ease;
+.ag-pool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
 }
 
-.zone-fieldset.zone-gemini {
-  border-color: var(--blue-400-edge);
+.ag-pool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  line-height: 1.1;
 }
 
-.zone-fieldset.zone-gemini:hover {
-  border-color: var(--blue-400-line);
-}
-
-.zone-fieldset.zone-gemini .zone-legend {
-  color: #93c5fd;
-}
-
-.zone-fieldset.zone-claude {
-  border-color: rgba(251, 146, 60, 0.35);
-}
-
-.zone-fieldset.zone-claude:hover {
-  border-color: rgba(251, 146, 60, 0.55);
-}
-
-.zone-fieldset.zone-claude .zone-legend {
-  color: #fdba74;
-}
-
-.zone-legend {
-  font-size: 8px;
-  font-weight: 800;
+.ag-pool-title {
+  font-size: 9.5px;
+  font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 0 4px;
-  line-height: 1;
-  margin-left: 6px;
+  letter-spacing: 0.4px;
 }
 
-.zone-content {
+.ag-pool-windows {
   display: flex;
-  justify-content: space-around;
-  align-items: flex-start;
-  gap: 2px;
+  gap: 6px;
+  width: 100%;
 }
 
-/* Skeleton loader for circles */
+.ag-win-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: default;
+}
+
+.ag-win-col.is-muted {
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
+}
+
+.ag-win-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  line-height: 1;
+}
+
+.ag-win-left {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.ag-win-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ag-pct-val {
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.ag-pct-val.color-safe {
+  color: var(--accent-green);
+}
+
+.ag-pct-val.color-warning {
+  color: var(--accent-amber);
+}
+
+.ag-pct-val.color-danger {
+  color: var(--accent-red);
+}
+
+.ag-pct-val.color-muted,
+.ag-pct-val.color-na {
+  color: var(--text-darker);
+}
+
+.ag-win-right {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ag-win-right.is-na {
+  color: var(--text-darker);
+}
+
+.ag-track {
+  width: 100%;
+  height: 4px;
+  background: var(--surface-hover);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ag-track-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.ag-track-fill.color-safe {
+  background: var(--accent-green);
+}
+
+.ag-track-fill.color-warning {
+  background: var(--accent-amber);
+}
+
+.ag-track-fill.color-danger {
+  background: var(--accent-red);
+}
+
+.ag-track-fill.color-muted {
+  background: var(--border-strong);
+}
+
+.ag-track-fill.color-na {
+  background: var(--surface-hover);
+}
+
+/* Skeleton loader for AG compact bars */
 .usage-circles-skeleton {
   display: flex;
   flex-direction: column;
@@ -1120,38 +1250,55 @@ async function handleIconClick() {
   width: 100%;
 }
 
-.skeleton-zone {
-  border-color: rgba(255, 255, 255, 0.04) !important;
-}
-
-.skeleton-circle-wrapper {
+.ag-bars-skeleton {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 4px;
+  width: 100%;
 }
 
-.skeleton-circle {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--bg-tertiary);
-  animation: usage-pulse 1.5s infinite ease-in-out;
+.ag-skeleton-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
 }
 
-.skeleton-text {
+.skeleton-pool-title {
+  width: 36px;
+  height: 8px;
   border-radius: 2px;
-  background: var(--bg-tertiary);
+  background: var(--surface-hover);
   animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
-.skeleton-text-15 {
-  width: 15px;
+.skeleton-pool-windows {
+  display: flex;
+  gap: 6px;
+  width: 100%;
 }
 
-.skeleton-text-25 {
-  width: 25px;
-  height: 6px;
+.skeleton-win-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skeleton-win-meta {
+  width: 100%;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--surface-hover);
+  animation: usage-pulse 1.5s infinite ease-in-out;
+}
+
+.skeleton-win-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-hover);
+  animation: usage-pulse 1.5s infinite ease-in-out;
 }
 
 .clickable-icon {

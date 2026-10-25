@@ -255,13 +255,6 @@
     {
       "rule": "hardcoded-visual-value",
       "file": "src/components/AgentUsage.vue",
-      "match": "#fdba74",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/AgentUsage.vue",
       "match": "rgba(147, 197, 253, 0.2)",
       "owner": "UI",
       "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
@@ -276,28 +269,7 @@
     {
       "rule": "hardcoded-visual-value",
       "file": "src/components/AgentUsage.vue",
-      "match": "rgba(251, 146, 60, 0.35)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/AgentUsage.vue",
-      "match": "rgba(251, 146, 60, 0.55)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/AgentUsage.vue",
       "match": "rgba(251, 146, 60, 0.75)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/AgentUsage.vue",
-      "match": "rgba(255, 255, 255, 0.04)",
       "owner": "UI",
       "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
     },
@@ -732,34 +704,6 @@
       "rule": "hardcoded-visual-value",
       "file": "src/components/TerminalView.vue",
       "match": "rgba(0, 210, 255, 0.25)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/UsageCircle.vue",
-      "match": "rgba(18, 18, 22, 0.95)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/UsageCircle.vue",
-      "match": "rgba(255, 255, 255, 0.15)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/UsageCircle.vue",
-      "match": "rgba(255, 255, 255, 0.22)",
-      "owner": "UI",
-      "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
-    },
-    {
-      "rule": "hardcoded-visual-value",
-      "file": "src/components/UsageCircle.vue",
-      "match": "rgba(255, 255, 255, 0.88)",
       "owner": "UI",
       "reason": "one-off literal used under 3 times and outside the snap bands of the token scale (ui.A4); a token per odd value would be noise"
     },
@@ -1527,12 +1471,6 @@
     {
       "rule": "sfc-css-resident",
       "file": "src/components/TerminalView.vue",
-      "owner": "UI",
-      "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
-    },
-    {
-      "rule": "sfc-css-resident",
-      "file": "src/components/UsageCircle.vue",
       "owner": "UI",
       "reason": "component-local scoped CSS (docs/plan/done/audit-akirule-2026-09-18.md finding 3)"
     },

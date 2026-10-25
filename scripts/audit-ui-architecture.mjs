@@ -18,7 +18,7 @@ function walk(directory) {
   const files = [];
   if (!statSync(directory).isDirectory()) return [directory];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === 'target' || entry.name === 'dist' || entry.name === '.git') continue;
+    if (entry.name === 'node_modules' || entry.name === 'target' || entry.name === 'dist' || entry.name === '.git' || entry.name === 'dev') continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...walk(path));
     else if (SOURCE_EXTENSIONS.has(extname(entry.name))) files.push(path);
