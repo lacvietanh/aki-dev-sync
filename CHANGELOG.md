@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Added
+- **Antigravity Gemini 4 Argon quota pool support**: Normalizes `gemini-argon-wtu-weekly` and `disabled` status from CLI `/usage` payloads in `antigravity_payload.rs`.
+- **Dynamic 3-way AGY statusline quota routing**: Routes `argon` models to `gemini-argon-wtu-weekly` (suppressing absent 5h bucket) in `statusline-unified.sh` alongside Gemini and 3P Claude/OSS pools.
+
+### Changed
+- **Antigravity quota UI upgraded to compact multi-pool bars**: Replaced `UsageCircle.vue` radial layout in `AgentUsage.vue` with compact data-driven pool bars across Argon 4, Gemini, and Claude/OSS pools with full 11-datum parity, per-pool 5H dimming when 7D hits 100%, and auto-retry on reset expiry via `agoNow`.
+- **Statusline Customizer note updated**: Mentions Argon alongside Gemini and Claude in `ClaudeSettingModal.vue`.
+
+### Removed
+- `src/components/UsageCircle.vue`: Retired SVG radial progress circles and associated CSS overrides from `scripts/ui-audit.config.json`.
+
 ## [1.34.0] - 2026-10-21
 
 ### Changed

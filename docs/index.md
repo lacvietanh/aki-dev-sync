@@ -91,6 +91,7 @@
 - [docs/research/push-freeze-diagnosis.md](research/push-freeze-diagnosis.md) - Static diagnosis of the reported PUSH-sync app freeze: 0 of 86 `#[tauri::command]` break the `spawn_blocking` rule, hypotheses H1-H5 with file:line verdicts, the one supported mechanism (a `sync-log` event per rsync line into an O(buffer) listener) and the 50 ms batching in `useLogs.js`, the R1 measurements that closed it, and a proposed lesson on event floods. Status: closed 2026-10-20
 
 ## Plans (Active)
+- [docs/plan/done/agy-argon4-quota-bars.md](plan/done/agy-argon4-quota-bars.md) - Support for Antigravity's Gemini 4 Argon quota pool across probe normalization, AGY statusline routing, and compact quota bar UI, retiring UsageCircle.vue cleanly.
 - [docs/plan/backlog.md](plan/backlog.md) - Open work only, snapshot of `.akidevsync/notes.json` (2026-10-20): research (session restore after relaunch, Claude Code `/usage` API), an empty runtime ledger, decisions already taken (Refresh all reloads config, `rgba()` token scale), non-blocking debt (scythe, `cargo fmt`), and what is deliberately deferred (Claude Code multi-account)
 
 ## Plans (Completed)

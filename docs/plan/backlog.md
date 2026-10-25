@@ -37,10 +37,6 @@ Không còn mục nào. Owner đã tận mắt thấy chạy đúng thì mục �
 - Code sạch `[WRAP]/[YAP]` và `cargo fmt`/`clippy --all-targets` (2026-10-20). `scythe.py --all` còn 9 `[YAP]`, toàn là code trích trong `docs/plan/done/` và `docs/research/`: bản ghi sự kiện, giữ nguyên có chủ ý.
 - `npm run audit:ui` đã xanh (2026-09-29): detector sửa xong, literal lặp thành token, phần còn lại ghi exception có owner + lý do trong `scripts/ui-audit.config.json`. Không còn nợ từ `docs/plan/done/audit-akirule-2026-09-18.md`.
 
-## Chờ owner xác nhận
-
-- `task-1787103368182` — nhiều account Claude Code: code xong (2026-10-20, ship trong 1.34.0, `docs/arch/usage-claudecode.md` § Nhiều account trên một máy). Còn lại: cài bản mới (mở app là hook v6 tự thay hook cũ trên máy này và trên host remote), chạy turn ở cả hai account rồi xem menu email trên thẻ CC có đủ hai account với số riêng. Thấy đúng thì đóng note.
-
 ## Ngoài backlog này
 
 - **Remote ingress**: code xong, plan đã vào `docs/plan/done/remote-ingress-rework.md`. Phần còn lại là cấu hình trên máy owner, không phải việc của repo: cài đặt Remote trên Mac này vẫn trỏ `https://lvamac.akitao.com`, một tên cũ không có DNS cũng không có tunnel, nên lúc này chỉ dùng được qua LAN. Hướng đã chốt nằm ở `docs/research/remote-ingress-shared-vs-separate.md`: Dev Sync dùng subdomain và tunnel riêng, không chung với tunnel `mba20` của aki-mcp-sv.

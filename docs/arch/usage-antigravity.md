@@ -1,6 +1,6 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-> updated 2026-10-19 · v1.33.0
+> updated 2026-10-25 · v1.34.0
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
@@ -19,7 +19,7 @@ This reference document explains the architecture, flow, and implementation deta
 
 The Antigravity IDE (Gemini-based desktop agent coding environment) runs a local native Language Server instance (`language_server_macos_arm`, `language_server_macos_x64`, etc.) which exposes local Connect RPC APIs. 
 
-Instead of making external network requests to Google Cloud Code APIs (which return simulated/dead data with `0%` usage), our tool queries this local server directly to fetch real-time, accurate quota metrics (such as Gemini Pool and Claude/OSS pool status).
+Instead of making external network requests to Google Cloud Code APIs (which return simulated/dead data with `0%` usage), our tool queries this local server directly to fetch real-time, accurate quota metrics across all active pools (Gemini, Gemini 4 Argon, and Claude/OSS pools).
 
 ## Flow of Action
 
@@ -84,7 +84,7 @@ sequenceDiagram
 ### 3. API Query & Standardization
 * **Sequential Queries:** Performs two Connect RPC queries one after the other with `curl`:
   * `GetUserStatus`: Fetch account information such as `email`.
-  * `RetrieveUserQuotaSummary`: Fetch the 4 detailed quota metrics (5h and Weekly buckets for Gemini and Claude/GPT pools).
+  * `RetrieveUserQuotaSummary`: Fetch detailed quota metrics (5h and Weekly buckets for Gemini, Gemini 4 Argon weekly pool, and Claude/OSS pools, including disabled status flag).
 * **Output Mapping:** Merges the results into a standardized JSON snapshot containing:
   * `email`: User account email.
   * `models`: Autocomplete/model metadata (for backward compatibility).
@@ -189,6 +189,5 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **UI Components:**
   - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Pure N-Tier slot layout; owns no usage state.
   - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
-  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component featuring dynamic IDE/CLI icon and cyan/purple live dots.
-  - [UsageCircle.vue](../../src/components/UsageCircle.vue) - SVG radial progress circle used for Gemini and Claude/GPT quota buckets.
+  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini 4 Argon, Gemini, Claude/OSS) with per-pool 5H dimming when 7D hits 100%, disabled state tracking, and dynamic IDE/CLI icon.
   - [RefreshRing.vue](../../src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).
