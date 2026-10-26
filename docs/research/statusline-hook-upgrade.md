@@ -46,7 +46,7 @@ Hook `aki-rlcache v6` (một file quota cho mỗi account) đã có trong `[Unre
 **No action:**
 - *Linux*: không đổi code. Mọi lệnh hook cần đều có sẵn trên hai host đã kiểm, và không có login thì không có quota, giống v4.
 - *Windows*: không hỗ trợ. App chỉ ship macOS, script remote là POSIX `sh` qua SSH.
-- *Thư mục cấu hình khác*: đưa vào backlog #9. Chưa có ai dùng thư mục khác với login có quota.
+- *Thư mục cấu hình khác*: đưa vào backlog #9 (đóng 2026-10-27, xem `docs/plan/backlog.md`). Chưa có ai dùng thư mục khác với login có quota.
 
 **Phản biện đã chạy.** Steelman cho "chỉ khi mở modal": ghi file lúc mở app là ghi vào máy người khác mà người dùng không hề bấm gì. Trả lời: chỉ ghi lại file do chính app sinh ra, kèm backup có timestamp và toast nêu tên host; không cài mới thứ gì. Pre-mortem: hook bị sửa tay sau lần Apply sẽ bị ghi đè lúc mở app. Mức chấp nhận được: Apply vốn đã như vậy, có backup, và toast báo ngay. Tác động thứ hai: mở app thêm một lần SSH probe cho mỗi host, chạy nền, có giới hạn thời gian và khoá theo host; một host không vào được (`bien`) chỉ bị đánh dấu unreachable.
 
