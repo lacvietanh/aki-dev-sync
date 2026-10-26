@@ -55,7 +55,7 @@ Most likely failure modes to check first, since this Rust wasn't run through `ca
 - Consider moving `docs/plan/done/statusline-customizer.md` to `docs/plan/done/` once you've confirmed the feature works - its "việc cần làm" list is now implemented.
 - `npm run build:app` (or `build:rmad`/`build:rmud`) for the actual release build + GitHub Release, per your usual flow - nothing in this session touched the release scripts.
 
-Closed 2026-10-27 without re-run: shipped in 1.10.0 (CHANGELOG.md:840); L54 share/aki-statusLine was removed in 1.18.0 (CHANGELOG.md:580), L55 statusline-customizer.md already sits in done/, L56 superseded by 1.35.0 (CHANGELOG.md:6).
+Closed 2026-10-27 without re-run: shipped in 1.10.0 (CHANGELOG.md:840); L54 share/aki-statusLine was removed in 1.18.0 (CHANGELOG.md:580), L55 statusline-customizer.md already sits in done/, L56 was the 1.10.0 release step, done there (CHANGELOG.md:840).
 
 ## Known scope cuts (deliberate, not bugs)
 
