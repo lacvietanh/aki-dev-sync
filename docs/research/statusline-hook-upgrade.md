@@ -1,7 +1,5 @@
 # Nâng hook statusline đã cài khi app đổi định dạng cache
 
-Status: amended 2026-10-27 (see `## Amendments`).
-
 ## Start time
 
 2026-10-20, sau khi owner thấy thẻ Claude Code chỉ hiện `lacvietanh@gmail.com` dù vừa chạy hai phiên `claude` và `cl-tom` bằng hai account khác nhau.
@@ -55,7 +53,3 @@ Hook `aki-rlcache v6` (một file quota cho mỗi account) đã có trong `[Unre
 **Reopen if:** owner mất chỉnh sửa tay trên một hook sau khi mở app; toast "Could not write" hiện mỗi lần mở app với cùng một host; có host Linux đăng nhập OAuth nhiều account mà menu email chỉ hiện một account; có người dùng thật chạy Claude Code với thư mục cấu hình khác.
 
 **Cross-references:** `docs/feat/statusline-customizer.md` § Rollout to hosts, `docs/arch/usage-claudecode.md` § Nhiều account trên một máy, `CHANGELOG.md` `[1.34.0]` › Fixed.
-
-## Amendments
-
-- 2026-10-27 · § Decision, *Thư mục cấu hình khác*: kiểm lại trên Mac, `~/.claude-prx` và `~/.claude-prx-dev` đi qua gateway (`ANTHROPIC_BASE_URL`, không email nên không có quota), `~/.claude-9rt` không có login OAuth và không có phiên nào từ 2026-09-14. Vẫn chưa thư mục khác nào giữ login có quota; backlog #9 đã bỏ, điều kiện mở lại là dòng Reopen if ở trên.
