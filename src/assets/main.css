@@ -511,13 +511,6 @@ a {
   animation: skeleton-pulse 1.5s infinite;
 }
 
-.project-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-light);
-  margin-bottom: 4px;
-}
-
 .project-paths {
   display: flex;
   flex-direction: column;

@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Added
+- **Usage bars show where "now" sits in the window**: every Claude Code and Antigravity bar with a known reset carries a thin marker at the elapsed share of its 5-Hour or 7-Day window (one `elapsedRatio` helper in `AgentUsage.vue`, one overlay on the existing track, no new row). Fill past the marker means the quota is burning faster than the window passes. Buckets of unknown length and passed resets draw no marker. Hovering a bar names the elapsed share and says when the fill is ahead of it.
+
+### Changed
+- **Production-site link sits right of the project title**: the globe link no longer drops onto the line above the copy-local-path icon, so a click aimed at the path icon cannot open the site. Its hover now shows the URL it opens.
+
 ## [1.35.0] - 2026-10-26
 
 ### Added

@@ -96,7 +96,7 @@
               <div class="project-text-col">
                 <div class="project-name">
                   <span class="project-name-label">{{ projectDisplayName(p) }}</span>
-                  <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" title="Open Production Site" class="project-prod-link">
+                  <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" :title="`Open ${p.production_url}`" aria-label="Open production site" class="project-prod-link">
                     <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i>
                   </a>
                 </div>
@@ -1475,12 +1475,24 @@ html.fx-glass .grid-header {
 .project-drag-icon-fallback {
   font-size: 16px;
 }
+.project-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
 .project-name-label {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .project-prod-link {
+  flex-shrink: 0;
   color: var(--accent-cyan);
   font-size: 11px;
   text-decoration: none;

@@ -1,6 +1,6 @@
 # Kiến trúc: theo dõi quota Claude Code
 
-> updated 2026-10-21 · v1.34.0
+> updated 2026-10-27 · v1.35.0
 
 > Mô tả hệ thống **đang chạy**. Vì sao nó thành ra thế này, và những gì đã thử rồi bỏ: `docs/research/claudecode-usage-FINAL.md` - **đọc §5 (nhật ký) trước khi đề xuất thay đổi**.
 
@@ -179,7 +179,8 @@ Trễ phát hiện reset ≤ một chu kỳ poll (mặc định 30s). Đã cân 
 - **Hai đặc thù chỉ áp cho `five_hour`, giữ nguyên**:
   1. `five_hour.resets_at == seven_day.resets_at` → coi mốc reset của **5h** là không rõ (`null`), rơi về trạng thái `N/A` sẵn có. Claude báo trùng khi cửa sổ 5h nằm im ở 0%.
   2. Pool weekly **dùng chung** (`seven_day`) đạt 100% → làm mờ thanh 5h (bỏ khỏi thang màu, giữ tooltip). Bucket theo model **không** làm mờ ai và **không** bị ai làm mờ: chúng là pool riêng, một tuần Opus cạn không nói gì về cửa sổ 5h. Đây là quy tắc bán kính vụ nổ trong `CLAUDE.md`.
-- **Không thêm DOM nào ngoài cấu trúc thanh sẵn có** (`.cc-bar-label` + `.cc-progress-track`) - với dữ liệu 2 bucket hôm nay, card render y hệt trước refactor (nguyên tắc Extreme Narrow).
+- **Không thêm DOM nào ngoài cấu trúc thanh sẵn có** (`.cc-bar-label` + `.cc-progress-track`, cộng vạch mốc nằm trong track) - với dữ liệu 2 bucket hôm nay, card render y hệt trước refactor (nguyên tắc Extreme Narrow).
+- **Vạch mốc "đã trôi qua bao nhiêu"** là một `.usage-marker` tuyệt đối nằm trong `.cc-progress-track`, không thêm hàng. Vị trí = `elapsedRatio(resetsAt, WINDOW_SEC, now)` trong `AgentUsage.vue`, dùng chung với thanh pool của Antigravity: `five_hour*` → 5h, `seven_day*` → 7d, bucket lạ → không vẽ; `resets_at` thiếu hoặc đã qua → không vẽ (app refetch ngay khi qua mốc reset, nên không cần lăn mốc tuần như aiobox). Phần fill vượt qua vạch = đang dùng nhanh hơn tốc độ cửa sổ trôi. Hover thanh hiện "Line = now: N% of the <label> window passed".
 
 Timer dò qua mốc reset (`@retry` mỗi 60s) vẫn chỉ bám `five_hour`: đó là cửa sổ duy nhất quay vòng đủ dày để một lần refetch phía client có giá trị, và cũng đúng bucket mà hợp đồng `STALE_RESET` phía script được viết theo. `usageMonitor.js` cũng vì vậy chỉ lấy `five_hour` làm mốc stale (log thì enumerate mọi bucket).
 

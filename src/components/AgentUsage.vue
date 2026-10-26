@@ -141,7 +141,7 @@
               :key="b.key"
               class="cc-usage-bar"
               :class="{ 'is-muted': b.muted }"
-              :title="b.muted ? 'Dimmed - the 7-day pool is full (100%), so this reading no longer changes anything' : null"
+              :title="b.muted ? 'Dimmed - the 7-day pool is full (100%), so this reading no longer changes anything' : (b.markerHint || null)"
             >
               <div class="cc-bar-header">
                 <span class="cc-bar-label">{{ b.label }}</span>
@@ -149,6 +149,7 @@
               </div>
               <div class="cc-progress-track">
                 <div class="cc-progress-fill" :class="b.colorClass" :style="{ width: (b.pct || 0) + '%' }"></div>
+                <div v-if="b.markerRatio != null" class="usage-marker" :style="{ left: b.markerRatio * 100 + '%' }"></div>
               </div>
               <div class="cc-reset-line" :class="{ 'is-na': !b.resetsAt }">
                 <template v-if="b.resetLine.val">
@@ -196,6 +197,7 @@
                       :class="w.colorClass"
                       :style="{ width: w.fillPct + '%' }"
                     ></div>
+                    <div v-if="w.markerRatio != null" class="usage-marker" :style="{ left: w.markerRatio * 100 + '%' }"></div>
                   </div>
                 </div>
               </div>
@@ -361,7 +363,19 @@ function agPoolKey(displayName) {
   return null;
 }
 
-function agWindow({ key, label, name, fraction, resetTime, muted = false, disabled = false }, now) {
+const WINDOW_SEC = { '5h': 5 * 3600, '7d': 7 * 86400 };
+
+// Where `nowSec` sits inside the window that ends at `resetsAt`, as 0..1; null when nothing anchors it (no reset, reset passed, or a window of unknown length).
+function elapsedRatio(resetsAt, lenSec, nowSec) {
+  if (!resetsAt || !lenSec || resetsAt <= nowSec) return null;
+  return Math.max(0, (nowSec - (resetsAt - lenSec)) / lenSec);
+}
+
+function markerHint(markerRatio, label) {
+  return markerRatio == null ? null : `Line = now: ${Math.round(markerRatio * 100)}% of the ${label} window passed`;
+}
+
+function agWindow({ key, label, name, fraction, resetTime, lenSec = null, muted = false, disabled = false }, now) {
   const pct = fraction !== undefined ? Math.round((1 - fraction) * 100) : null;
   const resetsAt = resetTime ? Math.floor(new Date(resetTime).getTime() / 1000) : null;
   const reset = formatResetLine(resetsAt, now);
@@ -369,6 +383,9 @@ function agWindow({ key, label, name, fraction, resetTime, muted = false, disabl
   if (reset.val) parts.push(`Resets in ${reset.val} (${reset.abs})`);
   else if (resetsAt) parts.push('Reset passed - refreshing');
   else if (pct !== null) parts.push('Dynamic Window');
+  const markerRatio = elapsedRatio(resetsAt, lenSec, now);
+  const hint = markerHint(markerRatio, label);
+  if (hint) parts.push(hint);
   if (muted) parts.push(disabled ? 'Dimmed: disabled' : 'Dimmed: 7D pool full');
   return {
     key,
@@ -379,6 +396,7 @@ function agWindow({ key, label, name, fraction, resetTime, muted = false, disabl
     colorClass: muted ? 'color-muted' : pctColorClass(pct),
     fillPct: Math.max(0, Math.min(100, pct || 0)),
     resetCountdown: reset.val ?? reset.label,
+    markerRatio,
     tooltip: parts.join(' · '),
   };
 }
@@ -409,6 +427,7 @@ const agPools = computed(() => {
           name: b.displayName || `${label} ${short ? '5-Hour' : 'Weekly'} Limit`,
           fraction: b.remainingFraction,
           resetTime: b.resetTime,
+          lenSec: WINDOW_SEC[short ? '5h' : '7d'],
           muted: short && (weeklyFull || disabled),
           disabled,
         }, now);
@@ -549,6 +568,12 @@ function ccBucketRank(key) {
   return i === -1 ? CC_BUCKET_ORDER.length : i;
 }
 
+function ccWindowSec(key) {
+  if (key.startsWith('five_hour')) return WINDOW_SEC['5h'];
+  if (key.startsWith('seven_day')) return WINDOW_SEC['7d'];
+  return null;
+}
+
 const ccBuckets = computed(() => {
   const rl = props.data?.rate_limits;
   if (!rl || typeof rl !== 'object') return [];
@@ -568,14 +593,18 @@ const ccBuckets = computed(() => {
     const isFiveHour = key === 'five_hour';
     const resetsAt = isFiveHour ? cc5hResetsAt.value : (entry.resets_at ?? null);
     const muted = isFiveHour && cc5hMutedBy7d.value;
+    const markerRatio = elapsedRatio(resetsAt, ccWindowSec(key), agoNow.value);
+    const label = ccBucketLabel(key);
     return {
       key,
-      label: ccBucketLabel(key),
+      label,
       pct,
       resetsAt,
       muted,
       colorClass: muted ? 'color-muted' : pctColorClass(pct),
       resetLine: formatResetLine(resetsAt, agoNow.value),
+      markerRatio,
+      markerHint: markerHint(markerRatio, label),
     };
   });
 });
@@ -1113,6 +1142,7 @@ async function handleIconClick() {
 }
 
 .ag-track {
+  position: relative;
   width: 100%;
   height: 4px;
   background: var(--surface-hover);
@@ -1304,6 +1334,7 @@ async function handleIconClick() {
 }
 
 .cc-progress-track {
+  position: relative;
   height: 5px;
   background: var(--surface-hover);
   border-radius: 3px;
@@ -1334,6 +1365,17 @@ async function handleIconClick() {
 
 .cc-progress-fill.color-muted {
   background: rgba(255, 255, 255, 0.22);
+}
+
+/* Elapsed share of the window, drawn over the track so a bar ahead of the marker is burning faster than the window passes. */
+.usage-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-light);
+  pointer-events: none;
 }
 
 .cc-reset-line {

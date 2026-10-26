@@ -189,5 +189,5 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **UI Components:**
   - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Pure N-Tier slot layout; owns no usage state.
   - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
-  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini, Claude/GPT, Argon 4, in that order) with per-pool 5H dimming when 7D hits 100%, disabled state tracking, and dynamic IDE/CLI icon.
+  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini, Claude/GPT, Argon 4, in that order) with per-pool 5H dimming when 7D hits 100%, an elapsed-window marker on each bar with a known reset (`elapsedRatio`, details in `usage-claudecode.md` §4.1), disabled state tracking, and dynamic IDE/CLI icon.
   - [RefreshRing.vue](../../src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).
