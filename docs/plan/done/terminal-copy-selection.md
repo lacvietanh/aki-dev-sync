@@ -50,6 +50,8 @@ Static — settled by reading the diff, no runtime needed (`coding.B3`):
 - [ ] `hasTerminalFocus` has no remaining readers; both call sites use the live DOM check.
 - [ ] `npm run typecheck` — only if `package.json` actually defines it; this is JS/Vue with no type surface added, so its absence is not a gap.
 
+Closed 2026-10-27 without re-run: closed by dd708ed, owner-verified on real hardware in 1.28.1 (CHANGELOG.md:167).
+
 Runtime — one batch, on the owner's Mac, after the build (`Aki-DevSync-v1.28.1.0622-uni.dmg`, run 2026-08-20):
 - [x] **PASS.** In an SSH terminal running `claude`: select with `⌥`-drag, release, press `⌘C` → the text is in the clipboard, **whether or not the highlight survived**. Owner confirmed the clipboard has the text.
 - [x] **PASS.** Same, without Option and without a TUI (plain shell output): select, `⌘C` → clipboard has it.

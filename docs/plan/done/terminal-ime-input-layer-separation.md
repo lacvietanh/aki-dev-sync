@@ -357,3 +357,5 @@ if (inputMode === 'legacy') {
 - [ ] App shortcuts (⌘T, ⌘W, ⌘+, ⌘-): work while terminal focused
 - [ ] Companion (phone) typing: unaffected (key row + compose row unchanged)
 - [ ] Regression: font zoom, panel resize, tab switch, stack collapse
+
+Closed 2026-10-27 without re-run: superseded by docs/research/terminal-vietnamese-ime-root-cause-4.md and -5.md; owner hardware pass 2026-07-31 in -5.md:62 covered OpenKey, Chrome, Android and vim; not exercised there: Option+arrow, ⌘V paste, ⌘T/⌘W, multi-tab, zoom.

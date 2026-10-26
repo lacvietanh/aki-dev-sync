@@ -57,3 +57,5 @@ Owner follow-up clarifications:
 - [x] **B4 — Verification & Adversarial Review**:
   - [x] Run `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run audit:ui`, `npm run build`, and `scythe.py`.
   - [ ] Run Phase B verifier + drift sweep and `aki-challenger` adversarial review on the diff.
+
+Closed 2026-10-27 without re-run: closed by 52d77f3, shipped in 1.35.0 (CHANGELOG.md:6).

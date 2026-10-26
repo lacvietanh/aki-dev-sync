@@ -136,3 +136,5 @@ User Mouse Action on Terminal
 - [ ] **Test 4 (Explicit ⌘C Chord)**: Select text and press `⌘C`. Verify stashed text is copied to clipboard.
 - [ ] **Test 5 (OSC 52 Remote Copy)**: Run `printf "\033]52;c;%s\a" "$(echo -n 'hello from osc52' | base64)"` in remote shell. Verify text is copied to local macOS clipboard.
 - [ ] **Test 6 (Local Zsh Shell)**: Test drag selection and Copy-on-Select in standard local terminal tab.
+
+Closed 2026-10-27 without re-run: the select-to-copy design these tests cover was dropped by 2fbaf21 (restores ⌘C copy, drops the 1.29.0 mouse hijack).

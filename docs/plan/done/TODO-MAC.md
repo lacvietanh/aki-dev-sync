@@ -55,6 +55,8 @@ Most likely failure modes to check first, since this Rust wasn't run through `ca
 - [ ] Consider moving `docs/plan/done/statusline-customizer.md` to `docs/plan/done/` once you've confirmed the feature works - its "việc cần làm" list is now implemented.
 - [ ] `npm run build:app` (or `build:rmad`/`build:rmud`) for the actual release build + GitHub Release, per your usual flow - nothing in this session touched the release scripts.
 
+Closed 2026-10-27 without re-run: shipped in 1.10.0 (CHANGELOG.md:840); L54 share/aki-statusLine was removed in 1.18.0 (CHANGELOG.md:580), L55 statusline-customizer.md already sits in done/, L56 superseded by 1.35.0 (CHANGELOG.md:6).
+
 ## Known scope cuts (deliberate, not bugs)
 
 - Field catalog is 7 fields (+git_branch), not the full 41-key statusLine schema mentioned in the original plan doc - covers everything in the already-locked default preset. Adding a new field later is one `match` arm in `generate_statusline_script()` + one catalog entry in `default_config()` (Rust) and `defaultLocalConfig()`/`CATALOG` (Vue) - no structural change.

@@ -100,6 +100,8 @@ Phần còn lại của 2.2, đã làm:
 - [x] **Nghiệm thu trên Mac (2026-07-23):** `npm run test:statusline` → 29/29 pass trên crate thật; Apply thật (AGY → host `bien`) ra đúng statusline. Hai thiếu sót chỉ lộ khi Apply thật, đã sửa: (1) đích AGY không patch `settings.json` nên script không ai gọi; (2) probe trạng thái host chỉ biết Claude Code nên chip host không phản ánh AGY — nay mỗi CLI có tag riêng.
 - [ ] **Còn lại:** bump version + chốt mục `[Unreleased]` trong CHANGELOG khi phát hành.
 
+Closed 2026-10-27 without re-run: version bump and [Unreleased] close happened at 900d4e5 (CHANGELOG.md:6, 1.35.0).
+
 ---
 
 ## 3. Tiêu chí nghiệm thu Phase 1

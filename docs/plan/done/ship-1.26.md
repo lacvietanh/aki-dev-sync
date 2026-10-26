@@ -223,6 +223,8 @@ Grid hiện chia 2 cột theo `col-1` / `col-2`; thêm chip thứ ba cần một
 - [ ] Grid 3 chip trong dropdown không vỡ ở narrow mode (440px).
 - [ ] `savedView.width === 'ultrawide'` hiển thị đúng trạng thái active và sống sót qua lần khởi động sau khi bật **remember**.
 
+Closed 2026-10-27 without re-run: shipped in 1.26.0 (CHANGELOG.md:200, moved to done by 87a18b7); L212 reads 1.35.0 today (package.json:4, src-tauri/Cargo.toml:3).
+
 ---
 
 ## Ghi chú để lần sau khỏi lặp
