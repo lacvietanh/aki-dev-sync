@@ -2,6 +2,8 @@
 
 Status: §7 point 1 (the "narrow" keypress veto) and the first row of its exclusivity table superseded by `docs/research/terminal-vietnamese-ime-root-cause-5.md` (the jul31 double-space blocker proved that row false — `_keyPress` does not force-cancel space or uppercase A-Z). Every other part of this doc's architecture (the drain, composition stand-down, the 229 irreducible keydown claim, no vendoring, no bundled 6.x upgrade) stands unchanged.
 
+Status: amended 2026-10-27 (see `## Amendments`).
+
 Chain: follows `terminal-vietnamese-ime-root-cause-3.md` (residual auto-restore bug, three ranked candidates, a gated `classify()` patch). This doc reverses that chain's central mechanism against engine source, closes its open candidate analytically, and decides the architecture. It edits nothing in `-jul27.md`, `-2.md` or `-3.md` beyond the single `Status: superseded by` line `docs.B2` allows.
 
 ## Start time
@@ -224,3 +226,7 @@ The compose row currently renders on **every** surface, and `TerminalView.vue:73
 **Follow-up research** — none required to act. If, after the fix, direct typing still garbles, the discriminating observation is `__akiTermInput.tail(20)` around one bad syllable: whether the carrier keydown carries `keyCode 229` decides which of the two branches in the Verification residual is real, and both branches are already covered by the design, so a contradiction there would be a genuinely new finding worth a `-5`.
 
 **Cross-references** — `terminal-vietnamese-ime-root-cause-3.md` (given its `Status: superseded by` line by this round), `docs/plan/done/terminal-ime-input-layer-separation.md` (its §1 "what VS Code actually does" is corrected by §1-§3 here; its §3 built event-payload reading where its own §1 named value reading), `docs/plan/done/terminal-input-surface.md` (§5.1's VS Code framing and the compose-row work in §2/§3), `docs/feat/in-app-terminal.md` §Vietnamese input, `docs/index.md` (chain head moves to this doc), `src/composables/useTerminalInput.js` and `src/composables/useWkImeGuard.js` (both superseded by the §7 design), `docs/plan/done/backlog-jul27.md` WS-D (no longer blocked on Mac evidence).
+
+## Amendments
+
+- 2026-10-27 · § Checklist, last box (runtime confirmation on the Mac): run on real hardware by the owner on 2026-07-31, recorded in `docs/research/terminal-vietnamese-ime-root-cause-5.md` § Verification (macOS host with OpenKey, remote Chrome, remote Android/Gboard, `vim`). The box above was written before that run.

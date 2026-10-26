@@ -1,6 +1,6 @@
 # Backlog
 
-Snapshot từ `.akidevsync/notes.json` và trạng thái repo ngày 2026-10-20. Chỉ giữ việc còn mở; việc đã làm nằm trong `docs/plan/done/`, kết quả điều tra nằm trong `docs/research/`.
+Snapshot từ `.akidevsync/notes.json` và trạng thái repo ngày 2026-10-27. Chỉ giữ việc còn mở; việc đã làm nằm trong `docs/plan/done/`, kết quả điều tra nằm trong `docs/research/`.
 
 ## Đã quyết (2026-09-20, /akithink tự chạy)
 
@@ -29,8 +29,10 @@ Không còn mục nào. Owner đã tận mắt thấy chạy đúng thì mục �
 | # | Việc | Note | Bước kế tiếp |
 |---|---|---|---|
 | 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` | Research ranh giới có thể phục hồi: metadata tab, cwd, title, pin; không hứa phục hồi process nếu PTY đã chết |
-| 8 | Lấy usage thật của Claude Code qua API `/usage` (RE từ CLI), không cần probe hay phiên đang chạy | `task-1790294479640` | Debug/RE CLI để tìm API và cách xác thực; ghi kết quả vào `docs/research/`. Đối chiếu `docs/arch/usage-claudecode.md`: hiện statusLine hook là nguồn duy nhất, không có luồng active — đổi nguồn là đổi ràng buộc đó |
-| 9 | Quota cho phiên Claude Code chạy từ thư mục cấu hình khác (`CLAUDE_CONFIG_DIR=~/.claude-2`) | — | Apply chỉ nối `~/.claude/settings.json`, nên phiên từ thư mục khác không chạy hook. Chưa ai dùng kiểu này với login có quota (`docs/research/statusline-hook-upgrade.md` § Decision); làm khi có người dùng thật |
+
+Đóng, 2026-10-27:
+- **#8 usage Claude Code qua RE lệnh `/usage`** (`task-1790294479640`): bỏ. RE dẫn tới endpoint `oauth/usage`, đã gỡ 2026-07-20 vì phải giả User-Agent trên token OAuth của người dùng, no-op trên Mac và bắt mỗi lượt poll gọi mạng (`docs/research/claudecode-usage-FINAL.md` §3). Mở lại khi Anthropic công bố một API hoặc lệnh CLI có tài liệu trả phần trăm quota mà không cần giả client.
+- **#9 quota cho phiên chạy từ `CLAUDE_CONFIG_DIR` khác**: bỏ. Kiểm trên Mac: `~/.claude-prx` và `~/.claude-prx-dev` đi qua gateway (không email, không quota), `~/.claude-9rt` không có phiên nào từ 2026-09-14. Mở lại khi một login có quota chạy từ thư mục cấu hình khác (`docs/research/statusline-hook-upgrade.md` § Decision, Reopen if).
 
 ## Nợ kỹ thuật không chặn ship
 

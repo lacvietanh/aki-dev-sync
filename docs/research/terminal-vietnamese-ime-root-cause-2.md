@@ -1,4 +1,4 @@
-Status: superseded by `docs/plan/terminal-ime-input-layer-separation.md` (the delivery-shape guard v2 is replaced by the input-layer separation — `disableStdin` + app-owned textarea overlay). Root-cause analysis in this doc and `-jul27.md` stands.
+Status: superseded by `docs/plan/done/terminal-ime-input-layer-separation.md` (the delivery-shape guard v2 is replaced by the input-layer separation — `disableStdin` + app-owned textarea overlay). Root-cause analysis in this doc and `-jul27.md` stands.
 
 # Vietnamese typing in the in-app terminal — guard v1 post-mortem, delivery-shape matrix, guard v2
 
