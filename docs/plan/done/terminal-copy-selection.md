@@ -44,11 +44,11 @@ Same composable (one owner for "selection → clipboard"):
 ## 6. Verify
 
 Static — settled by reading the diff, no runtime needed (`coding.B3`):
-- [ ] No existing key handler loses an event: the `⌘C` claim is capture-phase on `term.element`, and every other claimant is checked in §2.
-- [ ] `copyText()` is reused, not reimplemented; no second clipboard code path.
-- [ ] The protocol wrapper is feature-detected and no-ops on shape mismatch; nothing throws when `_core` changes.
-- [ ] `hasTerminalFocus` has no remaining readers; both call sites use the live DOM check.
-- [ ] `npm run typecheck` — only if `package.json` actually defines it; this is JS/Vue with no type surface added, so its absence is not a gap.
+- No existing key handler loses an event: the `⌘C` claim is capture-phase on `term.element`, and every other claimant is checked in §2.
+- `copyText()` is reused, not reimplemented; no second clipboard code path.
+- The protocol wrapper is feature-detected and no-ops on shape mismatch; nothing throws when `_core` changes.
+- `hasTerminalFocus` has no remaining readers; both call sites use the live DOM check.
+- `npm run typecheck` — only if `package.json` actually defines it; this is JS/Vue with no type surface added, so its absence is not a gap.
 
 Closed 2026-10-27 without re-run: closed by dd708ed, owner-verified on real hardware in 1.28.1 (CHANGELOG.md:167).
 

@@ -34,14 +34,14 @@ guest@<host> | <cwd> | sonnet 5 med | ctx NN% x/max | 5h:NN%  7d:NN% | Nm +A/-R 
 
 ## 2. Functional checks (do these with ≥1 remote host configured, not just local)
 
-- [ ] Toggle a field off (e.g. `git_branch` stays off by default - turn it ON instead) → preview updates live.
-- [ ] Reorder two fields with the up/down chevrons → preview order changes.
-- [ ] Change a color on `cwd` or `session` (the only always-editable ones by default) → preview color changes; toggle `context`/`rate_limits`/`identity` and confirm there's **no** color picker for those (locked by design, see `field_color_editable()` in `statusline.rs`).
-- [ ] Adjust a threshold number → preview's % colors shift accordingly.
-- [ ] Check "Local" only → Apply → confirm `~/.claude/statusline-command.sh` was rewritten and `~/.claude/settings.json` gained/kept a correct `statusLine` block (diff it against whatever was there before, if anything).
-- [ ] Open a **second** terminal running Claude Code and confirm the new statusline actually renders (this needs a restart of that CC session - the plan doc's "apply" note holds: changes take effect on next CC start, not live).
-- [ ] Check a **remote host** too → Apply → confirm over ssh that `~/.claude/statusline-command.sh.aki-bak` exists (only if that host had a prior script) and the new script + settings.json patch landed correctly there too.
-- [ ] Apply a second time to the same host → confirm it does NOT re-backup (only the *first* apply per host should create `.aki-bak` - by design, so repeated Applies from the app don't clobber a backup of your actual original hand-edit).
+- Toggle a field off (e.g. `git_branch` stays off by default - turn it ON instead) → preview updates live.
+- Reorder two fields with the up/down chevrons → preview order changes.
+- Change a color on `cwd` or `session` (the only always-editable ones by default) → preview color changes; toggle `context`/`rate_limits`/`identity` and confirm there's **no** color picker for those (locked by design, see `field_color_editable()` in `statusline.rs`).
+- Adjust a threshold number → preview's % colors shift accordingly.
+- Check "Local" only → Apply → confirm `~/.claude/statusline-command.sh` was rewritten and `~/.claude/settings.json` gained/kept a correct `statusLine` block (diff it against whatever was there before, if anything).
+- Open a **second** terminal running Claude Code and confirm the new statusline actually renders (this needs a restart of that CC session - the plan doc's "apply" note holds: changes take effect on next CC start, not live).
+- Check a **remote host** too → Apply → confirm over ssh that `~/.claude/statusline-command.sh.aki-bak` exists (only if that host had a prior script) and the new script + settings.json patch landed correctly there too.
+- Apply a second time to the same host → confirm it does NOT re-backup (only the *first* apply per host should create `.aki-bak` - by design, so repeated Applies from the app don't clobber a backup of your actual original hand-edit).
 
 ## 3. If it doesn't compile
 
@@ -51,9 +51,9 @@ Most likely failure modes to check first, since this Rust wasn't run through `ca
 
 ## 4. Once verified
 
-- [ ] `git add share/ docs/plan/share-statusline.md` and commit - this was deliberately **not** committed this session (instruction was "không commit"); `share/share-statusline.md`'s own plan doc calls this out as the last step.
-- [ ] Consider moving `docs/plan/done/statusline-customizer.md` to `docs/plan/done/` once you've confirmed the feature works - its "việc cần làm" list is now implemented.
-- [ ] `npm run build:app` (or `build:rmad`/`build:rmud`) for the actual release build + GitHub Release, per your usual flow - nothing in this session touched the release scripts.
+- `git add share/ docs/plan/share-statusline.md` and commit - this was deliberately **not** committed this session (instruction was "không commit"); `share/share-statusline.md`'s own plan doc calls this out as the last step.
+- Consider moving `docs/plan/done/statusline-customizer.md` to `docs/plan/done/` once you've confirmed the feature works - its "việc cần làm" list is now implemented.
+- `npm run build:app` (or `build:rmad`/`build:rmud`) for the actual release build + GitHub Release, per your usual flow - nothing in this session touched the release scripts.
 
 Closed 2026-10-27 without re-run: shipped in 1.10.0 (CHANGELOG.md:840); L54 share/aki-statusLine was removed in 1.18.0 (CHANGELOG.md:580), L55 statusline-customizer.md already sits in done/, L56 superseded by 1.35.0 (CHANGELOG.md:6).
 

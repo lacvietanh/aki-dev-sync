@@ -207,21 +207,21 @@ Grid hiện chia 2 cột theo `col-1` / `col-2`; thêm chip thứ ba cần một
 
 **Kiểm bằng đọc / lệnh, không cần chạy app**
 
-- [ ] `grep -nE '^#{2,3} \[' CHANGELOG.md` — thứ tự version đơn điệu, không trùng, không hụt; `1.26.0` nằm trên `1.25.0`; cấp heading nhất quán.
-- [ ] Không còn bullet nào trong `[1.25.0]` mà marker của nó vắng mặt tại `7835cf3`. Cách kiểm một mục bất kỳ: `git show 7835cf3:<file> | grep <marker>`.
-- [ ] `node -p "require('./package.json').version"` và `grep -m1 '^version' src-tauri/Cargo.toml` cùng ra `1.26.0`.
-- [ ] `grep -n '"version"' src-tauri/tauri.conf.json` vẫn là `"../package.json"`.
-- [ ] `git status --short` không còn `?? docs/feat/right-dock.md`.
-- [ ] `grep -rn "ULTRAWIDE_WIDTH\|ultrawide" src/composables/useAppWindow.js src/components/AppHeader.vue` — hằng số, preset trong `VIEWS.width`, và cả 2 (hoặc 3) call site khớp tên.
-- [ ] `grep -n "⌘1\|⌘2" src/components/AppHeader.vue README.md` — rỗng nếu chọn hướng thay thế.
-- [ ] `setWidthPreset` gọi `setSize` **sau** khi đã clamp theo `waSize.width`.
-- [ ] `npm run build` (hoặc `vite build`) pass — bắt lỗi cú pháp / import thiếu.
+- `grep -nE '^#{2,3} \[' CHANGELOG.md` — thứ tự version đơn điệu, không trùng, không hụt; `1.26.0` nằm trên `1.25.0`; cấp heading nhất quán.
+- Không còn bullet nào trong `[1.25.0]` mà marker của nó vắng mặt tại `7835cf3`. Cách kiểm một mục bất kỳ: `git show 7835cf3:<file> | grep <marker>`.
+- `node -p "require('./package.json').version"` và `grep -m1 '^version' src-tauri/Cargo.toml` cùng ra `1.26.0`.
+- `grep -n '"version"' src-tauri/tauri.conf.json` vẫn là `"../package.json"`.
+- `git status --short` không còn `?? docs/feat/right-dock.md`.
+- `grep -rn "ULTRAWIDE_WIDTH\|ultrawide" src/composables/useAppWindow.js src/components/AppHeader.vue` — hằng số, preset trong `VIEWS.width`, và cả 2 (hoặc 3) call site khớp tên.
+- `grep -n "⌘1\|⌘2" src/components/AppHeader.vue README.md` — rỗng nếu chọn hướng thay thế.
+- `setWidthPreset` gọi `setSize` **sau** khi đã clamp theo `waSize.width`.
+- `npm run build` (hoặc `vite build`) pass — bắt lỗi cú pháp / import thiếu.
 
 **Cần chạy app mới kết luận được — bàn giao cho người test, không tự đánh dấu Done**
 
-- [ ] F2 trên màn hẹp hơn 1400px: cửa sổ khít work area, không tràn mép phải, chiều cao giữ nguyên.
-- [ ] Grid 3 chip trong dropdown không vỡ ở narrow mode (440px).
-- [ ] `savedView.width === 'ultrawide'` hiển thị đúng trạng thái active và sống sót qua lần khởi động sau khi bật **remember**.
+- F2 trên màn hẹp hơn 1400px: cửa sổ khít work area, không tràn mép phải, chiều cao giữ nguyên.
+- Grid 3 chip trong dropdown không vỡ ở narrow mode (440px).
+- `savedView.width === 'ultrawide'` hiển thị đúng trạng thái active và sống sót qua lần khởi động sau khi bật **remember**.
 
 Closed 2026-10-27 without re-run: shipped in 1.26.0 (CHANGELOG.md:200, moved to done by 87a18b7); L212 reads 1.35.0 today (package.json:4, src-tauri/Cargo.toml:3).
 

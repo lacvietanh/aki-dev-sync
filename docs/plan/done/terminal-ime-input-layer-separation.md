@@ -341,21 +341,21 @@ if (inputMode === 'legacy') {
 
 ## 8. Verification checklist
 
-- [ ] English typing: fast and slow, no dropped or doubled characters
-- [ ] Backspace, Enter, Escape, Tab: correct behavior
-- [ ] Ctrl+C (SIGINT): interrupts running process
-- [ ] Ctrl+D (EOF): exits shell
-- [ ] Arrow keys: navigate history and cursor
-- [ ] Home/End: line navigation
-- [ ] Paste (⌘V): text pasted correctly, bracketed
-- [ ] Copy (⌘C with selection): copies to clipboard
-- [ ] Vietnamese with OpenKey: `tieengs vieejt as` → correct output, fast and slow
-- [ ] Vietnamese with macOS built-in IME: compose works, commit correct
-- [ ] `localStorage['aki-input-mode']='legacy'` → old guard still works
-- [ ] `window.__akiTermInput.status()` → diagnostic API functional
-- [ ] Multiple tabs: typing in tab A doesn't affect tab B
-- [ ] App shortcuts (⌘T, ⌘W, ⌘+, ⌘-): work while terminal focused
-- [ ] Companion (phone) typing: unaffected (key row + compose row unchanged)
-- [ ] Regression: font zoom, panel resize, tab switch, stack collapse
+- English typing: fast and slow, no dropped or doubled characters
+- Backspace, Enter, Escape, Tab: correct behavior
+- Ctrl+C (SIGINT): interrupts running process
+- Ctrl+D (EOF): exits shell
+- Arrow keys: navigate history and cursor
+- Home/End: line navigation
+- Paste (⌘V): text pasted correctly, bracketed
+- Copy (⌘C with selection): copies to clipboard
+- Vietnamese with OpenKey: `tieengs vieejt as` → correct output, fast and slow
+- Vietnamese with macOS built-in IME: compose works, commit correct
+- `localStorage['aki-input-mode']='legacy'` → old guard still works
+- `window.__akiTermInput.status()` → diagnostic API functional
+- Multiple tabs: typing in tab A doesn't affect tab B
+- App shortcuts (⌘T, ⌘W, ⌘+, ⌘-): work while terminal focused
+- Companion (phone) typing: unaffected (key row + compose row unchanged)
+- Regression: font zoom, panel resize, tab switch, stack collapse
 
 Closed 2026-10-27 without re-run: superseded by docs/research/terminal-vietnamese-ime-root-cause-4.md and -5.md; owner hardware pass 2026-07-31 in -5.md:62 covered OpenKey, Chrome, Android and vim; not exercised there: Option+arrow, ⌘V paste, ⌘T/⌘W, multi-tab, zoom.

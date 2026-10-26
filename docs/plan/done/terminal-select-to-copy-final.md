@@ -130,11 +130,11 @@ User Mouse Action on Terminal
 - [x] `npm run build` green (11.1s), no new warnings attributable to this file.
 
 ### Runtime Test Matrix (macOS + SSH)
-- [ ] **Test 1 (SSH Claude Code — Normal Drag)**: Connect to remote host over SSH running `claude`. Drag mouse over terminal text without pressing `Option`. Verify selection highlights during drag, and on mouseup text is automatically in macOS clipboard (test by pressing `⌘V` in text editor).
-- [ ] **Test 2 (SSH Claude Code — Click Passthrough)**: Click interactive elements in Claude Code without dragging. Verify click is sent to TUI and existing macOS clipboard contents are NOT altered.
-- [ ] **Test 3 (Option-Drag Legacy Muscle Memory)**: Hold `Option` and drag. Verify selection and auto-copy work as expected.
-- [ ] **Test 4 (Explicit ⌘C Chord)**: Select text and press `⌘C`. Verify stashed text is copied to clipboard.
-- [ ] **Test 5 (OSC 52 Remote Copy)**: Run `printf "\033]52;c;%s\a" "$(echo -n 'hello from osc52' | base64)"` in remote shell. Verify text is copied to local macOS clipboard.
-- [ ] **Test 6 (Local Zsh Shell)**: Test drag selection and Copy-on-Select in standard local terminal tab.
+- **Test 1 (SSH Claude Code — Normal Drag)**: Connect to remote host over SSH running `claude`. Drag mouse over terminal text without pressing `Option`. Verify selection highlights during drag, and on mouseup text is automatically in macOS clipboard (test by pressing `⌘V` in text editor).
+- **Test 2 (SSH Claude Code — Click Passthrough)**: Click interactive elements in Claude Code without dragging. Verify click is sent to TUI and existing macOS clipboard contents are NOT altered.
+- **Test 3 (Option-Drag Legacy Muscle Memory)**: Hold `Option` and drag. Verify selection and auto-copy work as expected.
+- **Test 4 (Explicit ⌘C Chord)**: Select text and press `⌘C`. Verify stashed text is copied to clipboard.
+- **Test 5 (OSC 52 Remote Copy)**: Run `printf "\033]52;c;%s\a" "$(echo -n 'hello from osc52' | base64)"` in remote shell. Verify text is copied to local macOS clipboard.
+- **Test 6 (Local Zsh Shell)**: Test drag selection and Copy-on-Select in standard local terminal tab.
 
 Closed 2026-10-27 without re-run: the select-to-copy design these tests cover was dropped by 2fbaf21 (restores ⌘C copy, drops the 1.29.0 mouse hijack).

@@ -98,7 +98,7 @@ Phần còn lại của 2.2, đã làm:
 - [x] Fixture payload thật (spec §8.4-8.6) chạy qua bộ test tạm trên máy remote: 60 check, all pass — từng toggle, từng màu, từng độ dài cắt, zebra/separate, thứ tự khối, ladder, rlcache v4.
 - [x] **Bộ test thay hẳn việc tick từng ô rồi Apply rồi soi file bằng tay:** `npm run test:statusline` (= `cargo test` trên crate thật, toàn bộ nằm trong `#[cfg(test)]` của `statusline.rs`, không file phụ). Phủ **cả 18 công tắc**, có guard: thêm gate vào template mà quên test là fail. Xem `docs/research/statusline-generator-test-suite.md`. Lần chạy đầu bắt 1 bug thật: `.model` dạng string làm chết cả chương trình jq → statusline trắng trơn (đã sửa + dồn 4 chỗ lặp biểu thức chọn quota pool về một mối). Hiện 26/26 pass.
 - [x] **Nghiệm thu trên Mac (2026-07-23):** `npm run test:statusline` → 29/29 pass trên crate thật; Apply thật (AGY → host `bien`) ra đúng statusline. Hai thiếu sót chỉ lộ khi Apply thật, đã sửa: (1) đích AGY không patch `settings.json` nên script không ai gọi; (2) probe trạng thái host chỉ biết Claude Code nên chip host không phản ánh AGY — nay mỗi CLI có tag riêng.
-- [ ] **Còn lại:** bump version + chốt mục `[Unreleased]` trong CHANGELOG khi phát hành.
+- **Còn lại:** bump version + chốt mục `[Unreleased]` trong CHANGELOG khi phát hành.
 
 Closed 2026-10-27 without re-run: version bump and [Unreleased] close happened at 900d4e5 (CHANGELOG.md:6, 1.35.0).
 
