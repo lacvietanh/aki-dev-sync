@@ -75,13 +75,20 @@ const dropdown = () => `
 </div>`
 
 // AgentUsageSection.vue → AgentUsageSlot.vue → AgentUsage.vue
+const WINDOW_SEC = { '5H': 18000, '5-HOUR': 18000, '7D': 604800, '7-DAY': 604800 }
+const UNIT_SEC = { d: 86400, h: 3600, m: 60 }
+// AgentUsage.vue's elapsedRatio, read from the countdown text: the line sits at the share of the window already passed; no countdown, no line.
+const usageMarker = (label, countdown) => {
+  const left = [...countdown.matchAll(/(\d+)([dhm])/g)].reduce((sum, [, n, unit]) => sum + n * UNIT_SEC[unit], 0)
+  return left ? `<div class="usage-marker" style="left:${(1 - left / WINDOW_SEC[label]) * 100}%"></div>` : ''
+}
 const agPoolCard = (p) => `
 <div class="ag-pool-card">
   <div class="ag-pool-header"><span class="ag-pool-title">${p.label}</span></div>
   <div class="ag-pool-windows">${each(p.windows, (w) => `
     <div class="ag-win-col${w.muted ? ' is-muted' : ''}">
       <div class="ag-win-meta"><div class="ag-win-left"><span class="ag-win-tag">${w.label}</span><span class="ag-pct-val ${pctClass(w.pct, w.muted)}">${w.pct}%</span></div><div class="ag-win-right${w.val === 'N/A' ? ' is-na' : ''}"><span class="ag-time-val">${w.val}</span></div></div>
-      <div class="ag-track"><div class="ag-track-fill ${pctClass(w.pct, w.muted)}" style="width:${w.pct}%"></div></div>
+      <div class="ag-track"><div class="ag-track-fill ${pctClass(w.pct, w.muted)}" style="width:${w.pct}%"></div>${usageMarker(w.label, w.val)}</div>
     </div>`)}</div>
 </div>`
 const slotTab = (active, inner) => `<button class="slot-tab${active ? ' is-active' : ''}">${inner}</button>`
@@ -96,7 +103,7 @@ const usageSlot = (s) => {
   const body = cc
     ? `<div class="cc-bars-block">${each(s.bars, (b) => `
         <div class="cc-usage-bar"><div class="cc-bar-header"><span class="cc-bar-label">${b.label}</span><span class="cc-bar-pct ${pctClass(b.pct)}">${b.pct}%</span></div>
-          <div class="cc-progress-track"><div class="cc-progress-fill ${pctClass(b.pct)}" style="width:${b.pct}%"></div></div>
+          <div class="cc-progress-track"><div class="cc-progress-fill ${pctClass(b.pct)}" style="width:${b.pct}%"></div>${usageMarker(b.label, b.val)}</div>
           <div class="cc-reset-line"><span class="time-label">Reset </span><span class="time-val">${b.val}</span><span class="time-abs"> (${b.abs})</span></div></div>`)}</div>`
     : `<div class="ag-bars-block">${each(s.pools, agPoolCard)}</div>`
   return `
@@ -124,9 +131,9 @@ const projectRow = (p) => {
   return `
 <div class="grid-row" data-project="${p.name}">
   <div class="grid-row-cell col-project-info"><div class="project-info-row">
-    <div class="project-icon-col"><div class="project-drag-handle icon-glow"><i class="${p.icon} project-drag-icon-fallback" style="color:${p.color}"></i></div><i class="fa-solid fa-power-off src-power is-on"></i></div>
+    <div class="project-icon-col"><div class="project-drag-handle icon-glow"><i class="${p.icon} project-drag-icon-fallback" style="color:${p.color}"></i></div>${p.url ? '<a class="cell-badge cell-badge-top project-prod-link"><i class="fa-solid fa-globe"></i></a>' : ''}<i class="fa-solid fa-power-off src-power is-on"></i></div>
     <div class="project-text-col">
-      <div class="project-name"><span class="project-name-label">${p.name}</span>${p.url ? '<a class="project-prod-link"><i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i></a>' : ''}</div>
+      <div class="project-name">${p.name}</div>
       <div class="project-paths">
         <span class="path-local"><i class="fa-solid text-cyan mr-1 fa-laptop-code"></i> ${p.local}</span>
         <span class="path-remote"><i class="fa-solid text-amber mr-1 fa-cloud"></i><select class="host-select-mini host-select-mini--wide"><option>${p.host}</option></select><span>:${p.remote}</span></span>
