@@ -88,18 +88,14 @@
                   <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="project-drag-img" draggable="false" @error="failedIcons[p.id] = true" />
                   <i v-else class="fa-solid fa-folder-open text-cyan project-drag-icon-fallback"></i>
                 </div>
+                <a v-if="p.production_url" href="#" @click.prevent.stop="openUrl(p.production_url)" :title="`Open web ${p.production_url}`" :aria-label="`Open web ${p.production_url}`" class="cell-badge cell-badge-top project-prod-link"><i class="fa-solid fa-globe"></i></a>
                 <i class="fa-solid fa-power-off src-power" :class="[p.disabled ? 'is-off' : 'is-on', { 'is-locked': projectRuntime[p.id]?.syncing }]"
                    :title="p.disabled ? 'Background sync/git checks OFF - click to enable' : 'Background sync/git checks ON - click to disable'"
                    @click.stop="!projectRuntime[p.id]?.syncing && setProjectDisabled(p.id, !p.disabled)"></i>
               </div>
 
               <div class="project-text-col">
-                <div class="project-name">
-                  <span class="project-name-label">{{ projectDisplayName(p) }}</span>
-                  <a v-if="p.production_url" href="#" @click.prevent="openUrl(p.production_url)" :title="`Open ${p.production_url}`" aria-label="Open production site" class="project-prod-link">
-                    <i class="fa-solid fa-globe"></i><i class="fa-solid fa-arrow-up-right-from-square project-prod-icon"></i>
-                  </a>
-                </div>
+                <div class="project-name" :title="projectDisplayName(p)">{{ projectDisplayName(p) }}</div>
                 <div class="project-paths">
                   <!-- u-select-text: allow manual copying of project paths. -->
                   <span class="path-local u-select-text" :title="p.local_path"><i class="fa-solid text-cyan mr-1" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-laptop-code'" :title="copiedPathKey === `local-${p.id}` ? 'Copied' : 'Copy local path'" @click.stop="copyLocalPath(p)"></i> {{ p.local_path }}</span>
@@ -1061,6 +1057,7 @@ html.fx-glass .grid-header {
 }
 
 .project-icon-col {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1070,6 +1067,7 @@ html.fx-glass .grid-header {
 /* Drag handle style */
 .project-drag-handle {
   position: relative;
+  isolation: isolate;
   width: 28px;
   height: 28px;
   display: flex;
@@ -1476,32 +1474,32 @@ html.fx-glass .grid-header {
   font-size: 16px;
 }
 .project-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   min-width: 0;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-light);
   margin-bottom: 4px;
-}
-.project-name-label {
-  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Production-site link rides the project icon's corner (shared .cell-badge geometry) so the name keeps the whole column. */
 .project-prod-link {
-  flex-shrink: 0;
-  color: var(--accent-cyan);
-  font-size: 11px;
-  text-decoration: none;
+  top: -5px;
+  right: -3px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  padding: 0;
+  background: var(--surface-deep);
+  color: var(--accent-cyan);
+  text-decoration: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
-.project-prod-icon {
-  font-size: 9px;
+.project-prod-link:hover {
+  color: var(--text-light);
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 6px var(--accent-cyan-glow);
 }
 
 /* Popup classes */

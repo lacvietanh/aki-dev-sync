@@ -13,7 +13,7 @@
           <input type="text" v-model="editingProject.name" />
         </div>
         <div class="form-group full-width">
-          <label>Production URL <i class="fa-solid fa-circle-info help-icon" title="Used by the web icon button next to the project name to open the production site in a browser"></i></label>
+          <label>Production URL <i class="fa-solid fa-circle-info help-icon" title="Used by the web badge on the project icon to open the production site in a browser"></i></label>
           <input type="text" v-model="editingProject.production_url" placeholder="https://..." />
         </div>
       </div>
