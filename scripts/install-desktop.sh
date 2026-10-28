@@ -108,7 +108,8 @@ sleep 0.5
 rm -rf "$DEST"
 ditto "$APP_SRC" "$DEST"
 xattr -cr "$DEST" 2>/dev/null || true
-[ -z "$was_running" ] || open "$DEST" || true
+# `open` hands this shell's env to the app; npm's must not outlive the build (UNIDOC Tauri STANDARD §1.3).
+[ -z "$was_running" ] || (unset INIT_CWD NODE $(compgen -e | grep '^npm_'); open "$DEST") || true
 
 {
   echo "installed: $DEST"
