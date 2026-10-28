@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process'
 import { injectIntoDmg } from './inject-dmg-file.js'
 
 const BRAND_SLUG = 'Aki-DevSync'
-// Every DMG carries the installer and its readme, the release one included; FRIEND=1 only renames it so it is never taken for a release artifact.
+// Every DMG carries RUN BETA.command and README.png, the release one included; FRIEND=1 only renames it so it is never taken for a release artifact.
 const FRIEND = process.env.FRIEND === '1'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -39,13 +39,13 @@ function renameNative(dmgDir, nativeName, arch) {
   const { windowSize, appPosition, applicationFolderPosition } = tauriConf.bundle.macOS.dmg
   const centerX = Math.round(windowSize.width / 2)
   injectIntoDmg(to, [
-    { src: path.join(appRoot, 'scripts/installer/READ ME.txt'), at: [centerX, 70] },
-    { src: path.join(appRoot, `scripts/installer/Install ${productName}.command`), at: [centerX, 288] },
+    { src: path.join(appRoot, 'scripts/installer/README.png'), at: [centerX, 70] },
+    { src: path.join(appRoot, 'scripts/installer/RUN BETA.command'), at: [centerX, 288] },
   ], [
     { name: `${productName}.app`, at: [appPosition.x, appPosition.y] },
     { name: 'Applications', at: [applicationFolderPosition.x, applicationFolderPosition.y] },
   ])
-  console.log('Injected: installer + readme')
+  console.log('Injected: RUN BETA + README.png')
   reveal(to)
   return true
 }

@@ -95,7 +95,7 @@ The parts I'm quietly proud of - the clever bits that make the boring stuff "jus
 ## 📦 Install (macOS)
 
 1. Download the latest `.dmg` from the [**Releases**](https://github.com/lacvietanh/aki-dev-sync/releases) page (`Aki-DevSync-vX.X.X.BUILD-arm.dmg` for Apple Silicon, `-uni.dmg` for Intel + Apple Silicon).
-2. Open the `.dmg` and double-click **`Install Aki Dev Sync.command`** below the app icon - it creates a self-signed `Aki Dev Sync Dev` certificate in your login keychain (first time only), signs the app with it, copies it to `Applications` and launches it. Signing with the same certificate every time keeps the folder permissions you granted across updates. If macOS blocks the file, `READ ME.txt` above the icons shows the way past it. Releases up to 1.32.0 carry the older `Install (double-click + password).command` instead, which signs ad-hoc.
+2. Open the `.dmg` and double-click **`RUN BETA`** below the app icon - it creates a self-signed `Aki Dev Sync Dev` certificate in your login keychain (first time only), signs the app with it, copies it to `Applications` and launches it. Signing with the same certificate every time keeps the folder permissions you granted across updates. If macOS blocks the file, `README.png` above the icons shows the way past it (System Settings, Privacy & Security, Open Anyway). Releases 1.33.0 to 1.36.0 name it `Install Aki Dev Sync.command`; releases up to 1.32.0 carry the older `Install (double-click + password).command` instead, which signs ad-hoc.
 
 **Requirements:** `rsync` and `ssh` available on your `PATH` (preinstalled on macOS), plus an SSH host you can reach.
 

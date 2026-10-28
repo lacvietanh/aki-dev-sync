@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- Source of scripts/installer/README.png: dev/html-render/render.sh installer-readme.html 1280 440 scripts/installer/README.png -->
+<html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1280px; height: 440px; background: #fff; font-family: -apple-system, "Helvetica Neue", sans-serif; color: #1c2333; display: flex; align-items: center; justify-content: center; gap: 26px; }
+  .step { position: relative; width: 220px; height: 392px; background: #f0f2f8; border-radius: 16px; display: flex; flex-direction: column; align-items: center; padding: 70px 12px 0; text-align: center; }
+  .step + .step::before { content: ""; position: absolute; left: -21px; top: 190px; border: 9px solid transparent; border-left: 14px solid #6b7280; }
+  .num { position: absolute; left: 12px; top: 12px; width: 36px; height: 36px; border-radius: 50%; background: #2f6bff; color: #fff; font-weight: 700; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+  .art { height: 130px; display: flex; align-items: center; justify-content: center; }
+  h2 { margin-top: 40px; font-size: 22px; font-weight: 700; }
+  .green { color: #1f9d55; }
+  p { margin-top: 10px; font-size: 15px; line-height: 1.45; color: #5b6475; }
+  .disk { width: 124px; height: 96px; border-radius: 12px; background: #c9d0e3; display: flex; align-items: center; justify-content: center; }
+  .disk i { width: 60px; height: 60px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .disk i::after { content: ""; width: 16px; height: 16px; border-radius: 50%; background: #c9d0e3; }
+  .cap { font-size: 13px; color: #5b6475; font-weight: 600; margin-top: 6px; }
+  .file { position: relative; width: 92px; height: 124px; background: #fff; border: 1px solid #8a93a6; clip-path: polygon(0 0, 74% 0, 100% 20%, 100% 100%, 0 100%); display: flex; align-items: center; justify-content: center; }
+  .file b { background: #1f9d55; color: #fff; font-size: 13px; padding: 4px 6px; line-height: 1.15; }
+  .click { position: absolute; right: -14px; bottom: -14px; width: 38px; height: 38px; border: 3px solid #2f6bff; border-radius: 50%; }
+  .win { width: 160px; border: 1px solid #c9d0e3; border-radius: 8px; background: #fff; overflow: hidden; }
+  .win .bar { height: 20px; background: #e3e7f0; }
+  .win .t { font-size: 13px; font-weight: 600; color: #5b6475; margin: 8px 0; }
+  .win .btn { margin: 0 auto 14px; width: 112px; padding: 8px 0; border-radius: 8px; background: #2f6bff; color: #fff; font-size: 13px; font-weight: 700; }
+  .icon { position: relative; }
+  .icon img { width: 108px; height: 108px; }
+  .ok { position: absolute; right: -10px; bottom: -6px; width: 42px; height: 42px; border-radius: 50%; background: #1f9d55; color: #fff; font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 3px solid #f0f2f8; }
+  .loop { width: 104px; height: 104px; border: 9px solid #2f6bff; border-top-color: transparent; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; line-height: 1.2; transform: rotate(-30deg); }
+  .loop span { transform: rotate(30deg); }
+</style></head><body>
+  <div class="step"><div class="num">1</div><div class="art"><div><div class="disk"><i></i></div><div class="cap">.dmg</div></div></div><h2>Open the .dmg</h2></div>
+  <div class="step"><div class="num">2</div><div class="art"><div style="position:relative"><div class="file"><b>RUN<br>BETA</b></div><span class="click"></span></div></div><h2>Double-click<br><span class="green">RUN BETA</span></h2></div>
+  <div class="step"><div class="num">3</div><div class="art"><div class="win"><div class="bar"></div><div class="t">Privacy &amp; Security</div><div class="btn">Open Anyway</div></div></div><h2>Blocked?</h2><p>System Settings, Privacy &amp; Security, Open Anyway, then double-click again</p></div>
+  <div class="step"><div class="num">4</div><div class="art"><div class="icon"><img src="../../src-tauri/icons/128x128@2x.png"><span class="ok">✓</span></div></div><h2>Aki Dev Sync opens</h2><p>Allow folder access once</p></div>
+  <div class="step"><div class="num">5</div><div class="art"><div class="loop"><span>new<br>.dmg</span></div></div><h2>Every update</h2><p>New .dmg, RUN BETA again. Permissions stay.</p></div>
+</body></html>
