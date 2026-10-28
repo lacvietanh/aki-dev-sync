@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-10-28 · v1.36.0
+> updated 2026-10-29 · v1.36.0
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
@@ -214,11 +214,12 @@ CC never reads `~/.claude.json`'s `oauthAccount` for the tag: the CLI flushes th
 
 Claude Code sends `rate_limits` only on some turns, so the script persists it to `~/.claude/rate-limits/<email>.json`, one file per account, and merges it back on turns that omit it. A session reads and writes only its own account's file, so two accounts taking turns on one machine never overwrite each other's numbers (`docs/arch/usage-claudecode.md` § Nhiều account trên một máy). AGY carries its quota in `.quota` every turn and has nothing to persist, so the whole block is skipped when `CLI=AG` - an AGY run must neither read nor write Claude Code's cache file.
 
-Three rules are **not optional** and are marked with a `DESIGN LOCK` comment in the `# aki-rlcache` block:
+Four rules are **not optional** and are marked with a `DESIGN LOCK` comment in the `# aki-rlcache` block:
 
 1. **Expiry** - an entry whose `resets_at` has already passed is dropped, not displayed. `resets_at: 0` means "unknown", not "expired", and is kept.
 2. **Account scope** - the file is named by the email `claude auth status` returns for this session, and records the `org_id` that wrote it; a file whose `org_id` differs from the session's is discarded rather than displayed (either side empty counts as a match). Email alone is not an account identity: an account deleted and recreated under the same address gets a new org and a new plan.
 3. **Staleness** - every entry the live payload sends is stamped `seen_at`; one unseen for 6 h is dropped, so a tier a plan change stopped sending ages out instead of living on through its `resets_at`.
+4. **Monotone inside a window** (v8) - sessions of one account share the file and each renders its own last payload, so an idle session still holding 83% used to overwrite another's 100% (last writer wins). An entry whose positive `resets_at` equals the cached one keeps the larger `used_percentage`; a different `resets_at` is a new window and takes the payload as sent. `resets_at: 0` is unknown, so it is never compared. Pinned by `cc_stale_session_cannot_lower_usage_inside_one_window` and `cc_new_window_replaces_the_previous_windows_usage`.
 
 Nothing surviving the gates → the file is removed. The header's `# aki-rlcache vN` is parsed by `scripts/provision-claudecode.sh` to retire an older stacked block, so it stays at the start of that comment line.
 

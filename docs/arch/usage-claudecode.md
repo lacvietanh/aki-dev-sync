@@ -1,6 +1,6 @@
 # Kiến trúc: theo dõi quota Claude Code
 
-> updated 2026-10-28 · v1.36.0
+> updated 2026-10-29 · v1.36.0
 
 > Mô tả hệ thống **đang chạy**. Vì sao nó thành ra thế này, và những gì đã thử rồi bỏ: `docs/research/claudecode-usage-FINAL.md` - **đọc §5 (nhật ký) trước khi đề xuất thay đổi**.
 
@@ -126,7 +126,9 @@ Từ v5, gate account không còn so bằng email: một account bị xoá rồi
 
 Từ v6 file quota đã được đặt tên theo email, nên gate account chỉ còn so `org_id`: một account bị xoá rồi tạo lại dưới cùng email có org mới, và số của gói cũ bị bỏ. Hai bên thiếu `org_id` thì coi là khớp.
 
-Hai điều kiện này được test khoá lại (`cc_drops_a_cached_quota_whose_reset_has_passed`, `cc_ignores_a_cache_written_by_another_account`, `cc_config_dir_slot_picks_its_own_account`, `cc_drops_a_cache_from_a_recreated_account`), cùng với việc **nhánh AGY không bao giờ đọc/ghi file cache này** (`agy_never_touches_the_claude_rate_limit_cache`). Cách chạy các test đó trên máy không build được Tauri: `docs/research/statusline-generator-test-suite.md`.
+Từ v8 merge còn một điều kiện nữa: nhiều phiên cùng account dùng chung một file và mỗi phiên vẽ payload cuối của riêng nó, nên một phiên nghỉ còn mang 83% từng ghi đè 100% của phiên đang chạy (ai ghi sau thắng). Trong cùng một cửa sổ (cùng `resets_at` dương) `used_percentage` chỉ tăng: giữ số lớn hơn; `resets_at` khác là cửa sổ mới, lấy số mới. Hai test `cc_stale_session_cannot_lower_usage_inside_one_window` và `cc_new_window_replaces_the_previous_windows_usage` khoá điều này.
+
+Hai điều kiện trên được test khoá lại (`cc_drops_a_cached_quota_whose_reset_has_passed`, `cc_ignores_a_cache_written_by_another_account`, `cc_config_dir_slot_picks_its_own_account`, `cc_drops_a_cache_from_a_recreated_account`), cùng với việc **nhánh AGY không bao giờ đọc/ghi file cache này** (`agy_never_touches_the_claude_rate_limit_cache`). Cách chạy các test đó trên máy không build được Tauri: `docs/research/statusline-generator-test-suite.md`.
 
 ### Hai gate, hai vai trò khác nhau
 
