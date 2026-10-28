@@ -20,7 +20,7 @@ case "$0" in
   *)           CLI="CC" ;;
 esac
 
-# aki-rlcache v7 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
+# aki-rlcache v8 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
 if [ "$CLI" = "CC" ]; then
   _rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   _rl_now=$(date +%s)
@@ -93,7 +93,13 @@ if [ "$CLI" = "CC" ]; then
       [ -n "$_rl_input_seen" ] && rl_input="$_rl_input_seen"
       rl_merged="$rl_input"
       if [ -n "$rl_cached" ]; then
-          _merged=$(jq -c -n --argjson old "$rl_cached" --argjson new "$rl_input" '$old * $new' 2>/dev/null)
+          # Sessions of one account share this file and each carries its own last payload: inside one window (same positive resets_at) usage only grows, so a stale session never lowers the reading.
+          _merged=$(jq -c -n --argjson old "$rl_cached" --argjson new "$rl_input" '
+            $old * $new | with_entries(
+              .key as $k
+              | if (($old[$k] | type) == "object") and (($new[$k] | type) == "object") and (($new[$k].resets_at // 0) > 0) and ($old[$k].resets_at == $new[$k].resets_at)
+                then (([$old[$k].used_percentage, $new[$k].used_percentage] | map(numbers) | max) as $top | if $top == null then . else .value.used_percentage = $top end)
+                else . end)' 2>/dev/null)
           [ -n "$_merged" ] && rl_merged="$_merged"
       fi
   fi

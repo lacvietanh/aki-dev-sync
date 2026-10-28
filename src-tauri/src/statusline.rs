@@ -1094,6 +1094,45 @@ mod tests {
         );
     }
 
+    /// Renders `payload_pct` over a cache holding 100% for `cached_reset`, the payload's window ending at `payload_reset`; returns the line and the rewritten cache.
+    fn render_stale_session_over_full_cache(name: &str, payload_pct: u32, cached_reset: u64, payload_reset: u64) -> (String, String) {
+        let payload = format!(
+            r#"{{"cwd":"/tmp/demo","rate_limits":{{"five_hour":{{"used_percentage":{},"resets_at":{}}}}}}}"#,
+            payload_pct, payload_reset
+        );
+        let cache = format!(
+            r#"{{"account":"me@example.com","rate_limits":{{"five_hour":{{"used_percentage":100,"resets_at":{}}}}}}}"#,
+            cached_reset
+        );
+        let (line, home) = run_script(
+            name,
+            &gen(&test_config()),
+            &payload,
+            &[
+                (".claude/auth-cache-default.json", r#"{"email":"me@example.com"}"#),
+                (".claude/rate-limits/me@example.com.json", cache.as_str()),
+            ],
+        );
+        let written = std::fs::read_to_string(home.join(".claude/rate-limits/me@example.com.json")).unwrap();
+        (plain(&line), written)
+    }
+
+    #[test]
+    fn cc_stale_session_cannot_lower_usage_inside_one_window() {
+        let reset = now_epoch() + 3600;
+        let (p, written) = render_stale_session_over_full_cache("cc_rl_monotone.sh", 83, reset, reset);
+        assert!(p.contains("100%"), "stale 83% replaced the 100% reading: {}", p);
+        assert!(written.contains(r#""used_percentage":100"#), "cache lost the 100%: {}", written);
+    }
+
+    #[test]
+    fn cc_new_window_replaces_the_previous_windows_usage() {
+        let now = now_epoch();
+        let (p, written) = render_stale_session_over_full_cache("cc_rl_new_window.sh", 3, now + 600, now + 18000);
+        assert!(p.contains("3%"), "new window still shows the old usage: {}", p);
+        assert!(written.contains(r#""used_percentage":3"#), "cache kept the old window's 100%: {}", written);
+    }
+
     fn now_epoch() -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2279,7 +2318,7 @@ mod tests {
     fn a_marker_block_edit_bumps_its_version() {
         // (marker, line that ends the block, pinned version, pinned FNV-1a of the block body after the marker line)
         let pins: [(&str, &str, u32, u64); 2] = [
-            (RLCACHE_MARKER, AGQUOTA_MARKER, 7, 0xc0d382e4746771c8),
+            (RLCACHE_MARKER, AGQUOTA_MARKER, 8, 0xa2a75017354850df),
             (AGQUOTA_MARKER, r#"if [ -n "$JSON_CWD""#, 2, 0x4afa8d9b17150a34),
         ];
         for (marker, end, pinned_version, pinned_hash) in pins {
