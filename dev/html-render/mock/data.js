@@ -10,15 +10,15 @@ window.MOCK = {
       bars: [{ label: '5-HOUR', pct: 82, val: '1h12m', abs: '14:30 Oct22' }, { label: '7-DAY', pct: 37, val: '5d2h', abs: '15:00 Oct27' }] },
     { scope: 'local', agent: 'ag', source: 'ide', plan: 'Pro', account: 'me',
       pools: [
-        { label: 'Gemini', windows: [{ label: '5H', pct: 12, val: '3h5m' }, { label: '7D', pct: 34, val: '4d6h' }] },
-        { label: 'Claude/GPT', windows: [{ label: '5H', pct: 0, val: 'N/A', muted: true }, { label: '7D', pct: 100, val: '5d11h' }] },
-        { label: 'Argon 4', windows: [{ label: '7D', pct: 18, val: '6d10h' }] },
+        { key: 'gemini', label: 'Gemini', windows: [{ label: '5H', pct: 12, val: '3h5m' }, { label: '7D', pct: 34, val: '4d6h' }] },
+        { key: 'claude', label: 'Claude/GPT', windows: [{ label: '5H', pct: 0, val: 'N/A' }, { label: '7D', pct: 100, val: '5d11h' }] },
+        { key: 'argon', label: 'Argon 4', windows: [{ label: '7D', pct: 18, val: '6d10h' }] },
       ] },
-    { scope: 'remote', host: 'gpu-box', agent: 'ag', source: 'cli', account: 'lab', ago: '13m ago',
+    { scope: 'remote', host: 'gpu-box', agent: 'ag', source: 'cli', plan: 'Pro', account: 'lab', ago: '13m ago',
       pools: [
-        { label: 'Gemini', windows: [{ label: '5H', pct: 100, val: '47m' }, { label: '7D', pct: 71, val: '2d3h' }] },
-        { label: 'Claude/GPT', windows: [{ label: '5H', pct: 23, val: '4h10m' }, { label: '7D', pct: 18, val: '5d20h' }] },
-        { label: 'Argon 4', windows: [{ label: '7D', pct: 81, val: '6d9h' }] },
+        { key: 'gemini', label: 'Gemini', windows: [{ label: '5H', pct: 100, val: '47m' }, { label: '7D', pct: 71, val: '2d3h' }] },
+        { key: 'claude', label: 'Claude/GPT', windows: [{ label: '5H', pct: 23, val: '4h10m' }, { label: '7D', pct: 18, val: '5d20h' }] },
+        { key: 'argon', label: 'Argon 4', windows: [{ label: '7D', pct: 81, val: '6d9h' }] },
       ] },
   ],
 

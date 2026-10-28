@@ -1,6 +1,6 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-> updated 2026-10-26 · v1.34.0
+> updated 2026-10-28 · v1.36.0
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 
@@ -71,10 +71,17 @@ sequenceDiagram
 * **The read:** when `ps` shows at least one `agy` session, the script runs, once per poll, `agy -p "/usage" --output-format json --log-file <mktemp>` from `/` with stdin closed. agy's changelog (1.1.11, bundled at `~/.gemini/antigravity-cli/cache/CHANGELOG.md`) documents print-mode `/usage` as answered "without starting an agent turn, spending quota, or leaving a conversation behind"; measured `total_tokens: 0`. Output: `command.data.groups[]{name, description, buckets[]{id, name, window, remaining_fraction, reset_time, description?}}` with UTC timestamps.
 * **Email:** `/usage`, `/credits`, `/config` and `/help` carry no account. agy logs `OAuth: authenticated successfully as <email>` on every start; `--log-file` points that log at a temp file the script reads and deletes. No credential file is read. A run whose log names no email emits no frame (logged by name), since the cache is keyed by email.
 * **Account semantics:** a print-mode run signs in from the on-disk account, so it reports the account new `agy` runs use. A long-running session pinned to another account in RAM (`docs/ref/antigravity-multi-account-ram-credentials.md`) is not what this frame shows; the card labels the reading with the email it really belongs to. The desktop app shares this on-disk account but its `desktop` frame reports the account its own language server holds in RAM, so after a sign-in on the CLI the two frames can name different accounts until the desktop app restarts (ref § 4).
-* **Cost and cache:** one run costs ~3-4 s wall, ~1.3 CPU-s and ~200 MB RSS (measured on the Linux dev box); 6.7 s wall on the Mac with three agy sessions running (2026-10-19), well inside the 30 s `REMOTE_SCRIPT_TIMEOUT_SECS`. The frame is cached in `${TMPDIR:-/tmp}/aki-devsync-agy-usage.<uid>` (mode 600) and reused while under 1 minute old (`find -mmin -1`), so a 30 s poll runs agy at most once a minute; a failed run writes nothing.
-* **Frame and mapping:** the script emits a normal `|||AGPROC|||` frame with `TYPE cli`, `STATUS {"email":...}` and the raw `/usage` JSON as `SUMMARY`. `quota_summary_from_cli_usage` in `antigravity_payload.rs` renames it onto the `RetrieveUserQuotaSummary` shape (`id`→`bucketId`, `name`→`displayName`, `remaining_fraction`→`remainingFraction`, `reset_time`→`resetTime`); a field agy omits stays absent, so the card never reads a null as 0 %. A `cli` frame without `command.data.groups` is dropped.
+* **Cost and cache:** one run costs ~3-4 s wall, ~1.3 CPU-s and ~200 MB RSS (measured on the Linux dev box); 6.7 s wall on the Mac with three agy sessions running (2026-10-19). A run is killed after `AGY_USAGE_BOUND_SECS` (15 s; TERM, then KILL 2 s later, since a hung agy ignores TERM while it waits on its migrations): agy can hang at its print-mode eligibility check (seen 2026-10-28), and an unbounded run used the whole 30 s `REMOTE_SCRIPT_TIMEOUT_SECS`, so the poll lost the IDE frames too and held the host lock that long. A failed run touches `<cache>.failed`, and agy is not run again while that marker is under 1 minute old. The frame is cached in `${TMPDIR:-/tmp}/aki-devsync-agy-usage.<uid>` (mode 600) and reused while under 1 minute old (`find -mmin -1`), so a 30 s poll runs agy at most once a minute; a failed run writes no frame.
+* **Frame and mapping:** the script emits a normal `|||AGPROC|||` frame with `TYPE cli`, `STATUS {"email":...}` (plus `"userTier":{"name":...}` when the statusline recorded a tier for that email, § Plan tier) and the raw `/usage` JSON as `SUMMARY`. `quota_summary_from_cli_usage` in `antigravity_payload.rs` renames it onto the `RetrieveUserQuotaSummary` shape (`id`→`bucketId`, `name`→`displayName`, `remaining_fraction`→`remainingFraction`, `reset_time`→`resetTime`); a field agy omits stays absent, so the card never reads a null as 0 %. A `cli` frame without `command.data.groups` is dropped.
 * **Binary resolution:** static `[ -x ]` candidates first (`$HOME/.local/bin/agy`, `/opt/homebrew/bin/agy`, `/usr/local/bin/agy`), then `command -v agy` (tauri.A2).
 * **Updates:** agy updates itself in the background; `~/.gemini/antigravity-cli/updater/update_status.json` read `"Already on the latest version."` on 2026-10-19 with 1.4.2 installed on both the Mac and the Linux dev box.
+
+### Plan tier
+* **Record:** `/usage` carries no tier (agy 1.4.8), but every interactive agy turn sends `plan_tier` (`"Google AI Pro"`) to the statusline on stdin. `statusline-unified.sh` (block `aki-agquota` v2) writes it to `~/.gemini/antigravity-cli/aki-plan-tier/<email>` (one line, email sanitized like `aki-rlcache`'s file name) only when the turn's tier is non-empty and changed. `agy_cli_frame()` reads that file for the email `/usage` signed in as and drops a value outside `[A-Za-z0-9._+ -]` so it cannot break the frame JSON. Tier facts per plan, and what agy sends where: `docs/ref/fact-antigravity-quota-tiers.md` § F-AG4.
+* **Never cleared:** nothing deletes or downgrades the record. Known limit: if agy omits `plan_tier` for a Free account (unverified: what agy sends for Free), a Pro to Free downgrade keeps showing Pro for CLI-only accounts until a turn reports a tier.
+* **No inference from bucket topology:** `/usage` bucket layout differs by tier (zero `5h` buckets across all groups for Free; `5h` buckets plus a separate `Gemini 4 Argon` group for Pro), but `antigravity_payload.rs` does not infer a tier from it. An inferred tier is non-null, so it would overwrite an explicit cached tier and show a guess as fact when the vendor changes the layout; the record gives CLI accounts an explicit tier instead.
+* **Hosts not yet on v2:** a host whose AGY statusline predates v2 probes as `ag_outdated`; until Apply, its `cli` frames carry no tier.
+* **Live card vs cached view:** `persist()` keeps a cached `userTier` when a new reading for that (host, email) has none (§ Per-Account Cache), which protects the cached/offline view. The live card shows the reading as fetched, so before the agy statusline is applied a CLI-only live reading shows no badge.
 
 ### 2. Port Discovery & Probing
 * **TCP Port Detection:** Runs `lsof -nP -iTCP -sTCP:LISTEN -a -p <PID>` to gather active ports listening on each target process ID (both IDE and CLI).
@@ -83,12 +90,15 @@ sequenceDiagram
 
 ### 3. API Query & Standardization
 * **Sequential Queries:** Performs two Connect RPC queries one after the other with `curl`:
-  * `GetUserStatus`: Fetch account information such as `email`.
+  * `GetUserStatus`: Fetch account information: `email`, and `userTier` as an object (`{"id":"g1-pro-tier","name":"Google AI Pro",...}`).
   * `RetrieveUserQuotaSummary`: Fetch detailed quota metrics (5h and Weekly buckets for the Gemini and Claude/GPT pools, the weekly-only Gemini 4 Argon pool, and the disabled status flag).
-* **Output Mapping:** Merges the results into a standardized JSON snapshot containing:
+* **Output Mapping:** `parse_antigravity_frames` in `antigravity_payload.rs` builds one snapshot per account:
   * `email`: User account email.
+  * `userTier`: `{ name, ... }` from `GetUserStatus` or the `cli` frame (§ Plan tier), else `null`. `AgentUsage.vue`'s `planBadge` shows only the tier word(s) of `userTier.name`: `Google`, `AI`, `Antigravity`, `Quota`, `Plan` and `Tier` are dropped (`Antigravity Starter Quota` → `Starter`, `Google AI Pro` → `Pro`).
+  * `sourceType`: `ide` | `desktop` | `cli`, the surface the frame came from.
   * `models`: Autocomplete/model metadata (for backward compatibility).
   * `quotaSummary`: Structured list of groups and buckets, including remaining fractions and reset times.
+* **One account, several surfaces:** frames are merged by email, compared case-insensitively. The first frame keeps its `sourceType` (IDE/desktop frames precede the `cli` frame); a later frame only fills a `userTier` the first lacks, or a `quotaSummary` with no groups (an IDE whose summary RPC failed). So a tier the `cli` frame took from the record, even a stale one, fills an IDE frame whose tier is null. With more than one account the primary snapshot also carries `allAccounts[]`, one entry per email.
 
 ## Signed-Out Detection & usage-flow stability (fixed 2026-07-03, 1.9.1)
 
@@ -129,14 +139,16 @@ Antigravity can switch the logged-in account on the same machine, so usage is ca
 }
 ```
 
-* **Account identity = email, nothing else (v4, 2026-07-30).** A Google account has ONE quota regardless of which local surface (IDE, CLI, desktop) is running. `sourceType` is transport metadata — it records HOW the data was collected (icon/badge), not WHICH quota it belongs to. One email = one cache entry = one quota. Two entries for the same email on the same host are the same quota: the cache and the dedup in `antigravity_payload.rs` both key on email alone.
+* **Account identity = email, nothing else (v4, 2026-07-30).** A Google account has ONE quota regardless of which local surface (IDE, CLI, desktop) is running. `sourceType` is transport metadata — it records HOW the data was collected (icon/badge), not WHICH quota it belongs to. One email = one cache entry = one quota. Two entries for the same email on the same host are the same quota: the cache and the per-email merge in `antigravity_payload.rs` (§ 3) both key on email alone.
+* **A reading without a tier is partial.** `persist()` keeps the `userTier` an account already had when a new reading for the same (host, email) has `userTier: null` (a `cli` frame from a host whose statusline has not recorded a tier yet); a reading that carries a tier replaces it. Other accounts' entries are never touched. This protects the cached/offline view only: the live card shows the reading as fetched (§ Plan tier).
 * **Why the host is in the key** (v3, 1.20.0): the same Google account is routinely signed in on the Mac and on a remote host at once. v2 keyed on `email` (with host as advisory metadata), so both machines wrote the one key — whichever polled last overwrote the other's reading. Two records that share a key cannot be told apart by metadata; only by the key. `lastActiveKeyByHost` (per-host pointer) replaced the former global `lastActiveEmail` for the same reason.
 * **Migration chain:** `aki-antigravity-usage-cache` (v1 single blob) → v2 (per-account) → v3 (`host|email:sourceType`) → v4 (`host|email`). Each step runs once on load and removes the old key. v3→v4 collapses sourceType variants keeping the freshest entry per (host, email) — no reading is lost.
 * **`sourceType` in the dropdown row** is the most-recently-observed surface — drives the icon (terminal = CLI, logo = IDE). It updates on every live fetch and is NOT used for deduplication or as a cache key.
 * **Account dropdown:** clicking the email in the AG header (`AgentUsage.vue`) opens a dropdown listing every cached account (one row per email), newest first, with its cached-ago time and a «live» dot on the active one. Selecting a non-active account pins the view (`slotViewingEmail` in `AgentUsageSlot.vue`, persisted per slot). **The pin is an email-only handle** — it matches any surface (IDE or CLI) running that account, so switching between surfaces does not strand the card on a stale cache entry. **The monitor's `data` is the full parsed payload** (including `allAccounts`); `AgentUsageSlot.vue`'s `slotAccountInfo` computed resolves the right account for display — that separation is what lets two slots show two different accounts from the same monitor.
+* **Header row:** AG and CC cards share one `.agent-header` > `.agent-name-row` (title, plan badge, account trigger and eye button, 6px gap, same narrow-mode collapse); `.agent-name` styles only the title text.
 * **Sau refactor 1.20.0** mỗi monitor là một entity riêng theo `monitorId(agentId, host)` (`usageMonitorRegistry.js`), nên mỗi `antigravity@<host>` giữ danh sách account của riêng nó.
 
-> **Contrast with Claude Code:** CC deliberately has **no** multi-account cache - exactly one account per remote host by design (see `usage-claudecode.md`). Only Antigravity uses this store.
+> **Claude Code uses the same module** under its own key `aki-claudecode-usage-cache-v1`, with the same dropdown and per-slot pin (`usage-claudecode.md` § 1).
 
 ## Dynamic N-Tier Grid Architecture (`usageTierStore.js` & `AgentUsageSection.vue`)
 
@@ -164,7 +176,6 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 
 ### Design locks (by design - do not "fix")
 
-- **CC has no multi-account cache.** One account per remote host; do not add an AG-style store to CC.
 - **The per-slot account pin IS persisted, and self-heals rather than being cleared at boot.** Each slot stores its pin under `aki-usage-slot-<id>-viewing-account` and restores it on reload (1.18.0, "Persistent slot account selection") - that is what lets a two-slot side-by-side comparison of two Antigravity accounts survive a restart. Do **not** add a boot-time unpin: the failure it would be aimed at (a pin restored onto an account that no longer exists anywhere) is already handled, scoped to the one slot, by the `slotAccountInfo.isMissing` watcher in `AgentUsageSlot.vue`, which clears only that slot's key once the first fetch settles. A pin onto an account that is merely *not live* but still cached deliberately keeps showing that account's last-known state - the whole purpose of the cache.
 - **Header shows a character-truncated email.** `truncEmail()` in `AgentUsage.vue` cắt theo **số ký tự** (12, hoặc 7 ở breakpoint narrow `window.innerWidth <= 700`) rồi thêm `…` - **không** phải lấy phần trước dấu `@`. Mục đích là giữ width header ổn định khi đổi account active/cached; the full email is shown in the dropdown rows and the tooltip. (Ghi chú design lock nằm ngay trên hàm.)
 - **AG payload always has an email.** Antigravity authenticates via Google, so a live payload always carries `email`; no empty-email guard is added in the live cache path.
@@ -189,5 +200,5 @@ The usage section uses a declarative, standardized N-Tier slot architecture:
 - **UI Components:**
   - [AgentUsageSection.vue](../../src/components/AgentUsageSection.vue) - Pure N-Tier slot layout; owns no usage state.
   - [AgentUsageSlot.vue](../../src/components/AgentUsageSlot.vue) - Independent display slot component supporting per-slot account viewing state.
-  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini, Claude/GPT, Argon 4, in that order) with per-pool 5H dimming when 7D hits 100%, an elapsed-window marker on each bar with a known reset (`elapsedRatio`, details in `usage-claudecode.md` §4.1), disabled state tracking, and dynamic IDE/CLI icon.
+  - [AgentUsage.vue](../../src/components/AgentUsage.vue) - Usage card component displaying compact multi-pool quota bars (Gemini, Claude/GPT, Argon 4, in that order) each pool card on its own faint tint (`.ag-pool--gemini|claude|argon`), the whole card greyed (`is-exhausted`) when any of its windows reaches 100%, a 5H window dimmed when its bucket is disabled, an elapsed-window marker on each bar with a known reset (`elapsedRatio`, details in `usage-claudecode.md` §4.1), disabled state tracking, and dynamic IDE/CLI icon.
   - [RefreshRing.vue](../../src/components/RefreshRing.vue) - Countdown ring on the reload button (overlay mode).

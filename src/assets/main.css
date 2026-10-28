@@ -83,6 +83,8 @@
   --accent-amber-glow: rgba(255, 140, 0, 0.35);
   --accent-amber-wash: rgba(255, 140, 0, 0.12);
   --accent-blue-wash: rgba(0, 136, 255, 0.12);
+  --accent-blue-veil: rgba(0, 136, 255, 0.05); /* veil = barely-there tint under dense text */
+  --accent-cyan-veil: rgba(0, 210, 255, 0.05);
   --accent-cyan-edge: rgba(0, 210, 255, 0.25);
   --accent-cyan-glow: rgba(0, 210, 255, 0.35);
   --accent-cyan-wash: rgba(0, 210, 255, 0.12);
@@ -105,6 +107,7 @@
   --blue-400-wash: rgba(96, 165, 250, 0.12);
   --border-strong: rgba(255, 255, 255, 0.18);
   --brand-wash: rgba(217, 119, 87, 0.12);
+  --brand-veil: rgba(217, 119, 87, 0.05);
   --shadow-ink: rgba(0, 0, 0, 0.5);
   /* Role tokens minted for values used 3+ times in the same role (ui.A4); each keeps its exact original value, and those tinted from a base color mirror it - change both together. */
   --glass-strong: rgba(10, 15, 22, 0.95); /* dark panel surface, near-opaque */

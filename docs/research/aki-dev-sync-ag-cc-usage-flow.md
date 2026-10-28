@@ -56,7 +56,7 @@ Thông qua một hệ thống nghiên cứu tự động quy mô lớn gồm **1
 
 ### 1. Đối Với Antigravity IDE (Giải Pháp P4 Tuyệt Đối Native)
 
-Giải pháp của Antigravity được hiện thực hóa thông qua tệp mã nguồn [get-antigravity-usage.js](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/get-antigravity-usage.js). 
+Giải pháp của Antigravity được hiện thực hóa thông qua tệp mã nguồn [get-antigravity-usage.js](../../scripts/get-antigravity-usage.js). 
 
 Thay vì sử dụng cách can thiệp proxy thô bạo (MITM) của các công cụ như `9router`, Aki-Dev-Sync chọn cách giao tiếp trực tiếp với Language Server của Antigravity đang chạy cục bộ thông qua **gRPC-Web/Connect-RPC**:
 
@@ -82,7 +82,7 @@ Thay vì sử dụng cách can thiệp proxy thô bạo (MITM) của các công 
 Giám sát quota của một công cụ CLI trên máy Remote là bài toán khó hơn. Aki-Dev-Sync giải quyết bằng đúng một lớp - không có lớp fallback chủ động nào chạy `claude` để "ép" dữ liệu:
 
 #### Đọc Thụ Động Không Hao Phí Token (P1 - Zero-Token Cache)
-* Ứng dụng thực hiện vá (patch) tệp tin hook dòng trạng thái của Claude Code (`~/.claude/statusline-command.sh`) thông qua script [provision-claudecode.sh](file:///Volumes/DEV/Frameworks/Tauri/Aki-Dev-Sync/scripts/provision-claudecode.sh).
+* Ứng dụng thực hiện vá (patch) tệp tin hook dòng trạng thái của Claude Code (`~/.claude/statusline-command.sh`) thông qua script [provision-claudecode.sh](../../scripts/provision-claudecode.sh).
 * Mỗi khi người dùng gõ lệnh tương tác với Claude, Claude Code sẽ đẩy dữ liệu trạng thái sử dụng vào `stdin`. Hook đã vá sẽ trích xuất cụm `.rate_limits` này và ghi đè vào tệp cache cục bộ `~/.claude/rate-limits-cache.json`.
 * Giao diện GUI chỉ cần đọc tệp cache này. Cơ chế này đạt độ ổn định tuyệt đối và hoàn toàn không tốn tài nguyên mạng.
 * **Đã từng có, đã bị gỡ bỏ:** một phiên bản trước từng chạy `claude --model haiku -p /usage` như một "Force Sync" (họ P3) khi cache đóng băng qua chu kỳ reset, cộng với một luồng gọi endpoint bán-công khai `api.anthropic.com/api/oauth/usage`. Cả hai bị xoá hẳn - không phải rút gọn - sau khi đo thật cho thấy một lượt gọi headless như vậy **chỉ trả về mốc reset, không trả phần trăm đã dùng**, và luồng đó từng gây rò rỉ tiến trình `claude` mồ côi trên một máy remote (19 phiên, 6GB RAM). Khi qua mốc reset mà chưa có lượt tương tác mới, GUI giờ giữ nguyên số liệu cũ, đánh dấu "cached" và hiện dòng chờ, thay vì cố ép một nguồn dữ liệu không tồn tại.

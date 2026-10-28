@@ -1,7 +1,6 @@
 <template>
   <div class="agent-usage-card">
-    <!-- Header shell for Antigravity and Claude Code. -->
-    <div class="agent-header" :class="{ 'claudecode-custom-header': isCc }">
+    <div class="agent-header">
       <div class="agent-title-group">
         <div class="agent-icon-wrapper" :class="isCc ? null : currentSourceType">
           <img v-if="isCc" src="/claude-icon.png" class="agent-img-icon icon-glow" alt="Claude Code" />
@@ -9,12 +8,12 @@
             v-else-if="currentSourceType === 'cli'"
             class="fa-solid fa-terminal agent-cli-icon clickable-icon"
             @click="handleIconClick"
-            title="CLI Active"
+            :title="planBadge ? 'CLI Active' : 'CLI Active - no plan badge yet: apply the agy statusline (Statusline Customizer)'"
           ></i>
           <img
-            v-else-if="currentSourceType === 'desktop' || currentSourceType === 'desktop_cli'"
+            v-else-if="currentSourceType === 'desktop'"
             src="/antigravity-app-icon.png"
-            class="agent-img-icon ag-desktop-icon clickable-icon"
+            class="agent-img-icon clickable-icon"
             alt="AG"
             @click="handleIconClick"
             title="AG Active"
@@ -28,8 +27,8 @@
             title="IDE Active"
           />
         </div>
-        <div :class="isCc ? 'agent-name-row' : 'agent-name'">
-          <span :class="isCc ? 'agent-name u-narrow-hide' : 'u-narrow-hide'">{{ displayName }}</span>
+        <div class="agent-name-row">
+          <span class="agent-name u-narrow-hide">{{ displayName }}</span>
           <span v-if="planBadge" class="agent-plan-badge" :class="isCc ? 'claude' : 'ag'">
             {{ planBadge }}
           </span>
@@ -59,7 +58,7 @@
                 <span class="ag-account-left">
                   <template v-if="!isCc">
                     <i v-if="acc.sourceType === 'cli'" class="fa-solid fa-terminal ag-account-type-icon cli" title="CLI"></i>
-                    <img v-else-if="acc.sourceType === 'desktop' || acc.sourceType === 'desktop_cli'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG" />
+                    <img v-else-if="acc.sourceType === 'desktop'" src="/antigravity-app-icon.png" class="ag-account-type-icon desktop" alt="" title="AG" />
                     <img v-else src="/antigravity-icon.png" class="ag-account-type-icon ide" alt="" title="IDE" />
                   </template>
                   <span v-if="showEmail" class="ag-account-email u-select-text">{{ acc.email }}</span>
@@ -85,7 +84,6 @@
         </div>
       </div>
 
-      <!-- Cache/age note badge and reload button. -->
       <div class="agent-status-badges">
         <span v-if="ageNote" class="cached-note" :title="ageNote.title">{{ ageNote.text }}</span>
         <button class="btn-ui-action btn-reload" @click="$emit('retry')" :disabled="loading || sourceOff" :title="sourceOff ? (locked ? 'Monitor only for native Claude - Proxy mode active' : 'Monitoring off') : loading ? 'Loading data' : 'Refresh Data'" :aria-label="loading ? 'Loading data' : 'Refresh Data'">
@@ -141,7 +139,7 @@
               :key="b.key"
               class="cc-usage-bar"
               :class="{ 'is-muted': b.muted }"
-              :title="b.muted ? 'Dimmed - the 7-day pool is full (100%), so this reading no longer changes anything' : (b.markerHint || null)"
+              :title="b.muted ? 'Dimmed: 7-day pool full' : (b.markerHint || null)"
             >
               <div class="cc-bar-header">
                 <span class="cc-bar-label">{{ b.label }}</span>
@@ -170,6 +168,7 @@
               v-for="pool in agPools"
               :key="pool.key"
               class="ag-pool-card"
+              :class="[`ag-pool--${pool.key}`, { 'is-exhausted': pool.exhausted }]"
             >
               <div class="ag-pool-header">
                 <span class="ag-pool-title">{{ pool.label }}</span>
@@ -277,7 +276,7 @@ const uiStatus = computed(() => {
     return {
       kind: 'empty',
       icon: props.agentId === 'antigravity' ? 'fa-circle-info mb-1' : 'fa-hourglass-empty mb-1',
-      text: props.agentId === 'antigravity' ? 'Not connected - open & sign in to Antigravity to monitor' : 'No data - waiting for next session',
+      text: props.agentId === 'antigravity' ? 'Not connected - sign in to Antigravity (app, IDE or agy) to monitor' : 'No data - waiting for the next Claude Code session',
     };
   }
   return { kind: 'data' };
@@ -375,31 +374,35 @@ function markerHint(markerRatio, label) {
   return markerRatio == null ? null : `Line = now: ${Math.round(markerRatio * 100)}% of the ${label} window passed`;
 }
 
-function agWindow({ key, label, name, fraction, resetTime, lenSec = null, muted = false, disabled = false }, now) {
+function agWindow({ key, label, name, fraction, resetTime, lenSec = null, disabled = false }, now) {
   const pct = fraction !== undefined ? Math.round((1 - fraction) * 100) : null;
   const resetsAt = resetTime ? Math.floor(new Date(resetTime).getTime() / 1000) : null;
   const reset = formatResetLine(resetsAt, now);
   const parts = [name, pct !== null ? `${pct}% used` : 'N/A'];
   if (reset.val) parts.push(`Resets in ${reset.val} (${reset.abs})`);
   else if (resetsAt) parts.push('Reset passed - refreshing');
-  else if (pct !== null) parts.push('Dynamic Window');
+  else if (pct !== null) parts.push('Window length varies');
   const markerRatio = elapsedRatio(resetsAt, lenSec, now);
   const hint = markerHint(markerRatio, label);
   if (hint) parts.push(hint);
-  if (muted) parts.push(disabled ? 'Dimmed: disabled' : 'Dimmed: 7D pool full');
+  if (disabled) parts.push('Dimmed: disabled');
   return {
     key,
     label,
     resetsAt,
-    muted,
+    pct,
+    muted: disabled,
     pctText: pct !== null ? `${pct}%` : 'N/A',
-    colorClass: muted ? 'color-muted' : pctColorClass(pct),
+    colorClass: disabled ? 'color-muted' : pctColorClass(pct),
     fillPct: Math.max(0, Math.min(100, pct || 0)),
     resetCountdown: reset.val ?? reset.label,
     markerRatio,
     tooltip: parts.join(' · '),
   };
 }
+
+// A pool with any window used up is spent, so the whole card greys out.
+const agPool = (key, label, rank, windows) => ({ key, label, rank, windows, exhausted: windows.some(w => w.pct >= 100) });
 
 const agPools = computed(() => {
   if (props.agentId !== 'antigravity') return [];
@@ -416,11 +419,8 @@ const agPools = computed(() => {
       const label = own ? AG_POOLS[known].label : (g.displayName || '').replace(/\s+models$/i, '').trim();
       const buckets = Array.isArray(g.buckets) ? g.buckets : [];
       const is5h = b => b.window === '5h' || !!b.bucketId?.includes('5h');
-      const weekly = buckets.find(b => b.window === 'weekly' || b.bucketId?.includes('weekly'));
-      const weeklyFull = weekly?.remainingFraction !== undefined && Math.round((1 - weekly.remainingFraction) * 100) >= 100;
       const windows = [...buckets].sort((a, b) => is5h(b) - is5h(a)).map(b => {
         const short = is5h(b);
-        const disabled = b.disabled === true;
         return agWindow({
           key: b.bucketId || b.id || (short ? '5H' : '7D'),
           label: short ? '5H' : '7D',
@@ -428,22 +428,19 @@ const agPools = computed(() => {
           fraction: b.remainingFraction,
           resetTime: b.resetTime,
           lenSec: WINDOW_SEC[short ? '5h' : '7d'],
-          muted: short && (weeklyFull || disabled),
-          disabled,
+          disabled: short && b.disabled === true,
         }, now);
       });
-      return { key: own ? known : `group-${idx}`, label, rank: own ? AG_POOLS[known].rank : 100 + idx, windows };
+      return agPool(own ? known : `group-${idx}`, label, own ? AG_POOLS[known].rank : 100 + idx, windows);
     }).sort((a, b) => a.rank - b.rank);
   }
 
   // Readings without groups (Antigravity before 2.1.1, or an older offline cache entry) carry one figure per model.
   const models = props.data?.models;
   if (!models?.length) return [];
-  const legacyPool = (m, key) => m && {
-    key,
-    label: AG_POOLS[key].label,
-    windows: [agWindow({ key: `${key}-5h`, label: '5H', name: m.label || AG_POOLS[key].label, fraction: m.remainingPercentage, resetTime: m.resetTime }, now)],
-  };
+  const legacyPool = (m, key) => m && agPool(key, AG_POOLS[key].label, AG_POOLS[key].rank, [
+    agWindow({ key: `${key}-5h`, label: '5H', name: m.label || AG_POOLS[key].label, fraction: m.remainingPercentage, resetTime: m.resetTime }, now),
+  ]);
   return [
     legacyPool(models.find(m => m.label?.toLowerCase().includes('gemini')), 'gemini'),
     legacyPool(models.find(m => !m.label?.toLowerCase().includes('gemini')), 'claude'),
@@ -667,7 +664,7 @@ const claudeTierDisplay = computed(() => {
 
 const planBadge = computed(() => (isCc.value
   ? claudeTierDisplay.value
-  : props.data?.userTier?.name?.replace(/\b(Google|AI)\b/gi, '').trim()) || '');
+  : props.data?.userTier?.name?.replace(/\b(Google|AI|Antigravity|Quota|Plan|Tier)\b/gi, '').replace(/\s+/g, ' ').trim()) || '');
 
 async function handleIconClick() {
   if (props.agentId === 'antigravity') {
@@ -700,10 +697,6 @@ async function handleIconClick() {
   align-items: center;
   width: 100%;
   margin-bottom: 2px;
-}
-
-.claudecode-custom-header {
-  margin-bottom: 4px;
 }
 
 .agent-name-row {
@@ -747,9 +740,6 @@ async function handleIconClick() {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-light);
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .agent-account {
@@ -1045,11 +1035,36 @@ async function handleIconClick() {
   width: 100%;
 }
 
+/* The tint is a background plus a same-colour 2px spread, so it reads as a padded block without moving any text. */
 .ag-pool-card {
   display: flex;
   flex-direction: column;
   gap: 2px;
   width: 100%;
+  border-radius: 3px;
+  background: var(--pool-wash, transparent);
+  box-shadow: 0 0 0 2px var(--pool-wash, transparent);
+}
+
+.ag-pool--gemini {
+  --pool-wash: var(--accent-cyan-veil);
+}
+
+.ag-pool--claude {
+  --pool-wash: var(--brand-veil);
+}
+
+.ag-pool--argon {
+  --pool-wash: var(--accent-blue-veil);
+}
+
+.ag-pool-card.is-exhausted {
+  --pool-wash: var(--surface-faint);
+}
+
+.ag-pool-card.is-exhausted > * {
+  opacity: 0.45;
+  filter: grayscale(1);
 }
 
 .ag-pool-header {

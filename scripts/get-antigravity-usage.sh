@@ -257,6 +257,8 @@ EOF_PS
 
 # ── 6. agy CLI quota (docs/arch/usage-antigravity.md § agy CLI source) ─────
 # Headless `/usage`: agy's in-process server has no --csrf_token, so its RPC answers 401; ~4 s / ~200 MB a run, hence the 1-minute cache.
+AGY_USAGE_BOUND_SECS=15
+
 resolve_agy() {
     for _c in "$HOME/.local/bin/agy" /opt/homebrew/bin/agy /usr/local/bin/agy; do
         [ -x "$_c" ] && { printf '%s' "$_c"; return 0; }
@@ -271,8 +273,18 @@ agy_cli_frame() {
         return 1
     fi
     log_file=$(mktemp "${TMPDIR:-/tmp}/aki-agy-usage.XXXXXX") || return 1
-    usage_json=$(cd / && "$agy_bin" -p "/usage" --output-format json --log-file "$log_file" </dev/null 2>/dev/null)
+    out_file=$(mktemp "${TMPDIR:-/tmp}/aki-agy-usage-out.XXXXXX") || { rm -f "$log_file"; return 1; }
+    # A hung `/usage` must not eat the whole 30 s script cap (and the IDE frames with it); output goes to a file so no agy descendant holds a pipe open.
+    (cd / && exec "$agy_bin" -p "/usage" --output-format json --log-file "$log_file" </dev/null >"$out_file" 2>/dev/null) &
+    agy_pid=$!
+    # A hung agy ignores TERM while it waits on its migrations, hence the KILL.
+    (sleep "$AGY_USAGE_BOUND_SECS" && kill "$agy_pid" && sleep 2 && kill -9 "$agy_pid") >/dev/null 2>&1 &
+    watchdog_pid=$!
+    wait "$agy_pid"
     usage_rc=$?
+    kill "$watchdog_pid" 2>/dev/null
+    usage_json=$(cat "$out_file")
+    rm -f "$out_file"
     # agy prints the account only to its log; `/usage` itself carries no email.
     email=$(sed -n 's/.*authenticated successfully as \([^[:space:]]*\).*/\1/p' "$log_file" | tail -n 1)
     rm -f "$log_file"
@@ -286,10 +298,19 @@ agy_cli_frame() {
             return 1
             ;;
     esac
+    # `/usage` has no plan tier; the AGY statusline records it per account (statusline-unified.sh, aki-agquota).
+    tier=""
+    tier_file="$HOME/.gemini/antigravity-cli/aki-plan-tier/$(printf '%s' "$email" | tr -c 'A-Za-z0-9@._+-' '_')"
+    [ -f "$tier_file" ] && IFS= read -r tier < "$tier_file"
+    case "$tier" in *[!A-Za-z0-9._+\ -]*) _log "agy plan tier record has unexpected characters - ignored"; tier="" ;; esac
     printf '|||AGPROC|||agy-cli\n'
     printf '|||TYPE|||cli\n'
     printf '|||STATUSCODE|||200\n'
-    printf '|||STATUS|||{"email":"%s"}\n' "$email"
+    if [ -n "$tier" ]; then
+        printf '|||STATUS|||{"email":"%s","userTier":{"name":"%s"}}\n' "$email" "$tier"
+    else
+        printf '|||STATUS|||{"email":"%s"}\n' "$email"
+    fi
     printf '|||SUMMARYCODE|||200\n'
     printf '|||SUMMARY|||%s\n' "$usage_json"
 }
@@ -300,10 +321,15 @@ if [ "$AGY_RUNNING" = "1" ]; then
         _log "agy /usage reused from cache (<1 min old)"
         cat "$cli_cache"
         FRAMES_EMITTED=$((FRAMES_EMITTED + 1))
+    elif [ -n "$(find "$cli_cache.failed" -mmin -1 2>/dev/null)" ]; then
+        _log "agy /usage skipped: last run failed <1 min ago"
     elif cli_frame=$(agy_cli_frame); then
         (umask 077 && printf '%s\n' "$cli_frame" > "$cli_cache.$$" && mv -f "$cli_cache.$$" "$cli_cache")
+        rm -f "$cli_cache.failed"
         printf '%s\n' "$cli_frame"
         FRAMES_EMITTED=$((FRAMES_EMITTED + 1))
+    else
+        : > "$cli_cache.failed"
     fi
 fi
 

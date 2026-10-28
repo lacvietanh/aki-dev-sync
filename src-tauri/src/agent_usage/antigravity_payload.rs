@@ -1,6 +1,5 @@
 use crate::agent_usage::probe_result::AgentUsageResponse;
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
 
 /// Parses raw framed output from `get-antigravity-usage.sh` and assembles the unified AG snapshot payload.
 pub(crate) fn parse_antigravity_frames(
@@ -14,7 +13,6 @@ pub(crate) fn parse_antigravity_frames(
 
     let chunks: Vec<&str> = raw_output.split("|||AGPROC|||").collect();
     let mut snapshots: Vec<Value> = Vec::new();
-    let mut seen_instance_keys: HashSet<String> = HashSet::new();
 
     for chunk in chunks {
         let chunk = chunk.trim();
@@ -65,10 +63,12 @@ pub(crate) fn parse_antigravity_frames(
             obj.insert("sourceType".to_string(), json!(source_type));
         }
 
-        let instance_key = email.to_string();
-        if !seen_instance_keys.contains(&instance_key) {
-            seen_instance_keys.insert(instance_key);
-            snapshots.push(snapshot);
+        match snapshots
+            .iter_mut()
+            .find(|s| s["email"].as_str().is_some_and(|e| e.trim().eq_ignore_ascii_case(email)))
+        {
+            Some(first) => fill_gaps_from(first, &snapshot),
+            None => snapshots.push(snapshot),
         }
     }
 
@@ -76,15 +76,9 @@ pub(crate) fn parse_antigravity_frames(
         return Ok(None);
     }
 
-    let final_snapshots = snapshots;
-
-    if final_snapshots.is_empty() {
-        return Ok(None);
-    }
-
-    let mut primary = final_snapshots[0].clone();
-    if final_snapshots.len() > 1 {
-        let all_accounts: Vec<Value> = final_snapshots
+    let mut primary = snapshots[0].clone();
+    if snapshots.len() > 1 {
+        let all_accounts: Vec<Value> = snapshots
             .iter()
             .map(|s| {
                 json!({
@@ -111,6 +105,21 @@ pub(crate) fn parse_antigravity_frames(
         fetched_at: now_str.clone(),
         file_modified_at: now_str,
     }))
+}
+
+/// A later frame of the same account only fills a missing tier or quota, so the first frame's source and tier stay (docs/arch/usage-antigravity.md § 3).
+fn fill_gaps_from(first: &mut Value, later: &Value) {
+    if first["userTier"].is_null() && !later["userTier"].is_null() {
+        first["userTier"] = later["userTier"].clone();
+    }
+    let has_groups = |s: &Value| {
+        s["quotaSummary"]["groups"]
+            .as_array()
+            .is_some_and(|g| !g.is_empty())
+    };
+    if !has_groups(first) && has_groups(later) {
+        first["quotaSummary"] = later["quotaSummary"].clone();
+    }
 }
 
 struct ParsedFrameChunk {
@@ -395,15 +404,91 @@ mod tests {
         let raw = r#"|||AGPROC|||1234
 |||TYPE|||ide
 |||STATUSCODE|||200
-|||STATUS|||{"userStatus":{"email":"user@example.com","userTier":"PRO","cascadeModelConfigData":{"clientModelConfigs":[{"modelOrAlias":{"model":"gemini-2.5-flash"},"label":"Gemini 2.5 Flash","quotaInfo":{"remainingFraction":0.8,"resetTime":"2026-07-29T18:00:00Z"}}]}}}
+|||STATUS|||{"userStatus":{"email":"user@example.com","userTier":{"id":"g1-pro-tier","name":"Google AI Pro"},"cascadeModelConfigData":{"clientModelConfigs":[{"modelOrAlias":{"model":"gemini-2.5-flash"},"label":"Gemini 2.5 Flash","quotaInfo":{"remainingFraction":0.8,"resetTime":"2026-07-29T18:00:00Z"}}]}}}
 |||SUMMARYCODE|||200
 |||SUMMARY|||{"response":{"groups":[]}}
 "#;
         let res = parse_antigravity_frames(raw, 1750000000).unwrap();
         assert!(res.is_some());
         let payload = res.unwrap();
-        assert!(payload.content.contains("user@example.com"));
-        assert!(payload.content.contains("gemini-2.5-flash"));
+        let v: Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["email"], "user@example.com");
+        assert_eq!(v["userTier"]["name"], "Google AI Pro");
+        assert_eq!(v["models"][0]["modelId"], "gemini-2.5-flash");
+    }
+
+    #[test]
+    fn same_account_on_two_surfaces_keeps_first_source_and_fills_its_gaps() {
+        let raw = r#"|||AGPROC|||4321
+|||TYPE|||desktop
+|||STATUSCODE|||200
+|||STATUS|||{"userStatus":{"email":"user@example.com","userTier":{"id":"g1-pro-tier","name":"Google AI Pro"}}}
+|||SUMMARYCODE|||500
+|||SUMMARY|||
+|||AGPROC|||agy-cli
+|||TYPE|||cli
+|||STATUSCODE|||200
+|||STATUS|||{"email":"user@example.com"}
+|||SUMMARYCODE|||200
+|||SUMMARY|||{"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.5}]}]}}}
+"#;
+        let payload = parse_antigravity_frames(raw, 1750000000).unwrap().unwrap();
+        let v: Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["sourceType"], "desktop");
+        assert_eq!(v["userTier"]["name"], "Google AI Pro");
+        assert_eq!(v["quotaSummary"]["groups"][0]["buckets"][0]["bucketId"], "gemini-weekly");
+        assert!(v.get("allAccounts").is_none());
+    }
+
+    #[test]
+    fn three_frames_for_one_account_keep_the_first_tier_and_source() {
+        let raw = r#"|||AGPROC|||4321
+|||TYPE|||desktop
+|||STATUSCODE|||200
+|||STATUS|||{"userStatus":{"email":"user@example.com","userTier":{"id":"g1-pro-tier","name":"Google AI Pro"}}}
+|||SUMMARYCODE|||500
+|||SUMMARY|||
+|||AGPROC|||5678
+|||TYPE|||ide
+|||STATUSCODE|||200
+|||STATUS|||{"userStatus":{"email":"user@example.com","userTier":{"id":"g1-ultra-tier","name":"Google AI Ultra"}}}
+|||SUMMARYCODE|||500
+|||SUMMARY|||
+|||AGPROC|||agy-cli
+|||TYPE|||cli
+|||STATUSCODE|||200
+|||STATUS|||{"email":"user@example.com"}
+|||SUMMARYCODE|||200
+|||SUMMARY|||{"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.5}]}]}}}
+"#;
+        let payload = parse_antigravity_frames(raw, 1750000000).unwrap().unwrap();
+        let v: Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["sourceType"], "desktop");
+        assert_eq!(v["userTier"]["name"], "Google AI Pro");
+        assert_eq!(v["quotaSummary"]["groups"][0]["buckets"][0]["bucketId"], "gemini-weekly");
+        assert!(v.get("allAccounts").is_none());
+    }
+
+    #[test]
+    fn emails_differing_only_in_case_merge_into_one_account() {
+        let raw = r#"|||AGPROC|||4321
+|||TYPE|||ide
+|||STATUSCODE|||200
+|||STATUS|||{"userStatus":{"email":"User@Example.com","userTier":{"id":"g1-pro-tier","name":"Google AI Pro"}}}
+|||SUMMARYCODE|||500
+|||SUMMARY|||
+|||AGPROC|||agy-cli
+|||TYPE|||cli
+|||STATUSCODE|||200
+|||STATUS|||{"email":"user@example.com"}
+|||SUMMARYCODE|||200
+|||SUMMARY|||{"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","remaining_fraction":0.5}]}]}}}
+"#;
+        let payload = parse_antigravity_frames(raw, 1750000000).unwrap().unwrap();
+        let v: Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["email"], "User@Example.com");
+        assert_eq!(v["sourceType"], "ide");
+        assert!(v.get("allAccounts").is_none());
     }
 
     #[test]

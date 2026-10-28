@@ -110,7 +110,9 @@ function createAccountCache(agentId) {
       const existing = store.accounts[key];
       const at = accObj.seenAt || fetchedAt;
       if (accObj.quotaSummary || !existing?.data?.quotaSummary || (at || 0) >= (existing?.fetchedAt || 0)) {
-        store.accounts[key] = { data: accObj, fetchedAt: at, host };
+        // A reading without a tier (agy `/usage` before its statusline recorded one) is partial: the tier this account already showed stays.
+        const knownTier = accObj.userTier == null ? existing?.data?.userTier : null;
+        store.accounts[key] = { data: knownTier ? { ...accObj, userTier: knownTier } : accObj, fetchedAt: at, host };
       }
     }
 

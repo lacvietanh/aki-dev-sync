@@ -83,7 +83,7 @@ const usageMarker = (label, countdown) => {
   return left ? `<div class="usage-marker" style="left:${(1 - left / WINDOW_SEC[label]) * 100}%"></div>` : ''
 }
 const agPoolCard = (p) => `
-<div class="ag-pool-card">
+<div class="ag-pool-card ag-pool--${p.key}${p.windows.some((w) => w.pct >= 100) ? ' is-exhausted' : ''}">
   <div class="ag-pool-header"><span class="ag-pool-title">${p.label}</span></div>
   <div class="ag-pool-windows">${each(p.windows, (w) => `
     <div class="ag-win-col${w.muted ? ' is-muted' : ''}">
@@ -97,9 +97,7 @@ const usageSlot = (s) => {
   const cc = s.agent === 'cc'
   const icon = cc ? `<img src="${PUB}/claude-icon.png" class="agent-img-icon icon-glow">` : s.source === 'cli' ? '<i class="fa-solid fa-terminal agent-cli-icon clickable-icon"></i>' : `<img src="${PUB}/antigravity-icon.png" class="agent-img-icon ag-ide-icon clickable-icon">`
   const account = `<span class="ag-account-wrap"><span class="agent-account ag-account-trigger"><span class="email-prefix">${s.account}</span><span class="email-blurred-fixed">••••••••</span></span></span><button class="btn-eye-inline"><i class="fa-regular fa-eye-slash"></i></button>`
-  const name = cc
-    ? `<div class="agent-name-row"><span class="agent-name u-narrow-hide">${s.name}</span><span class="agent-plan-badge claude">${s.plan}</span>${account}</div>`
-    : `<div class="agent-name"><span class="u-narrow-hide">${s.source.toUpperCase()}</span>${s.plan ? `<span class="agent-plan-badge ag">${s.plan}</span>` : ''}${account}</div>`
+  const name = `<div class="agent-name-row"><span class="agent-name u-narrow-hide">${cc ? s.name : s.source.toUpperCase()}</span>${s.plan ? `<span class="agent-plan-badge ${cc ? 'claude' : 'ag'}">${s.plan}</span>` : ''}${account}</div>`
   const body = cc
     ? `<div class="cc-bars-block">${each(s.bars, (b) => `
         <div class="cc-usage-bar"><div class="cc-bar-header"><span class="cc-bar-label">${b.label}</span><span class="cc-bar-pct ${pctClass(b.pct)}">${b.pct}%</span></div>
@@ -113,7 +111,7 @@ const usageSlot = (s) => {
     <div class="slot-tab-group">${srcTab(s, 'ag', 'antigravity-app-icon.png', 'AG')}${srcTab(s, 'cc', 'claude-icon.png', 'CC')}${s.scope === 'remote' ? `<select class="host-select-mini"><option>${s.host}</option></select>` : ''}</div>
   </div>
   <div class="agent-usage-card">
-    <div class="agent-header${cc ? ' claudecode-custom-header' : ''}">
+    <div class="agent-header">
       <div class="agent-title-group"><div class="agent-icon-wrapper${cc ? '' : ' ' + s.source}">${icon}</div>${name}</div>
       <div class="agent-status-badges">${s.ago ? `<span class="cached-note">${s.ago}</span>` : ''}<button class="btn-ui-action btn-reload">${ring(true, 'rgba(0, 210, 255, 0.6)', 0.4)}<i class="fa-solid fa-rotate-right"></i></button></div>
     </div>
