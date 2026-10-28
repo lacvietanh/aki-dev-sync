@@ -30,8 +30,9 @@ else
         sed -i.bak2 '/^# aki-rlcache v[0-9]*$/d' "$FILE"
         rm -f "${FILE}.bak" "${FILE}.bak2"
     fi
-    trap 'rm -f /tmp/patch.sh' EXIT
-    cat << 'EOF' > /tmp/patch.sh
+    PATCH_TMP=$(mktemp "${TMPDIR:-/tmp}/aki-patch.XXXXXX") || { printf '[SHELL:provision] mktemp failed - rate-limit hook not injected\n' >&2; exit 0; }
+    trap 'rm -f "$PATCH_TMP"' EXIT
+    cat << 'EOF' > "$PATCH_TMP"
 # aki-rlcache v3
 OLD_RL_CACHE='{}'
 if [ -f "$HOME/.claude/rate-limits-cache.json" ]; then
@@ -45,8 +46,8 @@ input=$(echo "$input" | jq -c --argjson old "$OLD_RL_CACHE" '
 RL_TMP="$HOME/.claude/rate-limits-cache.json.tmp.$$"
 printf '%s' "$input" > "$RL_TMP" && mv "$RL_TMP" "$HOME/.claude/rate-limits-cache.json"
 EOF
-    sed -i.bak -e '/input=$(cat)/r /tmp/patch.sh' "$FILE"
-    rm -f "${FILE}.bak"
+    sed -i.bak -e '/input=$(cat)/r '"$PATCH_TMP" "$FILE"
+    rm -f "${FILE}.bak" "$PATCH_TMP"
 fi
 # Best-effort auth caching: must always exit 0 to prevent caller retry storm on empty auth.
 AUTH_CACHE="$HOME/.claude/auth-cache.json"

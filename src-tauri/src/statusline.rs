@@ -845,7 +845,7 @@ mod tests {
     fn agy_renders_argon_quota() {
         let payload = r#"{"cwd":"/tmp/demo","account":{"email":"user-a@example.com"},"model":"Gemini 4 Argon","quota":{"gemini-weekly":{"remaining_fraction":0.8},"gemini-5h":{"remaining_fraction":0.9},"gemini-argon-wtu-weekly":{"remaining_fraction":0.4}}}"#;
         let (line, _) = run_script(
-            ".gemini/antigravity-cli/statusline.sh",
+            ".gemini/antigravity-cli/agy_argon.sh",
             &gen(&test_config()),
             payload,
             &[],
@@ -942,6 +942,18 @@ mod tests {
         files: &[(&str, &str)],
         env: &[(&str, String)],
     ) -> (String, std::path::PathBuf) {
+        run_script_aged(name, script, payload, files, env, &[])
+    }
+
+    /// `run_script_env` with fixtures back-dated before the run: `aged` is (HOME-relative path, seconds old). A fixture named `bin/claude` replaces the always-failing stub.
+    fn run_script_aged(
+        name: &str,
+        script: &str,
+        payload: &str,
+        files: &[(&str, &str)],
+        env: &[(&str, String)],
+        aged: &[(&str, u64)],
+    ) -> (String, std::path::PathBuf) {
         let home =
             std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")));
         let _ = std::fs::remove_dir_all(&home);
@@ -953,6 +965,14 @@ mod tests {
             }
             std::fs::write(&p, contents).unwrap();
         }
+        for (rel, age_secs) in aged {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(home.join(rel))
+                .unwrap()
+                .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(*age_secs))
+                .unwrap();
+        }
         let path = home.join(name);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
@@ -960,7 +980,9 @@ mod tests {
         std::fs::write(&path, script).unwrap();
         let bin = home.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("claude"), "#!/bin/sh\nexit 1\n").unwrap();
+        if !bin.join("claude").exists() {
+            std::fs::write(bin.join("claude"), "#!/bin/sh\nexit 1\n").unwrap();
+        }
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755))
@@ -2144,6 +2166,132 @@ mod tests {
                 "{}: script file not written after install",
                 alias
             );
+        }
+    }
+
+    // ---- auth-cache TTL, AGY plan-tier record, marker tripwire ---------------------------------
+
+    const AUTH_CACHE_REL: &str = ".claude/auth-cache-default.json";
+    /// A `claude` that answers `auth status` with an account other than the one any test seeds in the auth cache.
+    const CLAUDE_AUTH_STUB: &str = "#!/bin/sh\nprintf '%s' '{\"email\":\"stub-user@example.com\"}'\n";
+
+    fn render_with_auth_cache_aged(name: &str, age_secs: u64) -> (String, std::path::PathBuf) {
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"}}"#;
+        run_script_aged(
+            name,
+            &gen(&test_config()),
+            payload,
+            &[
+                (AUTH_CACHE_REL, r#"{"email":"disk-user@example.com"}"#),
+                ("bin/claude", CLAUDE_AUTH_STUB),
+            ],
+            &[],
+            &[(AUTH_CACHE_REL, age_secs)],
+        )
+    }
+
+    #[test]
+    fn cc_auth_cache_inside_its_ttl_wins_over_the_live_cli() {
+        let (line, home) = render_with_auth_cache_aged("cc_auth_fresh.sh", 0);
+        let p = plain(&line);
+        assert!(p.contains("disk"), "fresh auth cache not used: {}", p);
+        assert!(!p.contains("stub"), "live CLI consulted despite a fresh auth cache: {}", p);
+        let cached = std::fs::read_to_string(home.join(AUTH_CACHE_REL)).unwrap();
+        assert!(cached.contains("disk-user"), "fresh auth cache was rewritten: {}", cached);
+    }
+
+    #[test]
+    fn cc_auth_cache_past_its_ttl_is_replaced_by_the_live_cli() {
+        let (line, home) = render_with_auth_cache_aged("cc_auth_expired.sh", 3600);
+        let p = plain(&line);
+        assert!(p.contains("stub"), "expired auth cache still used: {}", p);
+        assert!(!p.contains("disk"), "expired auth cache leaked into the line: {}", p);
+        let cached = std::fs::read_to_string(home.join(AUTH_CACHE_REL)).unwrap();
+        assert!(cached.contains("stub-user"), "live auth status was not cached: {}", cached);
+    }
+
+    fn plan_tier_dir(home: &std::path::Path) -> std::path::PathBuf {
+        home.join(".gemini/antigravity-cli/aki-plan-tier")
+    }
+
+    #[test]
+    fn agy_records_its_plan_tier_under_the_sanitized_account() {
+        let payload = r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","email":"ag/user@example.com","plan_tier":"Google AI Pro"}"#;
+        let (_, home) = run_script(
+            ".gemini/antigravity-cli/tier_write.sh",
+            &gen(&test_config()),
+            payload,
+            &[],
+        );
+        let record = std::fs::read_to_string(plan_tier_dir(&home).join("ag_user@example.com"))
+            .expect("plan-tier record not written");
+        assert_eq!(record.lines().next(), Some("Google AI Pro"));
+    }
+
+    #[test]
+    fn agy_without_a_plan_tier_writes_no_record() {
+        for (name, payload) in [
+            (
+                ".gemini/antigravity-cli/tier_empty.sh",
+                r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","email":"ag-user@example.com","plan_tier":""}"#,
+            ),
+            (
+                ".gemini/antigravity-cli/tier_absent.sh",
+                r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","email":"ag-user@example.com"}"#,
+            ),
+        ] {
+            let (_, home) = run_script(name, &gen(&test_config()), payload, &[]);
+            assert!(!plan_tier_dir(&home).exists(), "{}: a plan-tier record was written without a tier", name);
+        }
+    }
+
+    #[test]
+    fn cc_never_writes_a_plan_tier_record() {
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"email":"cc-user@example.com","plan_tier":"Google AI Pro"}"#;
+        let (_, home) = run_script("cc_tier.sh", &gen(&test_config()), payload, &[]);
+        assert!(!plan_tier_dir(&home).exists(), "the CC path wrote an AGY plan-tier record");
+    }
+
+    /// FNV-1a 64: dependency-free and fixed forever, unlike `DefaultHasher`.
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf29ce484222325_u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100000001b3))
+    }
+
+    /// The template lines after the one starting with `marker`, up to (not including) the next line starting with `end`.
+    fn marker_block(marker: &str, end: &str) -> &'static str {
+        let mut offset = 0;
+        let mut body_start = None;
+        for line in TEMPLATE.split_inclusive('\n') {
+            if let Some(start) = body_start {
+                if line.starts_with(end) {
+                    return &TEMPLATE[start..offset];
+                }
+            } else if line.starts_with(marker) {
+                body_start = Some(offset + line.len());
+            }
+            offset += line.len();
+        }
+        panic!("no block from {:?} to {:?} in the template", marker, end)
+    }
+
+    /// Installed hosts are compared by marker version alone, so a block edit that keeps its version never reaches a host that already has it.
+    #[test]
+    fn a_marker_block_edit_bumps_its_version() {
+        // (marker, line that ends the block, pinned version, pinned FNV-1a of the block body after the marker line)
+        let pins: [(&str, &str, u32, u64); 2] = [
+            (RLCACHE_MARKER, AGQUOTA_MARKER, 7, 0xc0d382e4746771c8),
+            (AGQUOTA_MARKER, r#"if [ -n "$JSON_CWD""#, 2, 0x4afa8d9b17150a34),
+        ];
+        for (marker, end, pinned_version, pinned_hash) in pins {
+            let shipped = marker_version(TEMPLATE, marker).expect("the template carries the marker");
+            let hash = fnv1a64(marker_block(marker, end).as_bytes());
+            let verdict = match (shipped == pinned_version, hash == pinned_hash) {
+                (true, true) => continue,
+                (true, false) => "block text changed - bump the marker AND update the pinned hash",
+                (false, true) => "version alone changed - update the pinned version",
+                (false, false) => "marker bumped with the text - update the pinned version and hash",
+            };
+            panic!("{}{}: {} (shipped v{}, hash now {:#018x})", marker, shipped, verdict, shipped, hash);
         }
     }
 }

@@ -1,6 +1,6 @@
 # Kiến trúc: theo dõi quota Claude Code
 
-> updated 2026-10-27 · v1.35.0
+> updated 2026-10-28 · v1.36.0
 
 > Mô tả hệ thống **đang chạy**. Vì sao nó thành ra thế này, và những gì đã thử rồi bỏ: `docs/research/claudecode-usage-FINAL.md` - **đọc §5 (nhật ký) trước khi đề xuất thay đổi**.
 
@@ -75,7 +75,7 @@ Claude Code lưu login trong Keychain theo **chuỗi** `CLAUDE_CONFIG_DIR`: `Cla
 - **Nâng hook**: lúc mở app, mọi host có hook `aki-rlcache` cũ hơn bản app mang theo được ghi lại (`docs/feat/statusline-customizer.md` § Rollout to hosts). Hook cũ chỉ ghi một file chung, nên chưa nâng thì thẻ chỉ thấy một account.
 - **Thư mục quota luôn là `$HOME/.claude/rate-limits/`**, bất kể `CLAUDE_CONFIG_DIR`, và script đọc cũng đọc đúng chỗ đó. Phiên chạy từ thư mục khác (`~/.claude-2`) chỉ có quota khi `settings.json` của thư mục đó trỏ tới hook; Apply hiện chỉ nối `~/.claude/settings.json`.
 - **Không có email thì không có file quota.** Phiên mà `claude auth status` không trả email (API key, `ANTHROPIC_AUTH_TOKEN` qua gateway) không ghi gì; những phiên này cũng không nhận `rate_limits`, nên hook cũ cũng không có gì để ghi.
-- **Phạm vi nền tảng**: macOS đã kiểm (Keychain theo slot). Host Linux: hook chạy được (`shasum`/`sha256sum`, `stat -f`/`-c`), nhưng nhiều account OAuth trên Linux chưa kiểm vì chưa có host nào đăng nhập kiểu đó. Windows không hỗ trợ: app chỉ ship macOS, script remote là POSIX `sh` qua SSH. Bằng chứng: `docs/research/statusline-hook-upgrade.md`.
+- **Phạm vi nền tảng**: macOS đã kiểm (Keychain theo slot). Host Linux: hook chạy được (`shasum`/`sha256sum`; từ hook v7 mtime của auth-cache đọc bằng `stat -c %Y` trước rồi `stat -f %m`, vì `stat -f` của GNU thành công với đầu ra `--file-system` còn `stat` BSD từ chối `-c` sạch sẽ; hook v6 đọc theo thứ tự ngược lại nên không ghi được cache quota trên Linux), nhưng nhiều account OAuth trên Linux chưa kiểm vì chưa có host nào đăng nhập kiểu đó. Windows không hỗ trợ: app chỉ ship macOS, script remote là POSIX `sh` qua SSH. Bằng chứng: `docs/research/statusline-hook-upgrade.md`.
 
 ## 2. Local hay remote - cùng một script
 
@@ -116,7 +116,7 @@ Hành vi hiện tại: đọc số N lớn nhất trong mọi marker `# aki-rlca
 
 Khi turn của CLI đẩy ra JSON **không có** `rate_limits`, script merge nguyên vẹn cục `rate_limits` cũ từ cache vào JSON mới - **không fabricate** giá trị.
 
-Từ 1.18.0 (`aki-rlcache v4`), việc merge đó có điều kiện bắt buộc - đánh dấu `DESIGN LOCK` ngay trong script `src-tauri/src/statusline-unified.sh` (khối `# aki-rlcache v4/v5`, chỉ chạy khi `CLI=CC`; xem `docs/feat/statusline-customizer.md`):
+Từ 1.18.0 (`aki-rlcache v4`), việc merge đó có điều kiện bắt buộc - đánh dấu `DESIGN LOCK` ngay trong script `src-tauri/src/statusline-unified.sh` (khối `# aki-rlcache`, chỉ chạy khi `CLI=CC`; xem `docs/feat/statusline-customizer.md`):
 - entry đã qua `resets_at` bị **loại**, không hiển thị (`resets_at: 0` = "không rõ", vẫn giữ);
 - cache ghi kèm account đã ghi nó; cache của account khác bị bỏ, không đọc.
 

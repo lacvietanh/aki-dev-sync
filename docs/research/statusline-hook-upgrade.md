@@ -1,5 +1,7 @@
 # Nâng hook statusline đã cài khi app đổi định dạng cache
 
+Status: amended 2026-10-28
+
 ## Start time
 
 2026-10-20, sau khi owner thấy thẻ Claude Code chỉ hiện `lacvietanh@gmail.com` dù vừa chạy hai phiên `claude` và `cl-tom` bằng hai account khác nhau.
@@ -53,3 +55,7 @@ Hook `aki-rlcache v6` (một file quota cho mỗi account) đã có trong `[Unre
 **Reopen if:** owner mất chỉnh sửa tay trên một hook sau khi mở app; toast "Could not write" hiện mỗi lần mở app với cùng một host; có host Linux đăng nhập OAuth nhiều account mà menu email chỉ hiện một account; có người dùng thật chạy Claude Code với thư mục cấu hình khác.
 
 **Cross-references:** `docs/feat/statusline-customizer.md` § Rollout to hosts, `docs/arch/usage-claudecode.md` § Nhiều account trên một máy, `CHANGELOG.md` `[1.34.0]` › Fixed.
+
+## Amendments
+
+- 2026-10-28 · § Decision › No action › Linux: nhận định "không đổi code, hook chạy được trên Linux" sai. Hook v6 đọc mtime của auth-cache bằng `stat -f %m || stat -c %Y` (BSD trước); `stat -f` của GNU là `--file-system`, thành công và in một khối thông tin hệ thống file, nên phép tính tuổi cache hỏng và host Linux không bao giờ ghi file quota theo account. Sửa bằng `# aki-rlcache v7` (GNU trước: `stat -c %Y || stat -f %m`, vì BSD `stat` từ chối `-c` sạch sẽ).

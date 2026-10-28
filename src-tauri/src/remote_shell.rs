@@ -43,8 +43,12 @@ pub(crate) fn run_remote_shell(
     script: &str,
     timeout_secs: u64,
 ) -> Result<Output, String> {
+    // Bounded runs are user actions capped at seconds; queueing them behind a background poll stalled Apply for up to its 30s cap.
     let host_mutex = host_lock(host);
-    let _host_guard = host_mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let _host_guard = match shell {
+        Shell::Plain => Some(host_mutex.lock().unwrap_or_else(|e| e.into_inner())),
+        Shell::Bounded(_) => None,
+    };
 
     let local = is_local_host(host);
     let mut child = spawn_shell(shell, host, local).map_err(|e| {

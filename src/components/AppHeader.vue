@@ -47,7 +47,7 @@
             </div>
             <!-- Host-only: writes local Mac config via native window. -->
             <template v-if="nativeWindow">
-            <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item statusline-menu-item" title="Build & deploy statuslines for AG CLI (~/.gemini/antigravity-cli/) visually, apply to local and/or remote hosts">
+            <a href="#" @click.prevent="showStatuslineModal = true" class="icon-dropdown-item statusline-menu-item" title="Build one statusline for Claude Code and agy; apply it to this Mac and SSH hosts">
               <i class="fa-solid fa-terminal"></i>
               <span class="statusline-label"><span
                       v-for="(c, i) in statuslineLabelChars"
@@ -55,7 +55,7 @@
                       :style="c.color ? { color: c.color } : null">{{ c.char }}</span></span>
               <span class="statusline-menu-targets">
                 <img src="/claude-icon.png" class="statusline-target-icon" alt="Claude Code" title="Claude Code" />
-                <img src="/antigravity-app-icon.png" class="statusline-target-icon ag" alt="Antigravity" title="AG CLI" />
+                <img src="/antigravity-app-icon.png" class="statusline-target-icon ag" alt="agy" title="agy" />
               </span>
             </a>
             <a href="#" @click.prevent="showProfileModal = true" class="icon-dropdown-item" title="Claude Code Profile (Local) - Native / Proxy settings for ~/.claude/settings.json on this machine">

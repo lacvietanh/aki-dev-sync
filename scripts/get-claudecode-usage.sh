@@ -77,10 +77,10 @@ print("STATUS:OK\t{}\t{}\t{}\t{}\t{}".format(json.dumps(top), top["seenAt"], top
         STATUS:OK*)
             _log "accounts: emitting per-account caches from $ACCT_DIR"
             printf '%s\n' "$(printf '%s' "$MULTI_LAST" | cut -f2)"
-            echo "|||MTIME|||$(printf '%s' "$MULTI_LAST" | cut -f3)"
-            echo "|||SUBTYPE|||$(printf '%s' "$MULTI_LAST" | cut -f4)"
-            echo "|||TIER|||$(printf '%s' "$MULTI_LAST" | cut -f5)"
-            echo "|||AUTHINFO|||$(printf '%s' "$MULTI_LAST" | cut -f6-)"
+            printf '%s\n' "|||MTIME|||$(printf '%s' "$MULTI_LAST" | cut -f3)"
+            printf '%s\n' "|||SUBTYPE|||$(printf '%s' "$MULTI_LAST" | cut -f4)"
+            printf '%s\n' "|||TIER|||$(printf '%s' "$MULTI_LAST" | cut -f5)"
+            printf '%s\n' "|||AUTHINFO|||$(printf '%s' "$MULTI_LAST" | cut -f6-)"
             exit 0
             ;;
         STATUS:STALE)
@@ -106,7 +106,7 @@ if [ "$AUTH_INFO" != '{}' ] && [ "$AUTH_LEN" -gt 2 ]; then
 elif [ "$AUTH_CACHE_EXISTS" = "yes" ]; then
     # Fallback to stale cache if live auth status failed to prevent blanking email; next poll retries live.
     _log "auth: WARNING claude_auth_status empty this cycle - falling back to stale cache"
-    AUTH_INFO=$(python3 -c "import json,sys; d=json.load(open('$AUTH_CACHE')); print(json.dumps(d))" 2>/dev/null || echo '{}')
+    AUTH_INFO=$(python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))" "$AUTH_CACHE" 2>/dev/null || echo '{}')
 else
     _log "auth: WARNING output was empty or {} - not caching"
 fi
@@ -364,10 +364,10 @@ fi
 # Emit identity frames even without valid quota cache so account switches update UI immediately (§6b).
 emit_frames() {
     printf '%s\n' "$1"
-    echo "|||MTIME|||$2"
-    echo "|||SUBTYPE|||$SUB_TYPE"
-    echo "|||TIER|||$TIER"
-    echo "|||AUTHINFO|||$AUTH_INFO"
+    printf '%s\n' "|||MTIME|||$2"
+    printf '%s\n' "|||SUBTYPE|||$SUB_TYPE"
+    printf '%s\n' "|||TIER|||$TIER"
+    printf '%s\n' "|||AUTHINFO|||$AUTH_INFO"
 }
 
 if [ -n "$SANITIZED_JSON" ]; then

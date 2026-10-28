@@ -1,6 +1,6 @@
 # Unified Statusline Specification
 
-> updated 2026-10-25 · v1.34.0 — Tài liệu tham chiếu quy chuẩn kỹ thuật cho kịch bản hiển thị dải trạng thái (Statusline) dùng chung cho cả Antigravity (AGY CLI) và Claude Code CLI.
+> updated 2026-10-28 · v1.36.0 — Tài liệu tham chiếu quy chuẩn kỹ thuật cho kịch bản hiển thị dải trạng thái (Statusline) dùng chung cho cả Antigravity (AGY CLI) và Claude Code CLI.
 
 ---
 
@@ -23,18 +23,19 @@ Kịch bản không đọc file từ đĩa cứng mà nhận dữ liệu JSON tr
 | **Context** | `.context_window` | `.context_window` | `.context_window.total_input_tokens + .context_window.total_output_tokens` |
 | **Cache** | `.context_window.current_usage` | `.context_window.current_usage` | `.cache_read_input_tokens` / `total_cache` |
 | **Account** | `.account.email` | `.account.email` / `.user.email` | `.account.email // .user.email // .email // ""` |
+| **Plan tier** | `.plan_tier` (`"Google AI Pro"`, agy 1.4.8 `json:"plan_tier,omitempty"`) | — | `.plan_tier // ""`; AGY only, not printed: recorded per account in `~/.gemini/antigravity-cli/aki-plan-tier/<email>` for the usage probe (`docs/arch/usage-antigravity.md` § Plan tier) |
 
 ### Cơ chế nguồn Account Email:
 **Tách hẳn 2 nhánh theo CLI, không thử lần lượt** — máy có cả 2 file thì file nào tồn tại sẽ thắng và tag hiện nhầm account của CLI kia.
 
 | CLI | Nguồn | Thứ tự |
 |---|---|---|
-| Claude Code | `claude auth status` chạy live, cache TTL ≤15s (`auth-cache.json`) chỉ để tránh spawn subprocess mỗi lần render | **luôn ghi đè payload, không phải fallback** |
+| Claude Code | `claude auth status` chạy live, cache TTL ≤15s (`auth-cache-<slot>.json`) chỉ để tránh spawn subprocess mỗi lần render | **luôn ghi đè payload, không phải fallback** |
 | AGY | `~/.gemini/google_accounts.json` → `.active` | payload trước, file đĩa là dự phòng |
 
 **Lịch sử đường dẫn `.claude.json` (đã không còn dùng cho email, xem đoạn dưới):** bug thứ hai phát hiện 2026-07-30 là đường dẫn sai (`$HOME/.claude.json` thay vì `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.claude.json` — CLI ghi `oauthAccount` vào file **trong thư mục config của nó**, mặc định `$HOME/.claude` kể cả khi `CLAUDE_CONFIG_DIR` không được set, xem `docs/ref/multiple-account-config-dir.md:19`). Đường dẫn đã đúng nhưng file đó **vẫn không đủ tin cậy cho danh tính** — xem đoạn dưới.
 
-**Bug thứ ba, cùng ngày 2026-07-30: `.claude.json` không phải nguồn danh tính đáng tin, kể cả với đường dẫn đúng (chi tiết: `docs/plan/done/cc-account-identity-ssot.md` §15).** File này do CLI ghi lại theo lịch refresh nội bộ của chính nó, không theo lượt lệnh - khi hai tiến trình `claude` chia sẻ một `CLAUDE_CONFIG_DIR` (hai account thật cùng đăng nhập, workflow bình thường của owner, không phải edge case), tiến trình nào flush file này sau cùng thắng, bất kể tiến trình nào vừa đăng nhập gần nhất. Nguồn đúng là `claude auth status` - lệnh này resolve danh tính của **phiên gọi nó**, không đụng tới `.claude.json` nên không dính race chia sẻ file (xác nhận: hai terminal chia sẻ config dir, gọi `claude auth status` cùng lúc, ra hai email thật khác nhau; lệnh này cũng xác nhận không tự ghi `.claude.json`). Spawn nó mỗi lần render tốn ~200-300ms, nên statusline cache kết quả TTL 15s trong `auth-cache.json` - **chỉ để tránh spawn subprocess dư thừa**, không phải để chịu đựng staleness qua một lần đổi account: cache chung này với `get-claudecode-usage.sh`, và app tự poll mỗi ~30s nên trong đa số trường hợp statusline thấy cache đã ấm sẵn.
+**Bug thứ ba, cùng ngày 2026-07-30: `.claude.json` không phải nguồn danh tính đáng tin, kể cả với đường dẫn đúng (chi tiết: `docs/plan/done/cc-account-identity-ssot.md` §15).** File này do CLI ghi lại theo lịch refresh nội bộ của chính nó, không theo lượt lệnh - khi hai tiến trình `claude` chia sẻ một `CLAUDE_CONFIG_DIR` (hai account thật cùng đăng nhập, workflow bình thường của owner, không phải edge case), tiến trình nào flush file này sau cùng thắng, bất kể tiến trình nào vừa đăng nhập gần nhất. Nguồn đúng là `claude auth status` - lệnh này resolve danh tính của **phiên gọi nó**, không đụng tới `.claude.json` nên không dính race chia sẻ file (xác nhận: hai terminal chia sẻ config dir, gọi `claude auth status` cùng lúc, ra hai email thật khác nhau; lệnh này cũng xác nhận không tự ghi `.claude.json`). Spawn nó mỗi lần render tốn ~200-300ms, nên statusline cache kết quả TTL 15s trong `auth-cache-<slot>.json` (một file cho mỗi slot đăng nhập) - **chỉ để tránh spawn subprocess dư thừa**, không phải để chịu đựng staleness qua một lần đổi account.
 
 **Statusline là một chỗ giữ email độc lập với app** — sửa app mà bỏ statusline chỉ là nửa fix, vì người dùng vẫn thấy email cũ trên mỗi turn. `scripts/get-claudecode-usage.sh` và statusline giờ cùng gọi `claude auth status`; hai bên không được phép bất đồng về việc host này thuộc account nào.
 
@@ -101,7 +102,7 @@ Khi bucket 5h vắng mặt (như với model Argon chỉ có weekly bucket), ph�
   - Claude: `[Nền 255] CC (Orange 208 bold) [Nền 252] lacv (Xám 241 normal)`
   - Cụm này **không bao giờ** được đệm khoảng trắng, kể cả khi `SEPARATE_BLOCKS` bật.
 - **Identity:** User (Trắng `97`), `@` (Xám `90`), Host (Trắng `97`).
-- **CWD:** Bỏ màu nền, Magenta Bold (`\033[01;35m`), truncate theo `TRUNC_CWD` (default 10) — xem §8.2.
+- **CWD:** Bỏ màu nền, Magenta Bold (`\033[01;35m`), truncate theo `TRUNC_CWD` (default 12) — xem §8.2.
 - **Model & Effort:** Bỏ chữ thương hiệu (`Gemini`, `Claude`) và ghi chú `(...)` ở cuối, tên gọn **dính liền** effort, không khoảng trắng (VD: `3.6Flashmed`). Bỏ một chữ ra khỏi giữa một id thô sẽ để lại dấu phân cách mồ côi (`gemini-2.5-flash` → `-2.5-flash`), nên `compact_model()` cắt luôn dấu thừa ở hai đầu và gộp các dấu bị dính đôi — một chỗ duy nhất lo việc này, không rải khắp nơi.
 - **Session (`ss`):** Đọc thời gian vận hành của tiến trình Terminal (`$PPID`) trực tiếp từ Kernel OS (`ps -o etime=`). Không dùng file tạm.
 - **Git Branch:** Truncate theo `TRUNC_BRANCH` (default 10) — xem §8.2.
@@ -141,10 +142,10 @@ Nội dung 2 file cài trên máy khi đó **không khớp** với hành vi mà 
 
 ---
 
-## 8. Gộp thành 1 file vật lý — ĐÃ CHỐT LÀM CHUẨN, chờ port vào generator (Phase 2)
+## 8. Gộp thành 1 file vật lý — ĐÃ CHỐT LÀM CHUẨN VÀ ĐÃ PORT VÀO GENERATOR
 
 *Đã implement và verify sống bằng payload thật ngày 2026-07-23. Reference implementation:*
-*`src-tauri/src/statusline-unified.sh`. Chưa đụng `statusline.rs` — việc port là Phase 2.*
+*`src-tauri/src/statusline-unified.sh`. `statusline.rs` nhúng chính file này (§8.3b) và đọc các marker `# aki-rlcache vN` / `# aki-agquota vN` của nó để báo `cc_outdated` / `ag_outdated`.*
 
 ### 8.1. Tín hiệu gate: đường dẫn gọi (`$0`), KHÔNG phải `.model | type`
 
@@ -155,7 +156,7 @@ case "$0" in
 esac
 ```
 
-`CLI` quyết định 3 chỗ: (1) chạy hay bỏ khối `aki-rlcache`, (2) chọn nguồn fallback account, (3) nhãn `CC`/`AG` trên tag.
+`CLI` quyết định 4 chỗ: (1) chạy hay bỏ khối `aki-rlcache`, (2) chọn nguồn fallback account, (3) nhãn `CC`/`AG` trên tag, (4) có ghi record plan tier của agy (`~/.gemini/antigravity-cli/aki-plan-tier/<email>`, khối `aki-agquota`) hay không.
 
 **Vì sao bỏ đề xuất `.model | type == "object"` (nội dung cũ của mục này):** payload thật của Claude Code 2.1.217 cho thấy `.model` của **CC cũng là object** — gate đó sẽ nhận nhầm CC thành AGY và tắt rlcache đúng lúc CC cần. Đường dẫn cài đặt là dữ kiện chắc chắn, không phụ thuộc field nào trong payload, nên không thể sai kiểu này.
 
@@ -196,7 +197,7 @@ Chọn từ **dải xám trung tính 232-255**: xám không có hue nên không 
 
 Cảnh báo "`BOLD_BLUE` (`01;34`) khá tối" ở bản trước đã thành hiện thực và **được xử lý ở 1.19.0**: nấc đáy đổi sang `BOLD_CALM` = `\033[01;38;5;86m` (xterm 86, aquamarine). Sáng hơn hẳn trên nền tối nhưng vẫn lạnh hơn nấc `green` kế trên, nên ladder vẫn đọc được như một thang nhiệt độ. Vì `38;5;N` trỏ thẳng vào bảng 256 màu nên nấc này không còn phụ thuộc palette của từng terminal.
 
-Nguồn sự thật cho toàn bộ mã màu (cả ladder lẫn 8 màu người dùng chọn được) là `src/utils/statuslineColors.js` — mỗi màu một bản ghi `{ key, ansi, hex }`, trong đó `hex` là màu xterm thật của đúng mã ANSI đó. `ansi_for()` trong `statusline.rs` và khối `BOLD_*`/`WHITE`/`GREY` trong `statusline-unified-spec.sh` là **bản sao** (Rust/shell không import được JS): sửa file JS trước, rồi mới sửa hai chỗ kia.
+Nguồn sự thật cho toàn bộ mã màu (cả ladder lẫn 8 màu người dùng chọn được) là `src/utils/statuslineColors.js` — mỗi màu một bản ghi `{ key, ansi, hex }`, trong đó `hex` là màu xterm thật của đúng mã ANSI đó. `ansi_for()` trong `statusline.rs` và khối `BOLD_*`/`WHITE`/`GREY` trong `src-tauri/src/statusline-unified.sh` là **bản sao** (Rust/shell không import được JS): sửa file JS trước, rồi mới sửa hai chỗ kia.
 
 Mốc thang: context tô màu theo **200k = 100%** (không hiện %), cost theo `COST_FULL_USD=30`.
 
@@ -229,7 +230,7 @@ AG lva   guest@roscy-  Aki-Dev-Sync  3.6Flashmed   ctx133k/1M    ↬0%    5h:0%4
 | Ca | Kết quả |
 |---|---|
 | CC có `rate_limits` | ETA reset hiện đúng (`5h:6% 1h34m`) |
-| CC thiếu `rate_limits` | Khôi phục đúng từ `rate-limits-cache.json` |
+| CC thiếu `rate_limits` | Khôi phục đúng từ cache quota (`rate-limits-cache.json` lúc xác minh; từ hook v6 là `~/.claude/rate-limits/<email>.json`, một file mỗi account) |
 | AGY model 3P (Sonnet 4.6) | `7d:56%` ← `3p-weekly` (0.4397) ✓ routing đúng nhánh |
 | AGY model Gemini | `7d:52%` ← `gemini-weekly` (0.4818) ✓, effort `med` từ `.model.effort` |
 
@@ -404,5 +405,7 @@ Việc này **không** thay đổi kiến trúc `StatuslineTarget` Adapter (vẫ
 ---
 
 ## 9. `RLCACHE` bỏ sót `CLAUDE_CONFIG_DIR` (2026-08-01, đã fix)
+
+> Hiện trạng: từ hook v6, `RLCACHE` trỏ tới `~/.claude/rate-limits/<email>.json`, một file mỗi account (`docs/arch/usage-claudecode.md` § Nhiều account trên một máy). Đoạn dưới mô tả bug ở thời điểm 2026-08-01, khi còn một file `rate-limits-cache.json`.
 
 `.claude.json`'s đường dẫn đọc `oauthAccount` đã tôn trọng `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` từ bug thứ hai (§ mục 2, 2026-07-30), nhưng `RLCACHE` (biến giữ đường dẫn `rate-limits-cache.json`) và `mktemp` tương ứng của nó vẫn cứng `$HOME/.claude/...` — một cấu hình `CLAUDE_CONFIG_DIR` khác `$HOME/.claude` sẽ khiến khối `aki-rlcache` đọc/ghi sai file so với nơi `.claude.json` thật sự nằm. Đã sửa cả 3 chỗ trong template (`src-tauri/src/statusline-unified.sh`, generator duy nhất — xem §8.3b) để dùng chung một biến `_rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"`: `RLCACHE`, `mkdir -p`, và `mktemp`'s temp-file prefix. `statusline.rs` nhúng file này qua `include_str!` nên không có bản deploy riêng cần đồng bộ tay.

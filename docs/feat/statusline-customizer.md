@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-10-26 · v1.34.0
+> updated 2026-10-28 · v1.36.0
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
@@ -20,7 +20,7 @@ case "$0" in
 esac
 ```
 
-`CLI` decides exactly three things: whether the `aki-rlcache` block runs, which on-disk file the account falls back to, and the two letters on the tag. Everything else is identical, so there is no "CC dialect" and "AGY dialect" to keep in sync. Earlier attempts guessed the CLI from payload fields; both CLIs turned out to send `.model` as an object, so no payload gate could tell them apart. The install path can't be wrong.
+`CLI` decides exactly four things: whether the `aki-rlcache` block runs, which on-disk file the account falls back to, the two letters on the tag, and whether the agy plan-tier record is written. Everything else is identical, so there is no "CC dialect" and "AGY dialect" to keep in sync. Earlier attempts guessed the CLI from payload fields; both CLIs turned out to send `.model` as an object, so no payload gate could tell them apart. The install path can't be wrong.
 
 Which targets an Apply writes is the "Apply to" checkbox pair in the modal header; both are ticked by default and the choice persists (`aki-statusline-targets`). An empty selection is rejected by the backend rather than silently falling back to one target.
 
@@ -222,6 +222,8 @@ Three rules are **not optional** and are marked with a `DESIGN LOCK` comment in 
 
 Nothing surviving the gates → the file is removed. The header's `# aki-rlcache vN` is parsed by `scripts/provision-claudecode.sh` to retire an older stacked block, so it stays at the start of that comment line.
 
+Bump N on any change inside the block, a fix included: the launch pass rewrites only a hook whose N is lower than the template's (§ Rollout to hosts), so an unbumped fix never reaches a host that already runs the block. v7 reads the auth-cache mtime with `stat -c %Y` first and `stat -f %m` second: GNU `stat -f` succeeds with `--file-system` output while BSD `stat` rejects `-c` cleanly, so the BSD-first order of v6 never wrote the per-account cache on a Linux host. A non-numeric mtime no longer aborts the render. A test pins each marker's version to a hash of its block, so an edit inside a marker-covered block without a bump fails `cargo test`.
+
 Without these, a field that landed in the cache once lived there forever, because the merge only adds/overwrites keys present in the live payload and never drops absent ones. That shipped in every release from 1.10.0 through 1.17.0 and produced a phantom `7d 45%` for an account with no weekly limit at all. Background: `docs/plan/done/1.18.0-statusline-apply-correctness.md` §P0-5.
 
 The block also validates the cache with `jq -e` before reading (a corrupt file used to blank the whole line), merges instead of replacing (a 5h-only payload no longer erases 7d), and writes via tmp+rename.
@@ -232,7 +234,7 @@ The block also validates the cache with `jq -e` before reading (a corrupt file u
 
 AGY splits its quota into three pools: Gemini, Argon (Gemini 4 Argon), and 3P (Claude/GPT models running inside AGY). The script picks the pool matching the running model - `gemini-argon-wtu-weekly` if the model name contains `argon` (5h absent/suppressed), `gemini-5h`/`gemini-weekly` if the model name contains `gemini`, otherwise `3p-5h`/`3p-weekly` - so there is nothing to configure, only a note on the quota row (`AGY: pool follows the selected model (Gemini, Claude, or Argon)`). Dropping the `3p-*` branch silently blanks the quota for anyone running Claude inside AGY.
 
-The routing block carries `# aki-agquota vN`; bump N whenever the routing changes. An AGY script written by this app (it carries `# aki-rlcache`) whose marker is lower or missing probes as `ag_outdated`, so a host still on the pre-Argon script shows an outdated AGY tag instead of silently reading Argon from the Gemini pool.
+The same marker covers the plan-tier record that follows the routing (v2): each AGY turn's `.plan_tier` is kept per account for the usage probe (`docs/arch/usage-antigravity.md` § Plan tier). The routing block carries `# aki-agquota vN`; bump N whenever the routing or the tier record changes. An AGY script written by this app (it carries `# aki-rlcache`) whose marker is lower or missing probes as `ag_outdated`, so a host still on the pre-Argon script shows an outdated AGY tag instead of silently reading Argon from the Gemini pool.
 
 The two CLIs also report reset time on **different scales**: Claude Code sends an absolute epoch (`.rate_limits.*.resets_at`), AGY a relative countdown (`.quota[*].reset_in_seconds`). The script normalises CC onto AGY's scale before formatting.
 
@@ -241,7 +243,7 @@ The two CLIs also report reset time on **different scales**: Claude Code sends a
 `check_statusline_status` (probe) and `apply_statusline_config` are both `async` commands whose work runs under `spawn_blocking`, with one thread per host - hosts do not wait on each other. Everything goes through `run_remote_script_bounded()` in `remote_shell.rs`, which adds two guarantees on top of the shared execution funnel:
 
 - **5s local cap / 4s remote self-bound.** The remote shell wraps itself in `timeout`/`gtimeout`/a `perl -e alarm` fallback, so killing the local SSH client cannot leave an unbounded orphan process on the remote host.
-- **One lock per host** (`host_lock()`), taken inside `run_remote_shell()` — so *every* feature that talks to a host (statusline probe, Apply, usage polling, git info) serializes against the others on that host, while different hosts stay fully parallel.
+- **No host lock.** Background traffic to a host (usage polling, git info) serializes on `host_lock()` inside `run_remote_shell()`; the bounded probe/Apply skip it, so a click never queues behind a poll that can hold the lock up to its 30 s cap. Each is already capped at 5 s, and different hosts stay fully parallel.
 
 **One installer per selected target, never one concatenated script.** Under a single shared `set -e` a Claude Code failure aborted the run before the AGY half was attempted, and the user heard about neither; now each target gets its own verdict, the host's `ok` is their AND, and the message names which half landed. An empty selection is an error, never an implicit AGY. Each installer is self-contained (its own `set -e`) and ordered against half-applied states:
 1. **Settings first.** `settings.json` is patched key-by-key with `jq` (everything else in the file survives) before the script is written: `jq` is the dependency a remote can lack, so such a host fails having changed nothing instead of holding a script no settings key points at.

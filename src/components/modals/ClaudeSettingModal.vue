@@ -157,7 +157,7 @@
               </div>
             </div>
 
-            <div class="section-label">Target Hosts <span class="hint">(tag per CLI found: filled = statusline live)</span></div>
+            <div class="section-label">Target Hosts <span class="hint">(tags: CC = Claude Code, AG = agy; filled = statusline live)</span></div>
             <div class="host-list">
               <label
                 v-for="h in hostOptions"
@@ -362,7 +362,7 @@ const GROUPS = [
     keys: ['rate_limits_5h', 'rate_reset_5h', 'rate_limits_7d', 'rate_reset_7d'],
     sep: ' ',
     // AGY splits its quota into Gemini, Claude/GPT, and Argon pools; the script picks the pool matching the running model, so there is nothing to configure here.
-    note: 'AGY: pool follows the selected model (Gemini, Claude, or Argon)',
+    note: 'agy: pool follows the selected model (Gemini, Claude, or Argon)',
     lines: [
       { segments: [
         { controls: [
@@ -511,7 +511,7 @@ const hostStatus = ref({});
 // The two CLI tags drawn inside a host chip. Built here rather than in the template so the chip stays one line and the "only what the host actually has" rule lives in exactly one place.
 const CLI_TAGS = [
   { cli: 'CC', name: 'Claude Code', present: 'cc_present', configured: 'cc_configured', outdated: 'cc_outdated' },
-  { cli: 'AG', name: 'AGY CLI', present: 'ag_present', configured: 'ag_configured', outdated: 'ag_outdated' },
+  { cli: 'AG', name: 'agy', present: 'ag_present', configured: 'ag_configured', outdated: 'ag_outdated' },
 ];
 function cliTags(host) {
   const s = hostStatus.value[host];
@@ -522,7 +522,7 @@ function cliTags(host) {
       cli: t.cli,
       configured: s[t.configured] && !outdated,
       title: outdated
-        ? `${t.name}: statusline is an older version - press Apply to update it`
+        ? `${t.name}: statusline is an older version - tick this host and press Apply to update it`
         : s[t.configured]
           ? `${t.name}: statusline installed and wired up`
           : `${t.name}: found, but no statusline wired up yet`,
@@ -605,7 +605,7 @@ async function repairCcStatusline(hosts, needsWrite) {
     const failed = targets.filter(s => !ok.has(s.host)).map(s => s.host);
     markApplied(done.map(s => s.host), ['cc']);
     const msg = [
-      installed.length && `Auto-installed statusline on: ${installed.join(', ')}. Restart Claude Code (or open a new terminal) to see it.`,
+      installed.length && `Installed the Claude Code statusline on: ${installed.join(', ')}. Restart Claude Code (or open a new terminal) to see it.`,
       updated.length && `Updated the Claude Code statusline on: ${updated.join(', ')}. Usage reads the new format from the next Claude Code turn.`,
       failed.length && `Could not write the Claude Code statusline on: ${failed.join(', ')}. Open Statusline Customizer and press Apply to retry.`,
     ].filter(Boolean).join(' ');
@@ -801,10 +801,10 @@ async function apply() {
     results.value = hostResults;
     markApplied(hostResults.filter(r => r.ok).map(r => r.host), targets);
     const failed = hostResults.filter(r => !r.ok);
-    const clis = targets.map(t => (t === 'cc' ? 'Claude Code' : 'AGY')).join(' and ');
+    const clis = targets.map(t => (t === 'cc' ? 'Claude Code' : 'agy')).join(' and ');
     status.err = failed.length > 0;
     status.msg = failed.length === 0
-      ? `Applied to ${hostResults.length} host${hostResults.length === 1 ? '' : 's'}. Restart ${clis} (or open a new terminal) to see it.`
+      ? `Applied to ${hostResults.length} host${hostResults.length === 1 ? '' : 's'}. Restart ${clis} (or open a new terminal) to see it.${targets.includes('ag') ? ' The plan badge shows from the next agy turn.' : ''}`
       : `${hostResults.length - failed.length}/${hostResults.length} hosts applied - see details above.`;
   } catch (e) {
     status.msg = String(e);

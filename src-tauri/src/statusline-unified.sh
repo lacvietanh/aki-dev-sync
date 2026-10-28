@@ -20,7 +20,7 @@ case "$0" in
   *)           CLI="CC" ;;
 esac
 
-# aki-rlcache v6 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
+# aki-rlcache v7 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
 if [ "$CLI" = "CC" ]; then
   _rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   _rl_now=$(date +%s)
@@ -32,13 +32,16 @@ if [ "$CLI" = "CC" ]; then
   _cc_auth=""
   _auth_cache_age=999999
   if [ -f "$_cc_auth_cache" ]; then
-      _auth_mtime=$(stat -f %m "$_cc_auth_cache" 2>/dev/null || stat -c %Y "$_cc_auth_cache" 2>/dev/null)
-      _auth_cache_age=$(( _rl_now - _auth_mtime ))
+      # GNU form first: GNU `stat -f` succeeds with the wrong output (--file-system), while BSD `stat` rejects `-c` cleanly.
+      _auth_mtime=$(stat -c %Y "$_cc_auth_cache" 2>/dev/null || stat -f %m "$_cc_auth_cache" 2>/dev/null)
+      case "$_auth_mtime" in ''|*[!0-9]*) ;; *) _auth_cache_age=$(( _rl_now - _auth_mtime )) ;; esac
   fi
   if [ "$_auth_cache_age" -lt "$AUTH_TTL_S" ]; then
       _cc_auth=$(cat "$_cc_auth_cache" 2>/dev/null)
   else
-      _auth_live=$( (timeout 3 claude auth status 2>/dev/null || gtimeout 3 claude auth status 2>/dev/null || claude auth status 2>/dev/null) )
+      _auth_bound=""
+      if command -v timeout >/dev/null 2>&1; then _auth_bound="timeout 3"; elif command -v gtimeout >/dev/null 2>&1; then _auth_bound="gtimeout 3"; fi
+      _auth_live=$($_auth_bound claude auth status 2>/dev/null)
       if [ -n "$(printf '%s' "$_auth_live" | jq -r '.email // empty' 2>/dev/null)" ]; then
           _cc_auth="$_auth_live"
           mkdir -p "$_rl_config_dir" 2>/dev/null
@@ -117,7 +120,7 @@ if [ "$CLI" = "CC" ]; then
   fi
 fi
 
-# aki-agquota v1 - AGY quota pool routing (gemini / 3p / argon). Bump when the routing changes, so hosts on an older script show as outdated: docs/feat/statusline-customizer.md § Quota routing (AGY).
+# aki-agquota v2 - AGY pool routing and the plan-tier record below; bump on any change to either: docs/feat/statusline-customizer.md § Quota routing (AGY).
 if [ -n "$input" ]; then
   eval $(echo "$input" | jq -r '
     # Resolved once: .model is a plain string on older CLIs, and an unguarded .model.display_name on a string aborts the whole program (blank line).
@@ -171,9 +174,23 @@ if [ -n "$input" ]; then
       "JSON_CLAUDE_7D_USED=" + (if (.rate_limits | type) == "object" and (.rate_limits.seven_day | type) == "object" then (.rate_limits.seven_day.used_percentage // -1) else -1 end | @sh),
       "JSON_CLAUDE_5H_RESET=" + ((.rate_limits.five_hour.resets_at // 0) | @sh),
       "JSON_CLAUDE_7D_RESET=" + ((.rate_limits.seven_day.resets_at // 0) | @sh),
-      "JSON_ACCOUNT_EMAIL=" + ((.account.email // .user.email // .email // "") | @sh)
+      "JSON_ACCOUNT_EMAIL=" + ((.account.email // .user.email // .email // "") | @sh),
+      "JSON_PLAN_TIER=" + ((.plan_tier // "") | tostring | @sh)
     ] | join("\n")
   ' 2>/dev/null)
+fi
+
+# Headless `agy /usage` carries no plan tier, so each AGY turn's tier is kept per account for the usage probe: docs/arch/usage-antigravity.md § Plan tier.
+if [ "$CLI" = "AG" ] && [ -n "$JSON_PLAN_TIER" ] && [ -n "$JSON_ACCOUNT_EMAIL" ]; then
+  _ag_tier_dir="$HOME/.gemini/antigravity-cli/aki-plan-tier"
+  _ag_tier_file="$_ag_tier_dir/$(printf '%s' "$JSON_ACCOUNT_EMAIL" | tr -c 'A-Za-z0-9@._+-' '_')"
+  _ag_tier_old=""
+  [ -f "$_ag_tier_file" ] && IFS= read -r _ag_tier_old < "$_ag_tier_file"
+  if [ "$_ag_tier_old" != "$JSON_PLAN_TIER" ]; then
+    mkdir -p "$_ag_tier_dir" 2>/dev/null
+    _ag_tier_tmp=$(mktemp "$_ag_tier_dir/.tier.XXXXXX" 2>/dev/null) \
+      && { { printf '%s\n' "$JSON_PLAN_TIER" > "$_ag_tier_tmp" && mv -f "$_ag_tier_tmp" "$_ag_tier_file"; } || rm -f "$_ag_tier_tmp"; }
+  fi
 fi
 
 if [ -n "$JSON_CWD" ] && [ "$JSON_CWD" != "null" ]; then
@@ -522,7 +539,7 @@ g_ram=""
 if [ "$EN_ram" = 1 ]; then
   if [[ "$OSTYPE" == "darwin"* ]]; then
     mem_pct=$(memory_pressure 2>/dev/null | awk '/System-wide memory free percentage:/ {print 100 - $5}')
-  elif [[ "$OSTYPE" == "linux-gnu"* ]] || [[ "$OSTYPE" == "linux" ]]; then
+  elif [[ "$OSTYPE" == linux* ]]; then
     mem_pct=$(free 2>/dev/null | awk '/Mem:/ {printf "%.0f", $3/$2 * 100}')
   fi
   # Static grey like the cache reading: whole-machine RAM is context, not something the ladder should escalate about mid-session.
