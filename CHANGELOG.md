@@ -3,13 +3,31 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [Unreleased]
+## [1.36.0] - 2026-10-28
 
 ### Added
 - **Usage bars show where "now" sits in the window**: every Claude Code and Antigravity bar with a known reset carries a thin marker at the elapsed share of its 5-Hour or 7-Day window (one `elapsedRatio` helper in `AgentUsage.vue`, one overlay on the existing track, no new row). Fill past the marker means the quota is burning faster than the window passes. Buckets of unknown length and passed resets draw no marker. Hovering a bar names the elapsed share and says when the fill is ahead of it.
 
 ### Changed
-- **Production-site link sits right of the project title**: the globe link no longer drops onto the line above the copy-local-path icon, so a click aimed at the path icon cannot open the site. Its hover now shows the URL it opens.
+- **Production-site link is a globe badge on the project icon**: it no longer sits in the title row, so a long project name keeps the whole column instead of being cut short by the link, and it is not on the line of the copy-local-path icon, so a click aimed at that icon cannot open the site. Hover shows `Open web <url>`; hovering a name that is still too long for the column shows the full name.
+- **Antigravity and Claude Code cards share one header row**: the AG title, plan badge, account and eye button now sit in the same `.agent-name-row` as Claude Code's (same 6px gap, same narrow-mode collapse), and the CC-only 4px header margin is gone, so both cards line up. The never-emitted `desktop_cli` icon branches are removed.
+- **A test pins each statusline block's marker to its content**: `# aki-rlcache` and `# aki-agquota` carry a version, and a test in `statusline.rs` ties each version to a hash of its block, so a block edit without a bump fails `cargo test` instead of never reaching hosts that already run the block.
+- **Antigravity pools are told apart by colour, and a spent pool greys out whole**: each pool card sits on a faint tint (Gemini light blue, Claude/GPT Claude orange, Argon 4 a deeper blue) drawn as a background plus a same-colour shadow, so no text or spacing moves; when any window of a pool reaches 100% (5H or 7D) the whole card turns grey instead of only its 5H bar. Claude Code's card keeps its 5H-dimmed-by-7D rule.
+- **User-facing copy brought up to date**: README, the Statusline Customizer card in the Intro dialog, clearer empty states and older-version hints.
+- **`CONTRIBUTING.md` states what a contributor needs**: akirule installed in their coding agent, and for Windows work a Linux host reachable over SSH with `claude` or `agy` signed in, tested from the Windows build; the stale `Cargo.toml` version advice and `.dmg` name pattern are corrected.
+
+### Fixed
+- **Antigravity plan badge shows for `agy` CLI accounts**: headless `agy -p "/usage"` carries no tier, so the AGY statusline now records each turn's `plan_tier` per account (`~/.gemini/antigravity-cli/aki-plan-tier/<email>`, block `aki-agquota` v2, so configured AGY hosts show as outdated until Apply) and the usage probe adds it to the `cli` frame.
+- **A CLI reading no longer wipes an account's known plan tier from the cached view**: when the same account is seen on two surfaces (emails matched case-insensitively), `antigravity_payload.rs` merges the frames (the first keeps its icon, a later one fills a missing tier or quota) instead of dropping the second, and the per-account cache keeps a cached `userTier` when a new reading for that (host, email) has none. The live card shows the reading as fetched, so a CLI-only account shows its badge once its AGY statusline is applied. Every other account's cached entry is untouched; a reading that carries a tier still replaces the old one.
+- **Claude Code statusline quota cache on Linux hosts**: the auth-cache age check tried BSD `stat -f %m` first, and GNU `stat -f` means `--file-system` and succeeds with a block of text, so the arithmetic failed and the per-account rate-limit cache was never written. The check now tries `stat -c %Y` first (BSD `stat` rejects `-c` cleanly), a non-numeric mtime no longer aborts the render, and the block is `aki-rlcache` v7, so a host still on v6 is rewritten at app launch like any outdated hook.
+- **The statusline asks `claude auth status` once per render**, not up to three times when logged out, and bounds the call with `timeout`/`gtimeout` when present.
+- **The statusline RAM segment shows on musl Linux**: it matches every `linux*` `$OSTYPE`, not only `linux-gnu`.
+- **A backslash in an organization name survives in the Claude Code usage card**: `get-claudecode-usage.sh` prints its frame lines with `printf '%s\n'`.
+- **The Antigravity plan badge shows only the tier**: `Antigravity Starter Quota` reads `Starter`, `Google AI Pro` reads `Pro`.
+- **Statusline Apply no longer stalls for up to 30 s**: the customizer's probe and Apply no longer wait for the host's background usage poll to finish, and a hung `agy -p "/usage"` is killed after 15 s (agy ignores a plain stop signal while hung) instead of holding the Antigravity poll (and its IDE pools) until the 30 s cap; after a failed run agy is not retried for a minute.
+
+### Security
+- **`provision-claudecode.sh` writes its patch to a private `mktemp` file** instead of the fixed path `/tmp/patch.sh`.
 
 ## [1.35.0] - 2026-10-26
 
