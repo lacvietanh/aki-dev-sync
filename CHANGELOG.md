@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [Unreleased]
+## [1.37.0] - 2026-11-16
 
 ### Added
 - **Every Antigravity account with a recent agy session shows its own quota**: headless `agy /usage` reads only the account signed in on disk, so a session running under another account fell back to an old cached reading. Each interactive agy turn now leaves its account's quota and tier in `~/.gemini/antigravity-cli/rate-limits/<email>.frame` (statusline block `aki-agquota` v3, so AGY hosts on v2 show as outdated until Apply), and the usage probe reads every file from the last 6 hours as one more account, after the headless `/usage` reading, which still wins for its own account. The IDE and desktop readings, the headless call and its one-minute cache are unchanged. Plan: `docs/plan/done/ag-multi-account-statusline-cache.md`.
