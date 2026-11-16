@@ -1,6 +1,6 @@
 # Sync Flow (Push, Pull, Select)
 
-> updated 2026-10-19 · v1.33.0
+> updated 2026-11-16 · v1.36.0
 
 This document covers the core synchronization capabilities of Aki Dev Sync, designed to support the **Lạc Việt Anh Workflow** where the Local machine acts as the Source of Truth and the Remote acts as the AI Engine.
 

@@ -1,6 +1,6 @@
 # Antigravity IDE Local Proxy Quota Monitoring Reference
 
-> updated 2026-10-28 · v1.36.0
+> updated 2026-11-16 · v1.36.0
 
 This reference document explains the architecture, flow, and implementation details of local quota monitoring for the Google Antigravity IDE & CLI in this project.
 

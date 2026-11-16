@@ -1,6 +1,6 @@
 # Project Table — column grid
 
-> updated 2026-08-16 · v1.24.0
+> updated 2026-11-16 · v1.36.0
 
 The main window's project list (`src/components/ProjectTable.vue`). This doc owns only the column-grid layout contract, not the individual buttons/badges inside each column — those are covered where they're introduced (e.g. `docs/feat/in-app-terminal.md` for the TERMINAL column).
 

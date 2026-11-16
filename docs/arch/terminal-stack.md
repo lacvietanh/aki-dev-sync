@@ -1,6 +1,6 @@
 # Terminal stack — architecture
 
-> updated 2026-10-20 · v1.33.1
+> updated 2026-11-16 · v1.36.0
 
 How the in-app terminal's frontend is layered, and how terminal v2's SCOPES (tab groups) sit on top of it without touching Rust. User-facing behaviour: `docs/feat/in-app-terminal.md`.
 

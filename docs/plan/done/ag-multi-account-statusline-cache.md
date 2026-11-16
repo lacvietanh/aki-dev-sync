@@ -1,6 +1,6 @@
 # Plan: Antigravity Multi-Account Statusline Cache & Hybrid Quota Monitoring
 
-Status: done 2026-11-16. Phases 3-4 already existed in 1.36.0 (`antigravity_payload.rs` keeps one account per email in `allAccounts`; `usageAccountCache.js` and `AgentUsageSlot.vue` persist and match every entry), so only phases 1-2 were built, with two deviations: the record is `rate-limits/<email>.frame` (the two frame bodies, so the probe needs no `jq`), not `<email>.json`, and the headless `/usage` call stays as it was (the probe cannot know the Keychain account without running it); its frame comes first and wins for its own account. Design: `docs/arch/usage-antigravity.md` § Per-account quota cache. Verified by `cargo test` (395 pass): the template run as AGY writes the frame for its account with the pool grouping and reset times, writes none without quota or from Claude Code, and two such frames parse into two `allAccounts` entries. Live: files appear from the first agy turn after Apply on each host.
+Status: done 2026-11-16. Phases 3-4 already existed in 1.36.0 (`antigravity_payload.rs` keeps one account per email in `allAccounts`; `usageAccountCache.js` and `AgentUsageSlot.vue` persist and match every entry), so only phases 1-2 were built, with two deviations: the record is `rate-limits/<email>.frame` (the two frame bodies, so the probe needs no `jq`), not `<email>.json`, and the headless `/usage` call stays as it was (the probe cannot know the Keychain account without running it); its frame comes first and wins for its own account. Design: `docs/arch/usage-antigravity.md` § Per-account quota cache. Verified by `cargo test`: the template run as AGY writes the frame for its account with the pool grouping and reset times, writes none without quota or from Claude Code; the real probe script reads each fresh frame as its own account and skips stale or malformed ones. Live: files appear from the first agy turn after Apply on each host.
 
 **Origin:** Turn diagnosis (2026-10-30) — concurrent `agy` in-RAM sessions missed by Keychain-only headless probe.  
 **Baseline version:** `v1.36.0` (`6c30560`)  
@@ -136,13 +136,13 @@ When users run multiple concurrent `agy` CLI sessions under different profiles (
 
 ## 4. Verification & Testing Checklist
 
-- [ ] **Statusline Hook Test:** Run an interactive `agy` turn in terminal and verify `~/.gemini/antigravity-cli/rate-limits/<email>.json` is written atomically with valid JSON.
-- [ ] **Multi-Terminal Isolation Test:**
+- [-] **Statusline Hook Test:** Run an interactive `agy` turn in terminal and verify `~/.gemini/antigravity-cli/rate-limits/<email>.json` is written atomically with valid JSON. Not run on a live turn; the write (file `<email>.frame`) is covered by `statusline::tests::agy_leaves_a_usage_shaped_quota_frame_for_its_own_account`, which runs the template as AGY in a scratch HOME.
+- [-] **Multi-Terminal Isolation Test:** not run with two live accounts; one file per sanitized email is asserted by the test above, two accounts in one poll by `agent_usage::antigravity::tests::probe_reads_each_fresh_quota_frame_as_its_own_account_and_skips_stale_or_malformed_ones`.
   - Launch `agy-kim` in Terminal 1, type a prompt. Verify `rate-limits/kimoanh240501@gmail.com.json` is updated.
   - Launch `agy-lac` in Terminal 2, type a prompt. Verify `rate-limits/lacvietanh@gmail.com.json` is updated.
-- [ ] **Script Probe Output Test:** Run `bash scripts/get-antigravity-usage.sh` and confirm it outputs multiple `|||AGPROC|||` frames within <100ms.
-- [ ] **UI Slot Verification:**
+- [x] **Script Probe Output Test:** Run `bash scripts/get-antigravity-usage.sh` and confirm it outputs multiple `|||AGPROC|||` frames within <100ms. Run by the probe test named above (real script, `sh`, scratch HOME); the timing was not measured.
+- [-] **UI Slot Verification:** not run: needs two live accounts. Slot matching is unchanged since 1.36.0 (`AgentUsageSlot.vue` reads `allAccounts`).
   - Open Aki-Dev-Sync with Slot B pinned to `lacvietanh` and Slot E pinned to `kimoanh`.
   - Both cards show live status (`isCached: false`) with their respective in-RAM quota numbers and model pools.
-- [ ] **Fallback Verification:** Test cold start without active statusline cache to confirm fallback to `agy -p /usage` functions correctly.
-- [ ] **Lint & Rule Receipt:** Run `python3 ~/.agents/skills/akiflow/scripts/scythe.py` to confirm 0 `[WRAP]` and 0 `[YAP]` formatting violations.
+- [-] **Fallback Verification:** Test cold start without active statusline cache to confirm fallback to `agy -p /usage` functions correctly. Not run as its own check: the `/usage` call was not changed; the no-frame path is covered by `probe_without_a_process_or_a_quota_frame_still_reports_not_running`.
+- [-] **Lint & Rule Receipt:** Run `python3 ~/.agents/skills/akiflow/scripts/scythe.py` to confirm 0 `[WRAP]` and 0 `[YAP]` formatting violations. Run on the release accumulation: 0 `[WRAP]`; 2 `[YAP]` review lines kept inside the statusline marker blocks, where an edit forces a block version bump.
