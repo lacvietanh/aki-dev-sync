@@ -14,6 +14,14 @@
             <i class="fa-solid fa-plus"></i><span class="u-narrow-hide"> NEW</span>
           </button>
         </div>
+        <div class="grid-header-cell col-sync">
+          <span class="th-with-ring">
+            SYNC
+            <RefreshRing :interval-s="syncCheckEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
+            <i class="fa-solid fa-power-off src-power" :class="syncCheckEnabled ? 'is-on' : 'is-off'" @click="toggleSyncCheck"
+               :title="syncCheckEnabled ? 'Sync check ON - click to stop all remote diff/push/pull' : 'Sync check OFF - click to enable'"></i>
+          </span>
+        </div>
         <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
         <div class="grid-header-cell col-git-status" title="LOCAL GIT">
           <span class="th-with-ring">
@@ -25,14 +33,6 @@
           <TerminalScopeButton :scope="GLOBAL_SCOPE" />
         </div>
         <div class="grid-header-cell col-action" title="OPEN / SELECT-PUSH">ACTION</div>
-        <div class="grid-header-cell col-sync">
-          <span class="th-with-ring">
-            SYNC
-            <RefreshRing :interval-s="syncCheckEnabled ? refreshSettings.remote_diff_interval_s : 0" :refresh-key="diffRefreshKey" stroke-color="rgba(255, 140, 0, 0.6)" />
-            <i class="fa-solid fa-power-off src-power" :class="syncCheckEnabled ? 'is-on' : 'is-off'" @click="toggleSyncCheck"
-               :title="syncCheckEnabled ? 'Sync check ON - click to stop all remote diff/push/pull' : 'Sync check OFF - click to enable'"></i>
-          </span>
-        </div>
       </div>
 
       <transition-group tag="div" class="grid-body" name="project-list">
@@ -114,152 +114,7 @@
             </div>
           </div>
 
-          <!-- Cell 2: Tasks -->
-          <div class="grid-row-cell col-tasks">
-            <TaskCell :project="p" />
-          </div>
-
-          <!-- Cell 3: Git Status -->
-          <div class="grid-row-cell col-git-status">
-            <div class="git-cell">
-              <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
-                <button
-                        class="btn-cell-trigger btn-action-git"
-                        :class="{
-                          'git-no-repo': !isPathMissing(p) && ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
-                          'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
-                          'git-path-missing': isPathMissing(p),
-                        }"
-                        @click="openGitModal(p)"
-                        :title="isPathMissing(p) ? `Local path not found - volume not mounted?\n${p.local_path}` : projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
-                        aria-label="Git Actions">
-                  <i class="fa-brands fa-git-alt"></i>
-                </button>
-              </CountBadgeWrap>
-            </div>
-          </div>
-
-          <!-- Cell 4: Terminal -->
-          <div class="grid-row-cell col-terminal">
-            <TerminalScopeButton :scope="p" />
-          </div>
-
-          <!-- Cell 5: Action (OPEN + SELECT-push only) -->
-          <div class="grid-row-cell col-action">
-            <div class="actions-wrapper">
-              <!-- Open Popup Trigger (OPEN Button) -->
-              <div class="open-popup-wrapper">
-                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup" :popovertarget="`open-popup-${p.id}`" :style="`anchor-name: --open-anchor-${p.id}`">
-                  <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
-                </button>
-
-                <div class="open-popup pin-left" popover :id="`open-popup-${p.id}`" :style="`position-anchor: --open-anchor-${p.id}`" @beforetoggle="onPopupOpen" @click="closeOnAction">
-                  <div class="popup-header popup-header-wrap" :title="projectDisplayName(p)">
-                     <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
-                     <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>
-                     <span class="popup-title-text">{{ projectDisplayName(p) }}</span>
-                     <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
-                       <i class="fa-solid fa-file-lines"></i> REPORT
-                     </button>
-                     <button v-if="p.production_url" class="popup-copy-btn" @click.stop="openSearchConsole(p)" title="Open Google Search Console for this domain">
-                       <i class="fa-solid fa-magnifying-glass"></i> GSC
-                     </button>
-                   </div>
-                   <div class="popup-columns">
-                     <!-- LOCAL -->
-                     <div class="popup-col-local">
-                       <div class="popup-section-label">
-                         <span>💻 LOCAL</span>
-                         <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
-                           <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
-                         </button>
-                       </div>
-                       <!-- Popup items disabled when local path is missing or IDE unavailable. -->
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('finder', p.local_path)">
-                         <i class="fa-solid fa-folder-open popup-item-icon popup-icon-amber"></i> Finder
-                       </div>
-                       <!-- In-app terminal option first for phone companion support. -->
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openNewProjectTerminal(p)">
-                         <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> In-App Terminal
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('terminal', p.local_path, p.id)">
-                         <i class="fa-solid fa-terminal popup-item-icon"></i> Terminal
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode') }" :title="localTitle(p)" @click="openIdeLocal('vscode', p.local_path)">
-                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode_insiders') }" :title="localTitle(p)" @click="openIdeLocal('vscode_insiders', p.local_path)">
-                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
-                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'cursor') }" :title="localTitle(p)" @click="openIdeLocal('cursor', p.local_path)">
-                         <i class="fa-solid fa-code popup-item-icon"></i> Cursor
-                       </div>
-                       <!-- DEV/BUILD buttons always rendered, disabled when command unconfigured. -->
-                       <div class="popup-run-row">
-                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getDevCmd(p) }" @click="!localBlocked(p) && getDevCmd(p) && runProjectDev(p, getDevCmd(p))" :title="runCmdTitle(p, getDevCmd(p), 'dev')">
-                           <i class="fa-solid fa-terminal popup-item-icon popup-icon-green"></i> DEV
-                         </div>
-                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getBuildCmd(p) }" @click="!localBlocked(p) && getBuildCmd(p) && runProjectCommand(p, getBuildCmd(p))" :title="runCmdTitle(p, getBuildCmd(p), 'build')">
-                           <i class="fa-solid fa-hammer popup-item-icon popup-icon-amber"></i> BUILD
-                         </div>
-                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !resolveDeployCmd(p) || !!deployBlockedReason(p) }" @click="!localBlocked(p) && resolveDeployCmd(p) && !deployBlockedReason(p) && runProjectDeploy(p)" :title="deployCmdTitle(p)">
-                           <i class="fa-solid fa-rocket popup-item-icon popup-icon-cyan"></i> DEPLOY
-                         </div>
-                       </div>
-                     </div>
-
-                     <!-- REMOTE -->
-                     <!-- Remote items always accessible, only upload action is gated by sync switch. -->
-                     <div v-if="p.remote_host && p.remote_path" class="popup-col-remote">
-                       <div class="popup-section-label">
-                         <span>☁️ REMOTE (SSH)</span>
-                         <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
-                           <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
-                         </button>
-                       </div>
-                       <!-- In-app SSH terminal first for companion support. -->
-                       <div class="popup-item" @click="openProjectRemoteTerminal(p)">
-                         <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> SSH Terminal (In-App)
-                       </div>
-                       <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path, p.id)">
-                         <i class="fa-solid fa-terminal popup-item-icon"></i> SSH Terminal
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode') }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
-                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode_insiders') }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
-                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('antigravity') }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
-                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
-                       </div>
-                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('cursor') }" @click="openIdeRemote('cursor', p.remote_host, p.remote_path)">
-                         <i class="fa-solid fa-code popup-item-icon"></i> Cursor (Remote SSH)
-                       </div>
-                       <div class="popup-item"
-                            :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing || !syncCheckEnabled }"
-                            @click="!projectRuntime[p.id]?.syncing && syncCheckEnabled && requestSelectPush(p.id)"
-                            :title="!syncCheckEnabled ? 'Sync check is off - turn it on (power icon in the SYNC column header) to push files' : 'Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project\'s exclude list, unaffected by the DRY toggle'">
-                         <i class="fa-solid fa-upload popup-item-icon popup-icon-cyan"></i> Upload (select files)
-                       </div>
-                     </div>
-                   </div>
-                 </div>
-              </div>
-
-              <button class="btn-tech btn-tech-secondary btn-refresh-project"
-                      @click="requestRefresh(p.id)"
-                      :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
-                      :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only - git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
-                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isRefreshing(p.id) }"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- Cell 6: Sync (PUSH/DRY/PULL, LOG, config) -->
+          <!-- Cell 2: Sync (PUSH/DRY/PULL, LOG, config) -->
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
               <div class="sync-cluster">
@@ -387,6 +242,151 @@
 
               <button class="btn-cell-trigger" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
                 <i class="fa-solid fa-gear"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cell 3: Tasks -->
+          <div class="grid-row-cell col-tasks">
+            <TaskCell :project="p" />
+          </div>
+
+          <!-- Cell 4: Git Status -->
+          <div class="grid-row-cell col-git-status">
+            <div class="git-cell">
+              <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
+                <button
+                        class="btn-cell-trigger btn-action-git"
+                        :class="{
+                          'git-no-repo': !isPathMissing(p) && ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
+                          'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
+                          'git-path-missing': isPathMissing(p),
+                        }"
+                        @click="openGitModal(p)"
+                        :title="isPathMissing(p) ? `Local path not found - volume not mounted?\n${p.local_path}` : projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
+                        aria-label="Git Actions">
+                  <i class="fa-brands fa-git-alt"></i>
+                </button>
+              </CountBadgeWrap>
+            </div>
+          </div>
+
+          <!-- Cell 5: Terminal -->
+          <div class="grid-row-cell col-terminal">
+            <TerminalScopeButton :scope="p" />
+          </div>
+
+          <!-- Cell 6: Action (OPEN + SELECT-push only) -->
+          <div class="grid-row-cell col-action">
+            <div class="actions-wrapper">
+              <!-- Open Popup Trigger (OPEN Button) -->
+              <div class="open-popup-wrapper">
+                <button class="btn-tech btn-tech-primary btn-action-open" title="Open Popup" :popovertarget="`open-popup-${p.id}`" :style="`anchor-name: --open-anchor-${p.id}`">
+                  <span class="btn-text u-narrow-hide">OPEN</span> <i class="fa-solid fa-caret-up"></i>
+                </button>
+
+                <div class="open-popup pin-left" popover :id="`open-popup-${p.id}`" :style="`position-anchor: --open-anchor-${p.id}`" @beforetoggle="onPopupOpen" @click="closeOnAction">
+                  <div class="popup-header popup-header-wrap" :title="projectDisplayName(p)">
+                     <img v-if="!failedIcons[p.id] && projectIconSrc(p.id, iconTimestamp)" :src="projectIconSrc(p.id, iconTimestamp)" class="popup-project-icon" alt="" @error="failedIcons[p.id] = true" />
+                     <i v-else class="fa-solid fa-folder-open text-cyan mr-1 popup-icon-folder-fallback"></i>
+                     <span class="popup-title-text">{{ projectDisplayName(p) }}</span>
+                     <button class="popup-copy-btn" @click.stop="openReportHtml(p)" title="Open REPORT.html (pulls newer copy from remote first if needed)">
+                       <i class="fa-solid fa-file-lines"></i> REPORT
+                     </button>
+                     <button v-if="p.production_url" class="popup-copy-btn" @click.stop="openSearchConsole(p)" title="Open Google Search Console for this domain">
+                       <i class="fa-solid fa-magnifying-glass"></i> GSC
+                     </button>
+                   </div>
+                   <div class="popup-columns">
+                     <!-- LOCAL -->
+                     <div class="popup-col-local">
+                       <div class="popup-section-label">
+                         <span>💻 LOCAL</span>
+                         <button class="popup-copy-btn" @click.stop="copyLocalPath(p)" :title="copiedPathKey === `local-${p.id}` ? 'Copied!' : 'Copy full path'">
+                           <i class="fa-solid" :class="copiedPathKey === `local-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                         </button>
+                       </div>
+                       <!-- Popup items disabled when local path is missing or IDE unavailable. -->
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('finder', p.local_path)">
+                         <i class="fa-solid fa-folder-open popup-item-icon popup-icon-amber"></i> Finder
+                       </div>
+                       <!-- In-app terminal option first for phone companion support. -->
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openNewProjectTerminal(p)">
+                         <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> In-App Terminal
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p) }" :title="localTitle(p)" @click="openIdeLocal('terminal', p.local_path, p.id)">
+                         <i class="fa-solid fa-terminal popup-item-icon"></i> Terminal
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode') }" :title="localTitle(p)" @click="openIdeLocal('vscode', p.local_path)">
+                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'vscode_insiders') }" :title="localTitle(p)" @click="openIdeLocal('vscode_insiders', p.local_path)">
+                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'antigravity') }" :title="localTitle(p)" @click="openIdeLocal('antigravity', p.local_path)">
+                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity IDE
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': localBlocked(p, 'cursor') }" :title="localTitle(p)" @click="openIdeLocal('cursor', p.local_path)">
+                         <i class="fa-solid fa-code popup-item-icon"></i> Cursor
+                       </div>
+                       <!-- DEV/BUILD buttons always rendered, disabled when command unconfigured. -->
+                       <div class="popup-run-row">
+                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getDevCmd(p) }" @click="!localBlocked(p) && getDevCmd(p) && runProjectDev(p, getDevCmd(p))" :title="runCmdTitle(p, getDevCmd(p), 'dev')">
+                           <i class="fa-solid fa-terminal popup-item-icon popup-icon-green"></i> DEV
+                         </div>
+                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !getBuildCmd(p) }" @click="!localBlocked(p) && getBuildCmd(p) && runProjectCommand(p, getBuildCmd(p))" :title="runCmdTitle(p, getBuildCmd(p), 'build')">
+                           <i class="fa-solid fa-hammer popup-item-icon popup-icon-amber"></i> BUILD
+                         </div>
+                         <div class="popup-item popup-run-btn" :class="{ 'popup-disabled': localBlocked(p) || !resolveDeployCmd(p) || !!deployBlockedReason(p) }" @click="!localBlocked(p) && resolveDeployCmd(p) && !deployBlockedReason(p) && runProjectDeploy(p)" :title="deployCmdTitle(p)">
+                           <i class="fa-solid fa-rocket popup-item-icon popup-icon-cyan"></i> DEPLOY
+                         </div>
+                       </div>
+                     </div>
+
+                     <!-- REMOTE -->
+                     <!-- Remote items always accessible, only upload action is gated by sync switch. -->
+                     <div v-if="p.remote_host && p.remote_path" class="popup-col-remote">
+                       <div class="popup-section-label">
+                         <span>☁️ REMOTE (SSH)</span>
+                         <button class="popup-copy-btn" @click.stop="copyRemotePath(p)" :title="copiedPathKey === `remote-${p.id}` ? 'Copied!' : 'Copy full path'">
+                           <i class="fa-solid" :class="copiedPathKey === `remote-${p.id}` ? 'fa-check' : 'fa-copy'"></i> COPY
+                         </button>
+                       </div>
+                       <!-- In-app SSH terminal first for companion support. -->
+                       <div class="popup-item" @click="openProjectRemoteTerminal(p)">
+                         <i class="fa-solid fa-terminal popup-item-icon popup-icon-cyan"></i> SSH Terminal (In-App)
+                       </div>
+                       <div class="popup-item" @click="openIdeRemote('terminal', p.remote_host, p.remote_path, p.id)">
+                         <i class="fa-solid fa-terminal popup-item-icon"></i> SSH Terminal
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode') }" @click="openIdeRemote('vscode', p.remote_host, p.remote_path)">
+                         <img src="/vscode-icon.png" class="popup-icon" alt="VSCode" /> VSCode (Remote SSH)
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('vscode_insiders') }" @click="openIdeRemote('vscode_insiders', p.remote_host, p.remote_path)">
+                         <img src="/vscode-icon.png" class="popup-icon popup-icon-insiders" alt="VSCode Insiders" /> VSCode Insiders (Remote)
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('antigravity') }" @click="openIdeRemote('antigravity', p.remote_host, p.remote_path)">
+                         <img src="/antigravity-icon.png" class="popup-icon" alt="Antigravity" /> Antigravity (Remote)
+                       </div>
+                       <div class="popup-item" :class="{ 'popup-disabled': ideMissing('cursor') }" @click="openIdeRemote('cursor', p.remote_host, p.remote_path)">
+                         <i class="fa-solid fa-code popup-item-icon"></i> Cursor (Remote SSH)
+                       </div>
+                       <div class="popup-item"
+                            :class="{ 'popup-disabled': projectRuntime[p.id]?.syncing || !syncCheckEnabled }"
+                            @click="!projectRuntime[p.id]?.syncing && syncCheckEnabled && requestSelectPush(p.id)"
+                            :title="!syncCheckEnabled ? 'Sync check is off - turn it on (power icon in the SYNC column header) to push files' : 'Pick specific files/folders (native file picker) and push only those to Remote - bypasses this project\'s exclude list, unaffected by the DRY toggle'">
+                         <i class="fa-solid fa-upload popup-item-icon popup-icon-cyan"></i> Upload (select files)
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+              </div>
+
+              <button class="btn-tech btn-tech-secondary btn-refresh-project"
+                      @click="requestRefresh(p.id)"
+                      :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
+                      :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only - git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
+                <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isRefreshing(p.id) }"></i>
               </button>
             </div>
           </div>
@@ -912,7 +912,7 @@ function formatTimeAgo(timestamp) {
   overflow-y: auto;
   width: 100%;
   /* Table layout columns */
-  --grid-cols: minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr;
+  --grid-cols: minmax(12rem, 1fr) auto 2.5rem 2.5rem 2.5rem 7rem;
   --grid-gap: 0.5rem;
 }
 
@@ -1327,7 +1327,7 @@ html.fx-glass .grid-header {
 /* Narrow container layout adjustments (<=700px). */
 @container main-view (max-width: 700px) {
   .projects-table-container {
-    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.0rem 4.2rem 1fr;
+    --grid-cols: minmax(7.5rem, 1fr) auto 2.1rem 1.9rem 2.0rem 4.2rem;
     --grid-gap: 0.4rem;
   }
 

@@ -13,13 +13,12 @@ The main window's project list (`src/components/ProjectTable.vue`). This doc own
 
 ## Column widths (`--grid-cols`)
 
-Six tracks, in DOM order: project info, TASKS, GIT, TERMINAL, ACTION, SYNC.
+Six tracks, in DOM order: project info, SYNC, TASKS, GIT, TERMINAL, ACTION. SYNC sits right after the name so PUSH/DRY/PULL stay in the left part of the window, which is all that stays visible when other windows cover the right half (owner, 2026-11-16).
 
-- **Wide** (`.projects-table-container`, default): `minmax(12rem, 2fr) 2.5rem 2.5rem 2.5rem 7rem 1fr`
-- **Narrow** (`≤700px`, `RULE-stack-tauri`-style breakpoint shared app-wide): `minmax(7.5rem, 2fr) 2.1rem 1.9rem 2.5rem 4.2rem 1fr`
+- **Wide** (`.projects-table-container`, default): `minmax(12rem, 1fr) auto 2.5rem 2.5rem 2.5rem 7rem`
+- **Narrow** (`≤700px`, `RULE-stack-tauri`-style breakpoint shared app-wide): `minmax(7.5rem, 1fr) auto 2.1rem 1.9rem 2.0rem 4.2rem`
 
-Only two tracks flex: **project info** (`minmax(_, 2fr)`) and **SYNC** (bare `1fr`, i.e.
-`minmax(auto, 1fr)`), weighted 2:1 toward the project column. A wider window spends its extra width on the name/path, not on the sync button cluster. SYNC deliberately never gets an explicit `minmax(Nrem, 1fr)` — an explicit length *replaces* the free min-content floor instead of adding to it, and every rem guess tried so far ended up smaller than the PUSH+DRY+PULL+LOG+gear cluster's own icon-only width (~176px at the narrow breakpoint), crushing the buttons into each other. Let the bare `1fr` auto-floor stand instead of re-guessing a fixed minimum.
+Only **project info** (`minmax(_, 1fr)`) flexes: a wider window spends its extra width on the name/path. **SYNC** is `auto`, which in practice is its content width (measured 2026-11-16: 166px narrow, 305px wide, the same for `1fr`, `min-content` and `fit-content`), so PUSH/DRY/PULL start right after the name at any width. At the 436px right-dock cap the grid is ~50px wider than the column, the same total as before the reorder; the clipped part is now ACTION's refresh button instead of LOG/gear. SYNC deliberately never gets an explicit length or `minmax(Nrem, 1fr)` — an explicit length *replaces* the free min-content floor instead of adding to it, and every rem guess tried so far ended up smaller than the PUSH+DRY+PULL+LOG+gear cluster's own icon-only width (~176px at the narrow breakpoint), crushing the buttons into each other. Let the `auto` floor stand instead of re-guessing a fixed minimum.
 
 ## Changing this layout
 
