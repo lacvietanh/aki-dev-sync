@@ -1298,6 +1298,21 @@ fn local_file_stat(local_path: &str, rel: &str) -> (Option<u64>, Option<u64>) {
     }
 }
 
+/// `rsync -c --dry-run --files-from` args: lists only paths whose content differs, never an mtime-only mismatch.
+fn checksum_residue_args(list_path: &std::path::Path, src: String, dest: String) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "-avzc".to_string(),
+        "--dry-run".to_string(),
+        format!("--files-from={}", list_path.display()),
+    ];
+    push_transport_args(&mut args);
+    args.push(src);
+    args.push(dest);
+    let insert_pos = args.len().saturating_sub(2);
+    args.insert(insert_pos, "--modify-window=2".to_string());
+    args
+}
+
 /// One `rsync -c --dry-run --files-from` over the residue, returning what still differs; an empty residue makes no call.
 fn rsync_checksum_residue(
     project: &SyncProject,
@@ -1322,17 +1337,7 @@ fn rsync_checksum_residue(
     std::fs::write(&list_path, residue.join("\n"))
         .map_err(|e| format!("checksum residue list write: {}", e))?;
 
-    let mut args: Vec<String> = vec![
-        "-avzc".to_string(),
-        "--dry-run".to_string(),
-        format!("--files-from={}", list_path.display()),
-    ];
-    push_transport_args(&mut args);
-    args.push(remote);
-    args.push(local);
-    let insert_pos = args.len().saturating_sub(2);
-    args.insert(insert_pos, "--modify-window=2".to_string());
-
+    let args = checksum_residue_args(&list_path, remote, local);
     let output = crate::system::create_command("rsync").args(&args).output();
     let _ = std::fs::remove_file(&list_path);
     let output = output.map_err(|e| format!("rsync checksum residue failed: {}", e))?;
@@ -1883,6 +1888,14 @@ fn files_overwritten_by_mirror(
         .collect()
 }
 
+/// Keeps overwrites whose content differs, or was never checked (past `CHECKSUM_CAP` or a failed `rsync -c`); a byte-identical file only gets its mtime reset, nothing is lost. Pure.
+fn drop_identical_overwrites(overwrites: Vec<String>, content: &ContentCheck) -> Vec<String> {
+    overwrites
+        .into_iter()
+        .filter(|f| content.differing.contains(f) || content.unchecked.contains(f))
+        .collect()
+}
+
 /// Paths a mirror sync would overwrite, for the confirm dialog beside the delete preview; merge mode keeps `-u`, so it returns empty without an rsync call.
 #[tauri::command]
 pub async fn get_sync_overwrite_preview(
@@ -1937,10 +1950,11 @@ pub async fn get_sync_overwrite_preview(
         // The same transfer under real `-u` semantics (`rsync_change_files` always forces -avzu) - whatever mirror sends that this list omits is destination-newer-or-equal, silently overwritten.
         let update_only_files = rsync_change_files(&project, is_push)?;
 
-        Ok(files_overwritten_by_mirror(
-            &mirror_files,
-            &update_only_files,
-        ))
+        let overwrites = files_overwritten_by_mirror(&mirror_files, &update_only_files);
+
+        // rsync compares only size + mtime, so a byte-identical file whose destination is newer lands in `overwrites` too; drop it the way the status poll drops converged files (one capped `rsync -c`, unchecked ones stay listed).
+        let content = check_content(&project, overwrites.clone(), &HashMap::new());
+        Ok(drop_identical_overwrites(overwrites, &content))
     })
     .await
     .map_err(|e| format!("get_sync_overwrite_preview task error: {}", e))?
@@ -2344,6 +2358,106 @@ mod tests {
         let mirror = vec!["a.txt".to_string()];
         let update_only = vec!["a.txt".to_string()];
         assert!(files_overwritten_by_mirror(&mirror, &update_only).is_empty());
+    }
+
+    fn content_check(differing: &[&str], unchecked: &[&str]) -> ContentCheck {
+        ContentCheck {
+            differing: differing.iter().map(|s| s.to_string()).collect(),
+            unchecked: unchecked.iter().map(|s| s.to_string()).collect(),
+            failed: false,
+        }
+    }
+
+    #[test]
+    fn drop_identical_overwrites_drops_byte_identical_files_and_keeps_the_rest_in_order() {
+        let overwrites = vec![
+            "z.txt".to_string(),
+            ".env".to_string(),
+            "a.txt".to_string(),
+        ];
+        // `.env` is absent from `differing`: `rsync -c` found it byte-identical, only its mtime differs.
+        let content = content_check(&["a.txt", "z.txt"], &[]);
+        assert_eq!(
+            drop_identical_overwrites(overwrites, &content),
+            vec!["z.txt".to_string(), "a.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn drop_identical_overwrites_keeps_files_whose_content_was_never_checked() {
+        let overwrites = vec!["over-cap.txt".to_string(), "same.txt".to_string()];
+        // Past CHECKSUM_CAP or in a failed `rsync -c` call: unknown content still warns.
+        let content = content_check(&[], &["over-cap.txt"]);
+        assert_eq!(
+            drop_identical_overwrites(overwrites, &content),
+            vec!["over-cap.txt".to_string()]
+        );
+    }
+
+    // Real local rsync, the api.akitao.com case: a `.env` identical byte for byte but 23 s newer at the destination, beside a same-size file whose content differs. Skips without rsync.
+    #[test]
+    fn real_rsync_checksum_drops_an_identical_newer_destination_file_from_the_overwrite_preview() {
+        if Command::new("rsync").arg("--version").output().is_err() {
+            eprintln!("skipping: rsync not on PATH");
+            return;
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "aki-sync-overwrite-checksum-{}",
+            std::process::id()
+        ));
+        let src = root.join("src");
+        let dest = root.join("dest");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let src_mtime: u64 = 1_700_000_000;
+        let dest_mtime: u64 = src_mtime + 23;
+        let write = |path: std::path::PathBuf, contents: &[u8], mtime: u64| {
+            std::fs::write(&path, contents).unwrap();
+            std::fs::File::open(&path)
+                .unwrap()
+                .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(mtime))
+                .expect("std::fs::File::set_modified must be supported for the fixture to mean anything");
+        };
+        write(src.join(".env"), b"API_KEY=same\n", src_mtime);
+        write(dest.join(".env"), b"API_KEY=same\n", dest_mtime);
+        write(src.join("changed.txt"), b"aaaa", src_mtime);
+        write(dest.join("changed.txt"), b"bbbb", dest_mtime);
+
+        // Both are destination-newer, so mirror-minus-`-u` lists both.
+        let overwrites = vec![".env".to_string(), "changed.txt".to_string()];
+        let list_path = root.join("files-from.txt");
+        std::fs::write(&list_path, overwrites.join("\n")).unwrap();
+
+        let args = checksum_residue_args(
+            &list_path,
+            format!("{}/", src.to_str().unwrap()),
+            format!("{}/", dest.to_str().unwrap()),
+        );
+        let output = Command::new("rsync")
+            .args(&args)
+            .output()
+            .expect("rsync was confirmed present above");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            output.status.success(),
+            "local-to-local checksum dry-run must succeed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let content = ContentCheck {
+            differing: filter_file_change_lines(&stdout).into_iter().collect(),
+            unchecked: HashSet::new(),
+            failed: false,
+        };
+        assert_eq!(
+            drop_identical_overwrites(overwrites, &content),
+            vec!["changed.txt".to_string()],
+            "rsync -c output: {stdout:?}"
+        );
     }
 
     #[test]
