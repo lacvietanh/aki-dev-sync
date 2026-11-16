@@ -26,9 +26,10 @@ Không còn mục nào. Owner đã tận mắt thấy chạy đúng thì mục �
 
 ## Research / thiết kế
 
-| # | Việc | Note | Bước kế tiếp |
-|---|---|---|---|
-| 5 | Phục hồi phiên làm việc sau quit/relaunch | `task-1789604852739` (research, done) | Research xong 2026-10-27 (`docs/research/terminal-session-restore.md`): phục hồi được scope, title, pin và cwd cuối dưới dạng shell mới; không bao giờ process, scrollback hay DEV/BUILD. Còn lại: implement theo § Decision › Follow-up (`pty.rs` lưu `TabMeta` + `cwd`), chờ owner duyệt vì đổi thiết kế trong `docs/arch/terminal-stack.md` |
+Không còn mục nào.
+
+Đóng, 2026-11-16:
+- **#5 phục hồi phiên làm việc sau quit/relaunch** (`task-1789604852739`): đã implement theo § Decision › Follow-up của `docs/research/terminal-session-restore.md`, owner duyệt 2026-11-16. `pty.rs` ghi `TabMeta` + `cwd` vào `terminal_tabs.json`; thiết kế ở `docs/arch/terminal-stack.md` § Tabs survive a relaunch.
 
 Đóng, 2026-10-27:
 - **#8 usage Claude Code qua RE lệnh `/usage`** (`task-1790294479640`): bỏ. RE dẫn tới endpoint `oauth/usage`, đã gỡ 2026-07-20 vì phải giả User-Agent trên token OAuth của người dùng, no-op trên Mac và bắt mỗi lượt poll gọi mạng (`docs/research/claudecode-usage-FINAL.md` §3). Mở lại khi Anthropic công bố một API hoặc lệnh CLI có tài liệu trả phần trăm quota mà không cần giả client.

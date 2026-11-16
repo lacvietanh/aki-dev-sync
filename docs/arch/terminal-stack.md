@@ -119,7 +119,7 @@ The orphaned `ssh` clients investigated in 1.20.0 were not caused by this code: 
 
 ### Lock order
 
-`sessions` → `inputs`, `scrollbacks` → `min_accepted`, `sessions` → `spawn_inflight`, `OutBuf` → `min_accepted`. `min_accepted`, `spawn_inflight` and `tab_meta` are leaf locks; no path holds both `OutBuf` and `scrollbacks`. A slow operation (process-group kill, spawn) never runs under `sessions`: `kill_session` removes the session under the lock and kills after releasing it, `kill_all_sessions` snapshots ids first, `pty_list_tabs` takes `tab_meta` per id.
+`sessions` → `inputs`, `scrollbacks` → `min_accepted`, `sessions` → `spawn_inflight`, `OutBuf` → `min_accepted`. `min_accepted`, `spawn_inflight` and `tab_meta` are leaf locks (`TAB_META_PERSIST` → `tab_meta` is the one path into `tab_meta` from above); no path holds both `OutBuf` and `scrollbacks`. A slow operation (process-group kill, spawn) never runs under `sessions`: `kill_session` removes the session under the lock and kills after releasing it, `kill_all_sessions` snapshots ids first, `pty_list_tabs` takes `tab_meta` per id.
 
 ### Output: coalescing with a deadline
 
@@ -140,6 +140,10 @@ A killed shell's reader lives up to one `FLUSH_INTERVAL` longer and can still fl
 ### Tab metadata survives a reload
 
 `TabMeta` (`project_id`, `title`, `pinned`) outlives the shell and a webview reload, and is forgotten only by `drop_tab_state` on close; `adoptTabs` (`terminalTabsStore.js`) rebuilds scope, title and pin from `pty_list_tabs`, which returns the union of tabs with a session and tabs with a scrollback (an exited tab still has one a phone may read). `upsert_tab_meta` patches: `None` leaves a field alone, so an older companion calling `pty_spawn` without ownership cannot erase it. `project_id` is set at the first spawn and never moved.
+
+### Tabs survive a relaunch
+
+`TabMeta` is also written to `terminal_tabs.json` in the app data dir (`app_paths::app_data_dir`), by `pty.rs` alone: after every change (`upsert_tab_meta`, `pty_set_tab_pinned`, `drop_tab_state` removing one entry), so a quit that skips `shutdown` (`killall` in `install-desktop.sh`) still leaves the open tabs on disk, and once in `shutdown`, where one batched `lsof` records each live shell's `cwd` before the kill. Launch loads it into `tab_meta`; `pty_list_tabs` lists record-only tabs with `alive: false`, `adoptTabs` stays the only reader, and a restored tab's spawn starts in its recorded `cwd` when the caller passes none and the directory still exists. Restored: scope, title, pin, directory. Not restored: the process, scrollback, DEV/BUILD commands (`docs/research/terminal-session-restore.md`). Tests never write the file (`tab_meta_path` is `None` under `cfg(test)`).
 
 ### The spawned shell
 

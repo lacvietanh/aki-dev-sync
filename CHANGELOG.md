@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Ve
 
 ## [Unreleased]
 
+### Added
+- **Terminal tabs come back after a quit and relaunch**: each tab's group (project or global), title, pin and last directory are kept in `~/.aki/devsync/terminal_tabs.json`, written by `pty.rs` on every change and, at quit, with each live shell's directory (one batched `lsof` before the shells are killed). On launch the tabs reappear and each starts a fresh login shell in its last directory, or the default one when that directory is gone. Running programs, scrollback and DEV/BUILD commands are not restored (`docs/research/terminal-session-restore.md`). Closing a tab removes only that tab's record; every other tab's record is kept. A quit that skips the normal exit (`build:app`'s `killall`) still restores the tabs, with the directories from the previous normal quit.
+
 ### Changed
 - **PUSH/DRY/PULL sit right after the project name**: the SYNC column moved from the right edge to the second column, and TASKS, GIT, TERMINAL and ACTION (OPEN, per-project refresh) moved to the right, so the sync controls stay in view when other windows cover the right half of the app. The project column still takes the spare width; SYNC takes only its content width (`auto`, never a fixed length, so the cluster keeps its free min-content floor). Every button, badge, popup and the header's sync switch are unchanged, only their column order.
 

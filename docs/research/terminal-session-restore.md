@@ -62,4 +62,6 @@ Rejected:
 
 Reopen if the owner wants only pinned tabs restored, or wants scrollback.
 
+**2026-11-16, shipped.** The Follow-up above is implemented as written (`docs/arch/terminal-stack.md` § Tabs survive a relaunch). A restored tab spawns when its `TerminalView` mounts: `adoptTabs` gives it `cwd: null`, so `pty_spawn` falls back to the recorded directory. Checked on the dev instance (`npm run dev:agent` + `npm run ctl`): a tab spawned in `/tmp`, a normal quit recorded `cwd: /private/tmp`, the relaunch listed it `alive: false`, then its shell came up `alive: true` in `/private/tmp`; closing it left `terminal_tabs.json` as `{}`.
+
 Cross-references: `docs/plan/backlog.md` #5, `docs/arch/terminal-stack.md` (gains a section when this ships), `.akidevsync/notes.json` `task-1789604852739`.

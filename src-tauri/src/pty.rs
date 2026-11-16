@@ -8,7 +8,7 @@
 // `portable-pty` API used here.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -56,15 +56,21 @@ struct PtySession {
     generation: u64,
 }
 
-/// Per-tab facts that outlive the shell and a webview reload: docs/arch/terminal-stack.md § Tab metadata survives a reload.
-#[derive(Default, Clone)]
+/// Per-tab facts that outlive the shell, a webview reload and a relaunch: docs/arch/terminal-stack.md § Tab metadata survives a reload, § Tabs survive a relaunch.
+#[derive(Default, Clone, PartialEq, Serialize, Deserialize)]
 struct TabMeta {
     /// `None` = global scope. Set once, at the tab's first `pty_spawn`, and never reassigned after —
     /// nothing in this app's frontend ever moves a tab to a different project.
+    #[serde(default)]
     project_id: Option<String>,
     /// `None` = no title recorded yet (frontend falls back to its own default, e.g. "Shell {id}").
+    #[serde(default)]
     title: Option<String>,
+    #[serde(default)]
     pinned: bool,
+    /// The shell's directory at the last app exit; a restored tab's spawn starts there when the caller names none.
+    #[serde(default)]
+    cwd: Option<String>,
 }
 
 struct PtyState {
@@ -90,7 +96,7 @@ static PTY: OnceLock<PtyState> = OnceLock::new();
 fn pty_state() -> &'static PtyState {
     PTY.get_or_init(|| PtyState {
         sessions: StdMutex::new(HashMap::new()),
-        tab_meta: StdMutex::new(HashMap::new()),
+        tab_meta: StdMutex::new(load_tab_meta()),
         inputs: StdMutex::new(HashMap::new()),
         scrollbacks: StdMutex::new(HashMap::new()),
         generation: AtomicU64::new(0),
@@ -98,6 +104,63 @@ fn pty_state() -> &'static PtyState {
         spawn_gate: StdMutex::new(()),
         spawn_inflight: StdMutex::new(None),
     })
+}
+
+const TAB_META_FILE: &str = "terminal_tabs.json";
+
+/// Serializes snapshot + write so an older snapshot never lands after a newer one. Taken before `tab_meta`, never while holding it.
+static TAB_META_PERSIST: StdMutex<()> = StdMutex::new(());
+
+/// `None` under test, so tests driving `pty_state` never touch the dev data dir.
+fn tab_meta_path() -> Option<std::path::PathBuf> {
+    if cfg!(test) {
+        return None;
+    }
+    crate::app_paths::app_data_dir()
+        .ok()
+        .map(|d| d.join(TAB_META_FILE))
+}
+
+fn load_tab_meta() -> HashMap<TabId, TabMeta> {
+    tab_meta_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| parse_tab_meta(&s))
+        .unwrap_or_default()
+}
+
+/// An unreadable file restores no tabs instead of failing launch.
+fn parse_tab_meta(json: &str) -> HashMap<TabId, TabMeta> {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+/// Rewrites the whole map after every change, so a quit that skips `shutdown` (`killall` in `install-desktop.sh`) still leaves every open tab on disk.
+fn persist_tab_meta() {
+    let Some(path) = tab_meta_path() else {
+        return;
+    };
+    let _gate = TAB_META_PERSIST.lock().unwrap();
+    let snapshot: std::collections::BTreeMap<TabId, TabMeta> = pty_state()
+        .tab_meta
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(id, meta)| (*id, meta.clone()))
+        .collect();
+    let result = serde_json::to_string_pretty(&snapshot)
+        .map_err(|e| e.to_string())
+        .and_then(|json| crate::system::write_atomic(&path, &json));
+    if let Err(e) = result {
+        eprintln!("[pty] {} not written: {}", TAB_META_FILE, e);
+    }
+}
+
+/// The caller's directory wins; otherwise a relaunch-restored one, only while it still exists.
+fn pick_spawn_cwd(
+    requested: Option<String>,
+    restored: Option<String>,
+    is_dir: impl Fn(&str) -> bool,
+) -> Option<String> {
+    requested.or_else(|| restored.filter(|d| is_dir(d)))
 }
 
 /// The user's login shell; `/bin/zsh`, the macOS default, when `$SHELL` is unset.
@@ -161,7 +224,10 @@ fn drop_tab_state(tab_id: TabId) {
     state.inputs.lock().unwrap().remove(&tab_id);
     state.scrollbacks.lock().unwrap().remove(&tab_id);
     state.min_accepted.lock().unwrap().insert(tab_id, u64::MAX);
-    state.tab_meta.lock().unwrap().remove(&tab_id);
+    let removed = state.tab_meta.lock().unwrap().remove(&tab_id).is_some();
+    if removed {
+        persist_tab_meta();
+    }
 }
 
 /// Raises a new session's tab floor to its own generation: lifts a reused id's close fence while every older session stays rejected.
@@ -175,13 +241,20 @@ fn admit_generation(tab_id: TabId, generation: u64) {
 
 /// Patches one tab's metadata: `None` keeps a field as recorded, so an older companion calling `pty_spawn` without ownership cannot erase it.
 fn upsert_tab_meta(tab_id: TabId, project_id: Option<String>, title: Option<String>) {
-    let mut all = pty_state().tab_meta.lock().unwrap();
-    let entry = all.entry(tab_id).or_default();
-    if project_id.is_some() {
-        entry.project_id = project_id;
-    }
-    if title.is_some() {
-        entry.title = title;
+    let changed = {
+        let mut all = pty_state().tab_meta.lock().unwrap();
+        let before = all.get(&tab_id).cloned();
+        let entry = all.entry(tab_id).or_default();
+        if project_id.is_some() {
+            entry.project_id = project_id;
+        }
+        if title.is_some() {
+            entry.title = title;
+        }
+        before.as_ref() != Some(&*entry)
+    };
+    if changed {
+        persist_tab_meta();
     }
 }
 
@@ -410,8 +483,8 @@ pub async fn pty_spawn(
     title: Option<String>,
 ) -> Result<(), String> {
     let tab_id = tab_id.unwrap_or(DEFAULT_TAB);
-    upsert_tab_meta(tab_id, project_id, title);
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        upsert_tab_meta(tab_id, project_id, title);
         let result = spawn_if_absent(app.clone(), tab_id, cwd);
         // Broadcast even on the no-op path: the other screen may still believe this shell is dead.
         emit_alive(&app, tab_id);
@@ -430,8 +503,16 @@ pub fn pty_rename_tab(tab_id: u32, title: String) {
 /// Sets one tab's durable pin (mirrors `toggleTabPinned`); a map insert, so a plain `fn`.
 #[tauri::command]
 pub fn pty_set_tab_pinned(tab_id: u32, pinned: bool) {
-    let mut all = pty_state().tab_meta.lock().unwrap();
-    all.entry(tab_id).or_default().pinned = pinned;
+    let changed = {
+        let mut all = pty_state().tab_meta.lock().unwrap();
+        let entry = all.entry(tab_id).or_default();
+        let changed = entry.pinned != pinned;
+        entry.pinned = pinned;
+        changed
+    };
+    if changed {
+        persist_tab_meta();
+    }
 }
 
 /// What one attempt to create a tab's shell came to. Separated from the thread wiring so the gate/commit/cancel logic can be driven by tests without an `AppHandle`.
@@ -506,7 +587,13 @@ fn spawn_shell(tab_id: TabId, cwd: Option<String>) -> Result<Spawned, String> {
         );
         cmd.env("PATH", seeded);
     }
-    if let Some(dir) = cwd {
+    let restored = pty_state()
+        .tab_meta
+        .lock()
+        .unwrap()
+        .get(&tab_id)
+        .and_then(|m| m.cwd.clone());
+    if let Some(dir) = pick_spawn_cwd(cwd, restored, |d| std::path::Path::new(d).is_dir()) {
         cmd.cwd(dir);
     }
     let mut child = pair
@@ -633,7 +720,77 @@ fn kill_all_sessions() {
 
 /// Tears every tab's PTY down on app exit (`RunEvent::Exit` in `lib.rs`); every other kill path is a user gesture.
 pub fn shutdown() {
+    record_cwds_for_relaunch();
     kill_all_sessions();
+}
+
+/// One batched `lsof` over every live shell, before the kill: the last moment their directories are readable.
+fn record_cwds_for_relaunch() {
+    let pids: Vec<(TabId, u32)> = pty_state()
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|(id, s)| s.child.process_id().map(|pid| (*id, pid)))
+        .collect();
+    if pids.is_empty() {
+        return;
+    }
+    let found = read_cwds(&pids.iter().map(|(_, pid)| *pid).collect::<Vec<_>>());
+    {
+        let mut all = pty_state().tab_meta.lock().unwrap();
+        for (id, pid) in &pids {
+            if let (Some(meta), Some(dir)) = (all.get_mut(id), found.get(pid)) {
+                meta.cwd = Some(dir.clone());
+            }
+        }
+    }
+    persist_tab_meta();
+}
+
+/// Current directory of each pid; a pid it cannot read is absent from the map.
+fn read_cwds(pids: &[u32]) -> HashMap<u32, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let list = pids
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        // Exits non-zero when one pid is gone and still prints the rest.
+        std::process::Command::new("/usr/sbin/lsof")
+            .args(["-a", "-d", "cwd", "-p", &list, "-Fpn"])
+            .output()
+            .map(|out| parse_lsof_cwds(&String::from_utf8_lossy(&out.stdout)))
+            .unwrap_or_default()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        pids.iter()
+            .filter_map(|pid| {
+                std::fs::read_link(format!("/proc/{}/cwd", pid))
+                    .ok()
+                    .map(|p| (*pid, p.to_string_lossy().to_string()))
+            })
+            .collect()
+    }
+}
+
+/// `lsof -F` output: a `p<pid>` line opens a process, its `n<path>` line is the cwd; other field lines are skipped.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn parse_lsof_cwds(stdout: &str) -> HashMap<u32, String> {
+    let mut found = HashMap::new();
+    let mut pid = None;
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix('p') {
+            pid = rest.parse::<u32>().ok();
+        } else if let (Some(path), Some(p)) = (line.strip_prefix('n'), pid) {
+            if !path.is_empty() {
+                found.insert(p, path.to_string());
+            }
+        }
+    }
+    found
 }
 
 /// Kills one tab's shell and leaves the tab open, in the same `[process exited]` state as a shell that exited by itself.
@@ -682,19 +839,16 @@ pub struct PtyTabInfo {
     pinned: bool,
 }
 
-/// Every tab with a session or a scrollback, by id: the companion replay and the post-reload re-adopt both need exited tabs too.
+/// Every tab with a session, a scrollback or a record, by id: the companion replay, the post-reload re-adopt and a relaunch's restored tabs (no shell yet) all need it.
 #[tauri::command]
 pub async fn pty_list_tabs() -> Result<Vec<PtyTabInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| -> Vec<PtyTabInfo> {
         let state = pty_state();
         let live: Vec<TabId> = state.sessions.lock().unwrap().keys().copied().collect();
-        let mut ids: Vec<TabId> = state.scrollbacks.lock().unwrap().keys().copied().collect();
-        for id in &live {
-            if !ids.contains(id) {
-                ids.push(*id);
-            }
-        }
-        ids.sort_unstable();
+        let with_scrollback: Vec<TabId> =
+            state.scrollbacks.lock().unwrap().keys().copied().collect();
+        let with_meta: Vec<TabId> = state.tab_meta.lock().unwrap().keys().copied().collect();
+        let ids = listed_tab_ids(&[&live, &with_scrollback, &with_meta]);
         // Per-id lock keeps `tab_meta` a leaf.
         ids.into_iter()
             .map(|id| {
@@ -717,6 +871,14 @@ pub async fn pty_list_tabs() -> Result<Vec<PtyTabInfo>, String> {
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
+}
+
+/// Sorted, de-duplicated union of the id sources `pty_list_tabs` reads.
+fn listed_tab_ids(sources: &[&[TabId]]) -> Vec<TabId> {
+    let mut ids: Vec<TabId> = sources.iter().flat_map(|s| s.iter().copied()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 /// Kill, wipe this tab's scrollback, spawn: the RESTART button only. The emit order is the fix: docs/arch/terminal-stack.md § Liveness rides the output channel.
@@ -772,24 +934,7 @@ pub async fn pty_cwd(tab_id: Option<u32>) -> Result<Option<String>, String> {
             let guard = pty_state().sessions.lock().unwrap();
             guard.get(&tab_id).and_then(|s| s.child.process_id())?
         };
-        // -Fn = machine-readable, one field per line prefixed by its type; `n` is the path.
-        #[cfg(target_os = "macos")]
-        let found = std::process::Command::new("/usr/sbin/lsof")
-            .args(["-a", "-d", "cwd", "-p", &pid.to_string(), "-Fn"])
-            .output()
-            .ok()
-            .and_then(|out| {
-                String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    .find(|l| l.starts_with('n'))
-                    .map(|l| l[1..].to_string())
-            })
-            .filter(|p| !p.is_empty());
-        #[cfg(not(target_os = "macos"))]
-        let found = std::fs::read_link(format!("/proc/{}/cwd", pid))
-            .ok()
-            .map(|p| p.to_string_lossy().to_string());
-        found
+        read_cwds(&[pid]).remove(&pid)
     })
     .await
     .map_err(|e| format!("spawn_blocking panicked: {}", e))
@@ -896,6 +1041,97 @@ mod constant_guards {
             "SCROLLBACK_CAP changed. Re-derive COMPANION_QUEUE_LIMIT_BYTES in web_server.rs (INVARIANT R) \
              and update docs/arch/terminal-stack.md's PTY-backend contract in the same commit."
         );
+    }
+}
+
+#[cfg(test)]
+mod relaunch_restore {
+    use super::*;
+
+    #[test]
+    fn a_file_without_cwd_or_with_garbage_restores_safely() {
+        let old = r#"{"3":{"project_id":"p1","title":"api","pinned":true}}"#;
+        let meta = parse_tab_meta(old);
+        assert_eq!(meta.len(), 1);
+        let t = &meta[&3];
+        assert_eq!(t.project_id.as_deref(), Some("p1"));
+        assert_eq!(t.title.as_deref(), Some("api"));
+        assert!(t.pinned);
+        assert_eq!(t.cwd, None);
+        assert!(parse_tab_meta("not json").is_empty());
+    }
+
+    #[test]
+    fn tab_meta_round_trips_through_the_file_shape() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(
+            0u32,
+            TabMeta {
+                project_id: None,
+                title: Some("Shell".into()),
+                pinned: false,
+                cwd: Some("/tmp/a b".into()),
+            },
+        );
+        map.insert(
+            7u32,
+            TabMeta {
+                project_id: Some("p2".into()),
+                title: None,
+                pinned: true,
+                cwd: None,
+            },
+        );
+        let json = serde_json::to_string_pretty(&map).unwrap();
+        let back = parse_tab_meta(&json);
+        assert_eq!(back.len(), 2);
+        assert!(back[&0] == map[&0]);
+        assert!(back[&7] == map[&7]);
+    }
+
+    #[test]
+    fn lsof_output_maps_every_pid_to_its_cwd() {
+        let out = "p101\nfcwd\nn/Users/aki/a b\np202\nfcwd\nn/tmp\np303\nfcwd\nn\n";
+        let found = parse_lsof_cwds(out);
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[&101], "/Users/aki/a b");
+        assert_eq!(found[&202], "/tmp");
+    }
+
+    #[test]
+    fn spawn_cwd_prefers_the_caller_then_an_existing_restored_dir() {
+        let exists = |d: &str| d == "/restored";
+        assert_eq!(
+            pick_spawn_cwd(Some("/asked".into()), Some("/restored".into()), exists),
+            Some("/asked".into())
+        );
+        assert_eq!(
+            pick_spawn_cwd(None, Some("/restored".into()), exists),
+            Some("/restored".into())
+        );
+        assert_eq!(pick_spawn_cwd(None, Some("/gone".into()), exists), None);
+        assert_eq!(pick_spawn_cwd(None, None, exists), None);
+    }
+
+    #[test]
+    fn listed_ids_include_record_only_tabs_once_and_sorted() {
+        let live = [4u32, 1];
+        let with_scrollback = [1u32, 9];
+        let with_meta = [12u32, 4, 2];
+        assert_eq!(
+            listed_tab_ids(&[&live, &with_scrollback, &with_meta]),
+            vec![1, 2, 4, 9, 12]
+        );
+    }
+
+    #[test]
+    fn dropping_one_tab_keeps_every_other_tabs_record() {
+        upsert_tab_meta(9101, Some("pa".into()), Some("a".into()));
+        upsert_tab_meta(9102, Some("pb".into()), Some("b".into()));
+        drop_tab_state(9101);
+        let all = pty_state().tab_meta.lock().unwrap();
+        assert!(!all.contains_key(&9101));
+        assert_eq!(all[&9102].project_id.as_deref(), Some("pb"));
     }
 }
 
