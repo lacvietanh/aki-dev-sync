@@ -15,6 +15,18 @@ const PLACE_ICONS = `on run argv
   end tell
 end run`
 
+// Finder learns of a -nobrowse volume lazily: its first Apple event after attach can fail with "Can't get disk" (-1728) while the next one resolves it, so the placement is retried.
+function placeIcons(args) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return execFileSync('osascript', ['-e', PLACE_ICONS, ...args], { stdio: 'inherit' })
+    } catch (e) {
+      if (attempt === 5) throw e
+      execFileSync('sleep', ['1'])
+    }
+  }
+}
+
 // Finder sometimes saves the window a few points lower or leaves a new file where it auto-placed it, so the coordinates are written straight into the volume's .DS_Store.
 export function pinIconPositions(dsStorePath, icons) {
   const store = fs.readFileSync(dsStorePath)
@@ -49,7 +61,7 @@ export function injectIntoDmg(dmgPath, files, pinned = []) {
     }
     const placed = files.filter((f) => f.at)
     if (placed.length) {
-      execFileSync('osascript', ['-e', PLACE_ICONS, path.basename(mountPoint), ...placed.flatMap((f) => [path.basename(f.src), ...f.at.map(String)])], { stdio: 'inherit' })
+      placeIcons([path.basename(mountPoint), ...placed.flatMap((f) => [path.basename(f.src), ...f.at.map(String)])])
       execFileSync('sync')
       pinIconPositions(path.join(mountPoint, '.DS_Store'), [...pinned, ...placed.map((f) => ({ name: path.basename(f.src), at: f.at }))])
     }
