@@ -333,7 +333,16 @@ if [ "$AGY_RUNNING" = "1" ]; then
     fi
 fi
 
-if [ "$PROCESSES_FOUND" = "0" ]; then
+# Each interactive AGY session's last turn, one file per account (statusline-unified.sh, aki-agquota v3): the accounts the Keychain-bound `/usage` above cannot see. After it, so for one account the live `/usage` frame comes first and these only fill gaps.
+for ag_frame in "$HOME/.gemini/antigravity-cli/rate-limits/"*.frame; do
+    [ -n "$(find "$ag_frame" -mmin -360 2>/dev/null)" ] || continue
+    { IFS= read -r ag_status && IFS= read -r ag_summary; } < "$ag_frame" || continue
+    case "$ag_status" in '{"email":'*) ;; *) _log "malformed quota frame $ag_frame - ignored"; continue ;; esac
+    printf '|||AGPROC|||agy-cli\n|||TYPE|||cli\n|||STATUSCODE|||200\n|||STATUS|||%s\n|||SUMMARYCODE|||200\n|||SUMMARY|||%s\n' "$ag_status" "$ag_summary"
+    FRAMES_EMITTED=$((FRAMES_EMITTED + 1))
+done
+
+if [ "$PROCESSES_FOUND" = "0" ] && [ "$FRAMES_EMITTED" = "0" ]; then
     printf '{"error":"Antigravity IDE or CLI process is not running."}\n' >&2
     exit 1
 fi

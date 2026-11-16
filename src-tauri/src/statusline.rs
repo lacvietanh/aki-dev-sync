@@ -2297,6 +2297,57 @@ mod tests {
         assert!(cached.contains("stub-user"), "live auth status was not cached: {}", cached);
     }
 
+    fn quota_frame(home: &std::path::Path, file: &str) -> Option<(serde_json::Value, serde_json::Value)> {
+        let text = std::fs::read_to_string(home.join(".gemini/antigravity-cli/rate-limits").join(file)).ok()?;
+        let mut lines = text.lines();
+        let status = serde_json::from_str(lines.next()?).ok()?;
+        let summary = serde_json::from_str(lines.next()?).ok()?;
+        Some((status, summary))
+    }
+
+    #[test]
+    fn agy_leaves_a_usage_shaped_quota_frame_for_its_own_account() {
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Gemini 3.8 Pro"},"account":{"email":"ag/kim@example.com"},"plan_tier":"Google AI Pro","quota":{"gemini-5h":{"remaining_fraction":0.75,"reset_in_seconds":3600},"gemini-weekly":{"remaining_fraction":0.97,"reset_in_seconds":604800},"gemini-argon-wtu-weekly":{"remaining_fraction":0.17,"reset_in_seconds":500000},"3p-weekly":1.0}}"#;
+        let (_, home) = run_script(".gemini/antigravity-cli/quota_frame.sh", &gen(&test_config()), payload, &[]);
+        let (status, summary) =
+            quota_frame(&home, "ag_kim@example.com.frame").expect("quota frame not written as two JSON lines");
+        assert_eq!(status["email"], "ag/kim@example.com");
+        assert_eq!(status["userTier"]["name"], "Google AI Pro");
+        let groups = summary.pointer("/command/data/groups").and_then(|g| g.as_array()).expect("groups");
+        let bucket = |id: &str| {
+            groups
+                .iter()
+                .flat_map(|g| g["buckets"].as_array().unwrap().iter().map(move |b| (g["name"].as_str().unwrap(), b)))
+                .find(|(_, b)| b["id"] == id)
+                .unwrap_or_else(|| panic!("bucket {} missing: {}", id, summary))
+        };
+        let (pool, b) = bucket("gemini-5h");
+        assert_eq!((pool, b["window"].as_str(), b["remaining_fraction"].as_f64()), ("Gemini Models", Some("5h"), Some(0.75)));
+        assert!(b["reset_time"].as_str().is_some_and(|t| t.ends_with('Z')), "{}", b);
+        assert_eq!(bucket("gemini-argon-wtu-weekly").0, "Gemini 4 Argon");
+        let (pool, b) = bucket("3p-weekly");
+        assert_eq!((pool, b["remaining_fraction"].as_f64()), ("Claude and GPT models", Some(1.0)));
+        assert!(b.get("reset_time").is_none(), "a bare fraction has no reset time: {}", b);
+    }
+
+    #[test]
+    fn no_quota_frame_without_quota_or_from_claude_code() {
+        let (_, home) = run_script(
+            ".gemini/antigravity-cli/quota_absent.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/tmp/demo","model":"gemini-2.5-flash","email":"ag-user@example.com"}"#,
+            &[],
+        );
+        assert!(!home.join(".gemini/antigravity-cli/rate-limits").exists(), "frame written without quota");
+        let (_, home) = run_script(
+            ".claude/quota_cc.sh",
+            &gen(&test_config()),
+            r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"email":"cc-user@example.com","quota":{"gemini-5h":0.5}}"#,
+            &[],
+        );
+        assert!(!home.join(".gemini/antigravity-cli/rate-limits").exists(), "Claude Code wrote an AGY quota frame");
+    }
+
     fn plan_tier_dir(home: &std::path::Path) -> std::path::PathBuf {
         home.join(".gemini/antigravity-cli/aki-plan-tier")
     }
@@ -2367,7 +2418,7 @@ mod tests {
         // (marker, line that ends the block, pinned version, pinned FNV-1a of the block body after the marker line)
         let pins: [(&str, &str, u32, u64); 2] = [
             (RLCACHE_MARKER, AGQUOTA_MARKER, 9, 0xbe57c6920c5388da),
-            (AGQUOTA_MARKER, r#"if [ -n "$JSON_CWD""#, 2, 0x4afa8d9b17150a34),
+            (AGQUOTA_MARKER, r#"if [ -n "$JSON_CWD""#, 3, 0x033e789bc8e71f6a),
         ];
         for (marker, end, pinned_version, pinned_hash) in pins {
             let shipped = marker_version(TEMPLATE, marker).expect("the template carries the marker");

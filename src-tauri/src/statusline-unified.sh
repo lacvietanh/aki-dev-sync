@@ -139,7 +139,7 @@ if [ "$CLI" = "CC" ]; then
   fi
 fi
 
-# aki-agquota v2 - AGY pool routing and the plan-tier record below; bump on any change to either: docs/feat/statusline-customizer.md § Quota routing (AGY).
+# aki-agquota v3 - AGY pool routing, the plan-tier record and the per-account quota frame below; bump on any change to either: docs/feat/statusline-customizer.md § Quota routing (AGY).
 if [ -n "$input" ]; then
   eval $(echo "$input" | jq -r '
     # Resolved once: .model is a plain string on older CLIs, and an unguarded .model.display_name on a string aborts the whole program (blank line).
@@ -194,7 +194,30 @@ if [ -n "$input" ]; then
       "JSON_CLAUDE_5H_RESET=" + ((.rate_limits.five_hour.resets_at // 0) | @sh),
       "JSON_CLAUDE_7D_RESET=" + ((.rate_limits.seven_day.resets_at // 0) | @sh),
       "JSON_ACCOUNT_EMAIL=" + ((.account.email // .user.email // .email // "") | @sh),
-      "JSON_PLAN_TIER=" + ((.plan_tier // "") | tostring | @sh)
+      "JSON_PLAN_TIER=" + ((.plan_tier // "") | tostring | @sh),
+      # STATUS and SUMMARY frame bodies of this account for the usage probe, the SUMMARY in `agy /usage --output-format json` shape (bucket ids are the quota keys): docs/arch/usage-antigravity.md § Per-account quota cache.
+      "JSON_AG_STATUS=" + ((.account.email // .user.email // .email // "") as $e | ((.plan_tier // "") | tostring) as $t
+        | if $e == "" then "" else ({email: $e} + (if $t == "" then {} else {userTier: {name: $t}} end) | tojson) end | @sh),
+      "JSON_AG_SUMMARY=" + (
+        [ $quota | to_entries[]
+          | select((.value | type) == "object" or (.value | type) == "number")
+          | {
+              key,
+              frac: (if (.value | type) == "object" then .value.remaining_fraction else .value end),
+              reset: (if (.value | type) == "object" then (.value.reset_in_seconds // 0) else 0 end)
+            }
+          | select(.frac != null)
+          | .pool = (if (.key | test("argon")) then "Gemini 4 Argon"
+                     elif (.key | startswith("gemini")) then "Gemini Models"
+                     elif (.key | startswith("3p")) then "Claude and GPT models"
+                     else (.key | sub("-(5h|weekly)$"; "")) end) ]
+        | if length == 0 then "" else
+            { command: { name: "usage", data: { groups: (group_by(.pool) | map({
+                name: .[0].pool,
+                buckets: map({ id: .key, window: (if (.key | test("5h")) then "5h" else "weekly" end), remaining_fraction: .frac }
+                  + (if .reset > 0 then { reset_time: ((now + .reset) | floor | todate) } else {} end))
+              })) } } } | tojson
+          end | @sh)
     ] | join("\n")
   ' 2>/dev/null)
 fi
@@ -210,6 +233,15 @@ if [ "$CLI" = "AG" ] && [ -n "$JSON_PLAN_TIER" ] && [ -n "$JSON_ACCOUNT_EMAIL" ]
     _ag_tier_tmp=$(mktemp "$_ag_tier_dir/.tier.XXXXXX" 2>/dev/null) \
       && { { printf '%s\n' "$JSON_PLAN_TIER" > "$_ag_tier_tmp" && mv -f "$_ag_tier_tmp" "$_ag_tier_file"; } || rm -f "$_ag_tier_tmp"; }
   fi
+fi
+
+# Headless `agy /usage` sees only the Keychain account, so each AGY turn leaves its own account's quota for the probe: docs/arch/usage-antigravity.md § Per-account quota cache.
+if [ "$CLI" = "AG" ] && [ -n "$JSON_AG_STATUS" ] && [ -n "$JSON_AG_SUMMARY" ]; then
+  _ag_rl_dir="$HOME/.gemini/antigravity-cli/rate-limits"
+  mkdir -p "$_ag_rl_dir" 2>/dev/null
+  _ag_rl_tmp=$(mktemp "$_ag_rl_dir/.frame.XXXXXX" 2>/dev/null) \
+    && { { printf '%s\n%s\n' "$JSON_AG_STATUS" "$JSON_AG_SUMMARY" > "$_ag_rl_tmp" \
+      && mv -f "$_ag_rl_tmp" "$_ag_rl_dir/$(printf '%s' "$JSON_ACCOUNT_EMAIL" | tr -c 'A-Za-z0-9@._+-' '_').frame"; } || rm -f "$_ag_rl_tmp"; }
 fi
 
 if [ -n "$JSON_CWD" ] && [ "$JSON_CWD" != "null" ]; then

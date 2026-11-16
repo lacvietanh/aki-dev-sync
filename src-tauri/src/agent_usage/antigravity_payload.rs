@@ -492,6 +492,33 @@ mod tests {
     }
 
     #[test]
+    fn per_account_quota_frames_become_one_account_each_and_the_first_stays_primary() {
+        let raw = r#"|||AGPROC|||agy-cli
+|||TYPE|||cli
+|||STATUSCODE|||200
+|||STATUS|||{"email":"kim@example.com","userTier":{"name":"Google AI Pro"}}
+|||SUMMARYCODE|||200
+|||SUMMARY|||{"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-5h","window":"5h","remaining_fraction":0.75,"reset_time":"2026-11-16T07:00:00Z"}]}]}}}
+|||AGPROC|||agy-cli
+|||TYPE|||cli
+|||STATUSCODE|||200
+|||STATUS|||{"email":"lva@example.com"}
+|||SUMMARYCODE|||200
+|||SUMMARY|||{"command":{"name":"usage","data":{"groups":[{"name":"Claude and GPT models","buckets":[{"id":"3p-weekly","window":"weekly","remaining_fraction":0.5}]}]}}}
+"#;
+        let payload = parse_antigravity_frames(raw, 1750000000).unwrap().unwrap();
+        let v: Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["email"], "kim@example.com");
+        let all = v["allAccounts"].as_array().expect("two accounts listed");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[1]["email"], "lva@example.com");
+        assert_eq!(
+            all[1]["quotaSummary"]["groups"][0]["buckets"][0]["bucketId"],
+            "3p-weekly"
+        );
+    }
+
+    #[test]
     fn agy_cli_usage_frame_maps_to_quota_summary_shape() {
         let raw = r#"|||AGPROC|||agy-cli
 |||TYPE|||cli
