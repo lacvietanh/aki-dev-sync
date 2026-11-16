@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-10-29 · v1.36.0
+> updated 2026-11-16 · v1.36.0
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
@@ -219,7 +219,7 @@ Four rules are **not optional** and are marked with a `DESIGN LOCK` comment in t
 1. **Expiry** - an entry whose `resets_at` has already passed is dropped, not displayed. `resets_at: 0` means "unknown", not "expired", and is kept.
 2. **Account scope** - the file is named by the email `claude auth status` returns for this session, and records the `org_id` that wrote it; a file whose `org_id` differs from the session's is discarded rather than displayed (either side empty counts as a match). Email alone is not an account identity: an account deleted and recreated under the same address gets a new org and a new plan.
 3. **Staleness** - every entry the live payload sends is stamped `seen_at`; one unseen for 6 h is dropped, so a tier a plan change stopped sending ages out instead of living on through its `resets_at`.
-4. **Monotone inside a window** (v8) - sessions of one account share the file and each renders its own last payload, so an idle session still holding 83% used to overwrite another's 100% (last writer wins). An entry whose positive `resets_at` equals the cached one keeps the larger `used_percentage`; a different `resets_at` is a new window and takes the payload as sent. `resets_at: 0` is unknown, so it is never compared. Pinned by `cc_stale_session_cannot_lower_usage_inside_one_window` and `cc_new_window_replaces_the_previous_windows_usage`.
+4. **Newest reading wins inside a window** (v9) - sessions of one account share the file and each renders its own last payload, so an idle session still holding 83% used to overwrite another's 100% (last writer wins), and keeping the larger number instead (v8) pinned the old reading after a mid-window usage reset, which lowers `used_percentage` without moving `resets_at`. Each live entry is stamped `fresh_at`, the mtime of the payload's `transcript_path`: a session writes its transcript on every turn, so the mtime dates its reading. An entry whose positive `resets_at` equals the cached one takes the payload when its `fresh_at` is at least the cached one (a cache without `fresh_at` counts as 0) and keeps the cached reading otherwise; a payload with no readable transcript keeps the larger `used_percentage`. A different `resets_at` is a new window and takes the payload as sent. `resets_at: 0` is unknown, so it is never compared. Known gap: a local command (`/usage`, `/status`) in an idle session writes its transcript without fetching quota, so that session's older reading shows until any session's next turn. Pinned by `cc_session_active_after_the_cache_lowers_usage_inside_one_window`, `cc_session_idle_since_before_the_cache_cannot_change_its_reading`, `cc_stale_session_cannot_lower_usage_inside_one_window` (undated payload) and `cc_new_window_replaces_the_previous_windows_usage`.
 
 Nothing surviving the gates → the file is removed. The header's `# aki-rlcache vN` is parsed by `scripts/provision-claudecode.sh` to retire an older stacked block, so it stays at the start of that comment line.
 

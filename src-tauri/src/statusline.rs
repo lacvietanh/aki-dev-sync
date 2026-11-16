@@ -954,8 +954,7 @@ mod tests {
         env: &[(&str, String)],
         aged: &[(&str, u64)],
     ) -> (String, std::path::PathBuf) {
-        let home =
-            std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")));
+        let home = test_home(name);
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
         for (rel, contents) in files {
@@ -1010,6 +1009,11 @@ mod tests {
             })
             .unwrap();
         (String::from_utf8_lossy(&out.stdout).to_string(), home)
+    }
+
+    /// The private $HOME `run_script_aged` gives the script invoked as `name`.
+    fn test_home(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("aki-statusline-test/{}", name.replace('/', "_")))
     }
 
     // ---- behavioural tests, per docs/plan/done/1.18.0-statusline-apply-correctness.md §P2-4 ------
@@ -1131,6 +1135,50 @@ mod tests {
         let (p, written) = render_stale_session_over_full_cache("cc_rl_new_window.sh", 3, now + 600, now + 18000);
         assert!(p.contains("3%"), "new window still shows the old usage: {}", p);
         assert!(written.contains(r#""used_percentage":3"#), "cache kept the old window's 100%: {}", written);
+    }
+
+    /// Renders `payload_pct` from a session whose transcript was last written `transcript_age` s ago, over a cache holding `cached_pct` read `cached_age` s ago, both in one 5-Hour window; returns the line and the rewritten cache.
+    fn render_dated_session(name: &str, payload_pct: u32, transcript_age: u64, cached_pct: u32, cached_age: u64) -> (String, String) {
+        let now = now_epoch();
+        let reset = now + 3600;
+        let transcript = test_home(name).join("transcript.jsonl");
+        let payload = format!(
+            r#"{{"cwd":"/tmp/demo","transcript_path":"{}","rate_limits":{{"five_hour":{{"used_percentage":{},"resets_at":{}}}}}}}"#,
+            transcript.display(), payload_pct, reset
+        );
+        let cache = format!(
+            r#"{{"account":"me@example.com","rate_limits":{{"five_hour":{{"used_percentage":{},"resets_at":{},"fresh_at":{}}}}}}}"#,
+            cached_pct, reset, now - cached_age
+        );
+        let (line, home) = run_script_aged(
+            name,
+            &gen(&test_config()),
+            &payload,
+            &[
+                (".claude/auth-cache-default.json", r#"{"email":"me@example.com"}"#),
+                (".claude/rate-limits/me@example.com.json", cache.as_str()),
+                ("transcript.jsonl", "{}\n"),
+            ],
+            &[],
+            &[("transcript.jsonl", transcript_age)],
+        );
+        let written = std::fs::read_to_string(home.join(".claude/rate-limits/me@example.com.json")).unwrap();
+        (plain(&line), written)
+    }
+
+    #[test]
+    fn cc_session_active_after_the_cache_lowers_usage_inside_one_window() {
+        // A usage reset mid-window lowers the server reading and keeps resets_at.
+        let (p, written) = render_dated_session("cc_rl_reset.sh", 30, 0, 100, 600);
+        assert!(p.contains("5h:30%"), "the reset reading did not replace the older 100%: {}", p);
+        assert!(written.contains(r#""used_percentage":30"#), "cache kept the older 100%: {}", written);
+    }
+
+    #[test]
+    fn cc_session_idle_since_before_the_cache_cannot_change_its_reading() {
+        let (p, written) = render_dated_session("cc_rl_idle.sh", 100, 600, 30, 0);
+        assert!(p.contains("5h:30%"), "an idle session's older reading replaced the newer one: {}", p);
+        assert!(written.contains(r#""used_percentage":30"#), "cache took the idle session's reading: {}", written);
     }
 
     fn now_epoch() -> u64 {
@@ -2318,7 +2366,7 @@ mod tests {
     fn a_marker_block_edit_bumps_its_version() {
         // (marker, line that ends the block, pinned version, pinned FNV-1a of the block body after the marker line)
         let pins: [(&str, &str, u32, u64); 2] = [
-            (RLCACHE_MARKER, AGQUOTA_MARKER, 8, 0xa2a75017354850df),
+            (RLCACHE_MARKER, AGQUOTA_MARKER, 9, 0xbe57c6920c5388da),
             (AGQUOTA_MARKER, r#"if [ -n "$JSON_CWD""#, 2, 0x4afa8d9b17150a34),
         ];
         for (marker, end, pinned_version, pinned_hash) in pins {

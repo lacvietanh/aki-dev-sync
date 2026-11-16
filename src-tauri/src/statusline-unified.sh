@@ -20,10 +20,16 @@ case "$0" in
   *)           CLI="CC" ;;
 esac
 
-# aki-rlcache v8 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
+# aki-rlcache v9 - one quota cache per account, CC only. Expiry/account/staleness gates are a DESIGN LOCK: docs/feat/statusline-customizer.md § Quota cache.
 if [ "$CLI" = "CC" ]; then
   _rl_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   _rl_now=$(date +%s)
+  # GNU form first: GNU `stat -f` succeeds with the wrong output (--file-system), while BSD `stat` rejects `-c` cleanly. Prints nothing for a non-numeric result.
+  _rl_mtime() {
+      local _m
+      _m=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
+      case "$_m" in ''|*[!0-9]*) ;; *) printf '%s' "$_m" ;; esac
+  }
   # One config dir can hold two logins, slotted like Claude Code's Keychain item: docs/arch/usage-claudecode.md § Nhiều account trên một máy.
   _cc_slot=default
   [ -n "${CLAUDE_CONFIG_DIR:-}" ] && _cc_slot=$(printf '%s' "$CLAUDE_CONFIG_DIR" | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -c1-8)
@@ -32,9 +38,8 @@ if [ "$CLI" = "CC" ]; then
   _cc_auth=""
   _auth_cache_age=999999
   if [ -f "$_cc_auth_cache" ]; then
-      # GNU form first: GNU `stat -f` succeeds with the wrong output (--file-system), while BSD `stat` rejects `-c` cleanly.
-      _auth_mtime=$(stat -c %Y "$_cc_auth_cache" 2>/dev/null || stat -f %m "$_cc_auth_cache" 2>/dev/null)
-      case "$_auth_mtime" in ''|*[!0-9]*) ;; *) _auth_cache_age=$(( _rl_now - _auth_mtime )) ;; esac
+      _auth_mtime=$(_rl_mtime "$_cc_auth_cache")
+      [ -n "$_auth_mtime" ] && _auth_cache_age=$(( _rl_now - _auth_mtime ))
   fi
   if [ "$_auth_cache_age" -lt "$AUTH_TTL_S" ]; then
       _cc_auth=$(cat "$_cc_auth_cache" 2>/dev/null)
@@ -86,19 +91,27 @@ if [ "$CLI" = "CC" ]; then
   fi
   rl_merged="$rl_cached"
   if [ -n "$rl_input" ]; then
-      # Stamp every entry the live payload actually sent this turn, so _rl_prune can tell
-      # "still being sent" from "hasn't been sent in a while".
-      _rl_input_seen=$(jq -c -n --argjson rl "$rl_input" --argjson now "$_rl_now" '
-        $rl | with_entries(if (.value | type) == "object" then .value.seen_at = $now else . end)' 2>/dev/null)
+      # A session writes its transcript on every turn, so the transcript's mtime dates the reading this payload carries: docs/feat/statusline-customizer.md § Quota cache, rule 4.
+      _rl_fresh_at=0
+      _rl_transcript=$(printf '%s' "$input" | jq -r '.transcript_path // ""' 2>/dev/null)
+      [ -n "$_rl_transcript" ] && [ -f "$_rl_transcript" ] && _rl_fresh_at=$(_rl_mtime "$_rl_transcript")
+      # seen_at marks every entry this payload sent, so _rl_prune can tell "still being sent" from "not sent for a while".
+      _rl_input_seen=$(jq -c -n --argjson rl "$rl_input" --argjson now "$_rl_now" --argjson fresh "${_rl_fresh_at:-0}" '
+        $rl | with_entries(if (.value | type) == "object" then (.value.seen_at = $now | if $fresh > 0 then .value.fresh_at = $fresh else . end) else . end)' 2>/dev/null)
       [ -n "$_rl_input_seen" ] && rl_input="$_rl_input_seen"
       rl_merged="$rl_input"
       if [ -n "$rl_cached" ]; then
-          # Sessions of one account share this file and each carries its own last payload: inside one window (same positive resets_at) usage only grows, so a stale session never lowers the reading.
+          # Inside one window (same positive resets_at) the more recently active session's reading wins, so an idle session cannot overwrite a newer one and a mid-window reset can lower the reading; an undated payload keeps the larger reading.
           _merged=$(jq -c -n --argjson old "$rl_cached" --argjson new "$rl_input" '
             $old * $new | with_entries(
               .key as $k
               | if (($old[$k] | type) == "object") and (($new[$k] | type) == "object") and (($new[$k].resets_at // 0) > 0) and ($old[$k].resets_at == $new[$k].resets_at)
-                then (([$old[$k].used_percentage, $new[$k].used_percentage] | map(numbers) | max) as $top | if $top == null then . else .value.used_percentage = $top end)
+                then
+                  if ($new[$k].fresh_at // 0) > 0 then
+                    (if $new[$k].fresh_at >= ($old[$k].fresh_at // 0) then . else .value = ($old[$k] | .seen_at = $new[$k].seen_at) end)
+                  else
+                    (([$old[$k].used_percentage, $new[$k].used_percentage] | map(numbers) | max) as $top | if $top == null then . else .value.used_percentage = $top end)
+                  end
                 else . end)' 2>/dev/null)
           [ -n "$_merged" ] && rl_merged="$_merged"
       fi

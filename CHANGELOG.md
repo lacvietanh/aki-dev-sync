@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [Unreleased]
+
+### Fixed
+- **Claude Code quota drops back after a mid-week usage reset**: a reset lowers `used_percentage` without moving `resets_at`, and since 1.36.0 the statusline kept the larger number inside one window, so the statusline and the usage card stayed at the old reading (98% while `/usage` showed 49%) until the cache file was deleted by hand. Each reading is now dated by the mtime of the session's transcript, and inside one window the most recently active session's reading wins, lower or not. An idle session still cannot overwrite a newer reading, a payload with no transcript keeps the larger number as before, and a different `resets_at` still starts a new window. Other accounts' cache files, the expiry, account and 6-hour gates and the other quota buckets are untouched. Block `aki-rlcache` v9, so hosts on v8 are rewritten at app launch.
+
 ## [1.36.0] - 2026-10-28
 
 ### Added
