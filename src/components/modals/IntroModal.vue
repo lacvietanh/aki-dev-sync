@@ -80,7 +80,7 @@
           <div class="feature-icon icon-syncstatus"><i class="fa-solid fa-circle-dot"></i></div>
           <div class="feature-text">
             <strong>Sync Status</strong>
-            <span>Checked automatically - the PUSH/PULL buttons light up when the two sides drift apart. They sit right after the project name, so they stay in view when the right half of the window is covered.</span>
+            <span>Checked automatically - the PUSH/PULL buttons light up when the two sides drift apart. They sit right after TASKS and GIT, ahead of the terminal, OPEN, refresh, LOG and config buttons, so they stay in view when the right part of the window is covered.</span>
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 # Research: SYNC column next to the project name
 
-**Asked 2026-11-16.** The owner keeps only about the left half of the project list in view (other windows overlap the rest) and wants the PUSH/DRY/PULL cluster there, with TASKS, GIT, TERMINAL and ACTION (OPEN, per-project refresh) moved to the right edge. Shipped the same day as option A (`CHANGELOG.md` [Unreleased] § Changed; layout contract in `docs/feat/project-table.md`).
+**Asked 2026-11-16.** The owner keeps only about the left half of the project list in view (other windows overlap the rest) and wants the PUSH/DRY/PULL cluster there, with TASKS, GIT, TERMINAL and ACTION (OPEN, per-project refresh) moved to the right edge. Shipped the same day; option A below was a misreading and was replaced, see § Correction (`CHANGELOG.md` [Unreleased] § Changed; layout contract in `docs/feat/project-table.md`).
 
 ## Today
 
@@ -32,3 +32,9 @@
 - Header and row cells line up track for track (measured at 720px; header and rows are one subgrid, so every width shares the same tracks).
 - The OPEN popup is `.pin-left` and the conflict popup clamps to the viewport, so neither depends on its trigger's column.
 - `npm run audit:ui` exit 0.
+
+## Correction (2026-11-16)
+
+Option A read the request wrong: it moved the whole SYNC cell, LOG and config included, ahead of TASKS and GIT. The owner asked for one thing only: terminal, OPEN and refresh go to the right of PUSH/DRY/PULL. TASKS and GIT keep their place, and LOG and config stay at the far right, where they were already past the visible edge and rarely used. The goal is to fill the left part of the table with what is used most.
+
+Shipped order: project, TASKS, GIT, SYNC (PUSH/DRY/PULL + last action), TERMINAL, ACTION (OPEN, refresh), LOG + config. LOG and config left the sync cell for a seventh track; `--grid-cols` is the original with `auto` inserted for SYNC (`minmax(_, 2fr) _ _ auto _ _ 1fr`). Measured at 436px: PUSH/DRY/PULL 203-293 (they sat at about 310-420 before), terminal 299-331, OPEN 336-368, refresh 374-406, LOG 411-443, config 449-481; header and row cells share every track edge at 436 and 720px.

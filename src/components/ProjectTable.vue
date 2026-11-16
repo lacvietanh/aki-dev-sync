@@ -14,6 +14,13 @@
             <i class="fa-solid fa-plus"></i><span class="u-narrow-hide"> NEW</span>
           </button>
         </div>
+        <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
+        <div class="grid-header-cell col-git-status" title="LOCAL GIT">
+          <span class="th-with-ring">
+            <span class="u-narrow-hide">GIT</span>
+            <RefreshRing :interval-s="refreshSettings.git_interval_s" :refresh-key="gitRefreshKey" stroke-color="rgba(16, 185, 129, 0.6)" />
+          </span>
+        </div>
         <div class="grid-header-cell col-sync">
           <span class="th-with-ring">
             SYNC
@@ -22,17 +29,11 @@
                :title="syncCheckEnabled ? 'Sync check ON - click to stop all remote diff/push/pull' : 'Sync check OFF - click to enable'"></i>
           </span>
         </div>
-        <div class="grid-header-cell col-tasks" title="PROJECT TASKS">TASKS</div>
-        <div class="grid-header-cell col-git-status" title="LOCAL GIT">
-          <span class="th-with-ring">
-            <span class="u-narrow-hide">GIT</span>
-            <RefreshRing :interval-s="refreshSettings.git_interval_s" :refresh-key="gitRefreshKey" stroke-color="rgba(16, 185, 129, 0.6)" />
-          </span>
-        </div>
         <div class="grid-header-cell col-terminal" title="TERMINAL">
           <TerminalScopeButton :scope="GLOBAL_SCOPE" />
         </div>
         <div class="grid-header-cell col-action" title="OPEN / SELECT-PUSH">ACTION</div>
+        <div class="grid-header-cell col-log-config"></div>
       </div>
 
       <transition-group tag="div" class="grid-body" name="project-list">
@@ -114,7 +115,32 @@
             </div>
           </div>
 
-          <!-- Cell 2: Sync (PUSH/DRY/PULL, LOG, config) -->
+          <!-- Cell 2: Tasks -->
+          <div class="grid-row-cell col-tasks">
+            <TaskCell :project="p" />
+          </div>
+
+          <!-- Cell 3: Git Status -->
+          <div class="grid-row-cell col-git-status">
+            <div class="git-cell">
+              <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
+                <button
+                        class="btn-cell-trigger btn-action-git"
+                        :class="{
+                          'git-no-repo': !isPathMissing(p) && ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
+                          'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
+                          'git-path-missing': isPathMissing(p),
+                        }"
+                        @click="openGitModal(p)"
+                        :title="isPathMissing(p) ? `Local path not found - volume not mounted?\n${p.local_path}` : projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
+                        aria-label="Git Actions">
+                  <i class="fa-brands fa-git-alt"></i>
+                </button>
+              </CountBadgeWrap>
+            </div>
+          </div>
+
+          <!-- Cell 4: Sync (PUSH/DRY/PULL) -->
           <div class="grid-row-cell col-sync">
             <div class="actions-wrapper">
               <div class="sync-cluster">
@@ -234,40 +260,6 @@
                   <div v-if="p.last_sync_host" class="la-line la-host">{{ p.last_sync_host }}</div>
                 </div>
               </div>
-
-              <button class="btn-tech btn-tech-secondary btn-log-trigger" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
-                <i class="fa-solid fa-file-lines btn-log-icon-only"></i>
-                <span class="btn-text u-narrow-hide">LOG</span>
-              </button>
-
-              <button class="btn-cell-trigger" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
-                <i class="fa-solid fa-gear"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- Cell 3: Tasks -->
-          <div class="grid-row-cell col-tasks">
-            <TaskCell :project="p" />
-          </div>
-
-          <!-- Cell 4: Git Status -->
-          <div class="grid-row-cell col-git-status">
-            <div class="git-cell">
-              <CountBadgeWrap :count="projectRuntime[p.id]?.git_changed_count || 0">
-                <button
-                        class="btn-cell-trigger btn-action-git"
-                        :class="{
-                          'git-no-repo': !isPathMissing(p) && ['No Git', 'Git Error'].includes(projectRuntime[p.id]?.git_status),
-                          'git-ahead': projectRuntime[p.id]?.git_status === 'Ahead',
-                          'git-path-missing': isPathMissing(p),
-                        }"
-                        @click="openGitModal(p)"
-                        :title="isPathMissing(p) ? `Local path not found - volume not mounted?\n${p.local_path}` : projectRuntime[p.id]?.git_status === 'No Git' ? 'No Git repository' : projectRuntime[p.id]?.git_status === 'Git Error' ? 'Git error - click to view' : projectRuntime[p.id]?.git_changed_count > 0 ? `Git Actions (${projectRuntime[p.id].git_changed_count} changed file(s))` : projectRuntime[p.id]?.git_status === 'Ahead' ? 'Ahead of remote - click to push' : 'Git Actions (Commit & Push to Remote Git)'"
-                        aria-label="Git Actions">
-                  <i class="fa-brands fa-git-alt"></i>
-                </button>
-              </CountBadgeWrap>
             </div>
           </div>
 
@@ -387,6 +379,20 @@
                       :disabled="projectRuntime[p.id]?.syncing || isRefreshing(p.id) || !syncCheckEnabled"
                       :title="!syncCheckEnabled ? 'Sync check is off' : isRefreshing(p.id) ? 'Refreshing…' : 'Refresh this project only - git status, remote diff and dev/build commands. Does not touch other projects or the usage monitors (unlike the global refresh in the header).'">
                 <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': isRefreshing(p.id) }"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cell 7: Project log + config -->
+          <div class="grid-row-cell col-log-config">
+            <div class="actions-wrapper">
+              <button class="btn-tech btn-tech-secondary btn-log-trigger" :class="{ 'log-active': activeLogProjectId === p.id }" @click="toggleProjectLog(p.id)" title="View Project Log">
+                <i class="fa-solid fa-file-lines btn-log-icon-only"></i>
+                <span class="btn-text u-narrow-hide">LOG</span>
+              </button>
+
+              <button class="btn-cell-trigger" @click="openConfig(p)" :disabled="projectRuntime[p.id]?.syncing" title="Edit Configuration" aria-label="Edit Configuration">
+                <i class="fa-solid fa-gear"></i>
               </button>
             </div>
           </div>
@@ -912,7 +918,7 @@ function formatTimeAgo(timestamp) {
   overflow-y: auto;
   width: 100%;
   /* Table layout columns */
-  --grid-cols: minmax(12rem, 1fr) auto 2.5rem 2.5rem 2.5rem 7rem;
+  --grid-cols: minmax(12rem, 2fr) 2.5rem 2.5rem auto 2.5rem 7rem 1fr;
   --grid-gap: 0.5rem;
 }
 
@@ -1327,7 +1333,7 @@ html.fx-glass .grid-header {
 /* Narrow container layout adjustments (<=700px). */
 @container main-view (max-width: 700px) {
   .projects-table-container {
-    --grid-cols: minmax(7.5rem, 1fr) auto 2.1rem 1.9rem 2.0rem 4.2rem;
+    --grid-cols: minmax(7.5rem, 2fr) 2.1rem 1.9rem auto 2.0rem 4.2rem 1fr;
     --grid-gap: 0.4rem;
   }
 

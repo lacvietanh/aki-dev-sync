@@ -13,12 +13,12 @@ The main window's project list (`src/components/ProjectTable.vue`). This doc own
 
 ## Column widths (`--grid-cols`)
 
-Six tracks, in DOM order: project info, SYNC, TASKS, GIT, TERMINAL, ACTION. SYNC sits right after the name so PUSH/DRY/PULL stay in the left part of the window, which is all that stays visible when other windows cover the right half (owner, 2026-11-16).
+Seven tracks, in DOM order: project info, TASKS, GIT, SYNC (PUSH/DRY/PULL and the last-action line), TERMINAL, ACTION (OPEN, refresh), LOG + config. SYNC sits before TERMINAL and ACTION so the controls the owner works with (name, tasks, git, push/pull) fill the left part of the table, the part that stays visible when other windows cover the right (owner, 2026-11-16). LOG and config are the least used and stay at the far right, where they always were.
 
-- **Wide** (`.projects-table-container`, default): `minmax(12rem, 1fr) auto 2.5rem 2.5rem 2.5rem 7rem`
-- **Narrow** (`≤700px`, `RULE-stack-tauri`-style breakpoint shared app-wide): `minmax(7.5rem, 1fr) auto 2.1rem 1.9rem 2.0rem 4.2rem`
+- **Wide** (`.projects-table-container`, default): `minmax(12rem, 2fr) 2.5rem 2.5rem auto 2.5rem 7rem 1fr`
+- **Narrow** (`≤700px`, `RULE-stack-tauri`-style breakpoint shared app-wide): `minmax(7.5rem, 2fr) 2.1rem 1.9rem auto 2.0rem 4.2rem 1fr`
 
-Only **project info** (`minmax(_, 1fr)`) flexes: a wider window spends its extra width on the name/path. **SYNC** is `auto`, which in practice is its content width (measured 2026-11-16: 166px narrow, 305px wide, the same for `1fr`, `min-content` and `fit-content`), so PUSH/DRY/PULL start right after the name at any width. At the 436px right-dock cap the grid is ~50px wider than the column, the same total as before the reorder; the clipped part is now ACTION's refresh button instead of LOG/gear. SYNC deliberately never gets an explicit length or `minmax(Nrem, 1fr)` — an explicit length *replaces* the free min-content floor instead of adding to it, and every rem guess tried so far ended up smaller than the PUSH+DRY+PULL+LOG+gear cluster's own icon-only width (~176px at the narrow breakpoint), crushing the buttons into each other. Let the `auto` floor stand instead of re-guessing a fixed minimum.
+Two tracks flex, 2:1 as before: **project info** (`minmax(_, 2fr)`) and the last track, **LOG + config** (bare `1fr`, i.e. `minmax(auto, 1fr)`). **SYNC** is `auto`: the width of PUSH/DRY/PULL, so it starts right after GIT at any width. Measured 2026-11-16 at the 436px right-dock cap: name 0-120, TASKS 126-160, GIT 166-197, PUSH/DRY/PULL 203-293, TERMINAL 299-331, OPEN 336-368, refresh 374-406, LOG 411-443, config 449-481. The grid is ~50px wider than the column there, as it was before the reorder, and the part past the edge is still LOG/config. Neither button-cluster track gets an explicit length or `minmax(Nrem, 1fr)` — an explicit length *replaces* the free min-content floor instead of adding to it, and every rem guess tried so far ended up smaller than the PUSH+DRY+PULL+LOG+gear cluster's own icon-only width (~176px at the narrow breakpoint), crushing the buttons into each other. Let the `auto` and bare `1fr` floors stand instead of re-guessing a fixed minimum.
 
 ## Changing this layout
 
