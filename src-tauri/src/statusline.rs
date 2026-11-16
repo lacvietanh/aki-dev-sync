@@ -1137,7 +1137,7 @@ mod tests {
         assert!(written.contains(r#""used_percentage":3"#), "cache kept the old window's 100%: {}", written);
     }
 
-    /// Renders `payload_pct` from a session whose transcript was last written `transcript_age` s ago, over a cache holding `cached_pct` read `cached_age` s ago, both in one 5-Hour window; returns the line and the rewritten cache.
+    /// Renders `payload_pct` (transcript `transcript_age` s old) over a cache holding `cached_pct` read `cached_age` s ago, same 5-Hour window; returns the line and the rewritten cache.
     fn render_dated_session(name: &str, payload_pct: u32, transcript_age: u64, cached_pct: u32, cached_age: u64) -> (String, String) {
         let now = now_epoch();
         let reset = now + 3600;

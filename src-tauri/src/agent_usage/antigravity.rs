@@ -135,6 +135,140 @@ pub(crate) fn get_antigravity_usage(host: &str) -> Result<AgentUsageResult, Stri
 mod tests {
     use super::*;
 
+    const PROBE: &str = include_str!("../../../scripts/get-antigravity-usage.sh");
+
+    /// Runs the real probe as a local poll does (`sh`, script on stdin) in a private $HOME; `ps` is stubbed to its header, so no process is seen. `frames` = (file, body, age in s).
+    #[cfg(unix)]
+    fn run_probe(name: &str, frames: &[(&str, &str, u64)]) -> (bool, String) {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let home = std::env::temp_dir().join(format!("aki-ag-probe-test/{}", name));
+        let _ = std::fs::remove_dir_all(&home);
+        let dir = home.join(".gemini/antigravity-cli/rate-limits");
+        let bin = home.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        if !frames.is_empty() {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+        for (file, body, age_secs) in frames {
+            let path = dir.join(file);
+            std::fs::write(&path, body).unwrap();
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(
+                    std::time::SystemTime::now() - std::time::Duration::from_secs(*age_secs),
+                )
+                .unwrap();
+        }
+        std::fs::write(bin.join("ps"), "#!/bin/sh\necho 'USER PID COMMAND'\n").unwrap();
+        std::fs::set_permissions(bin.join("ps"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path_env = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let out = std::process::Command::new("sh")
+            .env("HOME", &home)
+            .env("PATH", path_env)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut c| {
+                c.stdin.take().unwrap().write_all(PROBE.as_bytes())?;
+                c.wait_with_output()
+            })
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&home);
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).to_string(),
+        )
+    }
+
+    #[cfg(unix)]
+    fn frame(email: &str, bucket: &str) -> String {
+        format!(
+            "{{\"email\":\"{}\"}}\n{{\"command\":{{\"name\":\"usage\",\"data\":{{\"groups\":[{{\"name\":\"Gemini Models\",\"buckets\":[{{\"id\":\"{}\",\"window\":\"5h\",\"remaining_fraction\":0.5}}]}}]}}}}}}\n",
+            email, bucket
+        )
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_reads_each_fresh_quota_frame_as_its_own_account_and_skips_stale_or_malformed_ones() {
+        if std::process::Command::new("curl")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("skipping: curl not on PATH");
+            return;
+        }
+        let six_hours = 6 * 3600;
+        let (ok, stdout) = run_probe(
+            "frames",
+            &[
+                (
+                    "kim@example.com.frame",
+                    &frame("kim@example.com", "gemini-5h"),
+                    60,
+                ),
+                (
+                    "lva@example.com.frame",
+                    &frame("lva@example.com", "3p-5h"),
+                    six_hours - 600,
+                ),
+                (
+                    "old@example.com.frame",
+                    &frame("old@example.com", "gemini-5h"),
+                    six_hours + 600,
+                ),
+                ("bad@example.com.frame", "not a status line\n{}\n", 60),
+            ],
+        );
+        assert!(
+            ok,
+            "fresh frames must answer the poll with no process running: {}",
+            stdout
+        );
+        assert_eq!(stdout.matches("|||AGPROC|||").count(), 2, "{}", stdout);
+        let payload = parse_antigravity_frames(&stdout, 1_750_000_000)
+            .unwrap()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&payload.content).unwrap();
+        assert_eq!(v["email"], "kim@example.com");
+        let emails: Vec<&str> = v["allAccounts"]
+            .as_array()
+            .expect("both accounts listed")
+            .iter()
+            .filter_map(|a| a["email"].as_str())
+            .collect();
+        assert_eq!(emails, ["kim@example.com", "lva@example.com"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_without_a_process_or_a_quota_frame_still_reports_not_running() {
+        if std::process::Command::new("curl")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("skipping: curl not on PATH");
+            return;
+        }
+        let (ok, stdout) = run_probe("no-frames", &[]);
+        assert!(
+            !ok,
+            "no process and no frame must stay an error: {}",
+            stdout
+        );
+        assert!(!stdout.contains("|||AGPROC|||"), "{}", stdout);
+    }
+
     #[test]
     fn missing_tool_reports_once_within_suppression_ttl() {
         let mut reported_at = HashMap::new();

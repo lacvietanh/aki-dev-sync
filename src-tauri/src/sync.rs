@@ -1952,7 +1952,7 @@ pub async fn get_sync_overwrite_preview(
 
         let overwrites = files_overwritten_by_mirror(&mirror_files, &update_only_files);
 
-        // rsync compares only size + mtime, so a byte-identical file whose destination is newer lands in `overwrites` too; drop it the way the status poll drops converged files (one capped `rsync -c`, unchecked ones stay listed).
+        // rsync compares size + mtime only: a byte-identical file with a newer destination copy lands here too. One capped `rsync -c` drops those; unchecked ones stay listed.
         let content = check_content(&project, overwrites.clone(), &HashMap::new());
         Ok(drop_identical_overwrites(overwrites, &content))
     })
@@ -2370,11 +2370,7 @@ mod tests {
 
     #[test]
     fn drop_identical_overwrites_drops_byte_identical_files_and_keeps_the_rest_in_order() {
-        let overwrites = vec![
-            "z.txt".to_string(),
-            ".env".to_string(),
-            "a.txt".to_string(),
-        ];
+        let overwrites = vec!["z.txt".to_string(), ".env".to_string(), "a.txt".to_string()];
         // `.env` is absent from `differing`: `rsync -c` found it byte-identical, only its mtime differs.
         let content = content_check(&["a.txt", "z.txt"], &[]);
         assert_eq!(
