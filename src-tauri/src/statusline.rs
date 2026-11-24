@@ -811,6 +811,15 @@ mod tests {
             p
         );
         assert!(p.contains("master"), "branch missing: {}", p);
+        assert!(p.contains("ctx45k/1M"), "ctx must read this turn's window, not the session totals: {}", p);
+    }
+
+    #[test]
+    fn ctx_falls_back_to_session_totals_without_a_current_window() {
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Sonnet 5"},"context_window":{"total_input_tokens":12000,"total_output_tokens":3000,"context_window_size":200000,"current_usage":{"input_tokens":0}}}"#;
+        let (line, _) = run_script("ctx_fallback.sh", &gen(&test_config()), payload, &[]);
+        let p = plain(&line);
+        assert!(p.contains("ctx15k/200k"), "ctx must fall back to the totals when the window reads 0: {}", p);
     }
 
     #[test]
@@ -842,8 +851,8 @@ mod tests {
     }
 
     #[test]
-    fn agy_renders_argon_quota() {
-        let payload = r#"{"cwd":"/tmp/demo","account":{"email":"user-a@example.com"},"model":"Gemini 4 Argon","quota":{"gemini-weekly":{"remaining_fraction":0.8},"gemini-5h":{"remaining_fraction":0.9},"gemini-argon-wtu-weekly":{"remaining_fraction":0.4}}}"#;
+    fn agy_argon_model_reads_the_gemini_pool() {
+        let payload = r#"{"cwd":"/tmp/demo","account":{"email":"user-a@example.com"},"model":"Gemini 4 Argon","quota":{"gemini-weekly":{"remaining_fraction":0.8},"gemini-5h":{"remaining_fraction":0.9},"3p-weekly":{"remaining_fraction":0.4}}}"#;
         let (line, _) = run_script(
             ".gemini/antigravity-cli/agy_argon.sh",
             &gen(&test_config()),
@@ -858,10 +867,9 @@ mod tests {
             p
         );
         assert!(p.contains("4Argon"), "model not compacted to 4Argon: {}", p);
-        assert!(p.contains("60%"), "Argon weekly quota wrong (want 60%): {}", p);
-        assert!(!p.contains("20%"), "stray gemini-weekly quota rendered: {}", p);
-        assert!(!p.contains("5h:"), "5h quota should be omitted for Argon: {}", p);
-        assert!(p.contains("7d:"), "7d quota missing for Argon: {}", p);
+        assert!(p.contains("5h:10%"), "Gemini 5h quota wrong (want 10%): {}", p);
+        assert!(p.contains("7d:20%"), "Gemini weekly quota wrong (want 20%): {}", p);
+        assert!(!p.contains("60%"), "Claude/GPT quota rendered for an Argon model: {}", p);
     }
 
     /// Whatever shape a CLI reports the model in, dropping the vendor word must leave one token with no stray punctuation at either edge.
@@ -2307,7 +2315,7 @@ mod tests {
 
     #[test]
     fn agy_leaves_a_usage_shaped_quota_frame_for_its_own_account() {
-        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Gemini 3.8 Pro"},"account":{"email":"ag/kim@example.com"},"plan_tier":"Google AI Pro","quota":{"gemini-5h":{"remaining_fraction":0.75,"reset_in_seconds":3600},"gemini-weekly":{"remaining_fraction":0.97,"reset_in_seconds":604800},"gemini-argon-wtu-weekly":{"remaining_fraction":0.17,"reset_in_seconds":500000},"3p-weekly":1.0}}"#;
+        let payload = r#"{"cwd":"/tmp/demo","model":{"display_name":"Gemini 3.8 Pro"},"account":{"email":"ag/kim@example.com"},"plan_tier":"Google AI Pro","quota":{"gemini-5h":{"remaining_fraction":0.75,"reset_in_seconds":3600},"gemini-weekly":{"remaining_fraction":0.97,"reset_in_seconds":604800},"3p-weekly":1.0}}"#;
         let (_, home) = run_script(".gemini/antigravity-cli/quota_frame.sh", &gen(&test_config()), payload, &[]);
         let (status, summary) =
             quota_frame(&home, "ag_kim@example.com.frame").expect("quota frame not written as two JSON lines");
@@ -2324,10 +2332,25 @@ mod tests {
         let (pool, b) = bucket("gemini-5h");
         assert_eq!((pool, b["window"].as_str(), b["remaining_fraction"].as_f64()), ("Gemini Models", Some("5h"), Some(0.75)));
         assert!(b["reset_time"].as_str().is_some_and(|t| t.ends_with('Z')), "{}", b);
-        assert_eq!(bucket("gemini-argon-wtu-weekly").0, "Gemini 4 Argon");
         let (pool, b) = bucket("3p-weekly");
         assert_eq!((pool, b["remaining_fraction"].as_f64()), ("Claude and GPT models", Some(1.0)));
         assert!(b.get("reset_time").is_none(), "a bare fraction has no reset time: {}", b);
+    }
+
+    #[test]
+    fn agy_rewrites_its_quota_frame_only_when_the_quota_changes() {
+        let name = ".gemini/antigravity-cli/frame_skip.sh";
+        let frame = ".gemini/antigravity-cli/rate-limits/kim@example.com.frame";
+        let fp = ".gemini/antigravity-cli/rate-limits/.kim@example.com.fp";
+        let payload = |left: f64| {
+            format!(r#"{{"cwd":"/tmp/demo","model":"gemini-2.5-flash","email":"kim@example.com","quota":{{"gemini-5h":{{"remaining_fraction":{},"reset_in_seconds":3600}}}}}}"#, left)
+        };
+        let (_, home) = run_script(name, &gen(&test_config()), &payload(0.75), &[]);
+        let fp_written = std::fs::read_to_string(home.join(fp)).expect("fingerprint not written");
+        let (_, home) = run_script(name, &gen(&test_config()), &payload(0.75), &[(frame, "kept\n"), (fp, &fp_written)]);
+        assert_eq!(std::fs::read_to_string(home.join(frame)).unwrap(), "kept\n", "an unchanged quota rewrote the frame");
+        let (_, home) = run_script(name, &gen(&test_config()), &payload(0.5), &[(frame, "kept\n"), (fp, &fp_written)]);
+        assert!(quota_frame(&home, "kim@example.com.frame").is_some(), "a changed quota left the old frame");
     }
 
     #[test]
@@ -2417,8 +2440,8 @@ mod tests {
     fn a_marker_block_edit_bumps_its_version() {
         // (marker, line that ends the block, pinned version, pinned FNV-1a of the block body after the marker line)
         let pins: [(&str, &str, u32, u64); 2] = [
-            (RLCACHE_MARKER, AGQUOTA_MARKER, 9, 0xbe57c6920c5388da),
-            (AGQUOTA_MARKER, r#"if [ -n "$JSON_CWD""#, 3, 0x033e789bc8e71f6a),
+            (RLCACHE_MARKER, AGQUOTA_MARKER, 10, 0x5c7790bd205166f3),
+            (AGQUOTA_MARKER, r#"_cwd="${JSON_CWD"#, 4, 0x1fb8107035028169),
         ];
         for (marker, end, pinned_version, pinned_hash) in pins {
             let shipped = marker_version(TEMPLATE, marker).expect("the template carries the marker");

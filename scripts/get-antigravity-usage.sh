@@ -333,7 +333,7 @@ if [ "$AGY_RUNNING" = "1" ]; then
     fi
 fi
 
-# One file per account, left by each AGY session's last turn (aki-agquota v3). After `/usage`, so its live frame wins for its own account: docs/arch/usage-antigravity.md § Per-account quota cache.
+# One file per account, left by each AGY session's turns (aki-agquota v4). After `/usage`, so its live frame wins for its own account: docs/arch/usage-antigravity.md § Per-account quota cache.
 for ag_frame in "$HOME/.gemini/antigravity-cli/rate-limits/"*.frame; do
     [ -n "$(find "$ag_frame" -mmin -360 2>/dev/null)" ] || continue
     { IFS= read -r ag_status && IFS= read -r ag_summary; } < "$ag_frame" || continue

@@ -230,7 +230,7 @@ const CATALOG = {
   cwd:         { label: 'Working directory',    desc: 'Current folder name (~ when at $HOME)' },
   model:       { label: 'Model',                desc: 'Model name, e.g. "sonnet 5"' },
   effort:      { label: 'effort',               desc: 'Effort level (med/high), always grey - a qualifier of the model, not its own signal' },
-  context:     { label: 'Context window',       desc: 'ctx NN% used/max, auto-colored by threshold' },
+  context:     { label: 'Context window',       desc: 'ctx tokens in the window now / max, colored on a 200k scale' },
   rate_limits_5h: { label: '5h',          desc: '5-hour Pro/Max usage window, auto-colored by threshold' },
   rate_reset_5h:  { label: 'Reset ETA',   desc: 'Appends time-until-reset to the 5h window (e.g. 1h12m)' },
   rate_limits_7d: { label: '7d',          desc: '7-day Pro/Max usage window, auto-colored by threshold' },
@@ -361,8 +361,8 @@ const GROUPS = [
     id: 'quota',
     keys: ['rate_limits_5h', 'rate_reset_5h', 'rate_limits_7d', 'rate_reset_7d'],
     sep: ' ',
-    // AGY splits its quota into Gemini, Claude/GPT, and Argon pools; the script picks the pool matching the running model, so there is nothing to configure here.
-    note: 'agy: pool follows the selected model (Gemini, Claude, or Argon)',
+    // AGY splits its quota into Gemini and Claude/GPT pools; the script picks the pool matching the running model, so there is nothing to configure here.
+    note: 'agy: pool follows the selected model (Gemini or Claude/GPT)',
     lines: [
       { segments: [
         { controls: [
@@ -817,7 +817,7 @@ async function apply() {
 // ---- live preview: mirrors rendering rules in src-tauri/src/statusline-unified.sh against fixed sample data ----
 const SAMPLE = {
   user: 'aki', host: 'akitao', account: 'user-a@example.com', cwd: 'Aki-Dev-Sync', model: 'sonnet 5', effort: 'med',
-  ctxPct: 72, ctxUsed: '134.4k', ctxMax: '1M',
+  ctxPct: 67, ctxUsed: '134k', ctxMax: '1M',
   rate5h: 42, rate7d: 92, rate5hEta: '1h12m', rate7dEta: '2d3h',
   duration: '12m', linesAdded: 122, linesRemoved: 52, cost: '$8.40', costUsd: 8.4,
   gitBranch: 'master',

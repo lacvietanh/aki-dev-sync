@@ -1,6 +1,6 @@
 # Unified Statusline Specification
 
-> updated 2026-10-28 · v1.36.0 — Tài liệu tham chiếu quy chuẩn kỹ thuật cho kịch bản hiển thị dải trạng thái (Statusline) dùng chung cho cả Antigravity (AGY CLI) và Claude Code CLI.
+> updated 2026-11-25 · v1.37.0 — Tài liệu tham chiếu quy chuẩn kỹ thuật cho kịch bản hiển thị dải trạng thái (Statusline) dùng chung cho cả Antigravity (AGY CLI) và Claude Code CLI.
 
 ---
 
@@ -20,7 +20,7 @@ Kịch bản không đọc file từ đĩa cứng mà nhận dữ liệu JSON tr
 | **CWD** | `.cwd` / `.workspace.current_dir` | `.cwd` | `.cwd // .workspace.current_dir // ""` |
 | **Model** | `.model.id` / `.model.display_name` | `.model.id` / `.model.display_name` (**object**, xác minh 2026-07-23 trên CC 2.1.217 — không phải string) | `.model.display_name // .model.id // .model // ""` |
 | **Effort** | `.model.effort` | `.effort.level` | `.model.effort // .effort.level // ""` |
-| **Context** | `.context_window` | `.context_window` | `.context_window.total_input_tokens + .context_window.total_output_tokens` |
+| **Context** | `.context_window` | `.context_window` | Cửa sổ hiện tại: `.context_window.current_usage` (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens`); tổng bằng 0 thì lùi về `total_input_tokens + total_output_tokens`. Sau `/compact` số này tụt theo cửa sổ thật, tổng cộng dồn của phiên thì không |
 | **Cache** | `.context_window.current_usage` | `.context_window.current_usage` | `.cache_read_input_tokens` / `total_cache` |
 | **Account** | `.account.email` | `.account.email` / `.user.email` | `.account.email // .user.email // .email // ""` |
 | **Plan tier** | `.plan_tier` (`"Google AI Pro"`, agy 1.4.8 `json:"plan_tier,omitempty"`) | — | `.plan_tier // ""`; AGY only, not printed: recorded per account in `~/.gemini/antigravity-cli/aki-plan-tier/<email>` for the usage probe (`docs/arch/usage-antigravity.md` § Plan tier) |
@@ -65,11 +65,7 @@ Phân loại đối tượng Quota dựa trên hai tầng kiểm tra:
   │
   └── 2. NẾU có .quota (AGY CLI)
          │
-         ├── Tên Model chứa "argon" (Gemini 4 Argon)
-         │     ├─► 5h: (vắng mặt/suppressed, return -1)
-         │     └─► 7d: .quota["gemini-argon-wtu-weekly"]
-         │
-         ├── Tên Model chứa "gemini"
+         ├── Tên Model chứa "gemini" (cả Gemini 4 Argon)
          │     ├─► 5h: .quota["gemini-5h"]
          │     └─► 7d: .quota["gemini-weekly"]
          │
@@ -78,7 +74,7 @@ Phân loại đối tượng Quota dựa trên hai tầng kiểm tra:
                └─► 7d: .quota["3p-weekly"]
 ```
 
-Khi bucket 5h vắng mặt (như với model Argon chỉ có weekly bucket), phân đoạn `5h:` tự động ẩn và dải statusline chỉ hiển thị `7d: XX%`.
+Khi bucket 5h vắng mặt (gói Free chỉ có weekly bucket), phân đoạn `5h:` tự động ẩn và dải statusline chỉ hiển thị `7d: XX%`.
 
 ---
 

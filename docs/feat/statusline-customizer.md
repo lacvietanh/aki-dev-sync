@@ -1,6 +1,6 @@
 # Statusline Customizer
 
-> updated 2026-11-16 · v1.36.0
+> updated 2026-11-25 · v1.37.0
 
 Builds a statusline script from a visual field editor and pushes it - plus the CLI's own settings key - to the local machine and any configured remote host.
 
@@ -170,12 +170,12 @@ Rows carry `parts` chips naming the pieces a field prints, in print order, becau
 
 | Field | Prints | Note |
 |---|---|---|
-| `context` | `ctx` · tokens · `/max` | tokens = `total_input_tokens + total_output_tokens`; no `%` - see the ladder section |
+| `context` | `ctx` · tokens · `/max` | tokens = the window now, `current_usage` input + cache creation + cache read + output, falling back to `total_input_tokens + total_output_tokens` when that is 0; the session totals only grow, so they read wrong after `/compact`. No `%` - see the ladder section |
 | `cache_pct` | `↬` · `NN%` | `cache_read / (read + creation + input)`, static grey |
 | `cache_tokens` | read count, `fmt_k`-formatted | grey, no `/total`; off by default |
 | `rate_limits_5h/7d` | `5h:`/`7d:` · `NN%` · ETA | ETA only if the matching `rate_reset_*` is on |
 | `session` | duration · `+added/-removed` · cost | cost is ladder-colored; the `+`/`-` counts are bold green/red (fixed) so they read at small sizes |
-| `ram` | `⚅` · `NN%` | `memory_pressure` on macOS, `free` on Linux |
+| `ram` | `⚅` · `NN%` | `memory_pressure` on macOS, `/proc/meminfo` on Linux; shared for 15 s through `.aki-ram-cache` (§ Process budget) |
 
 `fmt_k` rounds to whole units - `126k`, `250k`, `1M`, never `125.2k` or `1.0M`.
 
@@ -210,6 +210,19 @@ In practice AGY does send an email in the payload, so its disk file is only a ba
 
 CC never reads `~/.claude.json`'s `oauthAccount` for the tag: the CLI flushes that file on its own schedule, so with two `claude` processes logged into different accounts in one config dir (`docs/ref/multiple-account-config-dir.md`) the last flusher wins and a switch reverts on the next render. `claude auth status` reads the live credential state and does not write that file. A spawn costs ~200-300 ms per prompt, so the result is cached per login slot: `default` when `CLAUDE_CONFIG_DIR` is unset, else the first 8 hex chars of its sha256, the same suffix Claude Code puts on its Keychain item. One config dir can hold two logins (unset vs. set to the same path), so one shared cache would hand one session the other's email.
 
+## Process budget
+
+AGY SIGKILLs a statusline that runs past 5 s, and a loaded Mac pushed the old script (22-28 child processes, 464-880 ms per run when measured 2026-11-20) over that line. Each turn now spawns as few processes as it can, ~90-110 ms per run:
+
+| Cost | Where it went |
+|---|---|
+| Payload reads (jq, sed, tr, basename) | One `jq` pass in `aki-agquota` emits every field the render reads as `@sh`-quoted assignments for one `eval`. The program sits in a variable: written straight into `"$(...)"`, bash 3.2 brace-expands a regex like `{2,}` inside it. |
+| Cache file reads in `aki-rlcache` | `eval` of `jq -r '@sh …'` instead of a heredoc or here-string, which bash 3.2 backs with a temp file in `/tmp`. |
+| Formatting (awk, sed, tr) | Shell functions that set a variable (`fmt_k`, `fmt_dur`, `fmt_eta`, `set_pct_color`, `quota_block`) instead of `$(...)` subshells. |
+| Identity, branch, elapsed time | `$USER`, `$HOSTNAME`, `.git/HEAD` and pure-bash parsing of `ps -o etime=`, each with the old command as fallback. |
+| `memory_pressure` | Cached `RAM_CACHE_TTL_S` (15 s) in `.aki-ram-cache` beside the CLI's config; the session that finds it expired restamps it before probing, so sessions rendering in the same second reuse the old reading. |
+| Quota frame write | Only when the quota changed or the last write is 5 min old (`aki-agquota`, § Quota routing). |
+
 ## Quota cache (`aki-rlcache`, CC only) - DESIGN LOCK
 
 Claude Code sends `rate_limits` only on some turns, so the script persists it to `~/.claude/rate-limits/<email>.json`, one file per account, and merges it back on turns that omit it. A session reads and writes only its own account's file, so two accounts taking turns on one machine never overwrite each other's numbers (`docs/arch/usage-claudecode.md` § Nhiều account trên một máy). AGY carries its quota in `.quota` every turn and has nothing to persist, so the whole block is skipped when `CLI=AG` - an AGY run must neither read nor write Claude Code's cache file.
@@ -223,7 +236,7 @@ Four rules are **not optional** and are marked with a `DESIGN LOCK` comment in t
 
 Nothing surviving the gates → the file is removed. The header's `# aki-rlcache vN` is parsed by `scripts/provision-claudecode.sh` to retire an older stacked block, so it stays at the start of that comment line.
 
-Bump N on any change inside the block, a fix included: the launch pass rewrites only a hook whose N is lower than the template's (§ Rollout to hosts), so an unbumped fix never reaches a host that already runs the block. v7 reads the auth-cache mtime with `stat -c %Y` first and `stat -f %m` second: GNU `stat -f` succeeds with `--file-system` output while BSD `stat` rejects `-c` cleanly, so the BSD-first order of v6 never wrote the per-account cache on a Linux host. A non-numeric mtime no longer aborts the render. A test pins each marker's version to a hash of its block, so an edit inside a marker-covered block without a bump fails `cargo test`.
+Bump N on any change inside the block, a fix included: the launch pass rewrites only a hook whose N is lower than the template's (§ Rollout to hosts), so an unbumped fix never reaches a host that already runs the block. v7 reads the auth-cache mtime with `stat -c %Y` first and `stat -f %m` second: GNU `stat -f` succeeds with `--file-system` output while BSD `stat` rejects `-c` cleanly, so the BSD-first order of v6 never wrote the per-account cache on a Linux host. A non-numeric mtime no longer aborts the render. v10 picks `stat` by `$OSTYPE` and reads the account, the transcript and the cache file each in one `eval` (§ Process budget). A test pins each marker's version to a hash of its block, so an edit inside a marker-covered block without a bump fails `cargo test`.
 
 Without these, a field that landed in the cache once lived there forever, because the merge only adds/overwrites keys present in the live payload and never drops absent ones. That shipped in every release from 1.10.0 through 1.17.0 and produced a phantom `7d 45%` for an account with no weekly limit at all. Background: `docs/plan/done/1.18.0-statusline-apply-correctness.md` §P0-5.
 
@@ -233,9 +246,9 @@ The block also validates the cache with `jq -e` before reading (a corrupt file u
 
 ## Quota routing (AGY)
 
-AGY splits its quota into three pools: Gemini, Argon (Gemini 4 Argon), and 3P (Claude/GPT models running inside AGY). The script picks the pool matching the running model - `gemini-argon-wtu-weekly` if the model name contains `argon` (5h absent/suppressed), `gemini-5h`/`gemini-weekly` if the model name contains `gemini`, otherwise `3p-5h`/`3p-weekly` - so there is nothing to configure, only a note on the quota row (`AGY: pool follows the selected model (Gemini, Claude, or Argon)`). Dropping the `3p-*` branch silently blanks the quota for anyone running Claude inside AGY.
+AGY splits its quota into two pools: Gemini (Gemini 4 Argon included, `docs/ref/fact-antigravity-quota-tiers.md` F-AG3) and 3P (Claude/GPT models running inside AGY). The script picks the pool matching the running model - `gemini-5h`/`gemini-weekly` if the model name contains `gemini`, otherwise `3p-5h`/`3p-weekly` - so there is nothing to configure, only a note on the quota row (`agy: pool follows the selected model (Gemini or Claude/GPT)`). Dropping the `3p-*` branch silently blanks the quota for anyone running Claude inside AGY.
 
-The same marker covers the plan-tier record that follows the routing (v2) and the per-account quota frame (v3): each AGY turn's `.plan_tier` and `.quota` are kept per account for the usage probe (`docs/arch/usage-antigravity.md` § Plan tier, § Per-account quota cache). The routing block carries `# aki-agquota vN`; bump N whenever the routing or the tier record changes. An AGY script written by this app (it carries `# aki-rlcache`) whose marker is lower or missing probes as `ag_outdated`, so a host still on the pre-Argon script shows an outdated AGY tag instead of silently reading Argon from the Gemini pool.
+The same marker covers the plan-tier record that follows the routing (v2), the per-account quota frame (v3) and, since v4, the whole payload read (§ Process budget): each AGY turn's `.plan_tier` and `.quota` are kept per account for the usage probe (`docs/arch/usage-antigravity.md` § Plan tier, § Per-account quota cache). v4 rewrites a frame only when its quota changed or it is 5 min old, so a live session's frame never reaches the probe's 6 h cutoff. The routing block carries `# aki-agquota vN`; bump N whenever the routing or the tier record changes. An AGY script written by this app (it carries `# aki-rlcache`) whose marker is lower or missing probes as `ag_outdated`, so a host still on a v3 script, whose Argon branch reads a bucket AGY no longer sends, shows an outdated AGY tag instead of a blank quota.
 
 The two CLIs also report reset time on **different scales**: Claude Code sends an absolute epoch (`.rate_limits.*.resets_at`), AGY a relative countdown (`.quota[*].reset_in_seconds`). The script normalises CC onto AGY's scale before formatting.
 
