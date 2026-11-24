@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [1.38.0] - 2026-11-25
+
+### Added
+- **A new release shows up while the app stays open**: the update check ran only at launch, so an app left open for a week never learned that 1.37.0 had shipped. `check_for_updates` now also runs every 6 hours (`AppHeader.vue`, host only, skipped once an update is already known) and lights the existing titlebar Update badge. The update modal still opens only at launch, and the per-version dismiss is unchanged.
+
+### Changed
+- **Antigravity shows two quota pools, Gemini and Claude/GPT**: Google folded the separate weekly-only `Gemini 4 Argon` group into `Gemini Models` (`agy` 1.5.16 `/usage`, every Pro and Ultra account; `docs/research/ag-argon-merged-into-gemini-pool.md`). The usage card drops the Argon pool, its tint and skeleton row; an unknown future group still renders under the vendor's name. The fact doc's F-AG2/F-AG3 are rewritten.
+- **A bar at 100% stays red**: a used-up window kept turning grey with its whole pool. Now the 100% bar keeps its red, and only the pool's other windows and its title dim (`dimWindow`); Claude Code's 5H bar dims under a full 7D pool only while the 5H bar itself is below 100%.
+- **A window past its reset reads 0%**: the bar and number showed the old usage next to "ready" until the next reading arrived. A passed reset now reads as an empty window (`currentPct`, the aiobox usage standard's `afterReset: 'empty'`), for Claude Code and Antigravity alike, including the 7D check that dims 5H.
+- **The usage area is exactly as tall as its cards**: the fixed 161 px per row, set before the compact bars, left up to ~75 px of empty space under the cards. Each row now reserves the height of its tallest agent card (Claude Code 150 px, Antigravity 122 px, measured), still fixed so data arriving never shifts the project list.
+- **The statusline runs in ~0.1 s instead of 0.5-0.9 s**: under load AGY killed it at its 5 s limit. One `jq` pass now reads the whole payload, formatting and identity use shell builtins, `memory_pressure` is shared for 15 s, and the per-account quota frame is rewritten only when the quota changed or every 5 minutes (`docs/feat/statusline-customizer.md` § Process budget). Each session still writes only its own account's frame and cache file; every other account's files are untouched. Blocks `aki-rlcache` v10 and `aki-agquota` v4, so hosts are rewritten at app launch and AGY hosts show as outdated until Apply.
+
+### Fixed
+- **The statusline `ctx` drops after `/compact`**: it summed the session's cumulative input and output tokens, which only grow, so a compacted session still read 881k. It now reads the tokens in the current window (`current_usage`), falling back to the totals when that is 0.
+- **An Argon model shows its quota on the statusline again**: the script read `gemini-argon-wtu-weekly`, a bucket AGY no longer sends, so the quota was blank; Argon now reads the Gemini pool.
+- **A slow status check no longer stacks a second one**: a background git or remote-diff tick started another subprocess for a project whose previous check was still running (an unreachable host). Both ticks now skip a project while any of its checks is in flight; manual Refresh always runs.
+
 ## [1.37.0] - 2026-11-16
 
 ### Added
