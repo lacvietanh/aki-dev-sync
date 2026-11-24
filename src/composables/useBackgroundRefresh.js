@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 import { hostInterval } from '../utils/scheduler'
 import { isHost } from '../services/bridge'
-import { projects } from '../store/projectStore'
+import { projects, isRefreshing } from '../store/projectStore'
 import { refreshSettings, triggerManualRefresh } from '../store/refreshStore'
 import { syncCheckEnabled } from '../store/syncCheckStore'
 import { refreshClaudeMode } from '../store/claudeModeStore'
@@ -26,8 +26,8 @@ export const diffRefreshKey = ref(0)
 
 function runGitTick() {
   lastGitTickAt = Date.now()
-  // Skip disabled projects for background ticks (manual checks bypass this filter).
-  projects.value.filter(p => !p.disabled).forEach(p => fetchGitStatus(p.id, true))
+  // Skip disabled projects and ones whose check is still running, so a slow check never stacks a second subprocess; manual checks bypass both.
+  projects.value.filter(p => !p.disabled && !isRefreshing(p.id)).forEach(p => fetchGitStatus(p.id, true))
   gitRefreshKey.value++
 }
 

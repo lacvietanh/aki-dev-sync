@@ -1,6 +1,6 @@
 # Background Refresh
 
-> updated 2026-10-20 · v1.33.1
+> updated 2026-11-25 · v1.37.0
 
 Automatic background polling that keeps three independent data types fresh without user interaction. Each type has a different cost profile and refresh interval.
 
@@ -32,7 +32,7 @@ Automatic background polling that keeps three independent data types fresh witho
 
 **Implementation:** `useSyncStatus.js` → `checkProjectSyncStatus(project)` → Tauri command `check_sync_status` → `rsync_change_files()` in `sync.rs`.
 
-**Gated by sync check:** `checkProjectSyncStatus()` early-returns if `syncCheckEnabled` (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)) is off - covers this interval poll and the manual Refresh path in one place, since both call the same function. **Gated per-project (PROJ-TOGGLE):** `checkAllSyncStatus()` and the git-status tick in `useBackgroundRefresh.js` both filter out any project with `disabled: true` before fanning out - manual per-project actions (Refresh button, PUSH/PULL, git modal) bypass this filter and always run.
+**Gated by sync check:** `checkProjectSyncStatus()` early-returns if `syncCheckEnabled` (see [sync-check-and-usage-switches.md](sync-check-and-usage-switches.md)) is off - covers this interval poll and the manual Refresh path in one place, since both call the same function. **Gated per-project (PROJ-TOGGLE):** `checkAllSyncStatus()` and the git-status tick in `useBackgroundRefresh.js` both filter out any project with `disabled: true`, or with a check still in flight (`isRefreshing`), before fanning out - manual per-project actions (Refresh button, PUSH/PULL, git modal) bypass this filter and always run.
 
 **Result:** `hasPendingPush` and `hasPendingPull` written into `projectRuntime`. On startup both are initialized to `null` (not `undefined`) - buttons render in a faint "checking" state (`.btn-sync-checking`) until the first check resolves. After that: `true` → fully lit, `false` → dim (`.btn-sync-clean`).
 

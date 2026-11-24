@@ -1,5 +1,5 @@
 import { invoke } from '../utils/tauri'
-import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh } from '../store/projectStore'
+import { projects, projectRuntime, currentEpoch, beginRefresh, endRefresh, isRefreshing } from '../store/projectStore'
 import { syncCheckEnabled } from '../store/syncCheckStore'
 import { getProjectConfigEntry } from '../store/projectConfigStore'
 import { useLogs } from './useLogs'
@@ -70,7 +70,7 @@ export async function checkProjectSyncStatus(project) {
   }
 }
 
-// Background-driven fan-out only, with per-project skip (PROJ-TOGGLE) - manual actions go through checkProjectSyncStatus directly; see docs/feat/background-refresh.md.
+// Background fan-out only, skipping disabled projects and ones with a check in flight: docs/arch/refresh-controller.md rule 4.
 export async function checkAllSyncStatus() {
-  await Promise.all(projects.value.filter(p => !p.disabled).map(p => checkProjectSyncStatus(p)))
+  await Promise.all(projects.value.filter(p => !p.disabled && !isRefreshing(p.id)).map(p => checkProjectSyncStatus(p)))
 }
