@@ -692,7 +692,7 @@ pub fn find_in_downloads(filename: String) -> Result<Option<String>, String> {
     })
 }
 
-/// Runs on every launch (`AppHeader.vue`) and on manual "Check for Updates".
+/// Runs on every launch, every 6 h while the app is open (`AppHeader.vue`), and on manual "Check for Updates".
 #[tauri::command]
 pub async fn check_for_updates() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {

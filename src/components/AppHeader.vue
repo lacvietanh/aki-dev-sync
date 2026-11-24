@@ -301,7 +301,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { invoke } from '../utils/tauri';
-import { onHostBoot } from '../utils/scheduler';
+import { onHostBoot, hostInterval } from '../utils/scheduler';
 import { useAppWindow } from '../composables/useAppWindow';
 import { useProjects } from '../composables/useProjects';
 import { useSsh } from '../composables/useSsh';
@@ -444,30 +444,40 @@ function applyLatestRelease(latest) {
   latestReleaseUrl.value = latest.html_url || RELEASE_URL;
 }
 
+// The app stays open for days, so a release must reach the Update badge without a relaunch.
+const UPDATE_POLL_MS = 6 * 3600 * 1000;
+let updatePollTimer = null;
+
+// Shows the Update badge for a release newer than this build and returns it; null when this build is the latest.
+async function showNewerRelease() {
+  const latest = JSON.parse(await invoke('check_for_updates'));
+  if (!latest?.tag_name || !hasUpdate(appVersion, latest.tag_name)) return null;
+  applyLatestRelease(latest);
+  return latest;
+}
+
 onMounted(() => {
   restorePin();
   restoreView().catch((e) => console.error('Failed to restore window view:', e));
   window.addEventListener('keydown', onViewShortcut);
-  // Host-only update check on startup via onHostBoot.
+  // Host-only: the launch check also opens the modal once per version; later checks only light the badge.
   onHostBoot(async () => {
     try {
-      const raw = await invoke('check_for_updates');
-      const latest = JSON.parse(raw);
-      if (latest && latest.tag_name && hasUpdate(appVersion, latest.tag_name)) {
-        applyLatestRelease(latest);
-        const dismissedVersion = localStorage.getItem(UPDATE_DISMISS_KEY);
-        if (dismissedVersion !== latest.tag_name) {
-          showUpdateModal.value = true;
-        }
-      }
+      const latest = await showNewerRelease();
+      if (latest && localStorage.getItem(UPDATE_DISMISS_KEY) !== latest.tag_name) showUpdateModal.value = true;
     } catch (e) {
       console.error('Failed to check for updates:', e);
     }
   });
+  updatePollTimer = hostInterval(() => {
+    if (newVersionAvailable.value) return;
+    showNewerRelease().catch((e) => console.error('Failed to check for updates:', e));
+  }, UPDATE_POLL_MS);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onViewShortcut);
+  clearInterval(updatePollTimer);
 });
 
 function dismissUpdateModal() {
