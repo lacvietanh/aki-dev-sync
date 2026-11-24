@@ -106,10 +106,10 @@
           <div class="skeleton-bar-time"></div>
         </div>
         <div v-else class="ag-bars-skeleton">
-          <div v-for="i in 3" :key="i" class="ag-skeleton-pool">
+          <div v-for="i in 2" :key="i" class="ag-skeleton-pool">
             <div class="skeleton-pool-title"></div>
             <div class="skeleton-pool-windows">
-              <div v-for="j in (i === 3 ? 1 : 2)" :key="j" class="skeleton-win-col">
+              <div v-for="j in 2" :key="j" class="skeleton-win-col">
                 <div class="skeleton-win-meta"></div>
                 <div class="skeleton-win-track"></div>
               </div>
@@ -161,7 +161,7 @@
           </div>
         </template>
 
-        <!-- Render Antigravity compact pool bars (3 pools) -->
+        <!-- Render Antigravity compact pool bars -->
         <template v-else-if="agentId === 'antigravity'">
           <div class="ag-bars-block">
             <div
@@ -350,13 +350,10 @@ const quotaSummaryGroups = computed(() => {
 const AG_POOLS = {
   gemini: { rank: 0, label: 'Gemini' },
   claude: { rank: 1, label: 'Claude/GPT' },
-  argon: { rank: 2, label: 'Argon 4' },
 };
 
 function agPoolKey(displayName) {
   const lower = (displayName || '').toLowerCase();
-  // Before gemini: the vendor names this pool "Gemini 4 Argon".
-  if (lower.includes('argon')) return 'argon';
   if (lower.includes('gemini')) return 'gemini';
   if (lower.includes('claude') || lower.includes('3p') || lower.includes('gpt')) return 'claude';
   return null;
@@ -370,13 +367,18 @@ function elapsedRatio(resetsAt, lenSec, nowSec) {
   return Math.max(0, (nowSec - (resetsAt - lenSec)) / lenSec);
 }
 
+// A window past its reset has nothing used until the next reading arrives, so it reads as 0%.
+function currentPct(pct, resetsAt, nowSec) {
+  return pct !== null && resetsAt && resetsAt <= nowSec ? 0 : pct;
+}
+
 function markerHint(markerRatio, label) {
   return markerRatio == null ? null : `Line = now: ${Math.round(markerRatio * 100)}% of the ${label} window passed`;
 }
 
 function agWindow({ key, label, name, fraction, resetTime, lenSec = null, disabled = false }, now) {
-  const pct = fraction !== undefined ? Math.round((1 - fraction) * 100) : null;
   const resetsAt = resetTime ? Math.floor(new Date(resetTime).getTime() / 1000) : null;
+  const pct = currentPct(fraction !== undefined ? Math.round((1 - fraction) * 100) : null, resetsAt, now);
   const reset = formatResetLine(resetsAt, now);
   const parts = [name, pct !== null ? `${pct}% used` : 'N/A'];
   if (reset.val) parts.push(`Resets in ${reset.val} (${reset.abs})`);
@@ -385,24 +387,37 @@ function agWindow({ key, label, name, fraction, resetTime, lenSec = null, disabl
   const markerRatio = elapsedRatio(resetsAt, lenSec, now);
   const hint = markerHint(markerRatio, label);
   if (hint) parts.push(hint);
-  if (disabled) parts.push('Dimmed: disabled');
-  return {
+  const win = {
     key,
     label,
     resetsAt,
     pct,
-    muted: disabled,
+    muted: false,
     pctText: pct !== null ? `${pct}%` : 'N/A',
-    colorClass: disabled ? 'color-muted' : pctColorClass(pct),
+    colorClass: pctColorClass(pct),
     fillPct: Math.max(0, Math.min(100, pct || 0)),
     resetCountdown: reset.val ?? reset.label,
     markerRatio,
     tooltip: parts.join(' · '),
   };
+  return disabled ? dimWindow(win, 'disabled') : win;
 }
 
-// A pool with any window used up is spent, so the whole card greys out.
-const agPool = (key, label, rank, windows) => ({ key, label, rank, windows, exhausted: windows.some(w => w.pct >= 100) });
+function dimWindow(win, reason) {
+  return { ...win, muted: true, colorClass: 'color-muted', tooltip: `${win.tooltip} · Dimmed: ${reason}` };
+}
+
+// A window used up blocks its whole pool: it keeps its red, and the pool's other windows dim since they cannot be spent until it resets.
+function agPool(key, label, rank, windows) {
+  const exhausted = windows.some(w => w.pct >= 100);
+  return {
+    key,
+    label,
+    rank,
+    exhausted,
+    windows: exhausted ? windows.map(w => (w.pct >= 100 ? w : dimWindow(w, 'pool used up'))) : windows,
+  };
+}
 
 const agPools = computed(() => {
   if (props.agentId !== 'antigravity') return [];
@@ -585,11 +600,12 @@ const ccBuckets = computed(() => {
   });
   return keys.map(key => {
     const entry = rl[key];
-    const pct = Math.round(entry.used_percentage);
     // five_hour keeps its two historical quirks; every other bucket is plain.
     const isFiveHour = key === 'five_hour';
     const resetsAt = isFiveHour ? cc5hResetsAt.value : (entry.resets_at ?? null);
-    const muted = isFiveHour && cc5hMutedBy7d.value;
+    const pct = currentPct(Math.round(entry.used_percentage), resetsAt, agoNow.value);
+    // A used-up 5H bar keeps its red: it is the limit the 7D one is blocking alongside.
+    const muted = isFiveHour && cc5hMutedBy7d.value && pct < 100;
     const markerRatio = elapsedRatio(resetsAt, ccWindowSec(key), agoNow.value);
     const label = ccBucketLabel(key);
     return {
@@ -617,7 +633,10 @@ const cc5hResetsAt = computed(() => {
 const cc5hMutedBy7d = computed(() => cc7dPct.value !== null && cc7dPct.value >= 100);
 
 // Shared 7D percentage for 5H dimming evaluation.
-const cc7dPct = computed(() => { const v = props.data?.rate_limits?.seven_day?.used_percentage; return v != null ? Math.round(v) : null; });
+const cc7dPct = computed(() => {
+  const w = props.data?.rate_limits?.seven_day;
+  return w?.used_percentage != null ? currentPct(Math.round(w.used_percentage), w.resets_at ?? null, agoNow.value) : null;
+});
 
 // Org name: skip Anthropic's auto-generated default "email's Organization"
 const ccOrgName = computed(() => {
@@ -1054,17 +1073,12 @@ async function handleIconClick() {
   --pool-wash: var(--brand-veil);
 }
 
-.ag-pool--argon {
-  --pool-wash: var(--accent-blue-veil);
-}
-
 .ag-pool-card.is-exhausted {
   --pool-wash: var(--surface-faint);
 }
 
-.ag-pool-card.is-exhausted > * {
+.ag-pool-card.is-exhausted .ag-pool-header {
   opacity: 0.45;
-  filter: grayscale(1);
 }
 
 .ag-pool-header {

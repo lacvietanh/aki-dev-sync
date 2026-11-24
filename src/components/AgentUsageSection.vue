@@ -14,19 +14,21 @@
 import { computed } from 'vue';
 import AgentUsageSlot from './AgentUsageSlot.vue';
 import { tierCount, rowSlotIds } from '../store/usageTierStore';
+import { slotTarget } from '../store/usageSlotStore';
 
 // Dynamically generate slot IDs per tier row based on tierCount.
 const activeTierRows = computed(() =>
   Array.from({ length: tierCount.value }, (_, r) => rowSlotIds(r))
 );
 
-// Tier row height and gap constants for sectionHeight calculation.
-const ROW_HEIGHT_PX = 161;
-const ROW_GAP_PX = 10;
+// A row reserves its tallest agent's data card, measured from the styles below and AgentUsage.vue, so data arriving never shifts the project list; a taller state scrolls.
+const SLOT_HEIGHT_PX = { claudecode: 150, antigravity: 122 };
+const SECTION_CHROME_PX = 13; // padding 6 + 6, border-bottom 1
+const ROW_SEPARATOR_PX = 13; // gap 6, padding-top 6, border-top 1
 
 const sectionHeight = computed(() => {
-  const rows = tierCount.value;
-  return `${rows * ROW_HEIGHT_PX + (rows - 1) * ROW_GAP_PX}px`;
+  const rows = activeTierRows.value.map(ids => Math.max(...ids.map(id => SLOT_HEIGHT_PX[slotTarget(id).agentId])));
+  return `${rows.reduce((sum, h) => sum + h, 0) + (rows.length - 1) * ROW_SEPARATOR_PX + SECTION_CHROME_PX}px`;
 });
 </script>
 

@@ -83,8 +83,7 @@
   --accent-amber-glow: rgba(255, 140, 0, 0.35);
   --accent-amber-wash: rgba(255, 140, 0, 0.12);
   --accent-blue-wash: rgba(0, 136, 255, 0.12);
-  --accent-blue-veil: rgba(0, 136, 255, 0.05); /* veil = barely-there tint under dense text */
-  --accent-cyan-veil: rgba(0, 210, 255, 0.05);
+  --accent-cyan-veil: rgba(0, 210, 255, 0.05); /* veil = barely-there tint under dense text */
   --accent-cyan-edge: rgba(0, 210, 255, 0.25);
   --accent-cyan-glow: rgba(0, 210, 255, 0.35);
   --accent-cyan-wash: rgba(0, 210, 255, 0.12);
